@@ -20,7 +20,7 @@ export function SiteHeader() {
   const user = session?.user
 
   const handleLogout = async () => {
-    await signOut({ callbackUrl: '/login' })
+    await signOut({ callbackUrl: '/auth/signin' })
   }
 
   return (
@@ -66,7 +66,7 @@ export function SiteHeader() {
           ) : (
             <div className="flex items-center gap-2">
               <Button variant="ghost" asChild>
-                <Link href="/login">Войти</Link>
+                <Link href="/auth/signin">Войти</Link>
               </Button>
               <Button asChild>
                 <Link href="/auth/register">Регистрация</Link>

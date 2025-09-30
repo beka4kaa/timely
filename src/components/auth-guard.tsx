@@ -17,7 +17,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
     if (status === "loading") return // Еще загружается
 
     if (requireAuth && !session) {
-      router.push("/login")
+      router.push("/auth/signin")
       return
     }
 
