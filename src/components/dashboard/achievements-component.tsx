@@ -248,7 +248,7 @@ export function AchievementsComponent() {
                 <Sparkles className="h-5 w-5 text-purple-600" />
                 Мотивация дня
               </h3>
-              <p className="text-purple-700 font-medium mb-3">"{randomQuote}"</p>
+              <p className="text-purple-700 font-medium mb-3">&ldquo;{randomQuote}&rdquo;</p>
               {randomAchievement && (
                 <div className="bg-white/70 p-3 rounded-lg">
                   <p className="text-sm text-purple-600 font-medium flex items-center gap-2">

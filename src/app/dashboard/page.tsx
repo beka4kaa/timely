@@ -312,7 +312,7 @@ export default function DashboardPage() {
                 <Heart className="h-8 w-8 mx-auto text-purple-600" />
               </div>
               <blockquote className="text-lg font-medium text-purple-900 mb-2">
-                "Каждое достижение начинается с решения попробовать."
+                &ldquo;Каждое достижение начинается с решения попробовать.&rdquo;
               </blockquote>
               <p className="text-sm text-purple-600">— Мотивация дня</p>
             </CardContent>
