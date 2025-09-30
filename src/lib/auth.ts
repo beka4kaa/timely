@@ -119,13 +119,22 @@ export const authOptions: NextAuthOptions = {
     },
     async redirect({ url, baseUrl }) {
       console.log('🔀 REDIRECT CALLBACK:', { url, baseUrl })
-      // После успешного логина через Google редиректим на дашборд
-      if (url.startsWith('/') || url.startsWith(baseUrl)) {
-        console.log('✅ Redirecting to dashboard')
-        return `${baseUrl}/dashboard`
+      
+      // Временно перенаправляем на тестовую страницу для отладки
+      if (url === baseUrl || url.includes('/auth/') || url === '/') {
+        const testUrl = `${baseUrl}/test-oauth`
+        console.log('✅ FORCING redirect to TEST PAGE:', testUrl)
+        return testUrl
       }
-      console.log('🔀 Using baseUrl as fallback')
-      return baseUrl
+      
+      // Если url уже содержит dashboard, оставляем как есть
+      if (url.includes('/dashboard')) {
+        console.log('✅ Already dashboard URL:', url)
+        return url
+      }
+      
+      console.log('🔀 Default redirect to dashboard')
+      return `${baseUrl}/dashboard`
     },
     async signIn({ user, account, profile }) {
       console.log('🔥 SIGNIN CALLBACK START:', {

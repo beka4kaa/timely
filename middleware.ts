@@ -5,6 +5,12 @@ export default withAuth(
   function middleware(req) {
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
+    
+    console.log('🔒 MIDDLEWARE:', { 
+      pathname, 
+      hasToken: !!token, 
+      userEmail: token?.email 
+    })
 
     // Публичные маршруты только для неавторизованных пользователей
     const publicPaths = ['/auth/signin', '/auth/register']
@@ -12,6 +18,7 @@ export default withAuth(
 
     // Если пользователь авторизован и пытается попасть на страницу входа/регистрации
     if (isPublicPath && token) {
+      console.log('✅ MIDDLEWARE: Authenticated user redirecting from auth page to dashboard')
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
 
