@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, ReactNode } from 'react'
+import { useSession, signIn as nextAuthSignIn, signOut as nextAuthSignOut } from 'next-auth/react'
 
 interface User {
   id: string
@@ -20,45 +21,30 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { data: session, status } = useSession()
+  
+  // Преобразуем данные сессии NextAuth в формат нашего User
+  const user = session?.user ? {
+    id: session.user.id || '',
+    email: session.user.email || '',
+    name: session.user.name || '',
+    role: session.user.role || 'user'
+  } : null
 
-  // Проверяем авторизацию при загрузке
-  useEffect(() => {
-    checkAuth()
-  }, [])
-
-  const checkAuth = async () => {
-    try {
-      const response = await fetch('/api/auth/me')
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data.user)
-      }
-    } catch (error) {
-      console.error('Ошибка при проверке авторизации:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const isLoading = status === 'loading'
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+      const result = await nextAuthSignIn('credentials', {
+        email,
+        password,
+        redirect: false,
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data.user)
-        return { success: true }
+      if (result?.error) {
+        return { success: false, error: result.error }
       } else {
-        return { success: false, error: data.error }
+        return { success: true }
       }
     } catch (error) {
       return { success: false, error: 'Ошибка при входе в систему' }
@@ -78,7 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json()
 
       if (response.ok) {
-        setUser(data.user)
+        // После успешной регистрации автоматически входим через NextAuth
+        await nextAuthSignIn('credentials', {
+          email,
+          password,
+          redirect: false,
+        })
         return { success: true }
       } else {
         return { success: false, error: data.error }
@@ -90,8 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      setUser(null)
+      await nextAuthSignOut({ redirect: false })
     } catch (error) {
       console.error('Ошибка при выходе:', error)
     }

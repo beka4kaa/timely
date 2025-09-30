@@ -20,7 +20,7 @@ export default withAuth(
       if (token) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
       } else {
-        return NextResponse.redirect(new URL('/login', req.url))
+        return NextResponse.redirect(new URL('/auth/signin', req.url))
       }
     }
 

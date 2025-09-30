@@ -7,6 +7,7 @@ import {
   MoreVerticalIcon,
   UserCircleIcon,
 } from "lucide-react"
+import { signOut } from "next-auth/react"
 
 import {
   Avatar,
@@ -39,6 +40,10 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+
+  const handleLogout = async () => {
+    await signOut({ callbackUrl: '/auth/signin' })
+  }
 
   return (
     <SidebarMenu>
@@ -98,7 +103,7 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOutIcon />
               Log out
             </DropdownMenuItem>

@@ -15,6 +15,7 @@ import {
   ClockIcon,
   BarChartIcon,
 } from "lucide-react"
+import { useSession } from "next-auth/react"
 
 import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
@@ -32,11 +33,6 @@ import {
 } from "@/components/ui/sidebar"
 
 const data = {
-  user: {
-    name: "Time Manager",
-    email: "user@example.com",
-    avatar: "/avatars/user.jpg",
-  },
   navMain: [
     {
       title: "Dashboard",
@@ -142,6 +138,15 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { data: session } = useSession()
+
+  // Формируем данные пользователя из сессии
+  const user = {
+    name: session?.user?.name || "Пользователь",
+    email: session?.user?.email || "",
+    avatar: session?.user?.image || "/avatars/user.jpg",
+  }
+
   return (
     <Sidebar {...props}>
       <SidebarHeader>
@@ -166,7 +171,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>
   )

@@ -20,7 +20,7 @@ export function SiteHeader() {
   const user = session?.user
 
   const handleLogout = async () => {
-    await signOut({ callbackUrl: '/login' })
+    await signOut({ callbackUrl: '/auth/signin' })
   }
 
   return (

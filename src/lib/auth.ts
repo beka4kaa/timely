@@ -80,30 +80,40 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async signIn({ user, account, profile }) {
-      if (account?.provider === "google") {
-        // При входе через Google создаем пользователя, если его нет
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email! }
-        })
-
-        if (!existingUser) {
-          await prisma.user.create({
-            data: {
-              email: user.email!,
-              name: user.name || "Пользователь Google",
-              image: user.image,
-              role: "user",
-              emailVerified: new Date(), // Google email уже верифицирован
-            }
+      try {
+        if (account?.provider === "google") {
+          console.log('Google sign in attempt:', { user: user.email, account: account.provider })
+          
+          // При входе через Google создаем пользователя, если его нет
+          const existingUser = await prisma.user.findUnique({
+            where: { email: user.email! }
           })
+
+          if (!existingUser) {
+            console.log('Creating new Google user:', user.email)
+            await prisma.user.create({
+              data: {
+                email: user.email!,
+                name: user.name || "Пользователь Google",
+                image: user.image,
+                role: "user",
+                emailVerified: new Date(), // Google email уже верифицирован
+              }
+            })
+          } else {
+            console.log('Existing Google user found:', user.email)
+          }
         }
+        return true
+      } catch (error) {
+        console.error('SignIn callback error:', error)
+        return false
       }
-      return true
     }
   },
   pages: {
-    signIn: '/login',
-    error: '/login',
+    signIn: '/auth/signin',
+    error: '/auth/signin',
   },
   session: {
     strategy: "jwt",
