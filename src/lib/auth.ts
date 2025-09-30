@@ -53,8 +53,16 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user, account }) {
+      console.log('🔑 JWT CALLBACK:', {
+        hasUser: !!user,
+        provider: account?.provider,
+        tokenEmail: token.email,
+        tokenId: token.id
+      })
+      
       // При первом входе (когда есть user)
       if (user) {
+        console.log('👤 First login, setting user data in token:', user.email)
         token.role = user.role || "user"
         token.id = user.id
         token.provider = account?.provider
@@ -63,24 +71,35 @@ export const authOptions: NextAuthOptions = {
       // Для Google OAuth - получаем данные из базы
       if (account?.provider === "google" && token.email) {
         try {
+          console.log('🔍 Fetching user from DB for Google OAuth:', token.email)
           const dbUser = await prisma.user.findUnique({
             where: { email: token.email }
           })
           
           if (dbUser) {
+            console.log('📋 Setting token data from DB user:', { id: dbUser.id, role: dbUser.role })
             token.role = dbUser.role
             token.id = dbUser.id
             token.name = dbUser.name
             token.picture = dbUser.image
+          } else {
+            console.log('⚠️ No DB user found for:', token.email)
           }
         } catch (error) {
-          console.error('JWT callback error:', error)
+          console.error('❌ JWT callback error:', error)
         }
       }
       
+      console.log('🔑 JWT token final state:', { id: token.id, email: token.email, role: token.role })
       return token
     },
     async session({ session, token }) {
+      console.log('📋 SESSION CALLBACK:', {
+        tokenId: token.id,
+        tokenEmail: token.email,
+        sessionEmail: session.user?.email
+      })
+      
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as string || "user"
@@ -88,18 +107,36 @@ export const authOptions: NextAuthOptions = {
         // Обновляем данные из токена
         if (token.name) session.user.name = token.name as string
         if (token.picture) session.user.image = token.picture as string
+        
+        console.log('✅ Final session data:', {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+          role: session.user.role
+        })
       }
       return session
     },
+    async redirect({ url, baseUrl }) {
+      console.log('🔀 REDIRECT CALLBACK:', { url, baseUrl })
+      // После успешного логина через Google редиректим на дашборд
+      if (url.startsWith('/') || url.startsWith(baseUrl)) {
+        console.log('✅ Redirecting to dashboard')
+        return `${baseUrl}/dashboard`
+      }
+      console.log('🔀 Using baseUrl as fallback')
+      return baseUrl
+    },
     async signIn({ user, account, profile }) {
+      console.log('🔥 SIGNIN CALLBACK START:', {
+        user: { email: user.email, name: user.name, image: user.image },
+        account: { provider: account?.provider, type: account?.type },
+        profile: profile ? { email: profile.email, name: profile.name } : null
+      })
+      
       try {
         if (account?.provider === "google") {
-          console.log('Google sign in attempt:', { 
-            email: user.email, 
-            name: user.name,
-            image: user.image,
-            provider: account.provider 
-          })
+          console.log('🚀 Google OAuth process started for:', user.email)
           
           // При входе через Google создаем или обновляем пользователя
           const existingUser = await prisma.user.findUnique({
@@ -107,21 +144,20 @@ export const authOptions: NextAuthOptions = {
           })
 
           if (!existingUser) {
-            console.log('Creating new Google user:', user.email)
+            console.log('👤 Creating new Google user:', user.email)
             const newUser = await prisma.user.create({
               data: {
                 email: user.email!,
-                name: user.name || "Пользователь Google",
+                name: user.name || "Google User",
                 image: user.image,
                 role: "user",
-                emailVerified: new Date(), // Google email уже верифицирован
+                emailVerified: new Date(),
               }
             })
-            console.log('New user created:', newUser.id)
+            console.log('✅ New user created successfully:', { id: newUser.id, email: newUser.email })
           } else {
-            // Обновляем данные существующего пользователя
-            console.log('Updating existing Google user:', user.email)
-            await prisma.user.update({
+            console.log('🔄 Updating existing Google user:', user.email)
+            const updatedUser = await prisma.user.update({
               where: { email: user.email! },
               data: {
                 name: user.name || existingUser.name,
@@ -129,11 +165,14 @@ export const authOptions: NextAuthOptions = {
                 emailVerified: new Date()
               }
             })
+            console.log('✅ User updated successfully:', { id: updatedUser.id, email: updatedUser.email })
           }
+          
+          console.log('🎉 Google OAuth signin successful, redirecting to dashboard...')
         }
         return true
       } catch (error) {
-        console.error('SignIn callback error:', error)
+        console.error('❌ SignIn callback error:', error)
         return false
       }
     }

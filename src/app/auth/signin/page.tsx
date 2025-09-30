@@ -48,8 +48,14 @@ export default function SignInPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard' })
+      console.log('Starting Google sign in...')
+      const result = await signIn('google', { 
+        callbackUrl: '/dashboard',
+        redirect: true 
+      })
+      console.log('Google sign in result:', result)
     } catch (error) {
+      console.error('Google sign in error:', error)
       setError('Error signing in with Google')
       setIsLoading(false)
     }
