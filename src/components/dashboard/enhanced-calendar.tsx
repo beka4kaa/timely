@@ -5,815 +5,437 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
+import { Label } from '@/components/ui/label'
 import { 
   ChevronLeft, 
   ChevronRight, 
   Plus, 
   Calendar as CalendarIcon,
   Clock,
-  MapPin,
-  Users,
-  Bell,
-  Edit3,
-  Trash2,
-  Eye,
-  Grid,
-  List,
-  Search,
-  Filter
+  X,
+  Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, addWeeks, subWeeks, addMonths, subMonths, startOfMonth, endOfMonth, isSameMonth } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { useSession } from 'next-auth/react'
+
+interface TimeSlot {
+  id: string
+  startTime: string
+  endTime: string
+  task: string
+  color: string
+}
 
 interface CalendarEvent {
   id: string
   title: string
   description?: string
-  date: Date
-  startTime: string
-  endTime: string
-  type: 'work' | 'meeting' | 'personal' | 'reminder' | 'goal'
-  priority: 'high' | 'medium' | 'low'
-  location?: string
-  attendees?: string[]
-  recurring?: 'none' | 'daily' | 'weekly' | 'monthly'
-  reminders?: number[] // minutes before event
-  color?: string
-  isAllDay?: boolean
-  userId?: string
+  start: string
+  end: string
+  category: string
+  priority: string
+  color: string
+  userId: string
 }
 
-const EVENT_TYPES = {
-  work: { label: 'Работа', color: 'bg-blue-500', textColor: 'text-blue-700' },
-  meeting: { label: 'Встреча', color: 'bg-purple-500', textColor: 'text-purple-700' },
-  personal: { label: 'Личное', color: 'bg-green-500', textColor: 'text-green-700' },
-  reminder: { label: 'Напоминание', color: 'bg-yellow-500', textColor: 'text-yellow-700' },
-  goal: { label: 'Цель', color: 'bg-red-500', textColor: 'text-red-700' }
-}
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+]
 
-const PRIORITY_LEVELS = {
-  high: { label: 'Высокий', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' },
-  medium: { label: 'Средний', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' },
-  low: { label: 'Низкий', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' }
-}
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-const TIME_SLOTS = Array.from({ length: 24 }, (_, i) => 
-  `${i.toString().padStart(2, '0')}:00`
-)
-
-export function EnhancedCalendar() {
+export function EnhancedCalendarComponent() {
+  const { data: session } = useSession()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day'>('month')
+  const [showTimeScheduler, setShowTimeScheduler] = useState(false)
+  const [timeSlots, setTimeSlots] = useState<{ [date: string]: TimeSlot[] }>({})
   const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [isLoadingEvents, setIsLoadingEvents] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [newTask, setNewTask] = useState({ startTime: '', endTime: '', task: '' })
 
-  const [isAddEventOpen, setIsAddEventOpen] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState<string>('all')
-
-  const [newEvent, setNewEvent] = useState<Partial<CalendarEvent>>({
-    title: '',
-    description: '',
-    date: new Date(),
-    startTime: '09:00',
-    endTime: '10:00',
-    type: 'work',
-    priority: 'medium',
-    location: '',
-    recurring: 'none',
-    isAllDay: false
-  })
-
-  // Get events for a specific date
-  const getEventsForDate = (date: Date) => {
-    return events.filter(event => isSameDay(event.date, date))
-  }
-
-  // Get filtered events based on search and filter
-  const getFilteredEvents = () => {
-    let filteredEvents = events
-
-    if (searchTerm) {
-      filteredEvents = filteredEvents.filter(event =>
-        event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.description?.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    }
-
-    if (filterType !== 'all') {
-      filteredEvents = filteredEvents.filter(event => event.type === filterType)
-    }
-
-    return filteredEvents
-  }
-
-  // Navigation functions
-  const navigatePrevious = () => {
-    switch (viewMode) {
-      case 'month':
-        setCurrentDate(subMonths(currentDate, 1))
-        break
-      case 'week':
-        setCurrentDate(subWeeks(currentDate, 1))
-        break
-      case 'day':
-        setCurrentDate(addDays(currentDate, -1))
-        break
-    }
-  }
-
-  const navigateNext = () => {
-    switch (viewMode) {
-      case 'month':
-        setCurrentDate(addMonths(currentDate, 1))
-        break
-      case 'week':
-        setCurrentDate(addWeeks(currentDate, 1))
-        break
-      case 'day':
-        setCurrentDate(addDays(currentDate, 1))
-        break
-    }
-  }
-
-  // Load events from API
-  const loadEvents = async () => {
+  // Fetch events
+  const fetchEvents = async () => {
+    if (!session?.user?.id) return
+    
     try {
-      setIsLoadingEvents(true)
       const response = await fetch('/api/events')
       if (response.ok) {
         const data = await response.json()
-        const eventsWithDates = data.events.map((event: any) => ({
-          ...event,
-          date: new Date(event.date)
-        }))
-        setEvents(eventsWithDates)
+        setEvents(data.events || [])
       }
     } catch (error) {
-      console.error('Ошибка при загрузке событий:', error)
-    } finally {
-      setIsLoadingEvents(false)
+      console.error('Error fetching events:', error)
     }
   }
 
-  // Load events on mount
   useEffect(() => {
-    loadEvents()
-  }, [])
-
-  // Add new event
-  const addEvent = async () => {
-    if (!newEvent.title?.trim()) return
-
-    try {
-      const eventData = {
-        title: newEvent.title,
-        description: newEvent.description || '',
-        date: newEvent.date?.toISOString() || new Date().toISOString(),
-        startTime: newEvent.startTime || '09:00',
-        endTime: newEvent.endTime || '10:00',
-        type: newEvent.type || 'work',
-        priority: newEvent.priority || 'medium',
-        location: newEvent.location || '',
-        recurring: newEvent.recurring || 'none',
-        isAllDay: newEvent.isAllDay || false
-      }
-
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(eventData),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const eventWithDate = {
-          ...data.event,
-          date: new Date(data.event.date)
-        }
-        setEvents(prev => [...prev, eventWithDate])
-        setNewEvent({
-          title: '',
-          description: '',
-          date: new Date(),
-          startTime: '09:00',
-          endTime: '10:00',
-          type: 'work',
-          priority: 'medium',
-          location: '',
-          recurring: 'none',
-          isAllDay: false
-        })
-        setIsAddEventOpen(false)
-      }
-    } catch (error) {
-      console.error('Ошибка при создании события:', error)
+    if (session) {
+      fetchEvents()
     }
-  }
+  }, [session])
 
-  // Delete event
-  const deleteEvent = async (eventId: string) => {
-    try {
-      const response = await fetch(`/api/events/${eventId}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        setEvents(prev => prev.filter(event => event.id !== eventId))
-        setSelectedEvent(null)
-      }
-    } catch (error) {
-      console.error('Ошибка при удалении события:', error)
-    }
-  }
-
-  // Render calendar grid for month view
-  const renderMonthView = () => {
-    const monthStart = startOfMonth(currentDate)
-    const monthEnd = endOfMonth(currentDate)
-    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 })
-    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
+  // Get month data
+  const getMonthData = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
     
-    const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
-
-    return (
-      <div className="grid grid-cols-7 gap-1">
-        {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(day => (
-          <div key={day} className="p-2 text-center font-semibold text-sm text-muted-foreground">
-            {day}
-          </div>
-        ))}
-        {calendarDays.map(day => {
-          const dayEvents = getEventsForDate(day)
-          const isCurrentMonth = isSameMonth(day, currentDate)
-          const isToday = isSameDay(day, new Date())
-          const isSelected = selectedDate && isSameDay(day, selectedDate)
-
-          return (
-            <div
-              key={day.toISOString()}
-              className={cn(
-                "min-h-24 p-1 border border-border cursor-pointer hover:bg-muted/50 transition-colors",
-                !isCurrentMonth && "text-muted-foreground bg-muted/20",
-                isToday && "bg-blue-50 border-blue-200 dark:bg-blue-900/20",
-                isSelected && "bg-blue-100 border-blue-300 dark:bg-blue-800/30"
-              )}
-              onClick={() => setSelectedDate(day)}
-            >
-              <div className="flex justify-between items-start mb-1">
-                <span className={cn(
-                  "text-sm font-medium",
-                  isToday && "text-blue-600 dark:text-blue-400"
-                )}>
-                  {format(day, 'd')}
-                </span>
-                {dayEvents.length > 0 && (
-                  <Badge variant="secondary" className="text-xs px-1 py-0">
-                    {dayEvents.length}
-                  </Badge>
-                )}
-              </div>
-              <div className="space-y-1">
-                {dayEvents.slice(0, 2).map(event => (
-                  <div
-                    key={event.id}
-                    className={cn(
-                      "text-xs p-1 rounded text-white truncate",
-                      EVENT_TYPES[event.type].color
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedEvent(event)
-                    }}
-                  >
-                    {event.startTime} {event.title}
-                  </div>
-                ))}
-                {dayEvents.length > 2 && (
-                  <div className="text-xs text-muted-foreground">
-                    +{dayEvents.length - 2} ещё
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    )
+    const firstDayOfMonth = new Date(year, month, 1)
+    const lastDayOfMonth = new Date(year, month + 1, 0)
+    const daysInMonth = lastDayOfMonth.getDate()
+    
+    let startDayOfWeek = firstDayOfMonth.getDay()
+    startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1
+    
+    return { daysInMonth, startDayOfWeek, year, month }
   }
 
-  // Render week view
-  const renderWeekView = () => {
-    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
-    const weekDays = eachDayOfInterval({ 
-      start: weekStart, 
-      end: endOfWeek(weekStart, { weekStartsOn: 1 })
+  const { daysInMonth, startDayOfWeek, year, month } = getMonthData(currentDate)
+
+  // Get events for date
+  const getEventsForDate = (date: Date) => {
+    return events.filter(event => {
+      const eventDate = new Date(event.start)
+      return (
+        eventDate.getDate() === date.getDate() &&
+        eventDate.getMonth() === date.getMonth() &&
+        eventDate.getFullYear() === date.getFullYear()
+      )
     })
+  }
 
+  // Create calendar days
+  const calendarDays = []
+  
+  for (let i = 0; i < startDayOfWeek; i++) {
+    calendarDays.push(null)
+  }
+  
+  for (let day = 1; day <= daysInMonth; day++) {
+    calendarDays.push(day)
+  }
+
+  // Navigate months
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    const newDate = new Date(currentDate)
+    if (direction === 'prev') {
+      newDate.setMonth(newDate.getMonth() - 1)
+    } else {
+      newDate.setMonth(newDate.getMonth() + 1)
+    }
+    setCurrentDate(newDate)
+  }
+
+  // Check if today
+  const isToday = (day: number) => {
+    const today = new Date()
     return (
-      <div className="grid grid-cols-8 gap-1 h-96 overflow-auto">
-        <div className="border-r border-border p-2"></div>
-        {weekDays.map(day => (
-          <div key={day.toISOString()} className="border-r border-border p-2 text-center">
-            <div className={cn(
-              "text-sm font-semibold",
-              isSameDay(day, new Date()) && "text-blue-600 dark:text-blue-400"
-            )}>
-              {format(day, 'EEE', { locale: ru })}
-            </div>
-            <div className={cn(
-              "text-lg font-bold",
-              isSameDay(day, new Date()) && "text-blue-600 dark:text-blue-400"
-            )}>
-              {format(day, 'd')}
-            </div>
-          </div>
-        ))}
-        {TIME_SLOTS.map(time => (
-          <React.Fragment key={time}>
-            <div className="border-r border-t border-border p-2 text-sm text-muted-foreground">
-              {time}
-            </div>
-            {weekDays.map(day => {
-              const dayEvents = getEventsForDate(day).filter(event => 
-                event.startTime <= time && event.endTime > time
-              )
-              
-              return (
-                <div 
-                  key={`${day.toISOString()}-${time}`} 
-                  className="border-r border-t border-border p-1 relative"
-                >
-                  {dayEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className={cn(
-                        "text-xs p-1 rounded text-white cursor-pointer mb-1",
-                        EVENT_TYPES[event.type].color
-                      )}
-                      onClick={() => setSelectedEvent(event)}
-                    >
-                      {event.title}
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </React.Fragment>
-        ))}
-      </div>
+      day === today.getDate() &&
+      month === today.getMonth() &&
+      year === today.getFullYear()
     )
   }
 
-  // Render day view
-  const renderDayView = () => {
-    const dayEvents = getEventsForDate(currentDate)
-    
+  // Check if selected
+  const isSelected = (day: number) => {
+    if (!selectedDate) return false
     return (
-      <div className="grid grid-cols-2 gap-4 h-96">
-        <div className="space-y-2 overflow-auto">
-          <h3 className="font-semibold text-lg">
-            {format(currentDate, 'd MMMM yyyy', { locale: ru })}
-          </h3>
-          {TIME_SLOTS.map(time => {
-            const timeEvents = dayEvents.filter(event => 
-              event.startTime <= time && event.endTime > time
-            )
-            
-            return (
-              <div key={time} className="flex items-start space-x-2 border-b border-border pb-2">
-                <div className="text-sm text-muted-foreground w-16">{time}</div>
-                <div className="flex-1">
-                  {timeEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className={cn(
-                        "text-sm p-2 rounded cursor-pointer mb-1",
-                        EVENT_TYPES[event.type].color,
-                        "text-white"
-                      )}
-                      onClick={() => setSelectedEvent(event)}
-                    >
-                      <div className="font-medium">{event.title}</div>
-                      <div className="text-xs opacity-90">
-                        {event.startTime} - {event.endTime}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        
-        <div className="space-y-4">
-          <div>
-            <h4 className="font-medium mb-2">События дня</h4>
-            <div className="space-y-2">
-              {dayEvents.map(event => (
-                <Card key={event.id} className="cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => setSelectedEvent(event)}>
-                  <CardContent className="p-3">
-                    <div className="flex justify-between items-start mb-1">
-                      <h5 className="font-medium">{event.title}</h5>
-                      <Badge className={PRIORITY_LEVELS[event.priority].color}>
-                        {PRIORITY_LEVELS[event.priority].label}
-                      </Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground mb-1">
-                      {event.startTime} - {event.endTime}
-                    </div>
-                    {event.location && (
-                      <div className="text-sm text-muted-foreground flex items-center">
-                        <MapPin className="h-3 w-3 mr-1" />
-                        {event.location}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-              {dayEvents.length === 0 && (
-                <div className="text-center text-muted-foreground py-4">
-                  Нет событий на этот день
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      day === selectedDate.getDate() &&
+      month === selectedDate.getMonth() &&
+      year === selectedDate.getFullYear()
     )
+  }
+
+  // Select date
+  const selectDate = (day: number) => {
+    const newDate = new Date(year, month, day)
+    setSelectedDate(newDate)
+    setShowTimeScheduler(true)
+  }
+
+  // Time slot functions
+  const addTimeSlot = () => {
+    if (!selectedDate || !newTask.startTime || !newTask.endTime || !newTask.task) return
+    
+    const dateKey = selectedDate.toDateString()
+    const newSlot: TimeSlot = {
+      id: Date.now().toString(),
+      startTime: newTask.startTime,
+      endTime: newTask.endTime,
+      task: newTask.task,
+      color: `hsl(${Math.random() * 360}, 70%, 50%)`
+    }
+
+    setTimeSlots(prev => ({
+      ...prev,
+      [dateKey]: [...(prev[dateKey] || []), newSlot].sort((a, b) => 
+        a.startTime.localeCompare(b.startTime)
+      )
+    }))
+
+    setNewTask({ startTime: '', endTime: '', task: '' })
+  }
+
+  const removeTimeSlot = (slotId: string) => {
+    if (!selectedDate) return
+    const dateKey = selectedDate.toDateString()
+    setTimeSlots(prev => ({
+      ...prev,
+      [dateKey]: (prev[dateKey] || []).filter(slot => slot.id !== slotId)
+    }))
+  }
+
+  const getTimeSlotsForDate = (date: Date) => {
+    const dateKey = date.toDateString()
+    return timeSlots[dateKey] || []
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-        <div className="flex items-center space-x-4">
-          <h1 className="text-2xl font-bold">Календарь</h1>
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={navigatePrevious}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
-              Сегодня
-            </Button>
-            <Button variant="outline" size="sm" onClick={navigateNext}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigateMonth('prev')}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          
+          <h2 className="text-lg font-semibold">
+            {MONTHS[month]} {year}
+          </h2>
+          
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigateMonth('next')}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* Calendar Grid */}
+        <div className="lg:col-span-2">
+          <Card className="rounded-2xl border-2">
+            <CardContent className="p-4">
+              {/* Weekday headers */}
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {WEEKDAYS.map(day => (
+                  <div key={day} className="p-2 text-center text-xs font-medium text-muted-foreground">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((day, index) => {
+                  const dayEvents = day ? getEventsForDate(new Date(year, month, day)) : []
+                  const dayTimeSlots = day ? getTimeSlotsForDate(new Date(year, month, day)) : []
+                  
+                  return (
+                    <div 
+                      key={index}
+                      className={cn(
+                        "min-h-[48px] p-2 rounded-xl hover:bg-muted/50 cursor-pointer transition-all duration-200 relative border-2 border-transparent",
+                        day && "hover:bg-muted hover:border-primary/20",
+                        !day && "cursor-default hover:bg-transparent",
+                        day && isSelected(day) && "border-primary bg-primary/5",
+                        dayTimeSlots.length > 0 && "bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20"
+                      )}
+                      onClick={() => day && selectDate(day)}
+                    >
+                      {day && (
+                        <>
+                          <div className={cn(
+                            "text-sm font-medium mb-1 flex items-center justify-center",
+                            isToday(day) && "bg-primary text-primary-foreground rounded-full w-6 h-6 text-xs",
+                            day && isSelected(day) && !isToday(day) && "text-primary font-bold"
+                          )}>
+                            {day}
+                          </div>
+                          
+                          {/* Event indicators */}
+                          <div className="space-y-0.5">
+                            {dayEvents.slice(0, 1).map(event => (
+                              <div 
+                                key={event.id}
+                                className="w-full h-1 bg-blue-400 rounded-full"
+                                title={event.title}
+                              />
+                            ))}
+                            
+                            {dayTimeSlots.slice(0, 2).map(slot => (
+                              <div 
+                                key={slot.id}
+                                className="w-full h-1 rounded-full"
+                                style={{ backgroundColor: slot.color }}
+                                title={`${slot.startTime}-${slot.endTime}: ${slot.task}`}
+                              />
+                            ))}
+                            
+                            {(dayEvents.length + dayTimeSlots.length) > 2 && (
+                              <div className="text-[10px] text-muted-foreground text-center">
+                                +{(dayEvents.length + dayTimeSlots.length) - 2}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Search */}
-          <div className="relative">
-            <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
-            <Input
-              placeholder="Поиск событий..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 w-48"
-            />
-          </div>
-
-          {/* Filter */}
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-32">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {Object.entries(EVENT_TYPES).map(([key, type]) => (
-                <SelectItem key={key} value={key}>{type.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* View mode */}
-          <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as any)}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="month">Месяц</TabsTrigger>
-              <TabsTrigger value="week">Неделя</TabsTrigger>
-              <TabsTrigger value="day">День</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* Add event button */}
-          <Dialog open={isAddEventOpen} onOpenChange={setIsAddEventOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Добавить
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Новое событие</DialogTitle>
-                <DialogDescription>
-                  Создайте новое событие в календаре
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Название *</label>
-                  <Input
-                    placeholder="Введите название события..."
-                    value={newEvent.title || ''}
-                    onChange={(e) => setNewEvent(prev => ({ ...prev, title: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Описание</label>
-                  <Textarea
-                    placeholder="Добавьте описание..."
-                    value={newEvent.description || ''}
-                    onChange={(e) => setNewEvent(prev => ({ ...prev, description: e.target.value }))}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">Дата</label>
-                    <Input
-                      type="date"
-                      value={newEvent.date ? format(newEvent.date, 'yyyy-MM-dd') : ''}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, date: new Date(e.target.value) }))}
-                    />
-                  </div>
+        {/* Time Planning Panel */}
+        <div className="space-y-4">
+          {selectedDate && showTimeScheduler && (
+            <Card className="rounded-2xl border-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-base">
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="allDay"
-                      checked={newEvent.isAllDay || false}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, isAllDay: e.target.checked }))}
-                    />
-                    <label htmlFor="allDay" className="text-sm font-medium">Весь день</label>
+                    <CalendarIcon className="h-4 w-4" />
+                    <span>
+                      {selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]}
+                    </span>
                   </div>
-                </div>
-
-                {!newEvent.isAllDay && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowTimeScheduler(false)}
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Add time slot form */}
+                <div className="space-y-3 p-4 bg-muted/30 rounded-xl">
+                  <Label className="text-sm font-medium">Новая задача</Label>
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-sm font-medium">Начало</label>
-                      <Select 
-                        value={newEvent.startTime || '09:00'} 
-                        onValueChange={(value) => setNewEvent(prev => ({ ...prev, startTime: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIME_SLOTS.map(time => (
-                            <SelectItem key={time} value={time}>{time}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="start-time" className="text-xs">С</Label>
+                      <Input
+                        id="start-time"
+                        type="time"
+                        value={newTask.startTime}
+                        onChange={(e) => setNewTask(prev => ({ ...prev, startTime: e.target.value }))}
+                        className="h-8 text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Конец</label>
-                      <Select 
-                        value={newEvent.endTime || '10:00'} 
-                        onValueChange={(value) => setNewEvent(prev => ({ ...prev, endTime: value }))}
+                      <Label htmlFor="end-time" className="text-xs">До</Label>
+                      <Input
+                        id="end-time"
+                        type="time"
+                        value={newTask.endTime}
+                        onChange={(e) => setNewTask(prev => ({ ...prev, endTime: e.target.value }))}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Input
+                      placeholder="Название задачи"
+                      value={newTask.task}
+                      onChange={(e) => setNewTask(prev => ({ ...prev, task: e.target.value }))}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <Button 
+                    onClick={addTimeSlot}
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    disabled={!newTask.startTime || !newTask.endTime || !newTask.task}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Добавить
+                  </Button>
+                </div>
+
+                {/* Time slots list */}
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {getTimeSlotsForDate(selectedDate).map(slot => (
+                    <div 
+                      key={slot.id}
+                      className="flex items-center justify-between p-3 rounded-xl border-2"
+                      style={{ borderLeftColor: slot.color, borderLeftWidth: '4px' }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <Clock className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {slot.startTime} - {slot.endTime}
+                          </span>
+                        </div>
+                        <div className="text-sm font-medium truncate">{slot.task}</div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeTimeSlot(slot.id)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                       >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIME_SLOTS.map(time => (
-                            <SelectItem key={time} value={time}>{time}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {getTimeSlotsForDate(selectedDate).length === 0 && (
+                    <div className="text-center text-muted-foreground py-8">
+                      <Clock className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">Нет запланированных задач</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Events for selected date */}
+                {getEventsForDate(selectedDate).length > 0 && (
+                  <div className="pt-4 border-t">
+                    <Label className="text-sm font-medium mb-3 block">События</Label>
+                    <div className="space-y-2">
+                      {getEventsForDate(selectedDate).map(event => (
+                        <div 
+                          key={event.id}
+                          className="flex items-center justify-between p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                            <div>
+                              <div className="font-medium text-sm">{event.title}</div>
+                              <div className="text-xs text-muted-foreground flex items-center mt-1">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {new Date(event.start).toLocaleTimeString('ru-RU', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">
+                            {event.category}
+                          </Badge>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium">Тип</label>
-                    <Select 
-                      value={newEvent.type || 'work'} 
-                      onValueChange={(value) => setNewEvent(prev => ({ ...prev, type: value as any }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(EVENT_TYPES).map(([key, type]) => (
-                          <SelectItem key={key} value={key}>{type.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Приоритет</label>
-                    <Select 
-                      value={newEvent.priority || 'medium'} 
-                      onValueChange={(value) => setNewEvent(prev => ({ ...prev, priority: value as any }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(PRIORITY_LEVELS).map(([key, level]) => (
-                          <SelectItem key={key} value={key}>{level.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Местоположение</label>
-                  <Input
-                    placeholder="Введите адрес или место проведения..."
-                    value={newEvent.location || ''}
-                    onChange={(e) => setNewEvent(prev => ({ ...prev, location: e.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium">Повторение</label>
-                  <Select 
-                    value={newEvent.recurring || 'none'} 
-                    onValueChange={(value) => setNewEvent(prev => ({ ...prev, recurring: value as any }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Не повторять</SelectItem>
-                      <SelectItem value="daily">Ежедневно</SelectItem>
-                      <SelectItem value="weekly">Еженедельно</SelectItem>
-                      <SelectItem value="monthly">Ежемесячно</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddEventOpen(false)}>
-                  Отмена
-                </Button>
-                <Button onClick={addEvent} disabled={!newEvent.title?.trim()}>
-                  Создать событие
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
-
-      {/* Current date display */}
-      <div className="text-center">
-        <h2 className="text-xl font-semibold">
-          {viewMode === 'month' && format(currentDate, 'LLLL yyyy', { locale: ru })}
-          {viewMode === 'week' && `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'd MMM', { locale: ru })} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'd MMM yyyy', { locale: ru })}`}
-          {viewMode === 'day' && format(currentDate, 'd MMMM yyyy, EEEE', { locale: ru })}
-        </h2>
-      </div>
-
-      {/* Calendar Views */}
-      <Card>
-        <CardContent className="p-0">
-          {viewMode === 'month' && renderMonthView()}
-          {viewMode === 'week' && renderWeekView()}
-          {viewMode === 'day' && renderDayView()}
-        </CardContent>
-      </Card>
-
-      {/* Event Details Dialog */}
-      {selectedEvent && (
-        <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-start justify-between">
-                <span>{selectedEvent.title}</span>
-                <div className="flex space-x-2">
-                  <Button variant="ghost" size="sm">
-                    <Edit3 className="h-4 w-4" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => deleteEvent(selectedEvent.id)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </DialogTitle>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              {selectedEvent.description && (
-                <div>
-                  <h4 className="font-medium mb-1">Описание</h4>
-                  <p className="text-sm text-muted-foreground">{selectedEvent.description}</p>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-medium mb-1">Дата</h4>
-                  <p className="text-sm">{format(selectedEvent.date, 'd MMMM yyyy', { locale: ru })}</p>
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">Время</h4>
-                  <p className="text-sm">
-                    {selectedEvent.isAllDay ? 'Весь день' : `${selectedEvent.startTime} - ${selectedEvent.endTime}`}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-medium mb-1">Тип</h4>
-                  <Badge className={`${EVENT_TYPES[selectedEvent.type].color} text-white`}>
-                    {EVENT_TYPES[selectedEvent.type].label}
-                  </Badge>
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">Приоритет</h4>
-                  <Badge className={PRIORITY_LEVELS[selectedEvent.priority].color}>
-                    {PRIORITY_LEVELS[selectedEvent.priority].label}
-                  </Badge>
-                </div>
-              </div>
-
-              {selectedEvent.location && (
-                <div>
-                  <h4 className="font-medium mb-1 flex items-center">
-                    <MapPin className="h-4 w-4 mr-1" />
-                    Местоположение
-                  </h4>
-                  <p className="text-sm text-muted-foreground">{selectedEvent.location}</p>
-                </div>
-              )}
-
-              {selectedEvent.attendees && selectedEvent.attendees.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-1 flex items-center">
-                    <Users className="h-4 w-4 mr-1" />
-                    Участники
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedEvent.attendees.map((attendee, index) => (
-                      <Badge key={index} variant="secondary">{attendee}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedEvent.reminders && selectedEvent.reminders.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-1 flex items-center">
-                    <Bell className="h-4 w-4 mr-1" />
-                    Напоминания
-                  </h4>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedEvent.reminders.map((reminder, index) => (
-                      <Badge key={index} variant="outline">
-                        За {reminder} мин
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   )
 }

@@ -1,20 +1,16 @@
-import { EnhancedCalendar } from '@/components/dashboard/enhanced-calendar'
-import { Calendar } from 'lucide-react'
+import { CalendarComponent } from '@/components/dashboard/calendar-component'
 
 export default function CalendarPage() {
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Calendar className="h-8 w-8" />
-          Календарь и планирование
-        </h1>
+    <div className="space-y-6">
+      <div className="flex flex-col space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Календарь</h1>
         <p className="text-muted-foreground">
-          Управляйте своим расписанием и планируйте события с расширенными функциями
+          Планируйте и отслеживайте свои задачи и события
         </p>
       </div>
       
-      <EnhancedCalendar />
+      <CalendarComponent />
     </div>
   )
 }

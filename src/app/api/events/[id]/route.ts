@@ -1,87 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 
-// Временное хранилище событий (будет заменено на базу данных)
-let events: any[] = []
+export const dynamic = 'force-dynamic'
 
-// GET - получить конкретное событие
 export async function GET(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const event = events.find(e => e.id === params.id)
+    const session = await getServerSession(authOptions)
     
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const event = await prisma.event.findFirst({
+      where: {
+        id: params.id,
+        userId: session.user.id
+      }
+    })
+
     if (!event) {
-      return NextResponse.json(
-        { error: 'Событие не найдено' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
     return NextResponse.json({ event })
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Ошибка при получении события' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
-// PUT - обновить событие
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const body = await request.json()
-    const eventIndex = events.findIndex(e => e.id === params.id)
-    
-    if (eventIndex === -1) {
-      return NextResponse.json(
-        { error: 'Событие не найдено' },
-        { status: 404 }
-      )
-    }
-
-    const updatedEvent = {
-      ...events[eventIndex],
-      ...body,
-      updatedAt: new Date().toISOString()
-    }
-
-    events[eventIndex] = updatedEvent
-
-    return NextResponse.json({ event: updatedEvent })
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Ошибка при обновлении события' },
-      { status: 500 }
-    )
-  }
-}
-
-// DELETE - удалить событие
 export async function DELETE(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const eventIndex = events.findIndex(e => e.id === params.id)
+    const session = await getServerSession(authOptions)
     
-    if (eventIndex === -1) {
-      return NextResponse.json(
-        { error: 'Событие не найдено' },
-        { status: 404 }
-      )
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    events.splice(eventIndex, 1)
+    const event = await prisma.event.deleteMany({
+      where: {
+        id: params.id,
+        userId: session.user.id
+      }
+    })
 
-    return NextResponse.json({ message: 'Событие удалено' })
+    if (event.count === 0) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ message: 'Event deleted successfully' })
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Ошибка при удалении события' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

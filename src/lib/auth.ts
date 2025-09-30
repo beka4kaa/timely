@@ -5,6 +5,20 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
 
+// Проверяем переменные окружения при загрузке
+console.log('🔍 ENVIRONMENT CHECK:', {
+  hasGoogleClientId: !!process.env.GOOGLE_CLIENT_ID,
+  hasGoogleClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+  hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
+  hasNextAuthUrl: !!process.env.NEXTAUTH_URL,
+  googleClientIdLength: process.env.GOOGLE_CLIENT_ID?.length,
+  googleClientIdStart: process.env.GOOGLE_CLIENT_ID?.substring(0, 10)
+})
+
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  console.error('❌ MISSING GOOGLE OAUTH CREDENTIALS!')
+}
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
@@ -12,6 +26,24 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       allowDangerousEmailAccountLinking: true,
+      authorization: {
+        params: {
+          scope: 'openid email profile',
+          prompt: 'consent',
+          access_type: 'offline',
+          response_type: 'code'
+        }
+      },
+      profile(profile) {
+        console.log('🎭 GOOGLE PROFILE RECEIVED:', profile)
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          role: 'user'
+        }
+      }
     }),
     CredentialsProvider({
       name: "credentials",
@@ -120,11 +152,10 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       console.log('🔀 REDIRECT CALLBACK:', { url, baseUrl })
       
-      // Временно перенаправляем на тестовую страницу для отладки
+      // После успешного логина через Google редиректим на дашборд
       if (url === baseUrl || url.includes('/auth/') || url === '/') {
-        const testUrl = `${baseUrl}/test-oauth`
-        console.log('✅ FORCING redirect to TEST PAGE:', testUrl)
-        return testUrl
+        console.log('✅ Redirecting to dashboard')
+        return `${baseUrl}/dashboard`
       }
       
       // Если url уже содержит dashboard, оставляем как есть
@@ -138,10 +169,26 @@ export const authOptions: NextAuthOptions = {
     },
     async signIn({ user, account, profile }) {
       console.log('🔥 SIGNIN CALLBACK START:', {
-        user: { email: user.email, name: user.name, image: user.image },
-        account: { provider: account?.provider, type: account?.type },
-        profile: profile ? { email: profile.email, name: profile.name } : null
+        user: user ? { email: user.email, name: user.name, image: user.image, id: user.id } : 'USER IS UNDEFINED',
+        account: account ? { provider: account.provider, type: account.type, access_token: !!account.access_token } : 'ACCOUNT IS UNDEFINED',
+        profile: profile ? { email: (profile as any).email, name: (profile as any).name, sub: (profile as any).sub } : 'PROFILE IS UNDEFINED'
       })
+      
+      // Проверяем, что все данные есть
+      if (!user) {
+        console.error('❌ USER IS UNDEFINED - Google OAuth failed')
+        return false
+      }
+      
+      if (!account) {
+        console.error('❌ ACCOUNT IS UNDEFINED - OAuth account missing')
+        return false
+      }
+      
+      if (!user.email) {
+        console.error('❌ USER EMAIL IS MISSING')
+        return false
+      }
       
       try {
         if (account?.provider === "google") {

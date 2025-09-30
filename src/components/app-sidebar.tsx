@@ -45,6 +45,11 @@ const data = {
       icon: CalendarIcon,
     },
     {
+      title: "Расписание дня",
+      url: "/dashboard/schedule",
+      icon: ClockIcon,
+    },
+    {
       title: "Задачи",
       url: "/dashboard/tasks",
       icon: CheckSquareIcon,
