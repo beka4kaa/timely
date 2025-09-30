@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -56,7 +56,7 @@ export function EnhancedCalendarComponent() {
   const [newTask, setNewTask] = useState({ startTime: '', endTime: '', task: '' })
 
   // Fetch events
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     if (!session?.user?.id) return
     
     try {
@@ -68,13 +68,13 @@ export function EnhancedCalendarComponent() {
     } catch (error) {
       console.error('Error fetching events:', error)
     }
-  }
+  }, [session?.user?.id])
 
   useEffect(() => {
     if (session) {
       fetchEvents()
     }
-  }, [session])
+  }, [session, fetchEvents])
 
   // Get month data
   const getMonthData = (date: Date) => {

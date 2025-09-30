@@ -97,7 +97,7 @@ export function ScheduleComponent() {
   }
 
   // Вычислить время окончания
-  const calculateEndTime = (startTime: string, durationMinutes: number): string => {
+  const calculateEndTime = useCallback((startTime: string, durationMinutes: number): string => {
     const [hours, minutes] = startTime.split(':').map(Number)
     const totalMinutes = hours * 60 + minutes + durationMinutes
     const endHours = Math.floor(totalMinutes / 60)
@@ -106,7 +106,7 @@ export function ScheduleComponent() {
     if (endHours > 23) return '23:59'
     
     return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`
-  }
+  }, [])
 
   // Обработка клика по временной сетке
   const handleGridClick = (e: React.MouseEvent) => {
@@ -240,7 +240,7 @@ export function ScheduleComponent() {
   }
 
   // Парсинг custom длительности
-  const parseCustomDuration = (str: string): number => {
+  const parseCustomDuration = useCallback((str: string): number => {
     str = str.toLowerCase().trim()
     
     // Формат: "2ч 30м" или "2h 30m"
@@ -263,14 +263,14 @@ export function ScheduleComponent() {
       return parseInt(hourMatch[1]) * 60 || 60
     }
     
-    // Просто число - считаем минутами
+    // Просто число - считаем минutами
     const numberMatch = str.match(/^(\d+)$/)
     if (numberMatch) {
       return parseInt(numberMatch[1]) || 60
     }
     
     return 60 // возвращаем дефолтное значение если не смогли распарсить
-  }
+  }, [])
 
   // Обработчики перетаскивания и клика
   const handleMouseDown = (e: React.MouseEvent, item: TimeSlot) => {
@@ -400,7 +400,7 @@ export function ScheduleComponent() {
       
       return () => clearTimeout(timeoutId)
     }
-  }, [editingEvent?.id, showEditDialog, newEvent.title, newEvent.color, newEvent.duration, newEvent.customDuration])
+  }, [editingEvent?.id, showEditDialog, newEvent.title, newEvent.color, newEvent.duration, newEvent.customDuration, parseCustomDuration, calculateEndTime])
 
   // Получить слоты для выбранного дня
   const getSlotsForSelectedDay = () => {
@@ -571,40 +571,7 @@ export function ScheduleComponent() {
                       const value = e.target.value
                       setNewEvent(prev => ({ ...prev, customDuration: value }))
                       
-                      // Парсим custom duration
-                      const parseCustomDuration = (str: string): number => {
-                        str = str.toLowerCase().trim()
-                        let totalMinutes = 0
-                        
-                        // Формат: "2ч 30м" или "2h 30m"
-                        const hourMinuteMatch = str.match(/(\d+)\s*[чh]\s*(\d+)?\s*[мm]?/)
-                        if (hourMinuteMatch) {
-                          const hours = parseInt(hourMinuteMatch[1]) || 0
-                          const minutes = parseInt(hourMinuteMatch[2]) || 0
-                          return hours * 60 + minutes
-                        }
-                        
-                        // Формат: "120м" или "120m"
-                        const minuteMatch = str.match(/(\d+)\s*[мm]/)
-                        if (minuteMatch) {
-                          return parseInt(minuteMatch[1]) || 60
-                        }
-                        
-                        // Формат: "2ч" или "2h"
-                        const hourMatch = str.match(/(\d+)\s*[чh]/)
-                        if (hourMatch) {
-                          return parseInt(hourMatch[1]) * 60 || 60
-                        }
-                        
-                        // Просто число - считаем минутами
-                        const numberMatch = str.match(/^(\d+)$/)
-                        if (numberMatch) {
-                          return parseInt(numberMatch[1]) || 60
-                        }
-                        
-                        return 60 // возвращаем дефолтное значение если не смогли распарсить
-                      }
-                      
+
                       if (value) {
                         const parsedDuration = parseCustomDuration(value)
                         setNewEvent(prev => ({ ...prev, duration: parsedDuration }))
