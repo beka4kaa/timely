@@ -77,25 +77,34 @@ export function GoogleCalendarComponent() {
   const [showEventForm, setShowEventForm] = useState(false)
 
   // Fetch events from API
-  const fetchEvents = async () => {
-    if (!session?.user?.id) return
-    
+  const fetchEvents = useCallback(async () => {
+    if (!session?.user) {
+      console.log('No session available')
+      return
+    }
+
+    setLoading(true)
     try {
-      const response = await fetch('/api/events')
-      if (response.ok) {
-        const data = await response.json()
-        setEvents(data.events || [])
+      const response = await fetch('/api/google-calendar-events')
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch calendar events')
       }
+      
+      const data = await response.json()
+      setEvents(data.items || [])
     } catch (error) {
       console.error('Error fetching events:', error)
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [session?.user])
 
   useEffect(() => {
     if (session) {
       fetchEvents()
     }
-  }, [session])
+  }, [session, fetchEvents])
 
   // Конвертируем время в позицию Y
   const timeToPosition = (time: string): number => {

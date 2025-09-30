@@ -341,7 +341,7 @@ export function ScheduleComponent() {
       }
       return slot
     }))
-  }, [draggedItem])
+  }, [draggedItem, calculateEndTime, checkCollision, findFreePosition])
 
   const handleMouseUp = useCallback(() => {
     if (draggedItem && !draggedItem.isDragging) {
@@ -361,7 +361,7 @@ export function ScheduleComponent() {
       }
     }
     setDraggedItem(null)
-  }, [draggedItem, timeSlots])
+  }, [draggedItem, timeSlots, setNewEvent])
 
   useEffect(() => {
     if (draggedItem) {
@@ -400,7 +400,7 @@ export function ScheduleComponent() {
       
       return () => clearTimeout(timeoutId)
     }
-  }, [editingEvent?.id, showEditDialog, newEvent.title, newEvent.color, newEvent.duration, newEvent.customDuration, parseCustomDuration, calculateEndTime])
+  }, [editingEvent, showEditDialog, newEvent.title, newEvent.color, newEvent.duration, newEvent.customDuration, parseCustomDuration, calculateEndTime])
 
   // Получить слоты для выбранного дня
   const getSlotsForSelectedDay = () => {
@@ -408,7 +408,7 @@ export function ScheduleComponent() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto" data-schedule-content>
       <Tabs value={selectedDay.toString()} onValueChange={(value) => setSelectedDay(parseInt(value))}>
         {/* Вкладки дней недели */}
         <div className="flex flex-col space-y-6">
