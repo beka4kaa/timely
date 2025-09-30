@@ -18,10 +18,8 @@
 4. Выберите **Web application**
 5. Добавьте authorized redirect URIs:
    ```
-   http://localhost:3001/api/auth/callback/google
+   http://localhost:3000/api/auth/callback/google
    ```
-   
-   **⚠️ Важно:** Используйте порт 3001, так как 3000 занят!
 
 ### 3. Получите правильные учетные данные
 После создания OAuth client ID вы получите:
@@ -42,7 +40,7 @@ GOOGLE_CLIENT_SECRET=ваш-client-secret
 npm run dev
 ```
 
-2. Перейдите на http://localhost:3001
+2. Перейдите на http://localhost:3000
 3. Нажмите "Войти через Google"
 4. Система должна перенаправить вас на Google для авторизации
 
