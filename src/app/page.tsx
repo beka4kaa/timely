@@ -125,7 +125,7 @@ export default function HomePage() {
               whileTap={{ scale: 0.95 }}
             >
               <Button variant="outline" size="lg" asChild>
-                <Link href="/auth/signin">
+                <Link href="/login">
                   Sign in
                 </Link>
               </Button>

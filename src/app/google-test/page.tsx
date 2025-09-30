@@ -15,8 +15,8 @@ export default function GoogleTestPage() {
     setIsLoading(true)
     try {
       const result = await signIn('google', { 
-        callbackUrl: '/diagnostic',
-        redirect: false 
+        callbackUrl: 'http://localhost:3001/diagnostic',
+        redirect: true 
       })
       
       if (result?.error) {
