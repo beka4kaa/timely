@@ -7,7 +7,7 @@ export default withAuth(
     const token = req.nextauth.token
 
     // Публичные маршруты только для неавторизованных пользователей
-    const publicPaths = ['/login', '/register']
+    const publicPaths = ['/auth/signin', '/auth/register']
     const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
 
     // Если пользователь авторизован и пытается попасть на страницу входа/регистрации

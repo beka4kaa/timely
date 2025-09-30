@@ -1,65 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { hash } from 'bcryptjs'
+import { z } from 'zod'
+import { prisma } from '@/lib/prisma'
 
-// Временное хранилище пользователей
-let users: any[] = []
+const registerSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+})
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const { email, password, name } = await request.json()
-
-    if (!email || !password || !name) {
-      return NextResponse.json(
-        { error: 'Email, пароль и имя обязательны' },
-        { status: 400 }
-      )
-    }
-
-    // Проверяем, не существует ли уже пользователь с таким email
-    const existingUser = users.find(u => u.email === email)
+    const body = await req.json()
+    
+    // Validate request body
+    const { name, email, password } = registerSchema.parse(body)
+    
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    })
+    
     if (existingUser) {
       return NextResponse.json(
-        { error: 'Пользователь с таким email уже существует' },
+        { error: 'User with this email already exists' },
         { status: 400 }
       )
     }
-
-    // Создаем нового пользователя
-    const newUser = {
-      id: `user-${Date.now()}`,
-      email,
-      password, // В реальном проекте пароль должен быть захеширован
-      name,
-      role: 'user',
-      createdAt: new Date().toISOString()
-    }
-
-    users.push(newUser)
-
-    // В реальном проекте здесь создавался бы JWT токен
-    const token = `fake-jwt-token-${newUser.id}-${Date.now()}`
-
-    const response = NextResponse.json({
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role
+    
+    // Hash password
+    const hashedPassword = await hash(password, 12)
+    
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
       },
-      token
-    }, { status: 201 })
-
-    // Устанавливаем cookie с токеном
-    response.cookies.set('auth-token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7 // 7 дней
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+      }
     })
-
-    return response
-  } catch (error) {
+    
     return NextResponse.json(
-      { error: 'Ошибка при регистрации' },
+      { message: 'User created successfully', user },
+      { status: 201 }
+    )
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: error.errors },
+        { status: 400 }
+      )
+    }
+    
+    console.error('Registration error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

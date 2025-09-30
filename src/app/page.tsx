@@ -115,7 +115,7 @@ export default function HomePage() {
               whileTap={{ scale: 0.95 }}
             >
               <Button size="lg" asChild>
-                <Link href="/dashboard">
+                <Link href="/auth/register">
                   Get started
                 </Link>
               </Button>
@@ -125,8 +125,8 @@ export default function HomePage() {
               whileTap={{ scale: 0.95 }}
             >
               <Button variant="outline" size="lg" asChild>
-                <Link href="/components">
-                  Learn more
+                <Link href="/auth/signin">
+                  Sign in
                 </Link>
               </Button>
             </motion.div>

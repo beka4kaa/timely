@@ -3,33 +3,15 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
-
-// Временное хранилище пользователей (в продакшене заменить на базу данных)
-const users = [
-  {
-    id: 'user-1',
-    email: 'admin@example.com',
-    password: 'admin123',
-    name: 'Администратор',
-    role: 'admin',
-    image: null
-  },
-  {
-    id: 'user-2', 
-    email: 'user@example.com',
-    password: 'user123',
-    name: 'Пользователь',
-    role: 'user',
-    image: null
-  }
-]
+import bcrypt from "bcryptjs"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
     }),
     CredentialsProvider({
       name: "credentials",
@@ -42,58 +24,91 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        const user = users.find(
-          user => user.email === credentials.email && user.password === credentials.password
-        )
+        // Ищем пользователя в базе данных
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email }
+        })
 
-        if (user) {
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-            role: user.role
+        if (!user) {
+          return null
+        }
+
+        // Проверяем пароль (если он есть - для пользователей, зарегистрированных через форму)
+        if (user.password) {
+          const passwordMatch = await bcrypt.compare(credentials.password, user.password)
+          if (!passwordMatch) {
+            return null
           }
         }
 
-        return null
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+          role: user.role,
+        }
       }
     })
   ],
   callbacks: {
     async jwt({ token, user, account }) {
-      if (account?.provider === "google" && user) {
-        // При входе через Google создаем или обновляем пользователя
-        token.role = "user" // По умолчанию роль пользователя для Google auth
-        token.provider = "google"
-      }
-      
       if (user) {
         token.role = user.role || "user"
+        token.id = user.id
+      }
+      
+      if (account?.provider === "google") {
+        // При входе через Google обновляем роль пользователя в базе
+        const dbUser = await prisma.user.findUnique({
+          where: { email: token.email! }
+        })
+        
+        if (dbUser) {
+          token.role = dbUser.role
+          token.id = dbUser.id
+        }
       }
       
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.sub!
+        session.user.id = token.id as string
         session.user.role = token.role as string
-        session.user.provider = token.provider as string
       }
       return session
     },
     async signIn({ user, account, profile }) {
-      // Разрешаем вход для всех провайдеров
+      if (account?.provider === "google") {
+        // При входе через Google создаем пользователя, если его нет
+        const existingUser = await prisma.user.findUnique({
+          where: { email: user.email! }
+        })
+
+        if (!existingUser) {
+          await prisma.user.create({
+            data: {
+              email: user.email!,
+              name: user.name || "Пользователь Google",
+              image: user.image,
+              role: "user",
+              emailVerified: new Date(), // Google email уже верифицирован
+            }
+          })
+        }
+      }
       return true
     }
   },
   pages: {
     signIn: '/login',
-    signOut: '/login',
     error: '/login',
   },
   session: {
-    strategy: "jwt"
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 дней
   },
   secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === "development",
 }
