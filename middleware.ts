@@ -9,7 +9,9 @@ export default withAuth(
     console.log('🔒 MIDDLEWARE:', { 
       pathname, 
       hasToken: !!token, 
-      userEmail: token?.email 
+      userEmail: token?.email,
+      nextAuthUrl: process.env.NEXTAUTH_URL,
+      nodeEnv: process.env.NODE_ENV
     })
 
     // Публичные маршруты только для неавторизованных пользователей

@@ -11,6 +11,8 @@ console.log('🔍 ENVIRONMENT CHECK:', {
   hasGoogleClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
   hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
   hasNextAuthUrl: !!process.env.NEXTAUTH_URL,
+  nextAuthUrl: process.env.NEXTAUTH_URL,
+  nodeEnv: process.env.NODE_ENV,
   googleClientIdLength: process.env.GOOGLE_CLIENT_ID?.length,
   googleClientIdStart: process.env.GOOGLE_CLIENT_ID?.substring(0, 10)
 })
