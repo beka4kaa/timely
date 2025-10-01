@@ -23,6 +23,7 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+  debug: process.env.NODE_ENV === 'development',
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -91,7 +92,9 @@ export const authOptions: NextAuthOptions = {
         hasUser: !!user,
         provider: account?.provider,
         tokenEmail: token.email,
-        tokenId: token.id
+        tokenId: token.id,
+        nodeEnv: process.env.NODE_ENV,
+        nextAuthUrl: process.env.NEXTAUTH_URL
       })
       
       // При первом входе (когда есть user)
@@ -237,12 +240,46 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: '/auth/signin',
-    error: '/auth/signin',
+    error: '/auth/error',
+  },
+  events: {
+    async signIn({ user, account, isNewUser }) {
+      console.log('✅ SIGNIN SUCCESS:', { 
+        email: user.email, 
+        provider: account?.provider,
+        isNewUser,
+        timestamp: new Date().toISOString()
+      })
+    },
+    async signOut({ token }) {
+      console.log('👋 SIGNOUT:', { email: token?.email })
+    },
+    async createUser({ user }) {
+      console.log('👤 NEW USER CREATED:', { email: user.email })
+    },
+    async linkAccount({ user, account }) {
+      console.log('🔗 ACCOUNT LINKED:', { 
+        email: user.email, 
+        provider: account.provider 
+      })
+    }
+  },
+  logger: {
+    error(code, metadata) {
+      console.error('🚨 NEXTAUTH ERROR:', { code, metadata, timestamp: new Date().toISOString() })
+    },
+    warn(code) {
+      console.warn('⚠️ NEXTAUTH WARNING:', { code, timestamp: new Date().toISOString() })
+    },
+    debug(code, metadata) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 NEXTAUTH DEBUG:', { code, metadata })
+      }
+    }
   },
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 дней
   },
   secret: process.env.NEXTAUTH_SECRET,
-  debug: process.env.NODE_ENV === "development",
 }
