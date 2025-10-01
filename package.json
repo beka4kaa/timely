@@ -2,10 +2,8 @@
   "name": "time-schedule-platform",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.6.2",
   "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -18,7 +16,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "production": "pnpm run db:push && pnpm run build && pnpm run start"
+    "production": "npm run db:push && npm run build && npm run start"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
