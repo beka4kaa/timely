@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { FastAPIClient } from '@/lib/fastapi-client'
 import {
   Select,
   SelectContent,
@@ -70,60 +69,36 @@ const CATEGORIES = {
 }
 
 export function TasksComponent() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const client = new FastAPIClient()
-
-  // Load tasks from backend
-  useEffect(() => {
-    console.log('🎯 TasksComponent useEffect starting...')
-    
-    const loadTasks = async () => {
-      try {
-        console.log('🎯 Setting loading to true...')
-        setLoading(true)
-        console.log('🎯 About to call client.getTasks()...')
-        const response = await client.getTasks()
-        console.log('🎯 Tasks loaded from backend:', response)
-        
-        // Transform backend data to frontend format if needed
-        const transformedTasks = (Array.isArray(response) ? response : []).map((task: any) => ({
-          id: task.id.toString(),
-          title: task.title,
-          description: task.description,
-          completed: task.completed || false,
-          priority: task.priority || 'medium',
-          category: task.category || 'personal',
-          dueDate: task.due_date ? new Date(task.due_date) : undefined,
-          createdAt: new Date(task.created_at),
-          completedAt: task.completed_at ? new Date(task.completed_at) : undefined,
-        }))
-        
-        setTasks(transformedTasks)
-        setError(null)
-      } catch (err) {
-        console.error('❌ Error loading tasks:', err)
-        setError('Failed to load tasks from backend')
-        // Fallback to sample data for development
-        setTasks([
-          {
-            id: 'sample-1',
-            title: 'Пример задачи (не подключен backend)',
-            description: 'Этот пример показывается, когда backend недоступен',
-            completed: false,
-            priority: 'medium',
-            category: 'work',
-            createdAt: new Date(),
-          }
-        ])
-      } finally {
-        setLoading(false)
-      }
+  const [tasks, setTasks] = useState<Task[]>([
+    {
+      id: '1',
+      title: 'Завершить проект по React',
+      description: 'Добавить последние компоненты и протестировать',
+      completed: false,
+      priority: 'high',
+      category: 'work',
+      dueDate: new Date(Date.now() + 86400000), // завтра
+      createdAt: new Date(),
+    },
+    {
+      id: '2',
+      title: 'Утренняя зарядка',
+      completed: true,
+      priority: 'medium',
+      category: 'health',
+      createdAt: new Date(),
+      completedAt: new Date(),
+    },
+    {
+      id: '3',
+      title: 'Прочитать главу книги',
+      description: 'Продолжить чтение "Clean Code"',
+      completed: false,
+      priority: 'low',
+      category: 'learning',
+      createdAt: new Date(),
     }
-
-    loadTasks()
-  }, [])
+  ])
 
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
@@ -149,92 +124,47 @@ export function TasksComponent() {
   })
 
   // Переключение выполнения задачи
-  const toggleTask = async (taskId: string) => {
-    try {
-      const task = tasks.find(t => t.id === taskId)
-      if (!task) return
-
-      const updatedTask = {
-        ...task,
-        completed: !task.completed,
-        completed_at: !task.completed ? new Date().toISOString() : null,
-      }
-
-      console.log('🎯 Updating task:', taskId, updatedTask)
-      await client.updateTask(taskId, updatedTask)
-      
-      // Update local state
-      setTasks(prev => prev.map(t => 
-        t.id === taskId 
-          ? { 
-              ...t, 
-              completed: !t.completed,
-              completedAt: !t.completed ? new Date() : undefined
-            }
-          : t
-      ))
-    } catch (err) {
-      console.error('❌ Error updating task:', err)
-      setError('Failed to update task')
-    }
+  const toggleTask = (taskId: string) => {
+    setTasks(prev => prev.map(task => 
+      task.id === taskId 
+        ? { 
+            ...task, 
+            completed: !task.completed,
+            completedAt: !task.completed ? new Date() : undefined
+          }
+        : task
+    ))
   }
 
   // Добавление новой задачи
-  const addTask = async () => {
+  const addTask = () => {
     if (!newTask.title.trim()) return
 
-    try {
-      const taskData = {
-        title: newTask.title,
-        description: newTask.description || null,
-        priority: newTask.priority,
-        category: newTask.category,
-        due_date: newTask.dueDate ? new Date(newTask.dueDate).toISOString() : null,
-        completed: false,
-      }
-
-      console.log('🎯 Creating new task:', taskData)
-      const createdTask = await client.createTask(taskData) as any
-      
-      // Transform backend response to frontend format
-      const task: Task = {
-        id: createdTask.id.toString(),
-        title: createdTask.title,
-        description: createdTask.description,
-        completed: createdTask.completed || false,
-        priority: createdTask.priority || 'medium',
-        category: createdTask.category || 'personal',
-        dueDate: createdTask.due_date ? new Date(createdTask.due_date) : undefined,
-        createdAt: new Date(createdTask.created_at),
-      }
-
-      setTasks(prev => [task, ...prev])
-      setNewTask({
-        title: '',
-        description: '',
-        priority: 'medium',
-        category: 'personal',
-        dueDate: '',
-      })
-      setIsAddDialogOpen(false)
-      setError(null)
-    } catch (err) {
-      console.error('❌ Error creating task:', err)
-      setError('Failed to create task')
+    const task: Task = {
+      id: Date.now().toString(),
+      title: newTask.title,
+      description: newTask.description || undefined,
+      completed: false,
+      priority: newTask.priority,
+      category: newTask.category,
+      dueDate: newTask.dueDate ? new Date(newTask.dueDate) : undefined,
+      createdAt: new Date(),
     }
+
+    setTasks(prev => [task, ...prev])
+    setNewTask({
+      title: '',
+      description: '',
+      priority: 'medium',
+      category: 'personal',
+      dueDate: '',
+    })
+    setIsAddDialogOpen(false)
   }
 
   // Удаление задачи
-  const deleteTask = async (taskId: string) => {
-    try {
-      console.log('🎯 Deleting task:', taskId)
-      await client.deleteTask(taskId)
-      setTasks(prev => prev.filter(task => task.id !== taskId))
-      setError(null)
-    } catch (err) {
-      console.error('❌ Error deleting task:', err)
-      setError('Failed to delete task')
-    }
+  const deleteTask = (taskId: string) => {
+    setTasks(prev => prev.filter(task => task.id !== taskId))
   }
 
   // Статистика
@@ -256,31 +186,8 @@ export function TasksComponent() {
     return new Date(task.dueDate) < new Date()
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Загружаем задачи...</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
-      {/* Error State */}
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="h-4 w-4" />
-              <span>{error}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Статистика */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>

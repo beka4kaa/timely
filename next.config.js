@@ -17,7 +17,7 @@ const nextConfig = {
     ],
   },
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client', 'bcryptjs']
+    serverComponentsExternalPackages: ['bcryptjs']
   },
   typescript: {
     ignoreBuildErrors: false,
