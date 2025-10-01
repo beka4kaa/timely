@@ -17,8 +17,10 @@ export default function GoogleTestPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
+      // Используем динамический URL или относительный путь
+      const baseUrl = window.location.origin
       const result = await signIn('google', { 
-        callbackUrl: 'http://localhost:3000/diagnostic',
+        callbackUrl: `${baseUrl}/diagnostic`,
         redirect: true 
       })
       
