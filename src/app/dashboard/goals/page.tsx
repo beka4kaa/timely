@@ -1,6 +1,9 @@
 import { GoalsComponent } from '@/components/dashboard/goals-component'
 import { Target } from 'lucide-react'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function GoalsPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

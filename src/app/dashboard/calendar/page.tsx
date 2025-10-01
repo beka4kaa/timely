@@ -1,5 +1,8 @@
 import { CalendarComponent } from '@/components/dashboard/calendar-component'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function CalendarPage() {
   return (
     <div className="space-y-6">

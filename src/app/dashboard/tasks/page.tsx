@@ -1,6 +1,9 @@
 import { TasksComponent } from '@/components/dashboard/tasks-component'
 import { CheckSquare } from 'lucide-react'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function TasksPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

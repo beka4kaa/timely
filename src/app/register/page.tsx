@@ -1,9 +1,12 @@
-"use client"
+'use client'
 
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

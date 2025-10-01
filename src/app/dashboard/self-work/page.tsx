@@ -1,5 +1,8 @@
 import { SelfWorkComponent } from '@/components/dashboard/self-work-component'
-import { Heart } from 'lucide-react'
+import { BookOpen, Heart } from 'lucide-react'
+
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
 
 export default function SelfWorkPage() {
   return (

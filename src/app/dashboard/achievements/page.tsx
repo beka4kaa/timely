@@ -1,6 +1,9 @@
 import { AchievementsComponent } from '@/components/dashboard/achievements-component'
 import { Trophy } from 'lucide-react'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function AchievementsPage() {
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">

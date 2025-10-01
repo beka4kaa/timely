@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
