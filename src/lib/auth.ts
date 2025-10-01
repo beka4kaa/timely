@@ -5,10 +5,16 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "./prisma"
 import bcrypt from "bcryptjs"
 
-// Исправляем потенциальную проблему с двойным слешем в NEXTAUTH_URL
-if (process.env.NEXTAUTH_URL && process.env.NEXTAUTH_URL.includes('https//:')) {
-  process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL.replace('https//:', 'https://')
-  console.warn('🔧 Fixed NEXTAUTH_URL double slash issue:', process.env.NEXTAUTH_URL)
+// Исправляем потенциальные проблемы с NEXTAUTH_URL
+if (process.env.NEXTAUTH_URL) {
+  // Убираем лишние символы (переводы строк, пробелы)
+  process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL.trim()
+  
+  // Исправляем двойной слеш если есть
+  if (process.env.NEXTAUTH_URL.includes('https//:')) {
+    process.env.NEXTAUTH_URL = process.env.NEXTAUTH_URL.replace('https//:', 'https://')
+    console.warn('🔧 Fixed NEXTAUTH_URL double slash issue:', process.env.NEXTAUTH_URL)
+  }
 }
 
 // Проверяем переменные окружения при загрузке
