@@ -1,9 +1,12 @@
 'use client'
 
 import { useSession } from 'next-auth/react'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
 
 export default function OAuthDebugPage() {
   const { data: session, status } = useSession()

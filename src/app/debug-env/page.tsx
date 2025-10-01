@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function DebugEnvPage() {
   const [envData, setEnvData] = useState<any>(null)
 

@@ -6,6 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function DiagnosticPage() {
   const { data: session, status } = useSession()
   const [apiData, setApiData] = useState(null)

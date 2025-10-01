@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Link from 'next/link'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function GoogleTestPage() {
   const { data: session, status } = useSession()
   const [isLoading, setIsLoading] = useState(false)
@@ -15,7 +18,7 @@ export default function GoogleTestPage() {
     setIsLoading(true)
     try {
       const result = await signIn('google', { 
-        callbackUrl: 'http://localhost:3001/diagnostic',
+        callbackUrl: 'http://localhost:3000/diagnostic',
         redirect: true 
       })
       

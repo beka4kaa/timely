@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Link from 'next/link'
 
+// Отключаем SSR для этой страницы
+export const dynamic = 'force-dynamic'
+
 export default function TestAuthPage() {
   const { data: session, status } = useSession()
 
