@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+export const dynamic = 'force-dynamic'
+
 const settingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('light'),
   notifications: z.boolean().default(true),

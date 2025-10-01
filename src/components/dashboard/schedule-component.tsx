@@ -196,8 +196,13 @@ export function ScheduleComponent() {
     setNewEvent({ title: '', duration: 60, customDuration: '', color: '#3b82f6' })
   }
 
+  // Получить слоты для выбранного дня
+  const getSlotsForSelectedDay = useCallback(() => {
+    return timeSlots.filter(slot => slot.dayOfWeek === selectedDay)
+  }, [timeSlots, selectedDay])
+
   // Проверка на пересечения событий
-  const checkCollision = (startTime: string, endTime: string, excludeId?: string): boolean => {
+  const checkCollision = useCallback((startTime: string, endTime: string, excludeId?: string): boolean => {
     const newStart = timeToPosition(startTime)
     const newEnd = timeToPosition(endTime)
     
@@ -210,10 +215,10 @@ export function ScheduleComponent() {
       // Проверяем пересечение интервалов
       return !(newEnd <= slotStart || newStart >= slotEnd)
     })
-  }
+  }, [getSlotsForSelectedDay])
 
   // Найти ближайшее свободное место
-  const findFreePosition = (startTime: string, duration: number): string => {
+  const findFreePosition = useCallback((startTime: string, duration: number): string => {
     const durationHeight = (duration / 60) * HOUR_HEIGHT
     let currentTime = startTime
     
@@ -237,7 +242,7 @@ export function ScheduleComponent() {
     }
     
     return startTime // Возвращаем исходное время если не нашли место
-  }
+  }, [checkCollision, calculateEndTime])
 
   // Парсинг custom длительности
   const parseCustomDuration = useCallback((str: string): number => {
@@ -401,11 +406,6 @@ export function ScheduleComponent() {
       return () => clearTimeout(timeoutId)
     }
   }, [editingEvent, showEditDialog, newEvent.title, newEvent.color, newEvent.duration, newEvent.customDuration, parseCustomDuration, calculateEndTime])
-
-  // Получить слоты для выбранного дня
-  const getSlotsForSelectedDay = () => {
-    return timeSlots.filter(slot => slot.dayOfWeek === selectedDay)
-  }
 
   return (
     <div className="max-w-7xl mx-auto" data-schedule-content>
