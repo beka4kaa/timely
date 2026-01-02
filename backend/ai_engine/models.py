@@ -4,7 +4,7 @@ from mind.models import Topic, Subject
 
 class LearningProgram(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user_email = models.EmailField(null=True, blank=True, db_index=True)
+    # user_email = models.EmailField(null=True, blank=True, db_index=True)  # TODO: uncomment after migration
     name = models.CharField(max_length=255, default="Моя программа обучения")
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(null=True, blank=True)

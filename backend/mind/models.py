@@ -3,7 +3,7 @@ import uuid
 
 class Subject(models.Model):
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
-    user_email = models.EmailField(null=True, blank=True, db_index=True)  # For user-based data isolation
+    # user_email = models.EmailField(null=True, blank=True, db_index=True)  # TODO: uncomment after migration
     name = models.CharField(max_length=255)
     emoji = models.CharField(max_length=10, default="📚")
     color = models.CharField(max_length=9, default="#8b5cf6")
@@ -109,7 +109,7 @@ class SrsReviewLog(models.Model):
 
 class MindSession(models.Model):
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
-    user_email = models.EmailField(null=True, blank=True, db_index=True)
+    # user_email = models.EmailField(null=True, blank=True, db_index=True)  # TODO: uncomment after migration
     task_name = models.CharField(max_length=255)
     topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True, related_name='study_sessions')
     started_at = models.DateTimeField(auto_now_add=True)
