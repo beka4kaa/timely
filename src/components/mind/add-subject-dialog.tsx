@@ -27,7 +27,7 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
     const [name, setName] = useState('')
     const [emoji, setEmoji] = useState('📚')
     const [color, setColor] = useState('#8b5cf6')
-    const [targetHoursWeek, setTargetHoursWeek] = useState(5)
+
 
     const handleSubmit = async () => {
         if (!name.trim()) return
@@ -41,7 +41,6 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
                     name: name.trim(),
                     emoji,
                     color,
-                    targetHoursWeek,
                 }),
             })
 
@@ -62,7 +61,6 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
         setName('')
         setEmoji('📚')
         setColor('#8b5cf6')
-        setTargetHoursWeek(5)
     }
 
     return (
@@ -121,17 +119,7 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
                         </div>
                     </div>
 
-                    <div className="grid gap-2">
-                        <Label htmlFor="hours">Целевые часы в неделю</Label>
-                        <Input
-                            id="hours"
-                            type="number"
-                            min={1}
-                            max={40}
-                            value={targetHoursWeek}
-                            onChange={(e) => setTargetHoursWeek(parseInt(e.target.value) || 1)}
-                        />
-                    </div>
+
                 </div>
 
                 <DialogFooter className="mt-4">
