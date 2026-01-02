@@ -16,19 +16,50 @@ from django.utils import timezone
 class GenerateProgramView(APIView):
     def post(self, request):
         data = request.data
-        goal = data.get('goal')
-        timeframe = data.get('timeframe') # e.g. "3 months"
-        hours_per_day = data.get('hoursPerDay', 2)
-        current_level = data.get('currentLevel', 'Beginner')
-        subject_ids = data.get('subjectIds', [])
         
-        subjects = Subject.objects.filter(id__in=subject_ids)
-        subject_data = [{'name': s.name, 'id': str(s.id)} for s in subjects]
+        # Handle both parameter formats for compatibility
+        # New format from frontend: totalWeeks, hoursPerWeek, name, subjectDeadlines
+        # Old format: goal, timeframe, hoursPerDay, currentLevel, subjectIds
+        
+        total_weeks = data.get('totalWeeks', data.get('total_weeks', 4))
+        hours_per_week = data.get('hoursPerWeek', data.get('hours_per_week', 20))
+        hours_per_day = data.get('hoursPerDay', hours_per_week / 7)
+        program_name = data.get('name', 'Моя программа обучения')
+        
+        # Get subject deadlines - this contains subjectId and deadline info
+        subject_deadlines = data.get('subjectDeadlines', data.get('subject_deadlines', []))
+        
+        # Extract subject IDs from deadlines or from direct parameter
+        subject_ids = data.get('subjectIds', data.get('subject_ids', []))
+        if not subject_ids and subject_deadlines:
+            subject_ids = [sd.get('subjectId') or sd.get('subject_id') for sd in subject_deadlines if sd.get('subjectId') or sd.get('subject_id')]
+        
+        goal = data.get('goal', f'Complete program in {total_weeks} weeks')
+        timeframe = data.get('timeframe', f'{total_weeks} weeks')
+        current_level = data.get('currentLevel', data.get('current_level', 'Intermediate'))
+        
+        # Get subjects with their topics for AI context
+        subjects = Subject.objects.filter(id__in=subject_ids).prefetch_related('topics') if subject_ids else Subject.objects.all().prefetch_related('topics')
+        
+        subject_data = []
+        for s in subjects:
+            subject_info = {
+                'name': s.name, 
+                'id': str(s.id),
+                'topics': [{'name': t.name, 'status': t.status, 'id': str(t.id)} for t in s.topics.all()[:20]]  # Limit topics to avoid token overflow
+            }
+            # Find deadline for this subject
+            for sd in subject_deadlines:
+                if str(sd.get('subjectId') or sd.get('subject_id')) == str(s.id):
+                    subject_info['deadline'] = sd.get('deadline')
+                    break
+            subject_data.append(subject_info)
         
         try:
-            # Call AI Service
+            # Call AI Service with enriched context
             ai_result = generate_learning_program_content(
-                goal, timeframe, hours_per_day, current_level, subject_data
+                goal, timeframe, hours_per_day, current_level, subject_data,
+                context={'totalWeeks': total_weeks, 'subjectDeadlines': subject_deadlines}
             )
             
             if not ai_result:
@@ -36,50 +67,56 @@ class GenerateProgramView(APIView):
 
             # Create Database Objects
             program = LearningProgram.objects.create(
-                name=f"Program: {goal[:30]}...",
-                total_weeks=ai_result.get('totalWeeks', 4),
-                hours_per_week=hours_per_day * 7,
-                description=ai_result.get('description'),
-                strategy=ai_result.get('strategy')
+                name=program_name,
+                total_weeks=ai_result.get('totalWeeks', total_weeks),
+                hours_per_week=hours_per_week,
+                description=ai_result.get('description', ''),
+                strategy=ai_result.get('strategy', '')
             )
 
             # Create Week Plans
             for wp in ai_result.get('weekPlans', []):
                 WeekPlan.objects.create(
                     program=program,
-                    week_number=wp['weekNumber'],
+                    week_number=wp.get('weekNumber', 1),
                     start_date=timezone.now() + timedelta(days=wp.get('startOffset', 0)),
                     end_date=timezone.now() + timedelta(days=wp.get('endOffset', 7)),
                     subject_hours=str(wp.get('subjectHours', {})),
-                    focus=wp.get('focus'),
-                    notes=wp.get('notes')
+                    focus=wp.get('focus', ''),
+                    notes=wp.get('notes', '')
                 )
 
             # Create Topic Plans
-            # Note: finding topics by name is fuzzy. ideally we use IDs if AI returns them, 
-            # but AI operates on names mostly.
             for tp in ai_result.get('topicPlans', []):
+                topic_name = tp.get('topicName', tp.get('topic_name', ''))
+                subject_name = tp.get('subjectName', tp.get('subject_name', ''))
+                
+                if not topic_name:
+                    continue
+                    
                 # Try to find topic by name within selected subjects
-                topic = Topic.objects.filter(name__icontains=tp['topicName'], subject__id__in=subject_ids).first()
+                topic = Topic.objects.filter(name__icontains=topic_name).first()
                 if not topic:
-                    # Create if doesn't exist? Or skip? Let's create for now if we can find subject
-                    subject = Subject.objects.filter(name__icontains=tp.get('subjectName'), id__in=subject_ids).first()
+                    # Create if doesn't exist
+                    subject = Subject.objects.filter(name__icontains=subject_name).first() if subject_name else subjects.first()
                     if subject:
-                         topic = Topic.objects.create(subject=subject, name=tp['topicName'])
+                        topic = Topic.objects.create(subject=subject, name=topic_name)
                 
                 if topic:
                     TopicPlan.objects.create(
                         program=program,
                         topic=topic,
-                        planned_week=tp['plannedWeek'],
-                        estimated_hours=tp['estimatedHours'],
+                        planned_week=tp.get('plannedWeek', tp.get('planned_week', 1)),
+                        estimated_hours=tp.get('estimatedHours', tp.get('estimated_hours', 2)),
                         priority=tp.get('priority', 1),
-                        deadline=timezone.now() + timedelta(weeks=tp['plannedWeek']) # Rough deadline
+                        deadline=timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
                     )
 
             return Response(LearningProgramSerializer(program).data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class LearningProgramViewSet(viewsets.ModelViewSet):

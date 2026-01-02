@@ -46,13 +46,36 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     }}
     """
     
-    response = model.generate_content(prompt)
     try:
+        response = model.generate_content(prompt)
         text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(text)
+        result = json.loads(text)
+        # Validate required fields
+        if not isinstance(result, dict):
+            raise ValueError("AI response is not a valid object")
+        return result
+    except json.JSONDecodeError as e:
+        print(f"Error parsing AI response JSON: {e}")
+        print(f"Raw response: {response.text[:500] if response else 'No response'}")
+        # Return a fallback structure instead of None
+        return {
+            "description": "AI generation failed - using default program",
+            "strategy": "Manual planning recommended",
+            "totalWeeks": 4,
+            "weekPlans": [],
+            "topicPlans": [],
+            "scheduledTests": []
+        }
     except Exception as e:
-        print(f"Error parsing AI response: {e}")
-        return None
+        print(f"Error generating program: {e}")
+        return {
+            "description": f"Error: {str(e)}",
+            "strategy": "Manual planning recommended",
+            "totalWeeks": 4,
+            "weekPlans": [],
+            "topicPlans": [],
+            "scheduledTests": []
+        }
 
 def generate_fast_topics(subject_name, extra_prompt=""):
     if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
