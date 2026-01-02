@@ -20,13 +20,12 @@ COPY backend/ .
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8080
 
-# Run the application
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+# Run the application (Shell form to expand $PORT)
+CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}
