@@ -1,8 +1,8 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Subject, Topic, ReviewSet
-from .serializers import SubjectSerializer, TopicSerializer
+from .models import Subject, Topic, ReviewSet, Subtopic, MindSession
+from .serializers import SubjectSerializer, TopicSerializer, SubtopicSerializer, MindSessionSerializer
 from django.utils import timezone
 from datetime import timedelta
 
@@ -56,3 +56,11 @@ class TopicViewSet(viewsets.ModelViewSet):
             
         topic.save()
         return Response(TopicSerializer(topic).data)
+
+class SubtopicViewSet(viewsets.ModelViewSet):
+    queryset = Subtopic.objects.all()
+    serializer_class = SubtopicSerializer
+
+class MindSessionViewSet(viewsets.ModelViewSet):
+    queryset = MindSession.objects.all().order_by('-started_at')
+    serializer_class = MindSessionSerializer

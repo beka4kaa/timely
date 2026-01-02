@@ -54,6 +54,22 @@ const nextConfig = {
         source: '/api/ai/generate-program',
         destination: `${apiUrl}/api/ai/generate-program/`,
       },
+      {
+        source: '/api/learning-program/:path*',
+        destination: `${apiUrl}/api/ai_engine/learning-program/:path*`,
+      },
+      {
+        source: '/api/subtopics/:path*',
+        destination: `${apiUrl}/api/mind/subtopics/:path*`,
+      },
+      {
+        source: '/api/mind-sessions/:path*',
+        destination: `${apiUrl}/api/mind/sessions/:path*`,
+      },
+      {
+        source: '/api/ai/:path*',
+        destination: `${apiUrl}/api/ai/:path*`,
+      },
       // Fallback for everything else
       {
         source: '/api/:path*',

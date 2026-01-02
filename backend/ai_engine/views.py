@@ -1,10 +1,15 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest
 from .serializers import LearningProgramSerializer
 from mind.models import Subject, Topic
-from .services import generate_learning_program_content
+from .services import (
+    generate_learning_program_content, 
+    generate_fast_topics, 
+    analyze_progress, 
+    modify_program
+)
 from datetime import timedelta
 from django.utils import timezone
 
@@ -76,3 +81,35 @@ class GenerateProgramView(APIView):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class LearningProgramViewSet(viewsets.ModelViewSet):
+    queryset = LearningProgram.objects.all().order_by('-created_at')
+    serializer_class = LearningProgramSerializer
+
+    # Optional: logic to get "current" program easily
+    def get_queryset(self):
+        return super().get_queryset()
+
+class AnalyzeView(APIView):
+    def post(self, request):
+        return Response(analyze_progress(request.data))
+
+class FastTopicsView(APIView):
+    def post(self, request):
+        subject = request.data.get('subject', 'General')
+        prompt = request.data.get('prompt', '')
+        return Response(generate_fast_topics(subject, prompt))
+
+class ModifyProgramView(APIView):
+    def post(self, request):
+        current = request.data.get('program', {})
+        req_text = request.data.get('request', '')
+        return Response(modify_program(current, req_text))
+
+class GenerateSubtopicsView(APIView):
+    # Quick stub for generation
+    def post(self, request):
+        # reuse fast topics logic or similar
+        topic = request.data.get('topicName', '')
+        return Response(generate_fast_topics(topic, "Generate subtopics for this topic"))
+

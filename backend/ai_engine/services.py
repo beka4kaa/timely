@@ -53,3 +53,66 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     except Exception as e:
         print(f"Error parsing AI response: {e}")
         return None
+
+def generate_fast_topics(subject_name, extra_prompt=""):
+    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    model = genai.GenerativeModel('gemini-2.0-flash')
+    
+    prompt = f"""
+    Generate a list of study topics for the subject: {subject_name}.
+    Context: {extra_prompt}
+    
+    RESPONSE FORMAT (JSON LIST):
+    [
+      {{ "name": "Topic Name", "estimatedHours": 2, "difficulty": "Medium" }}
+    ]
+    """
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"Error generating fast topics: {e}")
+        return []
+
+def analyze_progress(context_data):
+    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    model = genai.GenerativeModel('gemini-2.0-flash')
+    
+    prompt = f"""
+    Analyze the user's study progress.
+    DATA: {json.dumps(context_data)}
+    
+    Provide identifying strengths, weaknesses, and a recommendation.
+    RESPONSE FORMAT (JSON):
+    {{
+        "strengths": ["...", "..."],
+        "weaknesses": ["...", "..."],
+        "recommendation": "..."
+    }}
+    """
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"Error analyzing progress: {e}")
+        return {"error": "Failed to analyze"}
+
+def modify_program(current_program_summary, user_request):
+    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    model = genai.GenerativeModel('gemini-2.0-flash')
+    
+    prompt = f"""
+    Modify this learning program based on user request.
+    CURRENT PROGRAM: {current_program_summary}
+    USER REQUEST: {user_request}
+    
+    Return the suggested changes in FREE TEXT format (Markdown ok), 
+    but conclude with a JSON block of specific actions if any (like adding topics).
+    """
+    try:
+        response = model.generate_content(prompt)
+        return {"text": response.text} # simplified for now
+    except Exception as e:
+        return {"error": str(e)}

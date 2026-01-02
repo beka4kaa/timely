@@ -2,17 +2,29 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from planner.views import DayPlanViewSet, BlockViewSet
-from mind.views import SubjectViewSet, TopicViewSet
-from ai_engine.views import GenerateProgramView
+from mind.views import SubjectViewSet, TopicViewSet, SubtopicViewSet, MindSessionViewSet
+from ai_engine.views import (
+    GenerateProgramView, LearningProgramViewSet, 
+    AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView
+)
 
 router = DefaultRouter()
 router.register(r'planner/dayplans', DayPlanViewSet)
 router.register(r'planner/blocks', BlockViewSet)
 router.register(r'mind/subjects', SubjectViewSet)
 router.register(r'mind/topics', TopicViewSet)
+router.register(r'mind/subtopics', SubtopicViewSet)
+router.register(r'mind/sessions', MindSessionViewSet)
+router.register(r'ai_engine/learning-program', LearningProgramViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
+    
+    # AI Actions
     path('api/ai/generate-program/', GenerateProgramView.as_view(), name='generate-program'),
+    path('api/ai/analyze/', AnalyzeView.as_view(), name='analyze-progress'),
+    path('api/ai/fast-topics/', FastTopicsView.as_view(), name='fast-topics'),
+    path('api/ai/modify-program/', ModifyProgramView.as_view(), name='modify-program'),
+    path('api/ai/generate-subtopics/', GenerateSubtopicsView.as_view(), name='generate-subtopics'),
 ]
