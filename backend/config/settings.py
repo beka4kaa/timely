@@ -42,6 +42,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
+    "rest_framework",
+    "planner",
+    "mind",
+    "ai_engine",
 ]
 
 MIDDLEWARE = [
