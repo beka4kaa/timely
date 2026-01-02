@@ -16,9 +16,7 @@ const nextConfig = {
       },
     ],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['bcryptjs']
-  },
+  serverExternalPackages: ['bcryptjs'],
   typescript: {
     ignoreBuildErrors: false,
   },
