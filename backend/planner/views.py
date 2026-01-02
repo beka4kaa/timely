@@ -9,7 +9,18 @@ from .serializers import DayPlanSerializer, BlockSerializer, SegmentSerializer, 
 class DayPlanViewSet(viewsets.ModelViewSet):
     queryset = DayPlan.objects.all()
     serializer_class = DayPlanSerializer
-    lookup_field = 'date' # Allow getting dayplans by date string
+    lookup_field = 'date'
+    
+    def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
+        queryset = DayPlan.objects.all().prefetch_related('blocks')
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
+        return queryset.order_by('-date')
+    
+    def perform_create(self, serializer):
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)
 
     @action(detail=True, methods=['post'])
     def copy(self, request, date=None):
@@ -135,5 +146,16 @@ class SubtaskViewSet(viewsets.ModelViewSet):
 
 class ScheduleSlotViewSet(viewsets.ModelViewSet):
     """Weekly schedule slots CRUD"""
-    queryset = ScheduleSlot.objects.all().order_by('day_of_week', 'start_time')
+    queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
+    
+    def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
+        queryset = ScheduleSlot.objects.all()
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
+        return queryset.order_by('day_of_week', 'start_time')
+    
+    def perform_create(self, serializer):
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)

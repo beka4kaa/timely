@@ -6,17 +6,39 @@ from .serializers import SubjectSerializer, TopicSerializer, SubtopicSerializer,
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q
+from django.core.cache import cache
 
 class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
+    
+    def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
+        queryset = Subject.objects.all().prefetch_related('topics')
+        
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
+        
+        return queryset.order_by('created_at')
+    
+    def perform_create(self, serializer):
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)
+        # Invalidate cache
+        if user_email:
+            cache.delete(f'subjects_{user_email}')
 
 class TopicViewSet(viewsets.ModelViewSet):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
     
     def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
         queryset = Topic.objects.all().select_related('subject').prefetch_related('subtopics')
+        
+        # Filter by user (through subject)
+        if user_email:
+            queryset = queryset.filter(subject__user_email=user_email)
         
         # Filter by subject
         subject_id = self.request.query_params.get('subjectId') or self.request.query_params.get('subject_id')
@@ -28,7 +50,6 @@ class TopicViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         
         if filter_param == 'weak' or filter_param == 'weaknesses':
-            # Topics that need review: low ease_factor or overdue
             queryset = queryset.filter(
                 Q(ease_factor__lt=2.0) | 
                 Q(next_review_at__lt=now) |
@@ -42,7 +63,6 @@ class TopicViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(next_review_at__lte=now)
         elif filter_param == 'not_started':
             queryset = queryset.filter(status='NOT_STARTED')
-        # 'all' returns everything
         
         return queryset.order_by('order_index', 'created_at')
     
@@ -132,7 +152,12 @@ class MindSessionViewSet(viewsets.ModelViewSet):
     serializer_class = MindSessionSerializer
     
     def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
         queryset = MindSession.objects.all()
+        
+        # Filter by user
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
         
         # Filter by days (last N days)
         days = self.request.query_params.get('days')
@@ -145,3 +170,7 @@ class MindSessionViewSet(viewsets.ModelViewSet):
                 pass
         
         return queryset.order_by('-started_at')
+    
+    def perform_create(self, serializer):
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)
