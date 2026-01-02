@@ -16,10 +16,13 @@ class TopicViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
-        ids = request.data.get('ids', [])
+        # Support both 'ids' and 'topicIds' for backwards compatibility
+        ids = request.data.get('ids') or request.data.get('topicIds') or request.data.get('topic_ids', [])
+        subject_id = request.data.get('subjectId') or request.data.get('subject_id')
+        
         for index, t_id in enumerate(ids):
             Topic.objects.filter(id=t_id).update(order_index=index)
-        return Response({'status': 'reordered'})
+        return Response({'status': 'reordered', 'count': len(ids)})
 
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):

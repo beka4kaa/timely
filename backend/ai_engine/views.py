@@ -90,6 +90,37 @@ class LearningProgramViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return super().get_queryset()
 
+
+class TopicPlanViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing individual topic plans"""
+    queryset = TopicPlan.objects.all()
+    
+    def get_serializer_class(self):
+        from .serializers import TopicPlanSerializer
+        return TopicPlanSerializer
+    
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Handle specific field updates
+        if 'planned_week' in request.data:
+            instance.planned_week = request.data['planned_week']
+            instance.manually_moved = True
+        
+        if 'deadline' in request.data:
+            instance.deadline = request.data['deadline']
+        
+        if 'priority' in request.data:
+            instance.priority = request.data['priority']
+            
+        if 'status' in request.data:
+            instance.status = request.data['status']
+        
+        instance.save()
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
 class AnalyzeView(APIView):
     def post(self, request):
         return Response(analyze_progress(request.data))

@@ -5,7 +5,7 @@ from rest_framework.routers import DefaultRouter
 from planner.views import DayPlanViewSet, BlockViewSet, SegmentViewSet, SubtaskViewSet
 from mind.views import SubjectViewSet, TopicViewSet, SubtopicViewSet, MindSessionViewSet
 from ai_engine.views import (
-    GenerateProgramView, LearningProgramViewSet, 
+    GenerateProgramView, LearningProgramViewSet, TopicPlanViewSet,
     AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView,
     DailyTasksView, ScheduleView
 )
@@ -25,6 +25,7 @@ router.register(r'mind/topics', TopicViewSet)
 router.register(r'mind/subtopics', SubtopicViewSet)
 router.register(r'mind/sessions', MindSessionViewSet)
 router.register(r'ai_engine/learning-program', LearningProgramViewSet)
+router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
