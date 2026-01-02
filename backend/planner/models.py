@@ -62,3 +62,27 @@ class TimerState(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     remaining_seconds = models.IntegerField()
     is_running = models.BooleanField(default=False)
+
+class ScheduleSlot(models.Model):
+    """Weekly schedule slots - recurring time blocks"""
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('SKIPPED', 'Skipped'),
+    ]
+    
+    id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
+    day_of_week = models.IntegerField()  # 0=Mon, 6=Sun
+    start_time = models.CharField(max_length=10)  # "09:00"
+    end_time = models.CharField(max_length=10)  # "10:00"
+    task = models.CharField(max_length=255)
+    color = models.CharField(max_length=9, default="#3b82f6")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    subject_emoji = models.CharField(max_length=10, null=True, blank=True)
+    subject_name = models.CharField(max_length=100, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"{self.task} ({self.day_of_week}: {self.start_time}-{self.end_time})"

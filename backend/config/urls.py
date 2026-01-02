@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
-from planner.views import DayPlanViewSet, BlockViewSet, SegmentViewSet, SubtaskViewSet
+from planner.views import DayPlanViewSet, BlockViewSet, SegmentViewSet, SubtaskViewSet, ScheduleSlotViewSet
 from mind.views import SubjectViewSet, TopicViewSet, SubtopicViewSet, MindSessionViewSet
 from ai_engine.views import (
     GenerateProgramView, LearningProgramViewSet, TopicPlanViewSet,
@@ -20,6 +20,7 @@ router.register(r'planner/dayplans', DayPlanViewSet)
 router.register(r'planner/blocks', BlockViewSet)
 router.register(r'planner/segments', SegmentViewSet)
 router.register(r'planner/subtasks', SubtaskViewSet)
+router.register(r'schedule', ScheduleSlotViewSet)  # Direct /api/schedule/ route
 router.register(r'mind/subjects', SubjectViewSet)
 router.register(r'mind/topics', TopicViewSet)
 router.register(r'mind/subtopics', SubtopicViewSet)

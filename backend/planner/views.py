@@ -3,8 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils.dateparse import parse_date
 from django.utils import timezone
-from .models import DayPlan, Block, Segment, Subtask, TimerState
-from .serializers import DayPlanSerializer, BlockSerializer, SegmentSerializer, SubtaskSerializer, TimerStateSerializer
+from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot
+from .serializers import DayPlanSerializer, BlockSerializer, SegmentSerializer, SubtaskSerializer, TimerStateSerializer, ScheduleSlotSerializer
 
 class DayPlanViewSet(viewsets.ModelViewSet):
     queryset = DayPlan.objects.all()
@@ -132,3 +132,8 @@ class SubtaskViewSet(viewsets.ModelViewSet):
         for index, subtask_id in enumerate(ordered_ids):
             Subtask.objects.filter(id=subtask_id).update(order_index=index)
         return Response({'status': 'reordered'})
+
+class ScheduleSlotViewSet(viewsets.ModelViewSet):
+    """Weekly schedule slots CRUD"""
+    queryset = ScheduleSlot.objects.all().order_by('day_of_week', 'start_time')
+    serializer_class = ScheduleSlotSerializer

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DayPlan, Block, Segment, Subtask, TimerState
+from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot
 
 class SubtaskSerializer(serializers.ModelSerializer):
     class Meta:
@@ -31,3 +31,15 @@ class DayPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = DayPlan
         fields = '__all__'
+
+class ScheduleSlotSerializer(serializers.ModelSerializer):
+    # Map snake_case to camelCase for frontend
+    dayOfWeek = serializers.IntegerField(source='day_of_week')
+    startTime = serializers.CharField(source='start_time')
+    endTime = serializers.CharField(source='end_time')
+    subjectEmoji = serializers.CharField(source='subject_emoji', required=False, allow_null=True)
+    subjectName = serializers.CharField(source='subject_name', required=False, allow_null=True)
+    
+    class Meta:
+        model = ScheduleSlot
+        fields = ['id', 'dayOfWeek', 'startTime', 'endTime', 'task', 'color', 'status', 'subjectEmoji', 'subjectName']
