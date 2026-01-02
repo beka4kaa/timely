@@ -1,51 +1,32 @@
-FROM node:18-alpine AS base
+FROM python:3.12-slim
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Copy requirements from the backend folder
+COPY backend/requirements.txt .
 
-# Generate Prisma Client
-RUN npx prisma generate
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Build the application
-RUN npm run build
+# Copy the backend code into the container
+COPY backend/ .
 
-# Production image, copy all the files and run next
-FROM base AS runner
-WORKDIR /app
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
 
-ENV NODE_ENV production
+# Collect static files
+RUN python manage.py collectstatic --noinput
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Expose port
+EXPOSE 8000
 
-COPY --from=builder /app/public ./public
-
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT 3000
-
-# Run database migrations and start the server
-CMD ["sh", "-c", "npx prisma db push && node server.js"]
+# Run the application
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
