@@ -12,7 +12,7 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     if not GEMINI_API_KEY:
         raise Exception("GEMINI_API_KEY is not set")
 
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.0-flash')
 
     prompt = f"""
     You are an expert strict AI Tutor. Create a detailed learning program.
