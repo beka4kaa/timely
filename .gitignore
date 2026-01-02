@@ -38,3 +38,6 @@ next-env.d.ts
 # database
 *.db
 *.sqlite
+
+/generated/prisma
+.env

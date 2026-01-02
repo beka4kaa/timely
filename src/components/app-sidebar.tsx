@@ -3,23 +3,29 @@
 import * as React from "react"
 import {
   ArrowUpCircleIcon,
+  BarChartIcon,
+  BookOpenIcon,
+  BrainIcon,
   CalendarIcon,
   CheckSquareIcon,
-  TrophyIcon,
-  TargetIcon,
-  HeartIcon,
-  LayoutDashboardIcon,
-  SettingsIcon,
-  HelpCircleIcon,
-  SearchIcon,
   ClockIcon,
-  BarChartIcon,
+  GraduationCapIcon,
+  HeartIcon,
+  HelpCircleIcon,
+  HistoryIcon,
+  LayoutDashboardIcon,
+  SearchIcon,
+  SettingsIcon,
+  Sparkles,
+  TargetIcon,
+  TimerIcon,
+  TrophyIcon,
+  User,
+  ZapIcon,
 } from "lucide-react"
 import { useSession } from "next-auth/react"
 
-import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -40,104 +46,81 @@ const data = {
       icon: LayoutDashboardIcon,
     },
     {
-      title: "Календарь",
+      title: "Study Planner",
+      url: "/dashboard/study",
+      icon: BookOpenIcon,
+    },
+    {
+      title: "Subjects",
+      url: "/dashboard/subjects",
+      icon: GraduationCapIcon,
+    },
+    {
+      title: "Topics",
+      url: "/dashboard/weaknesses",
+      icon: ZapIcon,
+    },
+    {
+      title: "Study Tracker",
+      url: "/dashboard/study-tracker",
+      icon: TimerIcon,
+    },
+    {
+      title: "Review",
+      url: "/dashboard/review",
+      icon: BrainIcon,
+    },
+    {
+      title: "AI Assistant",
+      url: "/dashboard/ai",
+      icon: Sparkles,
+    },
+    {
+      title: "Program",
+      url: "/dashboard/program",
+      icon: TargetIcon,
+    },
+    {
+      title: "Profile",
+      url: "/dashboard/profile",
+      icon: User,
+    },
+    {
+      title: "History",
+      url: "/dashboard/history",
+      icon: HistoryIcon,
+    },
+    {
+      title: "Calendar",
       url: "/dashboard/calendar",
       icon: CalendarIcon,
     },
     {
-      title: "Расписание дня",
-      url: "/dashboard/schedule",
-      icon: ClockIcon,
-    },
-    {
-      title: "Задачи",
-      url: "/dashboard/tasks",
-      icon: CheckSquareIcon,
-    },
-    {
-      title: "Цели",
+      title: "Goals",
       url: "/dashboard/goals",
       icon: TargetIcon,
     },
     {
-      title: "Достижения",
+      title: "Achievements",
       url: "/dashboard/achievements",
       icon: TrophyIcon,
     },
-  ],
-  navClouds: [
     {
-      title: "Работа с собой",
-      icon: HeartIcon,
-      isActive: true,
+      title: "Self Work",
       url: "/dashboard/self-work",
-      items: [
-        {
-          title: "Неуверенности",
-          url: "/dashboard/self-work/insecurities",
-        },
-        {
-          title: "Рефлексия",
-          url: "/dashboard/self-work/reflection",
-        },
-        {
-          title: "Личный рост",
-          url: "/dashboard/self-work/growth",
-        },
-      ],
-    },
-    {
-      title: "Аналитика",
-      icon: BarChartIcon,
-      url: "/dashboard/analytics",
-      items: [
-        {
-          title: "Продуктивность",
-          url: "/dashboard/analytics/productivity",
-        },
-        {
-          title: "Привычки",
-          url: "/dashboard/analytics/habits",
-        },
-        {
-          title: "Прогресс целей",
-          url: "/dashboard/analytics/goals-progress",
-        },
-      ],
+      icon: HeartIcon,
     },
   ],
   navSecondary: [
     {
-      title: "Настройки",
+      title: "Settings",
       url: "/dashboard/settings",
       icon: SettingsIcon,
     },
     {
-      title: "Помощь",
+      title: "Help",
       url: "/dashboard/help",
       icon: HelpCircleIcon,
-    },
-    {
-      title: "Поиск",
-      url: "/dashboard/search",
-      icon: SearchIcon,
-    },
-  ],
-  documents: [
-    {
-      name: "Время сегодня",
-      url: "/dashboard/today",
-      icon: ClockIcon,
-    },
-    {
-      name: "Статистика",
-      url: "/dashboard/stats",
-      icon: BarChartIcon,
-    },
-    {
-      name: "Экспорт данных",
-      url: "/dashboard/export",
-      icon: ArrowUpCircleIcon,
     },
   ],
 }
@@ -145,9 +128,8 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: session } = useSession()
 
-  // Формируем данные пользователя из сессии
   const user = {
-    name: session?.user?.name || "Пользователь",
+    name: session?.user?.name || "User",
     email: session?.user?.email || "",
     avatar: session?.user?.image || "/avatars/user.jpg",
   }
@@ -162,8 +144,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               <a href="/dashboard">
-                <ClockIcon className="h-5 w-5" />
-                <span className="text-base font-semibold">Time Schedule</span>
+                <BookOpenIcon className="h-5 w-5" />
+                <span className="text-base font-semibold">Study Planner</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -171,8 +153,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.navClouds} />
-        <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>

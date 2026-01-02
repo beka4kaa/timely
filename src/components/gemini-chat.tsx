@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { 
-  MessageCircle, 
-  Send, 
-  Minimize2, 
-  Maximize2, 
+import {
+  MessageCircle,
+  Send,
+  Minimize2,
+  Maximize2,
   X,
   Sparkles,
   Bot,
@@ -47,7 +47,7 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
   const [currentApiKey, setCurrentApiKey] = useState('')
   const [showApiKeyInput, setShowApiKeyInput] = useState(true)
   const [lastUserMessage, setLastUserMessage] = useState('')
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const genAI = useRef<GoogleGenerativeAI | null>(null)
 
@@ -73,7 +73,7 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
       } catch (error) {
         console.log('Server API key not available, checking localStorage')
       }
-      
+
       // Если не получилось с сервера, проверяем localStorage
       const savedApiKey = localStorage.getItem('gemini-api-key')
       if (savedApiKey) {
@@ -81,7 +81,7 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
         setShowApiKeyInput(false)
       }
     }
-    
+
     initializeApiKey()
   }, [])
 
@@ -105,18 +105,18 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
     // Получаем контекст экрана для Gemini
     const url = window.location.href
     const title = document.title
-    
+
     // Определяем текущую страницу
     let currentPage = 'Неизвестная страница'
     if (url.includes('/schedule')) currentPage = 'Страница расписания'
     else if (url.includes('/dashboard')) currentPage = 'Панель управления'
     else if (url.includes('/calendar')) currentPage = 'Календарь'
     else if (url.includes('/tasks')) currentPage = 'Задачи'
-    
+
     // Получаем события расписания если они есть
     const scheduleElement = document.querySelector('[data-schedule-content]')
     const events: string[] = []
-    
+
     if (scheduleElement) {
       // Ищем блоки событий
       const eventBlocks = scheduleElement.querySelectorAll('[data-event-id]')
@@ -126,7 +126,7 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
           events.push(eventText)
         }
       })
-      
+
       // Если событий нет, получаем общий контент
       if (events.length === 0) {
         const textContent = scheduleElement.textContent || ''
@@ -135,7 +135,7 @@ export function GeminiChat({ apiKey }: GeminiChatProps) {
         }
       }
     }
-    
+
     // Получаем время
     const currentTime = new Date().toLocaleString('ru-RU', {
       weekday: 'long',
@@ -179,11 +179,11 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
     setIsLoading(true)
 
     try {
-      const model = genAI.current.getGenerativeModel({ model: "gemini-2.0-flash" })
-      
+      const model = genAI.current.getGenerativeModel({ model: "gemini-1.5-flash" })
+
       const context = getScreenContext()
       const prompt = `${context}\n\nВопрос пользователя: ${inputValue}\n\nОтвечай на русском языке, будь полезным и дружелюбным. Помоги с планированием и продуктивностью.`
-      
+
       const result = await model.generateContent(prompt)
       const response = await result.response
       const text = response.text()
@@ -199,7 +199,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
     } catch (error) {
       console.error('Ошибка Gemini API:', error)
       let errorText = 'Извините, произошла ошибка. '
-      
+
       if (error instanceof Error) {
         if (error.message.includes('API_KEY_INVALID')) {
           errorText = '❌ Неверный API ключ. Проверьте ключ в настройках.'
@@ -213,7 +213,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
       } else {
         errorText += 'Проверьте интернет соединение и попробуйте позже.'
       }
-      
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: errorText,
@@ -241,9 +241,9 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
   }
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return date.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit'
     })
   }
 
@@ -277,7 +277,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
             </Badge>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-1">
           {!isMinimized && (
             <>
@@ -352,7 +352,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                   onChange={(e) => setCurrentApiKey(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && currentApiKey && setShowApiKeyInput(false)}
                 />
-                <Button 
+                <Button
                   onClick={() => setCurrentApiKey(currentApiKey)}
                   disabled={!currentApiKey}
                   size="icon"
@@ -374,8 +374,8 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                   >
                     <div className={cn(
                       "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
-                      message.isUser 
-                        ? "bg-blue-500" 
+                      message.isUser
+                        ? "bg-blue-500"
                         : "bg-gradient-to-r from-purple-500 to-blue-500"
                     )}>
                       {message.isUser ? (
@@ -384,7 +384,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                         <Bot className="h-4 w-4 text-white" />
                       )}
                     </div>
-                    
+
                     <div className={cn(
                       "flex-1 space-y-1",
                       message.isUser ? "items-end" : "items-start"
@@ -408,7 +408,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                     </div>
                   </div>
                 ))}
-                
+
                 {isLoading && (
                   <div className="flex gap-3 text-sm">
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
@@ -428,7 +428,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                     </div>
                   </div>
                 )}
-                
+
                 <div ref={messagesEndRef} />
               </div>
 
@@ -463,7 +463,7 @@ ${events.map((event, index) => `${index + 1}. ${event}`).join('\n')}
                   disabled={isLoading}
                   className="flex-1"
                 />
-                <Button 
+                <Button
                   onClick={sendMessage}
                   disabled={!inputValue.trim() || isLoading}
                   size="icon"

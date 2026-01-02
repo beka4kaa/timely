@@ -1,0 +1,790 @@
+"use client"
+
+import React, { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { DatePicker } from '@/components/ui/date-picker'
+import {
+    Sparkles,
+    Loader2,
+    Calendar,
+    Clock,
+    BookOpen,
+    Target,
+    AlertCircle,
+    CheckCircle,
+    ChevronRight,
+    FileText,
+    RefreshCw,
+    AlertTriangle,
+    GripVertical,
+    ChevronDown,
+    ChevronUp,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+
+// Subject with topics for program creation
+interface SubjectWithTopics {
+    id: string
+    name: string
+    emoji: string
+    color: string
+    topics: Array<{
+        id: string
+        name: string
+        orderIndex: number
+        status: string // NOT_STARTED, MEDIUM, SUCCESS, MASTERED
+    }>
+}
+
+// Deadline configuration per subject
+interface SubjectDeadline {
+    subjectId: string
+    milestoneTopicId: string | null // Which topic to finish by deadline (null = all)
+    deadline: string | null // ISO date string
+}
+
+
+interface TopicPlan {
+    id: string
+    topicId: string
+    plannedWeek: number
+    estimatedHours: number
+    priority: number
+    reinforceWeek1: number | null
+    reinforceWeek2: number | null
+    status: string
+    deadline: string | null
+    isFlexible: boolean
+    manuallyMoved: boolean
+    topic: {
+        id: string
+        name: string
+        subject: {
+            id: string
+            name: string
+            emoji: string
+            color: string
+        }
+    }
+}
+
+interface WeekPlan {
+    id: string
+    weekNumber: number
+    startDate: string
+    endDate: string
+    subjectHours: string
+    focus: string | null
+    notes: string | null
+}
+
+interface ScheduledTest {
+    id: string
+    scheduledDate: string
+    scheduledTime: string | null
+    title: string
+    description: string | null
+    type: string
+    status: string
+    subject: {
+        id: string
+        name: string
+        emoji: string
+    }
+}
+
+interface LearningProgram {
+    id: string
+    name: string
+    startDate: string
+    endDate: string | null
+    totalWeeks: number
+    hoursPerWeek: number
+    description: string | null
+    strategy: string | null
+    generatedAt: string
+    weekPlans: WeekPlan[]
+    topicPlans: TopicPlan[]
+    scheduledTests: ScheduledTest[]
+}
+
+import { ProgramChatDialog } from '@/components/mind/program-chat-dialog'
+
+export default function ProgramPage() {
+    const [loading, setLoading] = useState(true)
+    const [generating, setGenerating] = useState(false)
+    const [program, setProgram] = useState<LearningProgram | null>(null)
+    const [error, setError] = useState<string | null>(null)
+
+    // Generation settings
+    const [totalWeeks, setTotalWeeks] = useState(12)
+    const [hoursPerWeek, setHoursPerWeek] = useState(20)
+    const [selectedWeek, setSelectedWeek] = useState(1)
+    const [rebalancing, setRebalancing] = useState(false)
+
+    // Subjects and deadlines for program creation
+    const [subjects, setSubjects] = useState<SubjectWithTopics[]>([])
+    const [subjectDeadlines, setSubjectDeadlines] = useState<SubjectDeadline[]>([])
+    const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set())
+
+    useEffect(() => {
+        loadProgram()
+        fetchSubjects()
+    }, [])
+
+    const fetchSubjects = async () => {
+        try {
+            const res = await fetch('/api/subjects')
+            if (res.ok) {
+                const data = await res.json()
+                setSubjects(data.map((s: SubjectWithTopics) => ({
+                    ...s,
+                    topics: s.topics?.sort((a, b) => a.orderIndex - b.orderIndex) || []
+                })))
+                // Initialize empty deadlines for each subject
+                setSubjectDeadlines(data.map((s: SubjectWithTopics) => ({
+                    subjectId: s.id,
+                    milestoneTopicId: null,
+                    deadline: null
+                })))
+            }
+        } catch (err) {
+            console.error('Error fetching subjects:', err)
+        }
+    }
+
+    const toggleSubjectExpanded = (subjectId: string) => {
+        setExpandedSubjects(prev => {
+            const next = new Set(prev)
+            if (next.has(subjectId)) {
+                next.delete(subjectId)
+            } else {
+                next.add(subjectId)
+            }
+            return next
+        })
+    }
+
+    const updateSubjectDeadline = (subjectId: string, updates: Partial<SubjectDeadline>) => {
+        setSubjectDeadlines(prev => prev.map(sd =>
+            sd.subjectId === subjectId ? { ...sd, ...updates } : sd
+        ))
+    }
+
+    const moveTopicUp = async (subjectId: string, topicIndex: number) => {
+        if (topicIndex === 0) return
+        const subject = subjects.find(s => s.id === subjectId)
+        if (!subject) return
+
+        const newTopics = [...subject.topics]
+        const temp = newTopics[topicIndex]
+        newTopics[topicIndex] = newTopics[topicIndex - 1]
+        newTopics[topicIndex - 1] = temp
+
+        setSubjects(prev => prev.map(s =>
+            s.id === subjectId ? { ...s, topics: newTopics } : s
+        ))
+
+        // Save to API
+        await fetch('/api/topics/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId, topicIds: newTopics.map(t => t.id) })
+        })
+    }
+
+    const moveTopicDown = async (subjectId: string, topicIndex: number) => {
+        const subject = subjects.find(s => s.id === subjectId)
+        if (!subject || topicIndex >= subject.topics.length - 1) return
+
+        const newTopics = [...subject.topics]
+        const temp = newTopics[topicIndex]
+        newTopics[topicIndex] = newTopics[topicIndex + 1]
+        newTopics[topicIndex + 1] = temp
+
+        setSubjects(prev => prev.map(s =>
+            s.id === subjectId ? { ...s, topics: newTopics } : s
+        ))
+
+        // Save to API
+        await fetch('/api/topics/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subjectId, topicIds: newTopics.map(t => t.id) })
+        })
+    }
+
+    const loadProgram = async () => {
+        setLoading(true)
+        try {
+            const res = await fetch('/api/learning-program')
+            if (res.ok) {
+                const data = await res.json()
+                setProgram(data)
+            }
+        } catch (err) {
+            console.error('Error loading program:', err)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const rebalanceProgram = async () => {
+        if (!program) return
+        setRebalancing(true)
+        try {
+            const res = await fetch('/api/learning-program/rebalance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    programId: program.id,
+                    maxHoursPerWeek: program.hoursPerWeek,
+                    applyChanges: true
+                })
+            })
+            const data = await res.json()
+            if (data.success) {
+                toast.success(`Программа обновлена: ${data.changesCount} изменений`)
+                loadProgram()
+            } else if (data.conflicts?.length > 0) {
+                toast.warning(`${data.conflicts.length} конфликтов дедлайнов. Проверьте программу.`)
+                loadProgram()
+            }
+        } catch (err) {
+            toast.error('Ошибка ребалансировки')
+        } finally {
+            setRebalancing(false)
+        }
+    }
+
+    const updateTopicPlan = async (topicPlanId: string, updates: {
+        plannedWeek?: number
+        deadline?: string | null
+        priority?: number
+    }) => {
+        try {
+            const res = await fetch(`/api/topic-plans/${topicPlanId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            })
+            if (res.ok) {
+                toast.success('Обновлено')
+                loadProgram()
+            }
+        } catch (err) {
+            toast.error('Ошибка обновления')
+        }
+    }
+
+    const generateProgram = async () => {
+        setGenerating(true)
+        setError(null)
+        try {
+            const res = await fetch('/api/ai/generate-program', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    totalWeeks,
+                    hoursPerWeek,
+                    name: 'Моя программа обучения',
+                    subjectDeadlines: subjectDeadlines.filter(sd => sd.deadline), // Only pass ones with deadlines set
+                }),
+            })
+
+            if (!res.ok) {
+                const data = await res.json()
+                throw new Error(data.error || 'Failed to generate')
+            }
+
+            const data = await res.json()
+            setProgram(data)
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Ошибка генерации')
+        } finally {
+            setGenerating(false)
+        }
+    }
+
+    const getCurrentWeek = () => {
+        if (!program) return 1
+        const start = new Date(program.startDate)
+        const now = new Date()
+        const diff = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000))
+        return Math.max(1, Math.min(diff + 1, program.totalWeeks))
+    }
+
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'short',
+        })
+    }
+
+    if (loading) {
+        return (
+            <div className="container max-w-6xl mx-auto py-6 px-4">
+                <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+            </div>
+        )
+    }
+
+    // No program - show generation UI
+    if (!program) {
+        return (
+            <div className="container max-w-3xl mx-auto py-6 px-4">
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold flex items-center gap-2">
+                        📚 Программа обучения
+                    </h1>
+                    <p className="text-muted-foreground">
+                        AI создаст персонализированный план на основе ваших предметов
+                    </p>
+                </div>
+
+                <Card className="border-border">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5" />
+                            Создать программу
+                        </CardTitle>
+                        <CardDescription>
+                            AI проанализирует ваши предметы, темы и прогресс для создания плана
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Часов в неделю (максимум)</Label>
+                            <Input
+                                type="number"
+                                min={5}
+                                max={60}
+                                value={hoursPerWeek}
+                                onChange={e => setHoursPerWeek(parseInt(e.target.value) || 20)}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Количество недель рассчитается автоматически на основе дедлайнов
+                            </p>
+                        </div>
+
+                        {/* Subject deadlines configuration */}
+                        {subjects.length > 0 && (
+                            <div className="space-y-3">
+                                <Label className="text-base">Дедлайны по предметам</Label>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                    Укажите к какой теме и к какой дате нужно выучить материал
+                                </p>
+
+                                {subjects.map(subject => {
+                                    const isExpanded = expandedSubjects.has(subject.id)
+                                    const deadline = subjectDeadlines.find(sd => sd.subjectId === subject.id)
+
+                                    return (
+                                        <div
+                                            key={subject.id}
+                                            className="border rounded-lg p-3"
+                                            style={{ borderLeftColor: subject.color, borderLeftWidth: 3 }}
+                                        >
+                                            {/* Subject header */}
+                                            <div
+                                                className="flex items-center justify-between cursor-pointer"
+                                                onClick={() => toggleSubjectExpanded(subject.id)}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <span>{subject.emoji}</span>
+                                                    <span className="font-medium">{subject.name}</span>
+                                                    <Badge variant="secondary" className="text-xs">
+                                                        {subject.topics.length} тем
+                                                    </Badge>
+                                                </div>
+                                                {isExpanded ? (
+                                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                                ) : (
+                                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                                )}
+                                            </div>
+
+                                            {/* Expanded content */}
+                                            {isExpanded && (
+                                                <div className="mt-3 space-y-3">
+                                                    {/* Topic list with reorder */}
+                                                    <div className="space-y-1">
+                                                        {subject.topics.map((topic, idx) => (
+                                                            <div
+                                                                key={topic.id}
+                                                                className={cn(
+                                                                    "flex items-center gap-2 p-2 rounded text-sm",
+                                                                    topic.status === 'MASTERED' || topic.status === 'SUCCESS'
+                                                                        ? "bg-emerald-500/10 text-emerald-400"
+                                                                        : "bg-muted/50"
+                                                                )}
+                                                            >
+                                                                <GripVertical className="h-3 w-3 text-muted-foreground" />
+                                                                {(topic.status === 'MASTERED' || topic.status === 'SUCCESS') && (
+                                                                    <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                                                )}
+                                                                <span className="flex-1">{topic.name}</span>
+                                                                {topic.status === 'MEDIUM' && (
+                                                                    <Badge variant="secondary" className="text-xs">В процессе</Badge>
+                                                                )}
+                                                                <div className="flex gap-1">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); moveTopicUp(subject.id, idx) }}
+                                                                        disabled={idx === 0}
+                                                                        className="p-1 hover:bg-muted rounded disabled:opacity-30"
+                                                                    >
+                                                                        <ChevronUp className="h-3 w-3" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); moveTopicDown(subject.id, idx) }}
+                                                                        disabled={idx === subject.topics.length - 1}
+                                                                        className="p-1 hover:bg-muted rounded disabled:opacity-30"
+                                                                    >
+                                                                        <ChevronDown className="h-3 w-3" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Deadline configuration */}
+                                                    <div className="grid gap-3 md:grid-cols-2 pt-2 border-t">
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">Выучить до темы</Label>
+                                                            <select
+                                                                value={deadline?.milestoneTopicId || ''}
+                                                                onChange={(e) => updateSubjectDeadline(subject.id, {
+                                                                    milestoneTopicId: e.target.value || null
+                                                                })}
+                                                                className="w-full text-sm bg-background border rounded px-2 py-1.5"
+                                                            >
+                                                                <option value="">Все темы</option>
+                                                                {subject.topics.map(topic => (
+                                                                    <option key={topic.id} value={topic.id}>
+                                                                        {topic.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <Label className="text-xs">К дате</Label>
+                                                            <DatePicker
+                                                                date={deadline?.deadline ? new Date(deadline.deadline) : undefined}
+                                                                onDateChange={(date) => updateSubjectDeadline(subject.id, {
+                                                                    deadline: date ? date.toISOString() : null
+                                                                })}
+                                                                placeholder="Выберите дату"
+                                                                className="w-full text-sm"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+
+                        {error && (
+                            <div className="p-3 rounded-lg bg-red-500/10 text-red-400 flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4" />
+                                {error}
+                            </div>
+                        )}
+
+                        <Button
+                            size="lg"
+                            className="w-full"
+                            onClick={generateProgram}
+                            disabled={generating}
+                        >
+                            {generating ? (
+                                <>
+                                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                                    Генерация...
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="h-5 w-5 mr-2" />
+                                    Создать программу
+                                </>
+                            )}
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
+
+    // Show program
+    const currentWeek = getCurrentWeek()
+    const currentWeekPlan = program.weekPlans.find(w => w.weekNumber === selectedWeek)
+    const weekTopics = program.topicPlans.filter(tp => tp.plannedWeek === selectedWeek)
+    const weekTests = program.scheduledTests.filter(t => {
+        const testDate = new Date(t.scheduledDate)
+        const weekStart = new Date(currentWeekPlan?.startDate || '')
+        const weekEnd = new Date(currentWeekPlan?.endDate || '')
+        return testDate >= weekStart && testDate <= weekEnd
+    })
+
+    return (
+        <div className="container max-w-6xl mx-auto py-6 px-4">
+            <div className="mb-6 flex items-start justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold flex items-center gap-2">
+                        📚 {program.name}
+                    </h1>
+                    <p className="text-muted-foreground">
+                        {program.totalWeeks} недель • {program.hoursPerWeek} ч/неделю •
+                        Создано {formatDate(program.generatedAt)}
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={rebalanceProgram}
+                        disabled={rebalancing}
+                    >
+                        {rebalancing ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Ребалансировать
+                    </Button>
+                    <ProgramChatDialog programId={program.id} onProgramUpdated={loadProgram} />
+                    <Button variant="outline" onClick={() => setProgram(null)}>
+                        Пересоздать
+                    </Button>
+                </div>
+            </div>
+
+            {/* Strategy */}
+            {program.strategy && (
+                <Card className="mb-6">
+                    <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                            <Sparkles className="h-5 w-5 mt-0.5" />
+                            <div>
+                                <p className="font-medium mb-1">Стратегия</p>
+                                <p className="text-sm text-muted-foreground">{program.strategy}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Week selector */}
+            <div className="mb-6">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                    {program.weekPlans.map(wp => (
+                        <Button
+                            key={wp.weekNumber}
+                            variant={selectedWeek === wp.weekNumber ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                                "shrink-0",
+                                wp.weekNumber === currentWeek && "ring-2 ring-purple-500"
+                            )}
+                            onClick={() => setSelectedWeek(wp.weekNumber)}
+                        >
+                            Неделя {wp.weekNumber}
+                            {wp.weekNumber === currentWeek && (
+                                <Badge className="ml-1 bg-purple-500">Сейчас</Badge>
+                            )}
+                        </Button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-3">
+                {/* Week details */}
+                <div className="lg:col-span-2 space-y-4">
+                    {/* Week info */}
+                    {currentWeekPlan && (
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <Calendar className="h-5 w-5" />
+                                    Неделя {selectedWeek}
+                                </CardTitle>
+                                <CardDescription>
+                                    {formatDate(currentWeekPlan.startDate)} — {formatDate(currentWeekPlan.endDate)}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {currentWeekPlan.focus && (
+                                    <div className="p-3 rounded-lg bg-muted/50 mb-3">
+                                        <p className="font-medium text-sm">🎯 Фокус: {currentWeekPlan.focus}</p>
+                                    </div>
+                                )}
+                                {currentWeekPlan.notes && (
+                                    <p className="text-sm text-muted-foreground">{currentWeekPlan.notes}</p>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Topics for this week */}
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <BookOpen className="h-5 w-5" />
+                                Темы на эту неделю
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {weekTopics.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">Нет тем на эту неделю</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {weekTopics.map(tp => (
+                                        <div
+                                            key={tp.id}
+                                            className="flex items-center justify-between p-3 rounded-lg border"
+                                            style={{ borderLeftColor: tp.topic?.subject?.color || '#8b5cf6', borderLeftWidth: 3 }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span>{tp.topic?.subject?.emoji || '📚'}</span>
+                                                <div>
+                                                    <p className="font-medium">{tp.topic?.name || 'Тема'}</p>
+                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                        <span>{tp.topic?.subject?.name || 'Предмет'}</span>
+                                                        <span>•</span>
+                                                        <span>~{tp.estimatedHours}ч</span>
+                                                        {tp.deadline && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span className="flex items-center gap-1">
+                                                                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                                                                    До {formatDate(tp.deadline)}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {/* Week selector */}
+                                                <select
+                                                    value={tp.plannedWeek}
+                                                    onChange={(e) => updateTopicPlan(tp.id, { plannedWeek: parseInt(e.target.value) })}
+                                                    className="text-xs bg-muted rounded px-2 py-1 border"
+                                                >
+                                                    {program.weekPlans.map(w => (
+                                                        <option key={w.weekNumber} value={w.weekNumber}>
+                                                            Неделя {w.weekNumber}
+                                                        </option>
+                                                    ))}
+                                                </select>
+
+                                                {/* Deadline input */}
+                                                <DatePicker
+                                                    date={tp.deadline ? new Date(tp.deadline) : undefined}
+                                                    onDateChange={(date) => updateTopicPlan(tp.id, {
+                                                        deadline: date ? date.toISOString() : null
+                                                    })}
+                                                    placeholder="Дедлайн"
+                                                    className="text-xs"
+                                                />
+
+                                                {tp.status === 'COMPLETED' ? (
+                                                    <Badge className="bg-emerald-500/20 text-emerald-400">
+                                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                                        Готово
+                                                    </Badge>
+                                                ) : tp.manuallyMoved ? (
+                                                    <Badge variant="secondary">📌 Закреплено</Badge>
+                                                ) : (
+                                                    <Badge variant="outline">
+                                                        Приоритет {tp.priority}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Sidebar - Tests and hours */}
+                <div className="space-y-4">
+                    {/* Subject hours */}
+                    {currentWeekPlan && (
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <Clock className="h-5 w-5" />
+                                    Часы по предметам
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-2">
+                                    {Object.entries(JSON.parse(currentWeekPlan.subjectHours) as Record<string, number>).map(([subjectId, hours]) => {
+                                        const topic = program.topicPlans.find(tp => tp.topic?.subject?.id === subjectId)
+                                        const subject = topic?.topic?.subject
+                                        return (
+                                            <div key={subjectId} className="flex items-center justify-between">
+                                                <span className="flex items-center gap-2">
+                                                    <span>{subject?.emoji || '📚'}</span>
+                                                    <span className="text-sm">{subject?.name || 'Предмет'}</span>
+                                                </span>
+                                                <Badge variant="secondary">{hours}ч</Badge>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Upcoming tests */}
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <FileText className="h-5 w-5" />
+                                Тесты
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {program.scheduledTests.length === 0 ? (
+                                <p className="text-muted-foreground text-sm">Нет запланированных тестов</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {program.scheduledTests.slice(0, 5).map(test => (
+                                        <div
+                                            key={test.id}
+                                            className={cn(
+                                                "p-2 rounded-lg border",
+                                                weekTests.some(t => t.id === test.id) && "bg-amber-500/10 border-amber-500/30"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span>{test.subject.emoji}</span>
+                                                <span className="text-sm font-medium">{test.title}</span>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                {formatDate(test.scheduledDate)}
+                                                {test.scheduledTime && ` в ${test.scheduledTime}`}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    )
+}
