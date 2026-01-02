@@ -13,10 +13,10 @@ export class FastAPIClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
-    
+
     console.log(`🌐 FastAPI Request: ${options.method || 'GET'} ${url}`);
     console.log('🌐 Request options:', options);
-    
+
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',

@@ -105,7 +105,7 @@ export default function BackendIntegrationTest() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-700">{error}</p>
         </div>
-        <p className="text-gray-600">Make sure the FastAPI backend is running on http://localhost:8000</p>
+        <p className="text-gray-600">Check your API connection settings.</p>
       </div>
     )
   }
@@ -113,7 +113,7 @@ export default function BackendIntegrationTest() {
   return (
     <div className="p-8 space-y-6">
       <h1 className="text-3xl font-bold text-green-600">✅ Backend Integration Test</h1>
-      
+
       {/* Backend Health */}
       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
         <h2 className="text-lg font-semibold text-green-800 mb-2">🏥 Backend Health</h2>
@@ -171,9 +171,9 @@ export default function BackendIntegrationTest() {
                   <span>{Math.round((goal.current_value || 0) / (goal.target_value || 1) * 100)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                  <div 
-                    className="bg-purple-600 h-2 rounded-full" 
-                    style={{width: `${Math.min((goal.current_value || 0) / (goal.target_value || 1) * 100, 100)}%`}}
+                  <div
+                    className="bg-purple-600 h-2 rounded-full"
+                    style={{ width: `${Math.min((goal.current_value || 0) / (goal.target_value || 1) * 100, 100)}%` }}
                   ></div>
                 </div>
               </div>

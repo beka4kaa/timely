@@ -1,5 +1,6 @@
 // API client for FastAPI backend
-const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// API client for FastAPI backend
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export class BackendApiClient {
   private baseUrl: string
