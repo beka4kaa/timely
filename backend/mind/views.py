@@ -16,6 +16,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
         user_email = getattr(self.request, 'user_email', None)
         queryset = Subject.objects.all().prefetch_related('topics')
         
+        # Filter by user - each user only sees their own data
         if user_email:
             queryset = queryset.filter(user_email=user_email)
         
