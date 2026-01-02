@@ -28,4 +28,5 @@ export function toCamelCase(obj: any): any {
   return obj
 }
 
-export const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
+// Backend URL - use BACKEND_URL or NEXT_PUBLIC_API_URL
+export const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'

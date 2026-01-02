@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
+import { BACKEND_URL } from '@/lib/api-utils'
 
 // Transform snake_case to camelCase for frontend
 function toCamelCase(obj: any): any {
