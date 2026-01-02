@@ -26,7 +26,7 @@ import { Subject, Topic } from '@/types/mind'
 interface AddTopicDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
-    subjects: Subject[]
+    subjects: { id: string; name: string; emoji: string }[]
     defaultSubjectId?: string
     onTopicAdded: (topic: Topic) => void
 }

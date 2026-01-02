@@ -204,7 +204,7 @@ export default function TopicsPage() {
                 open={showAddDialog}
                 onOpenChange={setShowAddDialog}
                 subjects={subjects}
-                onSuccess={loadData}
+                onTopicAdded={() => loadData()}
             />
         </div>
     )
