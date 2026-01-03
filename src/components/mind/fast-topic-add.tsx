@@ -42,9 +42,15 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
             if (!res.ok) throw new Error('Failed to generate topics')
 
             const data = await res.json()
+            
+            // Count total subtopics
+            const totalSubtopics = data.topics.reduce((sum: number, t: any) => 
+                sum + (t.subtopics?.length || 0), 0)
 
             toast.success("✨ Темы добавлены!", {
-                description: `Добавлено ${data.topics.length} новых тем`,
+                description: totalSubtopics > 0 
+                    ? `Добавлено ${data.topics.length} тем и ${totalSubtopics} подтем`
+                    : `Добавлено ${data.topics.length} новых тем`,
             })
 
             setText('')

@@ -164,6 +164,8 @@ class AnalyzeView(APIView):
 
 class FastTopicsView(APIView):
     def post(self, request):
+        from mind.models import Subtopic
+        
         subject_id = request.data.get('subjectId') or request.data.get('subject_id')
         text = request.data.get('text', '')
         
@@ -175,30 +177,55 @@ class FastTopicsView(APIView):
         except Subject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Generate topics using AI - returns a list directly
+        # Generate topics using AI - returns a list with potential subtopics
         generated_topics = generate_fast_topics(subject.name, text)
         
-        # Save topics to database
+        # Save topics and subtopics to database
         created_topics = []
+        total_subtopics = 0
+        
         for topic_data in generated_topics:
             topic_name = topic_data.get('name', '')
-            if topic_name:
-                topic = Topic.objects.create(
-                    subject=subject,
-                    name=topic_name,
-                    status='NOT_STARTED',
-                    study_state='NOT_STUDIED'
-                )
-                created_topics.append({
-                    'id': str(topic.id),
-                    'name': topic.name,
-                    'estimatedHours': topic_data.get('estimatedHours', 0),
-                    'difficulty': topic_data.get('difficulty', 'Medium')
-                })
+            if not topic_name:
+                continue
+                
+            # Create topic
+            topic = Topic.objects.create(
+                subject=subject,
+                name=topic_name,
+                status='NOT_STARTED',
+                study_state='NOT_STUDIED'
+            )
+            
+            # Create subtopics if present
+            subtopic_list = topic_data.get('subtopics', [])
+            created_subtopics = []
+            
+            for subtopic_data in subtopic_list:
+                subtopic_name = subtopic_data.get('name', '')
+                if subtopic_name:
+                    subtopic = Subtopic.objects.create(
+                        topic=topic,
+                        name=subtopic_name,
+                        status='NOT_STARTED'
+                    )
+                    created_subtopics.append({
+                        'id': str(subtopic.id),
+                        'name': subtopic.name
+                    })
+                    total_subtopics += 1
+            
+            created_topics.append({
+                'id': str(topic.id),
+                'name': topic.name,
+                'estimatedHours': topic_data.get('estimatedHours', 0),
+                'difficulty': topic_data.get('difficulty', 'Medium'),
+                'subtopics': created_subtopics
+            })
         
         return Response({
             'topics': created_topics,
-            'message': f'Successfully created {len(created_topics)} topics'
+            'message': f'Created {len(created_topics)} topics with {total_subtopics} subtopics'
         })
 
 class ModifyProgramView(APIView):

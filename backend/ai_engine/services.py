@@ -82,13 +82,39 @@ def generate_fast_topics(subject_name, extra_prompt=""):
     model = genai.GenerativeModel('gemini-2.0-flash')
     
     prompt = f"""
-    Generate a list of study topics for the subject: {subject_name}.
-    Context: {extra_prompt}
+    Analyze this text and extract TOPICS and SUBTOPICS for the subject: {subject_name}.
+    
+    INPUT TEXT:
+    {extra_prompt}
+    
+    RULES:
+    1. Identify main topics (chapters, sections like "1)", "2)", "Chapter 1", etc.)
+    2. Identify subtopics (sub-sections like "1.1", "1.2", "2.1", bullet points under topics)
+    3. Keep original names but make them clean and concise
+    4. If text has numbered structure (1, 1.1, 1.2, 2, 2.1...) - preserve hierarchy
+    5. If no clear hierarchy, create only topics (no subtopics)
+    6. Ignore review exercises, end-of-chapter exercises - don't include them
     
     RESPONSE FORMAT (JSON LIST):
     [
-      {{ "name": "Topic Name", "estimatedHours": 2, "difficulty": "Medium" }}
+      {{
+        "name": "Main Topic Name",
+        "estimatedHours": 3,
+        "difficulty": "Medium",
+        "subtopics": [
+          {{ "name": "Subtopic 1.1 Name" }},
+          {{ "name": "Subtopic 1.2 Name" }}
+        ]
+      }},
+      {{
+        "name": "Another Topic without subtopics",
+        "estimatedHours": 2,
+        "difficulty": "Easy",
+        "subtopics": []
+      }}
     ]
+    
+    Return ONLY valid JSON array, no markdown, no explanations.
     """
     try:
         response = model.generate_content(prompt)
