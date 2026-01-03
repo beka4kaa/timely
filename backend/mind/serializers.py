@@ -18,7 +18,7 @@ class SubjectSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Subject
-        exclude = ['user_email']  # Exclude until migration runs
+        fields = '__all__'
 
 class ReviewSetSerializer(serializers.ModelSerializer):
     class Meta:
@@ -43,4 +43,4 @@ class SrsReviewLogSerializer(serializers.ModelSerializer):
 class MindSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = MindSession
-        exclude = ['user_email']  # Exclude until migration runs
+        fields = '__all__'
