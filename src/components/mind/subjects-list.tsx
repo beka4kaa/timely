@@ -139,10 +139,6 @@ export function SubjectsList({ className }: SubjectsListProps) {
                                         <BookOpen className="h-4 w-4" />
                                         <span>{subject.topics?.length || 0} тем</span>
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                        <Clock className="h-4 w-4" />
-                                        <span>{subject.targetHoursWeek} ч/неделю</span>
-                                    </div>
                                 </div>
 
                                 {subject.topics && subject.topics.length > 0 && (
