@@ -24,22 +24,25 @@ const nextConfig = {
     ignoreDuringBuilds: false,
   },
   async rewrites() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    // Use Railway backend on production, localhost on dev
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
+      (process.env.VERCEL ? 'https://timely-production-4f5a.up.railway.app' : 'http://localhost:8000');
     return [
       // Auth - handled by Next.js
       {
         source: '/api/auth/:path*',
         destination: '/api/auth/:path*',
       },
-      // Mind App
-      {
-        source: '/api/subjects/:path*',
-        destination: `${apiUrl}/api/mind/subjects/:path*`,
-      },
-      {
-        source: '/api/topics/:path*',
-        destination: `${apiUrl}/api/mind/topics/:path*`,
-      },
+      // Mind App - handled by Next.js API routes
+      // These routes have their own handlers in src/app/api/
+      // {
+      //   source: '/api/subjects/:path*',
+      //   destination: `${apiUrl}/api/mind/subjects/:path*`,
+      // },
+      // {
+      //   source: '/api/topics/:path*',
+      //   destination: `${apiUrl}/api/mind/topics/:path*`,
+      // },
       // Planner App
       {
         source: '/api/dayplans/:path*',
@@ -58,10 +61,10 @@ const nextConfig = {
         source: '/api/learning-program/:path*',
         destination: `${apiUrl}/api/ai_engine/learning-program/:path*`,
       },
-      {
-        source: '/api/subtopics/:path*',
-        destination: `${apiUrl}/api/mind/subtopics/:path*`,
-      },
+      // {
+      //   source: '/api/subtopics/:path*',
+      //   destination: `${apiUrl}/api/mind/subtopics/:path*`,
+      // },
       {
         source: '/api/mind-sessions/:path*',
         destination: `${apiUrl}/api/mind/sessions/:path*`,
@@ -69,11 +72,6 @@ const nextConfig = {
       {
         source: '/api/ai/:path*',
         destination: `${apiUrl}/api/ai/:path*`,
-      },
-      // Fallback for everything else
-      {
-        source: '/api/:path*',
-        destination: `${apiUrl}/api/:path*`,
       },
     ]
   },
