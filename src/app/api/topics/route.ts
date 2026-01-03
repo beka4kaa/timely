@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const filter = searchParams.get('filter')
 
-    let url = `${BACKEND_URL}/api/mind/topics`
+    let url = `${BACKEND_URL}/api/mind/topics/`
     if (filter) {
       url += `?filter=${filter}`
     }
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const headers = await createBackendHeaders(request)
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/mind/topics`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/topics/`, {
       method: 'POST',
       headers,
       body: JSON.stringify(toSnakeCase(body)),
