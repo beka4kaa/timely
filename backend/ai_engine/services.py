@@ -20,11 +20,11 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     hours_per_week = ctx.get('hoursPerWeek', hours_per_day * 7)
     subject_deadlines = ctx.get('subjectDeadlines', [])
     
-    # Calculate derived constraints
-    days_per_week = 6
-    sessions_per_day_max = 3
+    # Calculate derived constraints - user can study up to hours_per_day!
+    days_per_week = 7  # Study every day for tight deadlines
     session_minutes = 45
-    hours_per_day_available = hours_per_week / days_per_week
+    hours_per_day_available = hours_per_day  # Use actual hours user specified
+    sessions_per_day_max = int(hours_per_day * 60 / session_minutes)  # e.g. 12 hours = 16 sessions
     
     # Current date for calculations
     current_date = datetime.now()
@@ -130,32 +130,34 @@ SUBJECT {idx}: {s['name']}
     print(f"Topics per day needed: {topics_per_day:.1f}")
     print(f"Sessions per day needed: {sessions_needed_per_day}")
     print("=" * 60)
+    # Calculate exact deadline date string
+    deadline_date = current_date + __import__('datetime').timedelta(days=total_days)
+    deadline_date_str = deadline_date.strftime('%Y-%m-%d')
     
     # ULTRA AGGRESSIVE prompt
     prompt = f"""You are an ULTRA-INTENSE study program generator. 
-This student has {total_days} DAYS to learn {total_topics} TOPICS.
-That means {topics_per_day:.1f} topics PER DAY - this is NON-NEGOTIABLE.
-DO NOT spread topics beyond the deadline. ALL material must be covered BY the deadline.
+This student has EXACTLY {total_days} DAYS to learn {total_topics} TOPICS.
+HARD DEADLINE: {deadline_date_str} - NO SESSIONS AFTER THIS DATE!
+Student can study {hours_per_day_available} HOURS PER DAY = {sessions_per_day_max} sessions!
 
 CURRENT DATE: {current_date_str}
-DEADLINE: In {total_days} days - EVERYTHING must be done by then!
+⚠️ HARD DEADLINE: {deadline_date_str} (in {total_days} days) - CANNOT BE EXTENDED!
 
 MATH (you MUST follow this):
 - Total topics: {total_topics}
-- Days available: {total_days}
-- Topics per day: {topics_per_day:.1f} (MINIMUM)
-- Sessions per day: {sessions_needed_per_day} (MINIMUM - can do more!)
-- Each topic needs: THEORY (30-45min) + PRACTICE (30-45min)
+- Days available: {total_days} (Days {1} to {total_days} ONLY!)
+- Hours per day: {hours_per_day_available}
+- Sessions per day: {sessions_per_day_max} (each 45 min)
+- Topics per day: {topics_per_day:.1f}
 
 SUBJECTS:
 {subjects_text}
 
-⚠️ ABSOLUTE REQUIREMENTS - VIOLATION IS FAILURE ⚠️
-1. ALL {total_topics} topics MUST be scheduled WITHIN {total_days} days
-2. Each day needs AT LEAST {sessions_needed_per_day} sessions
-3. DO NOT schedule anything AFTER the deadline!
-4. Pack topics DENSELY - student can handle 8-10 hours/day
-5. ✓ topics = quick 15min review, ○ topics = full treatment
+⚠️ ABSOLUTE REQUIREMENTS - VIOLATION = FAILURE ⚠️
+1. ONLY schedule days 1 to {total_days} - NO DAY {total_days + 1} OR LATER!
+2. Each day MUST have {min(sessions_per_day_max, 16)} sessions (student can handle it!)
+3. Cover ALL {total_topics} topics BEFORE deadline
+4. Student studies {hours_per_day_available} hours/day - USE ALL OF IT!
 
 EXAMPLE for {total_days} days with {total_topics} topics:
 Day 1: {int(topics_per_day) + 1} topics = {(int(topics_per_day) + 1) * 2} sessions
