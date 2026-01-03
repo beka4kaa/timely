@@ -135,7 +135,7 @@ function SortableRow({
                     isSortableDragging && "bg-primary/10 shadow-lg"
                 )}
             >
-                <td className="p-3 w-[30px]">
+                <td className="p-2 md:p-3 w-[30px]">
                     <div
                         {...attributes}
                         {...listeners}
@@ -144,17 +144,17 @@ function SortableRow({
                         <GripVertical className="h-4 w-4 text-muted-foreground" />
                     </div>
                 </td>
-                <td className="p-3">
+                <td className="p-2 md:p-3">
                     <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => onToggleSelect(topic.id)}
                     />
                 </td>
-                <td className="p-3">
-                    <div className="flex items-center gap-2">
+                <td className="p-2 md:p-3">
+                    <div className="flex items-center gap-1 md:gap-2">
                         <button
                             onClick={() => onToggleExpand(topic.id)}
-                            className="hover:bg-muted p-0.5 rounded"
+                            className="hover:bg-muted p-0.5 rounded flex-shrink-0"
                         >
                             {isExpanded ? (
                                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -162,28 +162,28 @@ function SortableRow({
                                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
                             )}
                         </button>
-                        <button onClick={() => onTogglePicked(topic)}>
+                        <button onClick={() => onTogglePicked(topic)} className="flex-shrink-0">
                             {topic.picked ? (
                                 <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
                             ) : (
                                 <StarOff className="h-4 w-4 text-muted-foreground" />
                             )}
                         </button>
-                        <span className={cn(topic.archived && "line-through text-muted-foreground")}>
+                        <span className={cn("truncate max-w-[150px] md:max-w-none", topic.archived && "line-through text-muted-foreground")}>
                             {topic.name}
                         </span>
                         {isDueToday(topic.nextReviewAt) && (
-                            <Badge variant="destructive" className="text-xs">
+                            <Badge variant="destructive" className="text-xs flex-shrink-0">
                                 Сегодня
                             </Badge>
                         )}
                     </div>
                 </td>
-                <td className="p-3">
+                <td className="p-2 md:p-3">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className="cursor-pointer hover:opacity-80 transition-opacity">
-                                <Badge className={cn("text-xs", getTopicStatusColor(topic.status as any))}>
+                                <Badge className={cn("text-xs whitespace-nowrap", getTopicStatusColor(topic.status as any))}>
                                     {getTopicStatusLabel(topic.status as any)}
                                 </Badge>
                             </button>
@@ -220,24 +220,24 @@ function SortableRow({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </td>
-                <td className="p-3 text-muted-foreground">
+                <td className="p-2 md:p-3 text-muted-foreground whitespace-nowrap hidden sm:table-cell">
                     {formatInterval(topic.intervalDays)}
                 </td>
-                <td className="p-3 text-muted-foreground">
+                <td className="p-2 md:p-3 text-muted-foreground whitespace-nowrap hidden md:table-cell">
                     {formatDaysPast(topic.lastRevisedAt)}
                 </td>
-                <td className="p-3 text-muted-foreground">
+                <td className="p-2 md:p-3 text-muted-foreground whitespace-nowrap hidden lg:table-cell">
                     {topic.nextReviewAt
                         ? new Date(topic.nextReviewAt).toLocaleDateString('ru-RU')
                         : '—'
                     }
                 </td>
-                <td className="p-3">
-                    <div className="flex items-center justify-end gap-1">
+                <td className="p-2 md:p-3">
+                    <div className="flex items-center justify-end gap-0.5 md:gap-1">
                         <Button
                             size="sm"
                             variant="ghost"
-                            className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
+                            className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10 h-8 w-8 p-0"
                             onClick={() => onReview(topic.id, 'GOOD')}
                         >
                             <ThumbsUp className="h-4 w-4" />
@@ -245,7 +245,7 @@ function SortableRow({
                         <Button
                             size="sm"
                             variant="ghost"
-                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-8 w-8 p-0"
                             onClick={() => onReview(topic.id, 'AGAIN')}
                         >
                             <ThumbsDown className="h-4 w-4" />
@@ -253,6 +253,7 @@ function SortableRow({
                         <Button
                             size="sm"
                             variant="ghost"
+                            className="h-8 w-8 p-0 hidden sm:flex"
                             onClick={() => onToggleArchived(topic)}
                         >
                             {topic.archived ? (
@@ -643,11 +644,11 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     ]
 
     return (
-        <div className={cn("space-y-6", className)}>
+        <div className={cn("space-y-4 md:space-y-6", className)}>
             {/* Filters */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-muted-foreground" />
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                    <Filter className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <div className="flex gap-1">
                         {filters.map((f) => (
                             <Button
@@ -655,28 +656,29 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                                 variant={filter === f.key ? "secondary" : "ghost"}
                                 size="sm"
                                 onClick={() => setFilter(f.key)}
+                                className="whitespace-nowrap"
                             >
                                 {f.label}
                             </Button>
                         ))}
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto">
                     {selectedTopics.size > 0 && (
-                        <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Удалить ({selectedTopics.size})
+                        <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="flex-1 sm:flex-none">
+                            <Trash2 className="h-4 w-4 mr-1 sm:mr-2" />
+                            <span className="hidden sm:inline">Удалить</span> ({selectedTopics.size})
                         </Button>
                     )}
                     {!hideAddButton && (
-                        <Button onClick={() => setShowAddDialog(true)}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Новая тема
+                        <Button onClick={() => setShowAddDialog(true)} size="sm" className="flex-1 sm:flex-none">
+                            <Plus className="h-4 w-4 mr-1 sm:mr-2" />
+                            <span className="hidden sm:inline">Новая тема</span>
+                            <span className="sm:hidden">Добавить</span>
                         </Button>
                     )}
                 </div>
             </div>
-
             {/* Loading */}
             {loading && (
                 <div className="flex items-center justify-center py-12">
@@ -697,8 +699,8 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                 <div key={subjectId} className="space-y-2">
                     <div className="flex items-center gap-2 px-2">
                         <span className="text-lg">{subject?.emoji || '📚'}</span>
-                        <h3 className="font-semibold">{subject?.name || 'Без предмета'}</h3>
-                        <Badge variant="secondary" className="ml-auto">
+                        <h3 className="font-semibold truncate">{subject?.name || 'Без предмета'}</h3>
+                        <Badge variant="secondary" className="ml-auto flex-shrink-0">
                             {subjectTopics.length}
                         </Badge>
                     </div>
@@ -709,23 +711,23 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                         onDragStart={handleDragStart}
                         onDragEnd={(event) => handleDragEnd(event, subjectId, subjectTopics)}
                     >
-                        <div className="rounded-lg border overflow-hidden">
-                            <table className="w-full text-sm">
+                        <div className="rounded-lg border overflow-x-auto">
+                            <table className="w-full text-sm min-w-[700px]">
                                 <thead className="bg-muted/50">
                                     <tr>
-                                        <th className="w-[40px] p-3"></th>
-                                        <th className="w-[30px] p-3">
+                                        <th className="w-[40px] p-2 md:p-3"></th>
+                                        <th className="w-[30px] p-2 md:p-3">
                                             <Checkbox
                                                 checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
                                                 onCheckedChange={() => toggleSelectAll(subjectTopics)}
                                             />
                                         </th>
-                                        <th className="text-left p-3 font-medium">Тема</th>
-                                        <th className="text-left p-3 font-medium">Статус</th>
-                                        <th className="text-left p-3 font-medium">Интервал</th>
-                                        <th className="text-left p-3 font-medium">Прошло</th>
-                                        <th className="text-left p-3 font-medium">След. повтор</th>
-                                        <th className="text-right p-3 font-medium">Действия</th>
+                                        <th className="text-left p-2 md:p-3 font-medium">Тема</th>
+                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap">Статус</th>
+                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden sm:table-cell">Интервал</th>
+                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden md:table-cell">Прошло</th>
+                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden lg:table-cell">След. повтор</th>
+                                        <th className="text-right p-2 md:p-3 font-medium">Действия</th>
                                     </tr>
                                 </thead>
                                 <tbody>
