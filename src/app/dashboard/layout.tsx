@@ -14,9 +14,9 @@ export default function DashboardLayout({
   return (
     <AuthGuard requireAuth={true}>
       <SidebarProvider defaultOpen={true}>
-        <div className="flex h-screen w-full">
+        <div className="flex h-screen w-full overflow-hidden">
           <AppSidebar />
-          <SidebarInset className="flex-1">
+          <SidebarInset className="flex-1 min-w-0 overflow-hidden">
             <SiteHeader />
             <main className="flex-1 overflow-auto">
               {children}
