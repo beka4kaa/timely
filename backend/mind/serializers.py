@@ -8,10 +8,19 @@ class SubtopicSerializer(serializers.ModelSerializer):
 
 class TopicSerializer(serializers.ModelSerializer):
     subtopics = SubtopicSerializer(many=True, read_only=True)
+    subject_id = serializers.PrimaryKeyRelatedField(
+        queryset=Subject.objects.all(),
+        source='subject',
+        write_only=True,
+        required=False
+    )
 
     class Meta:
         model = Topic
         fields = '__all__'
+        extra_kwargs = {
+            'subject': {'required': False}
+        }
 
 class SubjectSerializer(serializers.ModelSerializer):
     topics = TopicSerializer(many=True, read_only=True)
