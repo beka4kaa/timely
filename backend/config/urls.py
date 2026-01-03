@@ -15,7 +15,7 @@ def health_check(request):
     return JsonResponse({'status': 'healthy', 'service': 'timely-backend'})
 
 
-router = DefaultRouter()
+router = DefaultRouter(trailing_slash=False)
 router.register(r'planner/dayplans', DayPlanViewSet)
 router.register(r'planner/blocks', BlockViewSet)
 router.register(r'planner/segments', SegmentViewSet)
