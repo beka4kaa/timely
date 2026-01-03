@@ -5,7 +5,8 @@ import { WeaknessesTable, AddTopicDialog } from '@/components/mind'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, List, Table2, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, List, Table2, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 interface Topic {
@@ -73,6 +74,24 @@ export default function TopicsPage() {
             }
             return next
         })
+    }
+
+    const handleDeleteTopic = async (topicId: string, e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (!confirm('Удалить эту тему?')) return
+        
+        try {
+            const res = await fetch(`/api/topics/${topicId}`, { method: 'DELETE' })
+            if (res.ok || res.status === 204) {
+                setTopics(prev => prev.filter(t => t.id !== topicId))
+                toast.success('Тема удалена')
+            } else {
+                toast.error('Не удалось удалить тему')
+            }
+        } catch (error) {
+            console.error(error)
+            toast.error('Ошибка при удалении')
+        }
     }
 
     // Create a map of subjects for quick lookup
@@ -180,16 +199,24 @@ export default function TopicsPage() {
                                                 <div
                                                     key={topic.id}
                                                     className={cn(
-                                                        "flex items-center justify-between px-3 py-1.5 pl-9",
+                                                        "flex items-center justify-between px-3 py-1.5 pl-9 group",
                                                         idx !== subjectTopics.length - 1 && "border-b border-border/50"
                                                     )}
                                                 >
                                                     <span className="text-sm">{topic.name}</span>
-                                                    <Badge
-                                                        className={cn("text-[10px] h-4 px-1.5", getStatusColor(topic.status))}
-                                                    >
-                                                        {getStatusLabel(topic.status)}
-                                                    </Badge>
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge
+                                                            className={cn("text-[10px] h-4 px-1.5", getStatusColor(topic.status))}
+                                                        >
+                                                            {getStatusLabel(topic.status)}
+                                                        </Badge>
+                                                        <button
+                                                            onClick={(e) => handleDeleteTopic(topic.id, e)}
+                                                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-destructive/20 rounded"
+                                                        >
+                                                            <Trash2 className="h-3 w-3 text-destructive" />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

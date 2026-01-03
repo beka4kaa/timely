@@ -181,14 +181,25 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
         if (!confirm(`Удалить выбранные ${selectedTopics.size} тем(ы)?`)) return
 
         try {
-            const promises = Array.from(selectedTopics).map(id =>
-                fetch(`/api/topics/${id}`, { method: 'DELETE' })
+            const results = await Promise.all(
+                Array.from(selectedTopics).map(async id => {
+                    const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' })
+                    return { id, ok: res.ok || res.status === 204 }
+                })
             )
-            await Promise.all(promises)
+            
+            const deleted = results.filter(r => r.ok).map(r => r.id)
+            const failed = results.filter(r => !r.ok).length
 
-            setTopics(prev => prev.filter(t => !selectedTopics.has(t.id)))
+            setTopics(prev => prev.filter(t => !deleted.includes(t.id)))
             setSelectedTopics(new Set())
-            toast.success("Темы удалены")
+            
+            if (failed > 0) {
+                toast.error(`${failed} тем(ы) не удалось удалить`)
+            }
+            if (deleted.length > 0) {
+                toast.success(`${deleted.length} тем(ы) удалено`)
+            }
         } catch (error) {
             console.error(error)
             toast.error("Ошибка при удалении")
