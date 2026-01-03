@@ -147,7 +147,8 @@ export function formatDaysPast(lastRevisedAt: string | null): string {
     const diffMs = now.getTime() - last.getTime()
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-    if (diffDays === 0) return 'сегодня'
+    // Handle future dates (timezone issues) or same day
+    if (diffDays <= 0) return 'сегодня'
     if (diffDays === 1) return 'вчера'
     return `${diffDays} дн. назад`
 }
