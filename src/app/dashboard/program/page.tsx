@@ -587,21 +587,34 @@ export default function ProgramPage() {
 
     // Generate days for the selected week (7 days)
     const getWeekDays = () => {
-        if (!currentWeekPlan) return []
-        const startDate = new Date(currentWeekPlan.startDate)
+        // Fallback: if no weekPlan, use today as start
+        const startDate = currentWeekPlan
+            ? new Date(currentWeekPlan.startDate)
+            : new Date()
+
+        // If no weekPlan but we have topics, show ALL topics distributed across days
+        const topicsToShow = weekTopics.length > 0
+            ? weekTopics
+            : (program.topicPlans || [])
+
         const days = []
         const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-        for (let i = 0; i < 7; i++) {
+        // Calculate how many days we actually need based on topics
+        const daysNeeded = currentWeekPlan ? 7 : Math.min(7, Math.ceil(topicsToShow.length / 4) || 2)
+
+        for (let i = 0; i < daysNeeded; i++) {
             const date = new Date(startDate)
             date.setDate(startDate.getDate() + i)
 
-            // Distribute topics across days
-            const dayTopics = weekTopics.filter((_, idx) => idx % 7 === i)
+            // Distribute topics across days more evenly
+            const topicsPerDay = Math.ceil(topicsToShow.length / daysNeeded)
+            const startIdx = i * topicsPerDay
+            const dayTopics = topicsToShow.slice(startIdx, startIdx + topicsPerDay)
 
             days.push({
                 dayNumber: i + 1,
-                dayName: dayNames[i],
+                dayName: dayNames[i % 7],
                 date: date,
                 isToday: date.toDateString() === new Date().toDateString(),
                 topics: dayTopics
