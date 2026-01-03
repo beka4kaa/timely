@@ -13,23 +13,19 @@ interface Topic {
     name: string
     status: string
     picked: boolean
-    subject: {
-        id: string
-        name: string
-        emoji: string
-        color: string
-    }
+    subject: string  // This is just the subject ID
 }
 
 interface Subject {
     id: string
     name: string
     emoji: string
+    color?: string
 }
 
 interface GroupedTopics {
     [subjectId: string]: {
-        subject: Subject & { color: string }
+        subject: Subject
         topics: Topic[]
     }
 }
@@ -79,11 +75,20 @@ export default function TopicsPage() {
         })
     }
 
+    // Create a map of subjects for quick lookup
+    const subjectsMap = new Map(subjects.map(s => [s.id, s]))
+
+    // Group topics by subject
     const groupedTopics: GroupedTopics = topics.reduce((acc, topic) => {
-        const subjectId = topic.subject.id
+        const subjectId = typeof topic.subject === 'object' ? (topic.subject as any).id : topic.subject
+        if (!subjectId) return acc
+        
+        const subjectInfo = subjectsMap.get(subjectId)
+        if (!subjectInfo) return acc
+        
         if (!acc[subjectId]) {
             acc[subjectId] = {
-                subject: topic.subject,
+                subject: subjectInfo,
                 topics: [],
             }
         }
