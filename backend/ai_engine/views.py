@@ -63,10 +63,14 @@ class GenerateProgramView(APIView):
             subject_data.append(subject_info)
         
         try:
-            # Call AI Service with enriched context
+            # Call AI Service with enriched context (61-school style)
             ai_result = generate_learning_program_content(
                 goal, timeframe, hours_per_day, current_level, subject_data,
-                context={'totalWeeks': total_weeks, 'subjectDeadlines': subject_deadlines}
+                context={
+                    'totalWeeks': total_weeks, 
+                    'hoursPerWeek': hours_per_week,
+                    'subjectDeadlines': subject_deadlines
+                }
             )
             
             if not ai_result:
@@ -74,32 +78,52 @@ class GenerateProgramView(APIView):
 
             # Create Database Objects
             program = LearningProgram.objects.create(
-                name=program_name,
+                name=ai_result.get('programTitle', program_name),
                 total_weeks=ai_result.get('totalWeeks', total_weeks),
                 hours_per_week=hours_per_week,
                 description=ai_result.get('description', ''),
                 strategy=ai_result.get('strategy', '')
             )
 
-            # Create Week Plans
-            for wp in ai_result.get('weekPlans', []):
+            # Create Week Plans - handle both new 'weeks' array and legacy 'weekPlans'
+            week_plans_data = ai_result.get('weeks', ai_result.get('weekPlans', []))
+            for wp in week_plans_data:
+                week_num = wp.get('weekNumber', wp.get('weekIndex', 1))
                 WeekPlan.objects.create(
                     program=program,
-                    week_number=wp.get('weekNumber', 1),
-                    start_date=timezone.now() + timedelta(days=wp.get('startOffset', 0)),
-                    end_date=timezone.now() + timedelta(days=wp.get('endOffset', 7)),
+                    week_number=week_num,
+                    start_date=timezone.now() + timedelta(days=wp.get('startOffset', (week_num - 1) * 7)),
+                    end_date=timezone.now() + timedelta(days=wp.get('endOffset', week_num * 7)),
                     subject_hours=str(wp.get('subjectHours', {})),
                     focus=wp.get('focus', ''),
                     notes=wp.get('notes', '')
                 )
 
-            # Create Topic Plans
-            for tp in ai_result.get('topicPlans', []):
+            # Create Topic Plans - handle both direct topicPlans and targets within weeks
+            topic_plans_data = ai_result.get('topicPlans', [])
+            
+            # Also extract topic plans from weeks.targets if present
+            for week in ai_result.get('weeks', []):
+                for target in week.get('targets', []):
+                    if target.get('type') in ['THEORY', 'PRACTICE', 'REVIEW']:
+                        topic_plans_data.append({
+                            'topicName': target.get('topicName', target.get('topic', '')),
+                            'subjectName': target.get('subjectName', target.get('subject', '')),
+                            'plannedWeek': target.get('plannedWeek', week.get('weekNumber', week.get('weekIndex', 1))),
+                            'estimatedHours': target.get('estimatedHours', target.get('durationMin', 45) / 60),
+                            'priority': target.get('priority', 1),
+                            'type': target.get('type')
+                        })
+            
+            # Deduplicate topic plans by topicName
+            seen_topics = set()
+            for tp in topic_plans_data:
                 topic_name = tp.get('topicName', tp.get('topic_name', ''))
                 subject_name = tp.get('subjectName', tp.get('subject_name', ''))
                 
-                if not topic_name:
+                if not topic_name or topic_name in seen_topics:
                     continue
+                seen_topics.add(topic_name)
                     
                 # Try to find topic by name within selected subjects
                 topic = Topic.objects.filter(name__icontains=topic_name).first()
@@ -110,13 +134,24 @@ class GenerateProgramView(APIView):
                         topic = Topic.objects.create(subject=subject, name=topic_name)
                 
                 if topic:
+                    # Parse deadline from AI response if provided, else calculate from week
+                    deadline_str = tp.get('deadline')
+                    if deadline_str and deadline_str != 'YYYY-MM-DD':
+                        try:
+                            from datetime import datetime as dt
+                            deadline = dt.fromisoformat(deadline_str.replace('Z', '+00:00'))
+                        except:
+                            deadline = timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
+                    else:
+                        deadline = timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
+                    
                     TopicPlan.objects.create(
                         program=program,
                         topic=topic,
                         planned_week=tp.get('plannedWeek', tp.get('planned_week', 1)),
                         estimated_hours=tp.get('estimatedHours', tp.get('estimated_hours', 2)),
                         priority=tp.get('priority', 1),
-                        deadline=timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
+                        deadline=deadline
                     )
 
             return Response(LearningProgramSerializer(program).data, status=status.HTTP_201_CREATED)
