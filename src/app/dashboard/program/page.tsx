@@ -776,7 +776,7 @@ export default function ProgramPage() {
                 {/* Sidebar - Tests and hours */}
                 <div className="space-y-4">
                     {/* Subject hours */}
-                    {currentWeekPlan && (
+                    {currentWeekPlan && currentWeekPlan.subjectHours && (
                         <Card>
                             <CardHeader className="pb-2">
                                 <CardTitle className="text-lg flex items-center gap-2">
@@ -786,19 +786,28 @@ export default function ProgramPage() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-2">
-                                    {Object.entries(JSON.parse(currentWeekPlan.subjectHours) as Record<string, number>).map(([subjectId, hours]) => {
-                                        const topic = program.topicPlans?.find(tp => tp.topic?.subject?.id === subjectId)
-                                        const subject = topic?.topic?.subject
-                                        return (
-                                            <div key={subjectId} className="flex items-center justify-between">
-                                                <span className="flex items-center gap-2">
-                                                    <span>{subject?.emoji || '📚'}</span>
-                                                    <span className="text-sm">{subject?.name || 'Предмет'}</span>
-                                                </span>
-                                                <Badge variant="secondary">{hours}ч</Badge>
-                                            </div>
-                                        )
-                                    })}
+                                    {(() => {
+                                        try {
+                                            const subjectHours = typeof currentWeekPlan.subjectHours === 'string' 
+                                                ? JSON.parse(currentWeekPlan.subjectHours) 
+                                                : currentWeekPlan.subjectHours || {}
+                                            return Object.entries(subjectHours as Record<string, number>).map(([subjectId, hours]) => {
+                                                const topic = program.topicPlans?.find(tp => tp.topic?.subject?.id === subjectId)
+                                                const subject = topic?.topic?.subject
+                                                return (
+                                                    <div key={subjectId} className="flex items-center justify-between">
+                                                        <span className="flex items-center gap-2">
+                                                            <span>{subject?.emoji || '📚'}</span>
+                                                            <span className="text-sm">{subject?.name || 'Предмет'}</span>
+                                                        </span>
+                                                        <Badge variant="secondary">{hours}ч</Badge>
+                                                    </div>
+                                                )
+                                            })
+                                        } catch {
+                                            return null
+                                        }
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>
