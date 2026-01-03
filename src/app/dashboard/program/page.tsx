@@ -623,20 +623,6 @@ export default function ProgramPage() {
                 </div>
             </div>
 
-            {/* Strategy */}
-            {program.strategy && (
-                <Card className="mb-6">
-                    <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                            <Sparkles className="h-5 w-5 mt-0.5" />
-                            <div>
-                                <p className="font-medium mb-1">Стратегия</p>
-                                <p className="text-sm text-muted-foreground">{program.strategy}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
 
             {/* Week selector */}
             <div className="mb-6">
@@ -788,8 +774,8 @@ export default function ProgramPage() {
                                 <div className="space-y-2">
                                     {(() => {
                                         try {
-                                            const subjectHours = typeof currentWeekPlan.subjectHours === 'string' 
-                                                ? JSON.parse(currentWeekPlan.subjectHours) 
+                                            const subjectHours = typeof currentWeekPlan.subjectHours === 'string'
+                                                ? JSON.parse(currentWeekPlan.subjectHours)
                                                 : currentWeekPlan.subjectHours || {}
                                             return Object.entries(subjectHours as Record<string, number>).map(([subjectId, hours]) => {
                                                 const topic = program.topicPlans?.find(tp => tp.topic?.subject?.id === subjectId)
