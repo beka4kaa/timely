@@ -108,7 +108,7 @@ class TopicViewSet(viewsets.ModelViewSet):
         if rating == 'AGAIN':
             interval = 0
             ease_factor = max(1.3, ease_factor - 0.2)
-            topic.status = 'LEARNING'
+            topic.status = 'MEDIUM'  # Знаю немного (оранжевый)
         elif rating == 'HARD':
             interval = 1
             ease_factor = max(1.3, ease_factor - 0.15)
