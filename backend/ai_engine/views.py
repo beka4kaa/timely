@@ -43,10 +43,17 @@ class GenerateProgramView(APIView):
         
         subject_data = []
         for s in subjects:
+            # Sort topics by order_index - this represents difficulty progression (easier to harder)
+            sorted_topics = s.topics.all().order_by('order_index', 'created_at')[:20]
             subject_info = {
                 'name': s.name, 
                 'id': str(s.id),
-                'topics': [{'name': t.name, 'status': t.status, 'id': str(t.id)} for t in s.topics.all()[:20]]  # Limit topics to avoid token overflow
+                'topics': [{
+                    'name': t.name, 
+                    'status': t.status, 
+                    'id': str(t.id),
+                    'order': t.order_index  # Include order for AI context
+                } for t in sorted_topics]
             }
             # Find deadline for this subject
             for sd in subject_deadlines:

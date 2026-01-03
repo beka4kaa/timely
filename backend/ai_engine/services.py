@@ -14,6 +14,13 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
 
     model = genai.GenerativeModel('gemini-2.0-flash')
 
+    # Build subjects info with topic order details
+    subjects_info = []
+    for s in subjects:
+        topics_list = s.get('topics', [])
+        topic_names = [f"{i+1}. {t['name']} (status: {t['status']})" for i, t in enumerate(topics_list)]
+        subjects_info.append(f"{s['name']}: {', '.join(topic_names)}")
+    
     prompt = f"""
     You are an expert strict AI Tutor. Create a detailed learning program.
     
@@ -21,13 +28,16 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     TIMEFRAME: {timeframe}
     HOURS/DAY: {hours_per_day}
     LEVEL: {current_level}
-    SUBJECTS: {', '.join([s['name'] for s in subjects])}
+    SUBJECTS WITH TOPICS (ordered by difficulty, from easier to harder):
+    {chr(10).join(subjects_info)}
     CONTEXT: {json.dumps(context or {})}
 
     CRITICAL RULES:
     1. STRICTLY follow deadlines.
     2. Mastered topics = shorter time.
     3. New topics = 2-4 hours.
+    4. RESPECT TOPIC ORDER - topics are ordered from easier to harder, schedule earlier topics before later ones.
+    5. Do not skip foundational topics - they build upon each other.
     
     RESPONSE FORMAT (JSON ONLY, NO MARKDOWN):
     {{
