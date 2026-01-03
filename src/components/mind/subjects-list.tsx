@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Subject } from '@/types/mind'
 import { AddSubjectDialog } from './add-subject-dialog'
+import { toast } from 'sonner'
 import { AddTopicDialog } from './add-topic-dialog'
 import { FastTopicAddDialog } from './fast-topic-add'
 
@@ -64,18 +65,25 @@ export function SubjectsList({ className }: SubjectsListProps) {
         if (!confirm('Удалить эту тему?')) return
 
         try {
-            await fetch(`/api/topics/${topicId}`, { method: 'DELETE' })
-            setSubjects(subjects.map(s => {
-                if (s.id === subjectId) {
-                    return {
-                        ...s,
-                        topics: s.topics?.filter(t => t.id !== topicId)
+            const res = await fetch(`/api/topics/${topicId}`, { method: 'DELETE' })
+            if (res.ok || res.status === 204) {
+                setSubjects(subjects.map(s => {
+                    if (s.id === subjectId) {
+                        return {
+                            ...s,
+                            topics: s.topics?.filter(t => t.id !== topicId)
+                        }
                     }
-                }
-                return s
-            }))
+                    return s
+                }))
+                toast.success('Тема удалена')
+            } else {
+                const data = await res.json().catch(() => ({}))
+                toast.error(data.error || 'Не удалось удалить тему')
+            }
         } catch (error) {
             console.error('Error deleting topic:', error)
+            toast.error('Ошибка при удалении темы')
         }
     }
 
