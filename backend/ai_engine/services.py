@@ -97,36 +97,66 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     for idx, s in enumerate(subjects_structured, 1):
         topics_str = ", ".join([f"{t['index']}.{t['name']}({t['status']})" for t in s['topics']])
         deadline_info = f"{s['daysUntilDeadline']} days" if s['daysUntilDeadline'] else "No deadline"
+        # Show topic status: ✓=MASTERED, ~=IN_PROGRESS, ○=NOT_STARTED
+        topics_str = ", ".join([
+            f"{t['index']}.{t['name']}({'✓' if t['status'] in ['MASTERED', 'SUCCESS'] else '~' if t['status'] == 'MEDIUM' else '○'})"
+            for t in s['topics']
+        ])
         subjects_text += f"""
 SUBJECT {idx}: {s['name']}
-  Deadline: {s['deadline'] or 'None'} ({deadline_info} remaining)
-  Topics to learn (in order): [{topics_str}]
-  Total topics: {s['totalTopicsInScope']}
+  DEADLINE: {s['deadline'] or 'None'} ({deadline_info} remaining) - URGENT!
+  TOPICS (✓=mastered, ~=in progress, ○=not started):
+  [{topics_str}]
+  TOTAL: {s['totalTopicsInScope']} topics MUST be covered before deadline
 """
     
+    # Calculate total topics count for validation
+    total_topics = sum(s['totalTopicsInScope'] for s in subjects_structured)
+    
+    # DEBUG: Print what we're sending to AI
+    print("=" * 60)
+    print("DEBUG: AI INPUT DATA")
+    print("=" * 60)
+    for s in subjects_structured:
+        print(f"Subject: {s['name']}")
+        print(f"  Deadline: {s['deadline']} ({s['daysUntilDeadline']} days)")
+        print(f"  Topics count: {len(s['topics'])}")
+        for t in s['topics']:
+            print(f"    {t['index']}. {t['name']} ({t['status']})")
+    print(f"Total topics to learn: {total_topics}")
+    print(f"Total days available: {total_days}")
+    print("=" * 60)
+    
     # ALWAYS daily planning with weekly summaries
-    prompt = f"""You are a 61-school-style study program generator. Create a COMPLETE DAY-BY-DAY study schedule.
+    prompt = f"""You are a HARDCORE 61-school-style study program generator. 
+This student is BEHIND SCHEDULE and needs to cover A LOT of material in a SHORT time.
+DO NOT be gentle. DO NOT skip topics. Create an INTENSIVE day-by-day schedule.
 
 CURRENT DATE: {current_date_str}
 
 TIME BUDGET:
 - Total days to plan: {total_days}
 - Hours per day available: {hours_per_day_available:.1f}
-- Sessions per day: {sessions_per_day_max}
+- Sessions per day: {sessions_per_day_max} (can go UP TO 6 if needed!)
 - Session duration: {session_minutes} min
-- Study days per week: {days_per_week}
+- Study days per week: {days_per_week} (add day 7 if needed!)
 
 SUBJECTS TO STUDY:
 {subjects_text}
 
-CRITICAL REQUIREMENTS:
-1. Generate a SPECIFIC schedule for EVERY SINGLE DAY
-2. Each day must list EXACT sessions (subject, topic, type, duration)
-3. User should NOT need to think - just follow the daily plan
-4. Include ALL topics from each subject in strict order (1, 2, 3...)
-5. For each topic: schedule THEORY day, then PRACTICE day, then REVIEW day
-6. Weekly summary shows what topics are covered that week
-7. Schedule tests: mini-quiz every 3-4 days, weekly test on day 6-7
+⚠️ CRITICAL - DO NOT SKIP ANY TOPIC! ⚠️
+- You MUST include ALL {total_topics} topics listed above
+- Topics marked ✓ (mastered) only need quick REVIEW
+- Topics marked ○ (not started) need THEORY + PRACTICE
+- Topics marked ~ (in progress) need PRACTICE + REVIEW
+
+HARDCORE REQUIREMENTS:
+1. Generate sessions for EVERY topic - no exceptions!
+2. Pack multiple sessions per day - student can handle it
+3. Cover 3-4 topics per day if deadline is tight
+4. If deadline is < 7 days, use INTENSIVE mode (5-6 sessions/day)
+5. Include ALL topics in topicPlans array
+6. Student does NOT want mercy - give them the FULL workload
 
 OUTPUT FORMAT (JSON only, no markdown):
 {{
