@@ -56,16 +56,21 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
         days_until_deadline = None
         if deadline:
             try:
+                print(f"DEBUG: Raw deadline for {s.get('name', 'unknown')}: {deadline}")
                 if 'T' in str(deadline):
                     deadline_date = datetime.fromisoformat(str(deadline).replace('Z', '+00:00'))
                 else:
                     deadline_date = datetime.strptime(str(deadline)[:10], '%Y-%m-%d')
                 days_until_deadline = (deadline_date.replace(tzinfo=None) - current_date.replace(tzinfo=None)).days
+                print(f"DEBUG: Days until deadline: {days_until_deadline} (deadline={deadline_date}, now={current_date})")
                 days_until_deadline = max(1, days_until_deadline)  # At least 1 day
                 min_days_until_deadline = min(min_days_until_deadline, days_until_deadline)
+                print(f"DEBUG: min_days_until_deadline now: {min_days_until_deadline}")
             except Exception as e:
                 print(f"Error parsing deadline {deadline}: {e}")
                 days_until_deadline = 30
+        else:
+            print(f"DEBUG: No deadline for {s.get('name', 'unknown')}")
         
         # CRITICAL: Only pass topics 1..K (in-scope topics) to AI
         in_scope_topics = topics_list[:end_topic_index]
