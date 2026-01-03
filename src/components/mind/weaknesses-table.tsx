@@ -381,6 +381,11 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
         return acc
     }, {} as Record<string, { subject: Subject | undefined; topics: Topic[] }>)
 
+    // Sort topics within each group by orderIndex to match Program page order
+    Object.values(groupedTopics).forEach(group => {
+        group.topics.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    })
+
     // Handle review (Good/Bad)
     const handleReview = async (topicId: string, rating: 'GOOD' | 'AGAIN') => {
         try {

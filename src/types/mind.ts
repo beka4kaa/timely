@@ -32,6 +32,7 @@ export interface Topic {
     nextReviewAt: string | null
     intervalDays: number | null
     easeFactor: number
+    orderIndex?: number         // Order within subject for sorting
     reviewLogs?: ReviewLog[]
     createdAt: string
     updatedAt: string
