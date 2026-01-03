@@ -584,15 +584,37 @@ export default function ProgramPage() {
     const currentWeek = getCurrentWeek()
     const currentWeekPlan = program.weekPlans?.find(w => w.weekNumber === selectedWeek)
     const weekTopics = program.topicPlans?.filter(tp => tp.plannedWeek === selectedWeek) || []
-    const weekTests = program.scheduledTests?.filter(t => {
-        const testDate = new Date(t.scheduledDate)
-        const weekStart = new Date(currentWeekPlan?.startDate || '')
-        const weekEnd = new Date(currentWeekPlan?.endDate || '')
-        return testDate >= weekStart && testDate <= weekEnd
-    }) || []
+
+    // Generate days for the selected week (7 days)
+    const getWeekDays = () => {
+        if (!currentWeekPlan) return []
+        const startDate = new Date(currentWeekPlan.startDate)
+        const days = []
+        const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(startDate)
+            date.setDate(startDate.getDate() + i)
+
+            // Distribute topics across days
+            const dayTopics = weekTopics.filter((_, idx) => idx % 7 === i)
+
+            days.push({
+                dayNumber: i + 1,
+                dayName: dayNames[i],
+                date: date,
+                isToday: date.toDateString() === new Date().toDateString(),
+                topics: dayTopics
+            })
+        }
+        return days
+    }
+
+    const weekDays = getWeekDays()
 
     return (
         <div className="container max-w-6xl mx-auto py-6 px-4">
+            {/* Header */}
             <div className="mb-6 flex items-start justify-between">
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -604,25 +626,14 @@ export default function ProgramPage() {
                     </p>
                 </div>
                 <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={rebalanceProgram}
-                        disabled={rebalancing}
-                    >
-                        {rebalancing ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                        )}
+                    <Button variant="outline" onClick={rebalanceProgram} disabled={rebalancing}>
+                        {rebalancing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                         Ребалансировать
                     </Button>
                     <ProgramChatDialog programId={program.id} onProgramUpdated={loadProgram} />
-                    <Button variant="outline" onClick={() => setProgram(null)}>
-                        Пересоздать
-                    </Button>
+                    <Button variant="outline" onClick={() => setProgram(null)}>Пересоздать</Button>
                 </div>
             </div>
-
 
             {/* Week selector */}
             <div className="mb-6">
@@ -632,210 +643,150 @@ export default function ProgramPage() {
                             key={wp.weekNumber}
                             variant={selectedWeek === wp.weekNumber ? "default" : "outline"}
                             size="sm"
-                            className={cn(
-                                "shrink-0",
-                                wp.weekNumber === currentWeek && "ring-2 ring-purple-500"
-                            )}
+                            className={cn("shrink-0", wp.weekNumber === currentWeek && "ring-2 ring-purple-500")}
                             onClick={() => setSelectedWeek(wp.weekNumber)}
                         >
                             Неделя {wp.weekNumber}
-                            {wp.weekNumber === currentWeek && (
-                                <Badge className="ml-1 bg-purple-500">Сейчас</Badge>
-                            )}
+                            {wp.weekNumber === currentWeek && <Badge className="ml-1 bg-purple-500">Сейчас</Badge>}
                         </Button>
                     ))}
                 </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-                {/* Week details */}
-                <div className="lg:col-span-2 space-y-4">
-                    {/* Week info */}
-                    {currentWeekPlan && (
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-lg flex items-center gap-2">
+            {/* Week Summary Card */}
+            {currentWeekPlan && (
+                <Card className="mb-6 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20">
+                    <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-semibold flex items-center gap-2">
                                     <Calendar className="h-5 w-5" />
                                     Неделя {selectedWeek}
-                                </CardTitle>
-                                <CardDescription>
+                                </h2>
+                                <p className="text-sm text-muted-foreground">
                                     {formatDate(currentWeekPlan.startDate)} — {formatDate(currentWeekPlan.endDate)}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {currentWeekPlan.focus && (
-                                    <div className="p-3 rounded-lg bg-muted/50 mb-3">
-                                        <p className="font-medium text-sm">🎯 Фокус: {currentWeekPlan.focus}</p>
-                                    </div>
-                                )}
-                                {currentWeekPlan.notes && (
-                                    <p className="text-sm text-muted-foreground">{currentWeekPlan.notes}</p>
-                                )}
-                            </CardContent>
-                        </Card>
-                    )}
+                                </p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-2xl font-bold">{weekTopics.length}</p>
+                                <p className="text-xs text-muted-foreground">тем</p>
+                            </div>
+                        </div>
+                        {currentWeekPlan.focus && (
+                            <div className="mt-3 p-3 rounded-lg bg-background/50">
+                                <p className="text-sm">🎯 <span className="font-medium">Фокус:</span> {currentWeekPlan.focus}</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
 
-                    {/* Topics for this week */}
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                <BookOpen className="h-5 w-5" />
-                                Темы на эту неделю
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {weekTopics.length === 0 ? (
-                                <p className="text-muted-foreground text-sm">Нет тем на эту неделю</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {weekTopics.map(tp => (
-                                        <div
-                                            key={tp.id}
-                                            className="flex items-center justify-between p-3 rounded-lg border"
-                                            style={{ borderLeftColor: tp.topic?.subject?.color || '#8b5cf6', borderLeftWidth: 3 }}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <span>{tp.topic?.subject?.emoji || '📚'}</span>
-                                                <div>
-                                                    <p className="font-medium">{tp.topic?.name || 'Тема'}</p>
-                                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                        <span>{tp.topic?.subject?.name || 'Предмет'}</span>
-                                                        <span>•</span>
-                                                        <span>~{tp.estimatedHours}ч</span>
-                                                        {tp.deadline && (
-                                                            <>
-                                                                <span>•</span>
-                                                                <span className="flex items-center gap-1">
-                                                                    <AlertTriangle className="h-3 w-3 text-amber-500" />
-                                                                    До {formatDate(tp.deadline)}
-                                                                </span>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {/* Week selector */}
-                                                <select
-                                                    value={tp.plannedWeek}
-                                                    onChange={(e) => updateTopicPlan(tp.id, { plannedWeek: parseInt(e.target.value) })}
-                                                    className="text-xs bg-muted rounded px-2 py-1 border"
-                                                >
-                                                    {(program.weekPlans || []).map(w => (
-                                                        <option key={w.weekNumber} value={w.weekNumber}>
-                                                            Неделя {w.weekNumber}
-                                                        </option>
-                                                    ))}
-                                                </select>
+            {/* Daily Schedule */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <BookOpen className="h-5 w-5" />
+                    Расписание по дням
+                </h3>
 
-                                                {/* Deadline input */}
-                                                <DatePicker
-                                                    date={tp.deadline ? new Date(tp.deadline) : undefined}
-                                                    onDateChange={(date) => updateTopicPlan(tp.id, {
-                                                        deadline: date ? date.toISOString() : null
-                                                    })}
-                                                    placeholder="Дедлайн"
-                                                    className="text-xs"
-                                                />
-
-                                                {tp.status === 'COMPLETED' ? (
-                                                    <Badge className="bg-emerald-500/20 text-emerald-400">
-                                                        <CheckCircle className="h-3 w-3 mr-1" />
-                                                        Готово
-                                                    </Badge>
-                                                ) : tp.manuallyMoved ? (
-                                                    <Badge variant="secondary">📌 Закреплено</Badge>
-                                                ) : (
-                                                    <Badge variant="outline">
-                                                        Приоритет {tp.priority}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                <div className="grid gap-3">
+                    {weekDays.map((day) => (
+                        <Card
+                            key={day.dayNumber}
+                            className={cn(
+                                "overflow-hidden transition-all",
+                                day.isToday && "ring-2 ring-purple-500 bg-purple-500/5"
                             )}
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Sidebar - Tests and hours */}
-                <div className="space-y-4">
-                    {/* Subject hours */}
-                    {currentWeekPlan && currentWeekPlan.subjectHours && (
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                    <Clock className="h-5 w-5" />
-                                    Часы по предметам
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-2">
-                                    {(() => {
-                                        try {
-                                            const subjectHours = typeof currentWeekPlan.subjectHours === 'string'
-                                                ? JSON.parse(currentWeekPlan.subjectHours)
-                                                : currentWeekPlan.subjectHours || {}
-                                            return Object.entries(subjectHours as Record<string, number>).map(([subjectId, hours]) => {
-                                                const topic = program.topicPlans?.find(tp => tp.topic?.subject?.id === subjectId)
-                                                const subject = topic?.topic?.subject
-                                                return (
-                                                    <div key={subjectId} className="flex items-center justify-between">
-                                                        <span className="flex items-center gap-2">
-                                                            <span>{subject?.emoji || '📚'}</span>
-                                                            <span className="text-sm">{subject?.name || 'Предмет'}</span>
-                                                        </span>
-                                                        <Badge variant="secondary">{hours}ч</Badge>
-                                                    </div>
-                                                )
-                                            })
-                                        } catch {
-                                            return null
-                                        }
-                                    })()}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Upcoming tests */}
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                <FileText className="h-5 w-5" />
-                                Тесты
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {(program.scheduledTests?.length || 0) === 0 ? (
-                                <p className="text-muted-foreground text-sm">Нет запланированных тестов</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {(program.scheduledTests || []).slice(0, 5).map(test => (
-                                        <div
-                                            key={test.id}
-                                            className={cn(
-                                                "p-2 rounded-lg border",
-                                                weekTests.some(t => t.id === test.id) && "bg-amber-500/10 border-amber-500/30"
-                                            )}
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <span>{test.subject.emoji}</span>
-                                                <span className="text-sm font-medium">{test.title}</span>
-                                            </div>
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                {formatDate(test.scheduledDate)}
-                                                {test.scheduledTime && ` в ${test.scheduledTime}`}
+                        >
+                            <CardContent className="p-0">
+                                {/* Day Header */}
+                                <div className={cn(
+                                    "flex items-center justify-between p-3 border-b",
+                                    day.isToday ? "bg-purple-500/10" : "bg-muted/30"
+                                )}>
+                                    <div className="flex items-center gap-3">
+                                        <div className={cn(
+                                            "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-sm font-medium",
+                                            day.isToday ? "bg-purple-500 text-white" : "bg-muted"
+                                        )}>
+                                            <span className="text-xs opacity-80">{day.dayName}</span>
+                                            <span>{day.date.getDate()}</span>
+                                        </div>
+                                        <div>
+                                            <p className="font-medium">
+                                                {day.isToday && <span className="text-purple-400">Сегодня • </span>}
+                                                {day.date.toLocaleDateString('ru-RU', { month: 'long', day: 'numeric' })}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {day.topics.length > 0
+                                                    ? `${day.topics.length} занятий`
+                                                    : '🧘 Выходной'
+                                                }
                                             </p>
                                         </div>
-                                    ))}
+                                    </div>
+                                    {day.isToday && <Badge className="bg-purple-500">Сегодня</Badge>}
                                 </div>
-                            )}
-                        </CardContent>
-                    </Card>
+
+                                {/* Sessions */}
+                                {day.topics.length > 0 && (
+                                    <div className="p-3 space-y-2">
+                                        {day.topics.map((tp, idx) => (
+                                            <div
+                                                key={tp.id}
+                                                className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50"
+                                                style={{ borderLeftWidth: 3, borderLeftColor: tp.topic?.subject?.color || '#8b5cf6' }}
+                                            >
+                                                <div className="text-center min-w-[45px]">
+                                                    <p className="text-sm font-medium">{String(9 + idx).padStart(2, '0')}:00</p>
+                                                    <p className="text-xs text-muted-foreground">{tp.estimatedHours}ч</p>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span>{tp.topic?.subject?.emoji || '📚'}</span>
+                                                        <span className="font-medium">{tp.topic?.name || 'Тема'}</span>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">{tp.topic?.subject?.name}</p>
+                                                </div>
+                                                <Badge variant={tp.status === 'COMPLETED' ? 'default' : 'outline'}>
+                                                    {tp.status === 'COMPLETED' ? '✓ Готово' : `#${tp.priority}`}
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    ))}
                 </div>
             </div>
+
+            {/* Tests Section */}
+            {(program.scheduledTests?.length || 0) > 0 && (
+                <Card className="mt-6">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            Тесты
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-2">
+                            {program.scheduledTests?.slice(0, 5).map(test => (
+                                <div key={test.id} className="p-3 rounded-lg border bg-muted/30">
+                                    <div className="flex items-center gap-2">
+                                        <span>{test.subject?.emoji || '📝'}</span>
+                                        <span className="font-medium">{test.title}</span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {formatDate(test.scheduledDate)}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     )
 }
+
