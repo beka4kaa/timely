@@ -11,6 +11,7 @@ export interface Subject {
     color: string
     targetHoursWeek: number
     textbookUrl: string | null
+    orderIndex?: number          // For subject ordering
     topics: Topic[]
     createdAt: string
     updatedAt: string

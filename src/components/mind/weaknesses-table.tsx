@@ -306,6 +306,140 @@ function SortableRow({
     )
 }
 
+// Sortable Subject Section Component
+interface SortableSubjectSectionProps {
+    subjectId: string
+    subject: Subject | undefined
+    subjectTopics: Topic[]
+    sensors: ReturnType<typeof useSensors>
+    selectedTopics: Set<string>
+    expandedTopics: Set<string>
+    topicSubtopics: Record<string, any[]>
+    onDragStart: (event: DragStartEvent) => void
+    onDragEnd: (event: DragEndEvent, subjectId: string, subjectTopics: Topic[]) => void
+    toggleSelectAll: (topics: Topic[]) => void
+    toggleSelect: (id: string | number) => void
+    toggleExpanded: (id: string) => void
+    togglePicked: (topic: Topic) => void
+    handleReview: (id: string, rating: 'GOOD' | 'AGAIN') => void
+    toggleArchived: (topic: Topic) => void
+    updateStatus: (id: string, status: string) => void
+    handleOpenAddSubtopic: (id: string, name: string) => void
+    handleOpenAISubtopics: (id: string, name: string) => void
+    refreshSubtopics: (id: string) => void
+}
+
+function SortableSubjectSection({
+    subjectId,
+    subject,
+    subjectTopics,
+    sensors,
+    selectedTopics,
+    expandedTopics,
+    topicSubtopics,
+    onDragStart,
+    onDragEnd,
+    toggleSelectAll,
+    toggleSelect,
+    toggleExpanded,
+    togglePicked,
+    handleReview,
+    toggleArchived,
+    updateStatus,
+    handleOpenAddSubtopic,
+    handleOpenAISubtopics,
+    refreshSubtopics,
+}: SortableSubjectSectionProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: subjectId })
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 1000 : undefined,
+    }
+
+    return (
+        <div ref={setNodeRef} style={style} className="space-y-2">
+            <div className="flex items-center gap-2 px-2">
+                <div
+                    {...attributes}
+                    {...listeners}
+                    className="cursor-grab active:cursor-grabbing touch-none"
+                >
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <span className="text-lg">{subject?.emoji || '📚'}</span>
+                <h3 className="font-semibold truncate">{subject?.name || 'Без предмета'}</h3>
+                <Badge variant="secondary" className="ml-auto flex-shrink-0">
+                    {subjectTopics.length}
+                </Badge>
+            </div>
+
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={onDragStart}
+                onDragEnd={(event) => onDragEnd(event, subjectId, subjectTopics)}
+            >
+                <div className="rounded-lg border overflow-x-auto">
+                    <table className="w-full text-sm min-w-[700px]">
+                        <thead className="bg-muted/50">
+                            <tr>
+                                <th className="w-[40px] p-2 md:p-3"></th>
+                                <th className="w-[30px] p-2 md:p-3">
+                                    <Checkbox
+                                        checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
+                                        onCheckedChange={() => toggleSelectAll(subjectTopics)}
+                                    />
+                                </th>
+                                <th className="text-left p-2 md:p-3 font-medium">Тема</th>
+                                <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap">Статус</th>
+                                <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden sm:table-cell">Интервал</th>
+                                <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden md:table-cell">Прошло</th>
+                                <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden lg:table-cell">След. повтор</th>
+                                <th className="text-right p-2 md:p-3 font-medium">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <SortableContext
+                                items={subjectTopics.map(t => String(t.id))}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {subjectTopics.map((topic) => (
+                                    <SortableRow
+                                        key={topic.id}
+                                        topic={topic}
+                                        isExpanded={expandedTopics.has(topic.id)}
+                                        subtopics={topicSubtopics[topic.id] || []}
+                                        isSelected={selectedTopics.has(String(topic.id))}
+                                        onToggleSelect={toggleSelect}
+                                        onToggleExpand={toggleExpanded}
+                                        onTogglePicked={togglePicked}
+                                        onReview={handleReview}
+                                        onToggleArchived={toggleArchived}
+                                        onUpdateStatus={updateStatus}
+                                        onOpenAddSubtopic={handleOpenAddSubtopic}
+                                        onOpenAISubtopics={handleOpenAISubtopics}
+                                        onRefreshSubtopics={refreshSubtopics}
+                                    />
+                                ))}
+                            </SortableContext>
+                        </tbody>
+                    </table>
+                </div>
+            </DndContext>
+        </div>
+    )
+}
+
 export function WeaknessesTable({ className, hideAddButton = false }: WeaknessesTableProps) {
     const [topics, setTopics] = useState<Topic[]>([])
     const [subjects, setSubjects] = useState<Subject[]>([])
@@ -385,6 +519,16 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     Object.values(groupedTopics).forEach(group => {
         group.topics.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
     })
+
+    // Sort subjects by their orderIndex (from subjects state)
+    const sortedSubjectEntries = useMemo(() => {
+        const entries = Object.entries(groupedTopics)
+        return entries.sort(([idA], [idB]) => {
+            const subjectA = subjects.find(s => s.id === idA)
+            const subjectB = subjects.find(s => s.id === idB)
+            return (subjectA?.orderIndex ?? 999) - (subjectB?.orderIndex ?? 999)
+        })
+    }, [groupedTopics, subjects])
 
     // Handle review (Good/Bad)
     const handleReview = async (topicId: string, rating: 'GOOD' | 'AGAIN') => {
@@ -617,18 +761,21 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
             }
         }
 
-        // Update local state
+        // Update orderIndex locally to prevent re-sorting to old positions
+        const updatedTopics = newSubjectTopics.map((t, idx) => ({ ...t, orderIndex: idx }))
+
+        // Update local state - preserve other subjects' order
         setTopics(prev => {
             const otherTopics = prev.filter(t => {
                 const tSubjectId = typeof t.subject === 'string' ? t.subject : (t.subject?.id || 'no-subject')
                 return tSubjectId !== subjectId
             })
-            return [...otherTopics, ...newSubjectTopics]
+            return [...otherTopics, ...updatedTopics]
         })
 
         // Save to backend
         try {
-            const newIds = newSubjectTopics.map(t => t.id)
+            const newIds = updatedTopics.map(t => t.id)
             await fetch('/api/topics/reorder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -638,6 +785,50 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
             console.error('Error reordering topics:', error)
             toast.error('Ошибка сохранения порядка')
             fetchData() // Reload on error
+        }
+    }
+
+    // Handle subject drag and drop
+    const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null)
+    
+    const handleSubjectDragStart = (event: DragStartEvent) => {
+        setActiveSubjectId(String(event.active.id))
+    }
+
+    const handleSubjectDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event
+        setActiveSubjectId(null)
+
+        if (!over || active.id === over.id) return
+
+        const oldIndex = sortedSubjectEntries.findIndex(([id]) => id === active.id)
+        const newIndex = sortedSubjectEntries.findIndex(([id]) => id === over.id)
+
+        if (oldIndex === -1 || newIndex === -1) return
+
+        // Get new order of subject IDs
+        const subjectIds = sortedSubjectEntries.map(([id]) => id)
+        const newSubjectIds = arrayMove(subjectIds, oldIndex, newIndex)
+
+        // Update subjects orderIndex locally
+        setSubjects(prev => {
+            return prev.map(s => {
+                const newIdx = newSubjectIds.indexOf(s.id)
+                return newIdx !== -1 ? { ...s, orderIndex: newIdx } : s
+            })
+        })
+
+        // Save to backend
+        try {
+            await fetch('/api/subjects/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: newSubjectIds }),
+            })
+        } catch (error) {
+            console.error('Error reordering subjects:', error)
+            toast.error('Ошибка сохранения порядка предметов')
+            fetchData()
         }
     }
 
@@ -700,71 +891,45 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                 </Card>
             )}
 
-            {!loading && Object.entries(groupedTopics).map(([subjectId, { subject, topics: subjectTopics }]) => (
-                <div key={subjectId} className="space-y-2">
-                    <div className="flex items-center gap-2 px-2">
-                        <span className="text-lg">{subject?.emoji || '📚'}</span>
-                        <h3 className="font-semibold truncate">{subject?.name || 'Без предмета'}</h3>
-                        <Badge variant="secondary" className="ml-auto flex-shrink-0">
-                            {subjectTopics.length}
-                        </Badge>
-                    </div>
-
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragStart={handleDragStart}
-                        onDragEnd={(event) => handleDragEnd(event, subjectId, subjectTopics)}
+            {/* Subjects DnD Context */}
+            {!loading && sortedSubjectEntries.length > 0 && (
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleSubjectDragStart}
+                    onDragEnd={handleSubjectDragEnd}
+                >
+                    <SortableContext
+                        items={sortedSubjectEntries.map(([id]) => id)}
+                        strategy={verticalListSortingStrategy}
                     >
-                        <div className="rounded-lg border overflow-x-auto">
-                            <table className="w-full text-sm min-w-[700px]">
-                                <thead className="bg-muted/50">
-                                    <tr>
-                                        <th className="w-[40px] p-2 md:p-3"></th>
-                                        <th className="w-[30px] p-2 md:p-3">
-                                            <Checkbox
-                                                checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
-                                                onCheckedChange={() => toggleSelectAll(subjectTopics)}
-                                            />
-                                        </th>
-                                        <th className="text-left p-2 md:p-3 font-medium">Тема</th>
-                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap">Статус</th>
-                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden sm:table-cell">Интервал</th>
-                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden md:table-cell">Прошло</th>
-                                        <th className="text-left p-2 md:p-3 font-medium whitespace-nowrap hidden lg:table-cell">След. повтор</th>
-                                        <th className="text-right p-2 md:p-3 font-medium">Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <SortableContext
-                                        items={subjectTopics.map(t => String(t.id))}
-                                        strategy={verticalListSortingStrategy}
-                                    >
-                                        {subjectTopics.map((topic) => (
-                                            <SortableRow
-                                                key={topic.id}
-                                                topic={topic}
-                                                isExpanded={expandedTopics.has(topic.id)}
-                                                subtopics={topicSubtopics[topic.id] || []}
-                                                isSelected={selectedTopics.has(String(topic.id))}
-                                                onToggleSelect={toggleSelect}
-                                                onToggleExpand={toggleExpanded}
-                                                onTogglePicked={togglePicked}
-                                                onReview={handleReview}
-                                                onToggleArchived={toggleArchived}
-                                                onUpdateStatus={updateStatus}
-                                                onOpenAddSubtopic={handleOpenAddSubtopic}
-                                                onOpenAISubtopics={handleOpenAISubtopics}
-                                                onRefreshSubtopics={refreshSubtopics}
-                                            />
-                                        ))}
-                                    </SortableContext>
-                                </tbody>
-                            </table>
-                        </div>
-                    </DndContext>
-                </div>
-            ))}
+                        {sortedSubjectEntries.map(([subjectId, { subject, topics: subjectTopics }]) => (
+                            <SortableSubjectSection
+                                key={subjectId}
+                                subjectId={subjectId}
+                                subject={subject}
+                                subjectTopics={subjectTopics}
+                                sensors={sensors}
+                                selectedTopics={selectedTopics}
+                                expandedTopics={expandedTopics}
+                                topicSubtopics={topicSubtopics}
+                                onDragStart={handleDragStart}
+                                onDragEnd={handleDragEnd}
+                                toggleSelectAll={toggleSelectAll}
+                                toggleSelect={toggleSelect}
+                                toggleExpanded={toggleExpanded}
+                                togglePicked={togglePicked}
+                                handleReview={handleReview}
+                                toggleArchived={toggleArchived}
+                                updateStatus={updateStatus}
+                                handleOpenAddSubtopic={handleOpenAddSubtopic}
+                                handleOpenAISubtopics={handleOpenAISubtopics}
+                                refreshSubtopics={refreshSubtopics}
+                            />
+                        ))}
+                    </SortableContext>
+                </DndContext>
+            )}
 
             {/* Add Topic Dialog */}
             <AddTopicDialog

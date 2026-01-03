@@ -27,6 +27,25 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
+// Drag and Drop
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core'
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
 // Subject with topics for program creation
 interface SubjectWithTopics {
     id: string
@@ -115,6 +134,57 @@ interface LearningProgram {
 
 import { ProgramChatDialog } from '@/components/mind/program-chat-dialog'
 
+// Sortable Topic Item for drag-and-drop
+interface SortableTopicItemProps {
+    topic: { id: string; name: string; status: string; orderIndex: number }
+}
+
+function SortableTopicItem({ topic }: SortableTopicItemProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: topic.id })
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 1000 : undefined,
+    }
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={cn(
+                "flex items-center gap-2 p-2 rounded text-sm",
+                topic.status === 'MASTERED' || topic.status === 'SUCCESS'
+                    ? "bg-emerald-500/10 text-emerald-400"
+                    : "bg-muted/50"
+            )}
+        >
+            <div
+                {...attributes}
+                {...listeners}
+                className="cursor-grab active:cursor-grabbing touch-none"
+            >
+                <GripVertical className="h-3 w-3 text-muted-foreground" />
+            </div>
+            {(topic.status === 'MASTERED' || topic.status === 'SUCCESS') && (
+                <CheckCircle className="h-3 w-3 text-emerald-500" />
+            )}
+            <span className="flex-1">{topic.name}</span>
+            {topic.status === 'MEDIUM' && (
+                <Badge variant="secondary" className="text-xs">В процессе</Badge>
+            )}
+        </div>
+    )
+}
+
 export default function ProgramPage() {
     const [loading, setLoading] = useState(true)
     const [generating, setGenerating] = useState(false)
@@ -131,6 +201,16 @@ export default function ProgramPage() {
     const [subjects, setSubjects] = useState<SubjectWithTopics[]>([])
     const [subjectDeadlines, setSubjectDeadlines] = useState<SubjectDeadline[]>([])
     const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set())
+
+    // DnD sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 8 },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    )
 
     useEffect(() => {
         loadProgram()
@@ -176,47 +256,40 @@ export default function ProgramPage() {
         ))
     }
 
-    const moveTopicUp = async (subjectId: string, topicIndex: number) => {
-        if (topicIndex === 0) return
+    // Handle topic drag and drop reorder
+    const handleTopicDragEnd = async (event: DragEndEvent, subjectId: string) => {
+        const { active, over } = event
+        if (!over || active.id === over.id) return
+
         const subject = subjects.find(s => s.id === subjectId)
         if (!subject) return
 
-        const newTopics = [...subject.topics]
-        const temp = newTopics[topicIndex]
-        newTopics[topicIndex] = newTopics[topicIndex - 1]
-        newTopics[topicIndex - 1] = temp
+        const oldIndex = subject.topics.findIndex(t => t.id === active.id)
+        const newIndex = subject.topics.findIndex(t => t.id === over.id)
 
+        if (oldIndex === -1 || newIndex === -1) return
+
+        const newTopics = arrayMove(subject.topics, oldIndex, newIndex).map((t, idx) => ({
+            ...t,
+            orderIndex: idx
+        }))
+
+        // Update local state
         setSubjects(prev => prev.map(s =>
             s.id === subjectId ? { ...s, topics: newTopics } : s
         ))
 
         // Save to API
-        await fetch('/api/topics/reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subjectId, topicIds: newTopics.map(t => t.id) })
-        })
-    }
-
-    const moveTopicDown = async (subjectId: string, topicIndex: number) => {
-        const subject = subjects.find(s => s.id === subjectId)
-        if (!subject || topicIndex >= subject.topics.length - 1) return
-
-        const newTopics = [...subject.topics]
-        const temp = newTopics[topicIndex]
-        newTopics[topicIndex] = newTopics[topicIndex + 1]
-        newTopics[topicIndex + 1] = temp
-
-        setSubjects(prev => prev.map(s =>
-            s.id === subjectId ? { ...s, topics: newTopics } : s
-        ))
-
-        // Save to API
-        await fetch('/api/topics/reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subjectId, topicIds: newTopics.map(t => t.id) })
-        })
+        try {
+            await fetch('/api/topics/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subjectId, ids: newTopics.map(t => t.id) })
+            })
+        } catch (error) {
+            console.error('Error reordering topics:', error)
+            toast.error('Ошибка сохранения порядка')
+        }
     }
 
     const loadProgram = async () => {
@@ -414,45 +487,23 @@ export default function ProgramPage() {
                                             {/* Expanded content */}
                                             {isExpanded && (
                                                 <div className="mt-3 space-y-3">
-                                                    {/* Topic list with reorder */}
-                                                    <div className="space-y-1">
-                                                        {subject.topics.map((topic, idx) => (
-                                                            <div
-                                                                key={topic.id}
-                                                                className={cn(
-                                                                    "flex items-center gap-2 p-2 rounded text-sm",
-                                                                    topic.status === 'MASTERED' || topic.status === 'SUCCESS'
-                                                                        ? "bg-emerald-500/10 text-emerald-400"
-                                                                        : "bg-muted/50"
-                                                                )}
-                                                            >
-                                                                <GripVertical className="h-3 w-3 text-muted-foreground" />
-                                                                {(topic.status === 'MASTERED' || topic.status === 'SUCCESS') && (
-                                                                    <CheckCircle className="h-3 w-3 text-emerald-500" />
-                                                                )}
-                                                                <span className="flex-1">{topic.name}</span>
-                                                                {topic.status === 'MEDIUM' && (
-                                                                    <Badge variant="secondary" className="text-xs">В процессе</Badge>
-                                                                )}
-                                                                <div className="flex gap-1">
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); moveTopicUp(subject.id, idx) }}
-                                                                        disabled={idx === 0}
-                                                                        className="p-1 hover:bg-muted rounded disabled:opacity-30"
-                                                                    >
-                                                                        <ChevronUp className="h-3 w-3" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); moveTopicDown(subject.id, idx) }}
-                                                                        disabled={idx === subject.topics.length - 1}
-                                                                        className="p-1 hover:bg-muted rounded disabled:opacity-30"
-                                                                    >
-                                                                        <ChevronDown className="h-3 w-3" />
-                                                                    </button>
-                                                                </div>
+                                                    {/* Topic list with drag-and-drop reorder */}
+                                                    <DndContext
+                                                        sensors={sensors}
+                                                        collisionDetection={closestCenter}
+                                                        onDragEnd={(event) => handleTopicDragEnd(event, subject.id)}
+                                                    >
+                                                        <SortableContext
+                                                            items={subject.topics.map(t => t.id)}
+                                                            strategy={verticalListSortingStrategy}
+                                                        >
+                                                            <div className="space-y-1">
+                                                                {subject.topics.map((topic) => (
+                                                                    <SortableTopicItem key={topic.id} topic={topic} />
+                                                                ))}
                                                             </div>
-                                                        ))}
-                                                    </div>
+                                                        </SortableContext>
+                                                    </DndContext>
 
                                                     {/* Deadline configuration */}
                                                     <div className="grid gap-3 md:grid-cols-2 pt-2 border-t">

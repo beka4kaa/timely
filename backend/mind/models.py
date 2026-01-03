@@ -9,6 +9,7 @@ class Subject(models.Model):
     color = models.CharField(max_length=9, default="#8b5cf6")
     target_hours_week = models.FloatField(default=5)
     textbook_url = models.URLField(null=True, blank=True)
+    order_index = models.IntegerField(default=0)  # For subject ordering
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

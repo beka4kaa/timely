@@ -20,11 +20,21 @@ class SubjectViewSet(viewsets.ModelViewSet):
         if user_email:
             queryset = queryset.filter(user_email=user_email)
         
-        return queryset.order_by('created_at')
+        return queryset.order_by('order_index', 'created_at')
     
     def perform_create(self, serializer):
         user_email = getattr(self.request, 'user_email', None)
-        serializer.save(user_email=user_email)
+        # Get max order_index for new subject
+        max_order = Subject.objects.filter(user_email=user_email).order_by('-order_index').values_list('order_index', flat=True).first() or -1
+        serializer.save(user_email=user_email, order_index=max_order + 1)
+    
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """Reorder subjects by updating their order_index"""
+        ids = request.data.get('ids') or request.data.get('subjectIds') or []
+        for index, s_id in enumerate(ids):
+            Subject.objects.filter(id=s_id).update(order_index=index)
+        return Response({'status': 'reordered', 'count': len(ids)})
 
 class TopicViewSet(viewsets.ModelViewSet):
     queryset = Topic.objects.all()
