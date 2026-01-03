@@ -206,12 +206,11 @@ class FastTopicsView(APIView):
                 if subtopic_name:
                     subtopic = Subtopic.objects.create(
                         topic=topic,
-                        name=subtopic_name,
-                        status='NOT_STARTED'
+                        title=subtopic_name  # Subtopic uses 'title' not 'name'
                     )
                     created_subtopics.append({
                         'id': str(subtopic.id),
-                        'name': subtopic.name
+                        'name': subtopic.title
                     })
                     total_subtopics += 1
             
