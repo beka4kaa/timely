@@ -11,6 +11,8 @@ export async function GET(
     const headers = await createBackendHeaders(request)
     const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/`, { headers })
     const data = await response.json()
+
+    
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error fetching topic:', error)

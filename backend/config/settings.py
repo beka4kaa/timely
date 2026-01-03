@@ -74,6 +74,10 @@ CORS_ALLOW_HEADERS = [
 
 ROOT_URLCONF = "config.urls"
 
+# Disable APPEND_SLASH to avoid errors when Vercel strips trailing slashes
+# This allows DELETE/PUT/PATCH requests without trailing slash to work
+APPEND_SLASH = False
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
