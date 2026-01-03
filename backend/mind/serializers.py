@@ -14,6 +14,10 @@ class TopicSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    # Add subject info fields
+    subject_name = serializers.SerializerMethodField()
+    subject_emoji = serializers.SerializerMethodField()
+    subject_color = serializers.SerializerMethodField()
 
     class Meta:
         model = Topic
@@ -21,6 +25,15 @@ class TopicSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'subject': {'required': False}
         }
+    
+    def get_subject_name(self, obj):
+        return obj.subject.name if obj.subject else None
+    
+    def get_subject_emoji(self, obj):
+        return obj.subject.emoji if obj.subject else None
+    
+    def get_subject_color(self, obj):
+        return obj.subject.color if obj.subject else None
 
 class SubjectSerializer(serializers.ModelSerializer):
     topics = TopicSerializer(many=True, read_only=True)

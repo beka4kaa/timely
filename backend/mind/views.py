@@ -73,20 +73,7 @@ class TopicViewSet(viewsets.ModelViewSet):
         """Associate topic with a subject that belongs to the user"""
         serializer.save()
     
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
-        data = serializer.data
-        
-        # Add subject_name to each topic for frontend convenience
-        for item in data:
-            topic = queryset.filter(id=item['id']).first()
-            if topic and topic.subject:
-                item['subject_name'] = topic.subject.name
-                item['subject_emoji'] = topic.subject.emoji
-                item['subject_color'] = topic.subject.color
-        
-        return Response(data)
+    # Removed list() override - subject_name/emoji/color now in TopicSerializer
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
