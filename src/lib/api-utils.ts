@@ -29,4 +29,7 @@ export function toCamelCase(obj: any): any {
 }
 
 // Backend URL - use BACKEND_URL or NEXT_PUBLIC_API_URL
-export const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// On production (Vercel), use Railway backend. On localhost, use local backend.
+export const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (
+  process.env.VERCEL ? 'https://timely-production-4f5a.up.railway.app' : 'http://localhost:8000'
+)

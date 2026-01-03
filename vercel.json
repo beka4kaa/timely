@@ -1,3 +1,6 @@
 {
-  "buildCommand": "npm run build:vercel"
+  "buildCommand": "npm run build:vercel",
+  "env": {
+    "BACKEND_URL": "https://timely-production-4f5a.up.railway.app"
+  }
 }
