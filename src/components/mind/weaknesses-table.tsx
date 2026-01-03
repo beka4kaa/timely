@@ -197,22 +197,28 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
             return
         }
         
-        if (!confirm(`Удалить выбранные ${selectedTopics.size} тем(ы)?`)) return
+        // Убрал confirm для теста
+        console.log('🗑️ Starting delete...')
 
         try {
+            const idsToDelete = Array.from(selectedTopics)
+            console.log('🗑️ IDs to delete:', idsToDelete)
+            
             const results = await Promise.all(
-                Array.from(selectedTopics).map(async id => {
-                    console.log('🗑️ Deleting topic:', id)
+                idsToDelete.map(async id => {
+                    console.log('🗑️ Sending DELETE request for:', id)
                     const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' })
                     console.log('🗑️ Delete response:', id, res.status, res.ok)
                     return { id, ok: res.ok || res.status === 204 }
                 })
             )
             
+            console.log('🗑️ All results:', results)
+            
             const deleted = results.filter(r => r.ok).map(r => r.id)
             const failed = results.filter(r => !r.ok).length
 
-            setTopics(prev => prev.filter(t => !deleted.includes(t.id)))
+            setTopics(prev => prev.filter(t => !deleted.includes(String(t.id))))
             setSelectedTopics(new Set())
             
             if (failed > 0) {
@@ -222,7 +228,7 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                 toast.success(`${deleted.length} тем(ы) удалено`)
             }
         } catch (error) {
-            console.error(error)
+            console.error('🗑️ Error:', error)
             toast.error("Ошибка при удалении")
         }
     }
