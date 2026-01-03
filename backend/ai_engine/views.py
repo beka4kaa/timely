@@ -87,36 +87,32 @@ class GenerateProgramView(APIView):
             
             # Debug log
             print(f"AI Result keys: {ai_result.keys()}")
-            print(f"weeks count: {len(ai_result.get('weeks', []))}")
+            print(f"dayPlans count: {len(ai_result.get('dayPlans', []))}")
             print(f"weekPlans count: {len(ai_result.get('weekPlans', []))}")
+            print(f"weekSummaries count: {len(ai_result.get('weekSummaries', []))}")
             print(f"topicPlans count: {len(ai_result.get('topicPlans', []))}")
 
-            # Create Week Plans - handle both new 'weeks' array and legacy 'weekPlans'
-            # Merge both sources
-            weeks_data = ai_result.get('weeks', [])
-            week_plans_legacy = ai_result.get('weekPlans', [])
-            
-            # Create set of week numbers we've already created
+            # Create Week Plans from multiple sources
             created_week_numbers = set()
             
-            # First process weeks array (primary source in 61-school format)
-            for wp in weeks_data:
-                week_num = wp.get('weekNumber', wp.get('weekIndex', 1))
+            # Source 1: weekSummaries (new format)
+            for ws in ai_result.get('weekSummaries', []):
+                week_num = ws.get('weekNumber', 1)
                 if week_num in created_week_numbers:
                     continue
                 created_week_numbers.add(week_num)
                 WeekPlan.objects.create(
                     program=program,
                     week_number=week_num,
-                    start_date=timezone.now() + timedelta(days=wp.get('startOffset', (week_num - 1) * 7)),
-                    end_date=timezone.now() + timedelta(days=wp.get('endOffset', week_num * 7)),
-                    subject_hours=str(wp.get('subjectHours', {})),
-                    focus=wp.get('focus', ''),
-                    notes=wp.get('notes', '')
+                    start_date=timezone.now() + timedelta(days=(week_num - 1) * 7),
+                    end_date=timezone.now() + timedelta(days=week_num * 7),
+                    subject_hours=str({'total': ws.get('totalHours', 20)}),
+                    focus=', '.join(ws.get('mainTopics', [])),
+                    notes=ws.get('goals', '')
                 )
             
-            # Then process weekPlans (legacy format) for any missing weeks
-            for wp in week_plans_legacy:
+            # Source 2: weekPlans (standard format)
+            for wp in ai_result.get('weekPlans', []):
                 week_num = wp.get('weekNumber', 1)
                 if week_num in created_week_numbers:
                     continue
@@ -131,23 +127,41 @@ class GenerateProgramView(APIView):
                     notes=wp.get('notes', '')
                 )
             
+            # If no weeks created, create at least one
+            if not created_week_numbers:
+                total_weeks = ai_result.get('totalWeeks', 1)
+                for i in range(1, total_weeks + 1):
+                    WeekPlan.objects.create(
+                        program=program,
+                        week_number=i,
+                        start_date=timezone.now() + timedelta(days=(i - 1) * 7),
+                        end_date=timezone.now() + timedelta(days=i * 7),
+                        subject_hours='{}',
+                        focus=f'Week {i}',
+                        notes=''
+                    )
+                    created_week_numbers.add(i)
+            
             print(f"Created {len(created_week_numbers)} week plans")
 
-            # Create Topic Plans - handle both direct topicPlans and targets within weeks
+            # Create Topic Plans from multiple sources
             topic_plans_data = list(ai_result.get('topicPlans', []))  # Make a copy
             
-            # Also extract topic plans from weeks.targets if present
-            for week in ai_result.get('weeks', []):
-                for target in week.get('targets', []):
-                    target_type = target.get('type', 'THEORY')
-                    if target_type in ['THEORY', 'PRACTICE', 'REVIEW']:
+            # Extract topic plans from dayPlans.sessions (new daily format)
+            for day in ai_result.get('dayPlans', []):
+                day_num = day.get('dayNumber', 1)
+                week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
+                for session in day.get('sessions', []):
+                    session_type = session.get('type', 'THEORY')
+                    if session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
                         topic_plans_data.append({
-                            'topicName': target.get('topicName', target.get('topic', '')),
-                            'subjectName': target.get('subjectName', target.get('subject', '')),
-                            'plannedWeek': target.get('plannedWeek', week.get('weekNumber', week.get('weekIndex', 1))),
-                            'estimatedHours': target.get('estimatedHours', target.get('durationMin', 45) / 60),
-                            'priority': target.get('priority', 1),
-                            'type': target_type
+                            'topicName': session.get('topicName', ''),
+                            'subjectName': session.get('subjectName', ''),
+                            'plannedWeek': week_num,
+                            'plannedDay': day_num,
+                            'estimatedHours': session.get('durationMin', 45) / 60,
+                            'priority': session.get('order', 1),
+                            'type': session_type
                         })
             
             print(f"Total topic plans to process: {len(topic_plans_data)}")
