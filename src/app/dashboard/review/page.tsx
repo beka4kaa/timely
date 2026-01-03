@@ -82,10 +82,10 @@ export default function ReviewPage() {
             <CardContent className="p-4 flex items-center justify-between">
                 <div>
                     <div className="flex items-center gap-2">
-                        <span>{topic.subject?.emoji}</span>
+                        <span>{topic.subjectEmoji || '📚'}</span>
                         <span className="font-medium">{topic.name}</span>
                         <Badge variant="secondary" className="text-xs">
-                            {topic.subject?.name}
+                            {topic.subjectName || 'Без предмета'}
                         </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -119,9 +119,9 @@ export default function ReviewPage() {
             <div className="container max-w-2xl mx-auto py-6 px-4">
                 <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700">
                     <CardHeader className="text-center">
-                        <div className="text-4xl mb-4">{reviewingTopic.subject?.emoji}</div>
+                        <div className="text-4xl mb-4">{reviewingTopic.subjectEmoji || '📚'}</div>
                         <CardTitle className="text-2xl text-white">{reviewingTopic.name}</CardTitle>
-                        <p className="text-muted-foreground">{reviewingTopic.subject?.name}</p>
+                        <p className="text-muted-foreground">{reviewingTopic.subjectName || 'Без предмета'}</p>
                     </CardHeader>
                     <CardContent className="p-8">
                         <p className="text-center text-muted-foreground mb-8">

@@ -116,7 +116,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
                                                     <span>{session.taskName}</span>
                                                     {session.topic && (
                                                         <Badge variant="outline" className="text-xs">
-                                                            {session.topic.subject?.emoji} {session.topic.name}
+                                                            {session.topic.subjectEmoji || '📚'} {session.topic.name}
                                                         </Badge>
                                                     )}
                                                 </div>
