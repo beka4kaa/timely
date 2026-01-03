@@ -298,7 +298,12 @@ export default function ProgramPage() {
             const res = await fetch('/api/learning-program')
             if (res.ok) {
                 const data = await res.json()
-                setProgram(data)
+                // Check if program exists (not just { notFound: true })
+                if (data && !data.notFound && data.id) {
+                    setProgram(data)
+                } else {
+                    setProgram(null)
+                }
             }
         } catch (err) {
             console.error('Error loading program:', err)
