@@ -93,7 +93,10 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     // Group topics by subject
     // topic.subject is the ID (string), subjectName/subjectEmoji/subjectColor are separate fields
     const groupedTopics = topics.reduce((acc, topic) => {
-        const subjectId = topic.subject || 'no-subject'
+        // Get subject ID as string
+        const subjectId = typeof topic.subject === 'string' 
+            ? topic.subject 
+            : (topic.subject?.id || 'no-subject')
         const subjectName = topic.subjectName || 'Без предмета'
         
         if (!acc[subjectId]) {

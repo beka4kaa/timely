@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -73,11 +73,12 @@ export function TasksComponent() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const client = new FastAPIClient()
+  const clientRef = useRef(new FastAPIClient())
 
   // Load tasks from backend
   useEffect(() => {
     console.log('🎯 TasksComponent useEffect starting...')
+    const client = clientRef.current
     
     const loadTasks = async () => {
       try {
@@ -161,7 +162,7 @@ export function TasksComponent() {
       }
 
       console.log('🎯 Updating task:', taskId, updatedTask)
-      await client.updateTask(taskId, updatedTask)
+      await clientRef.current.updateTask(taskId, updatedTask)
       
       // Update local state
       setTasks(prev => prev.map(t => 
@@ -194,7 +195,7 @@ export function TasksComponent() {
       }
 
       console.log('🎯 Creating new task:', taskData)
-      const createdTask = await client.createTask(taskData) as any
+      const createdTask = await clientRef.current.createTask(taskData) as any
       
       // Transform backend response to frontend format
       const task: Task = {
@@ -228,7 +229,7 @@ export function TasksComponent() {
   const deleteTask = async (taskId: string) => {
     try {
       console.log('🎯 Deleting task:', taskId)
-      await client.deleteTask(taskId)
+      await clientRef.current.deleteTask(taskId)
       setTasks(prev => prev.filter(task => task.id !== taskId))
       setError(null)
     } catch (err) {
