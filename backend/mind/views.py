@@ -34,9 +34,14 @@ class TopicViewSet(viewsets.ModelViewSet):
         user_email = getattr(self.request, 'user_email', None)
         queryset = Topic.objects.all().select_related('subject').prefetch_related('subtopics')
         
-        # Filter by user (through subject) - this ensures users can only see their own topics
+        # Filter by user (through subject) OR orphaned topics (no subject or subject without user_email)
         if user_email:
-            queryset = queryset.filter(subject__user_email=user_email)
+            queryset = queryset.filter(
+                Q(subject__user_email=user_email) |  # User's topics
+                Q(subject__user_email__isnull=True) |  # Orphaned topics (subject has no user)
+                Q(subject__user_email='') |  # Orphaned topics (subject has empty user)
+                Q(subject__isnull=True)  # Topics without subject
+            )
         
         # Filter by subject
         subject_id = self.request.query_params.get('subjectId') or self.request.query_params.get('subject_id')
