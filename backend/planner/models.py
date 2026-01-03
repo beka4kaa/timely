@@ -3,13 +3,13 @@ import uuid
 
 class DayPlan(models.Model):
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
-    # user_email = models.EmailField(null=True, blank=True, db_index=True)  # TODO: uncomment after migration
-    date = models.DateField(unique=True)  # YYYY-MM-DD
+    user_email = models.EmailField(null=True, blank=True, db_index=True)  # User-based data isolation
+    date = models.DateField()  # YYYY-MM-DD
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
-    # class Meta:
-    #     unique_together = ('user_email', 'date')  # Unique per user
+    class Meta:
+        unique_together = ('user_email', 'date')  # Unique per user
 
     def __str__(self):
         return str(self.date)
@@ -77,7 +77,7 @@ class ScheduleSlot(models.Model):
     ]
     
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
-    # user_email = models.EmailField(null=True, blank=True, db_index=True)  # TODO: uncomment after migration
+    user_email = models.EmailField(null=True, blank=True, db_index=True)  # User-based data isolation
     day_of_week = models.IntegerField()  # 0=Mon, 6=Sun
     start_time = models.CharField(max_length=10)  # "09:00"
     end_time = models.CharField(max_length=10)  # "10:00"

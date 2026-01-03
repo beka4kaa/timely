@@ -13,32 +13,30 @@ class SubjectViewSet(viewsets.ModelViewSet):
     serializer_class = SubjectSerializer
     
     def get_queryset(self):
-        # TODO: Re-enable after migration runs
-        # user_email = getattr(self.request, 'user_email', None)
+        user_email = getattr(self.request, 'user_email', None)
         queryset = Subject.objects.all().prefetch_related('topics')
         
-        # Filter by user - disabled until migration runs
-        # if user_email:
-        #     queryset = queryset.filter(user_email=user_email)
+        # Filter by user - each user only sees their own data
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
         
         return queryset.order_by('created_at')
     
     def perform_create(self, serializer):
-        # user_email = getattr(self.request, 'user_email', None)
-        # serializer.save(user_email=user_email)
-        serializer.save()  # Save without user_email until migration runs
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)
 
 class TopicViewSet(viewsets.ModelViewSet):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
     
     def get_queryset(self):
-        # user_email = getattr(self.request, 'user_email', None)  # Disabled until migration
+        user_email = getattr(self.request, 'user_email', None)
         queryset = Topic.objects.all().select_related('subject').prefetch_related('subtopics')
         
-        # Filter by user (through subject) - disabled until migration
-        # if user_email:
-        #     queryset = queryset.filter(subject__user_email=user_email)
+        # Filter by user (through subject)
+        if user_email:
+            queryset = queryset.filter(subject__user_email=user_email)
         
         # Filter by subject
         subject_id = self.request.query_params.get('subjectId') or self.request.query_params.get('subject_id')
@@ -152,12 +150,12 @@ class MindSessionViewSet(viewsets.ModelViewSet):
     serializer_class = MindSessionSerializer
     
     def get_queryset(self):
-        # user_email = getattr(self.request, 'user_email', None)  # Disabled until migration
+        user_email = getattr(self.request, 'user_email', None)
         queryset = MindSession.objects.all()
         
-        # Filter by user - disabled until migration
-        # if user_email:
-        #     queryset = queryset.filter(user_email=user_email)
+        # Filter by user - each user only sees their own data
+        if user_email:
+            queryset = queryset.filter(user_email=user_email)
         
         # Filter by days (last N days)
         days = self.request.query_params.get('days')
@@ -172,6 +170,5 @@ class MindSessionViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-started_at')
     
     def perform_create(self, serializer):
-        # user_email = getattr(self.request, 'user_email', None)
-        # serializer.save(user_email=user_email)
-        serializer.save()  # Save without user_email until migration runs
+        user_email = getattr(self.request, 'user_email', None)
+        serializer.save(user_email=user_email)
