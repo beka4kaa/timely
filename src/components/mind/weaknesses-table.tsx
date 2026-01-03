@@ -341,11 +341,11 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                 </Card>
             )}
 
-            {!loading && Object.entries(groupedTopics).map(([subjectName, { subject, topics: subjectTopics }]) => (
-                <div key={subjectName} className="space-y-2">
+            {!loading && Object.entries(groupedTopics).map(([subjectId, { subject, topics: subjectTopics }]) => (
+                <div key={subjectId} className="space-y-2">
                     <div className="flex items-center gap-2 px-2">
                         <span className="text-lg">{subject?.emoji || '📚'}</span>
-                        <h3 className="font-semibold">{subjectName}</h3>
+                        <h3 className="font-semibold">{subject?.name || 'Без предмета'}</h3>
                         <Badge variant="secondary" className="ml-auto">
                             {subjectTopics.length}
                         </Badge>
