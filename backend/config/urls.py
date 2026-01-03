@@ -15,7 +15,7 @@ def health_check(request):
     return JsonResponse({'status': 'healthy', 'service': 'timely-backend'})
 
 
-router = DefaultRouter(trailing_slash=False)
+router = DefaultRouter()
 router.register(r'planner/dayplans', DayPlanViewSet)
 router.register(r'planner/blocks', BlockViewSet)
 router.register(r'planner/segments', SegmentViewSet)
@@ -33,12 +33,12 @@ urlpatterns = [
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),
     
-    # AI Actions (no trailing slashes to match frontend)
-    path('api/ai/generate-program', GenerateProgramView.as_view(), name='generate-program'),
-    path('api/ai/analyze', AnalyzeView.as_view(), name='analyze-progress'),
-    path('api/ai/fast-topics', FastTopicsView.as_view(), name='fast-topics'),
-    path('api/ai/modify-program', ModifyProgramView.as_view(), name='modify-program'),
-    path('api/ai/generate-subtopics', GenerateSubtopicsView.as_view(), name='generate-subtopics'),
-    path('api/ai/daily-tasks', DailyTasksView.as_view(), name='daily-tasks'),
-    path('api/ai/schedule', ScheduleView.as_view(), name='ai-schedule'),
+    # AI Actions with trailing slashes (Django standard)
+    path('api/ai/generate-program/', GenerateProgramView.as_view(), name='generate-program'),
+    path('api/ai/analyze/', AnalyzeView.as_view(), name='analyze-progress'),
+    path('api/ai/fast-topics/', FastTopicsView.as_view(), name='fast-topics'),
+    path('api/ai/modify-program/', ModifyProgramView.as_view(), name='modify-program'),
+    path('api/ai/generate-subtopics/', GenerateSubtopicsView.as_view(), name='generate-subtopics'),
+    path('api/ai/daily-tasks/', DailyTasksView.as_view(), name='daily-tasks'),
+    path('api/ai/schedule/', ScheduleView.as_view(), name='ai-schedule'),
 ]

@@ -175,9 +175,8 @@ class FastTopicsView(APIView):
         except Subject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
         
-        # Generate topics using AI
-        result = generate_fast_topics(subject.name, text)
-        generated_topics = result.get('topics', [])
+        # Generate topics using AI - returns a list directly
+        generated_topics = generate_fast_topics(subject.name, text)
         
         # Save topics to database
         created_topics = []
