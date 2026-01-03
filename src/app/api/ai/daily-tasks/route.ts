@@ -6,7 +6,7 @@ export async function GET() {
   try {
     // Try to call backend endpoint
     try {
-      const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks/`, {
+      const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       })
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     
     // Try backend first
     try {
-      const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks/`, {
+      const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

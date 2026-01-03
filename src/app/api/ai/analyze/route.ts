@@ -3,7 +3,7 @@ import { BACKEND_URL } from '@/lib/api-utils'
 
 export async function GET() {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/ai/analyze/`, {
+    const response = await fetch(`${BACKEND_URL}/api/ai/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/ai/analyze/`, {
+    const response = await fetch(`${BACKEND_URL}/api/ai/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

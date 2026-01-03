@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
     try {
         const headers = await createBackendHeaders(request)
         const body = await request.json()
-        const response = await fetch(`${BACKEND_URL}/api/ai/generate-program/`, {
+        const response = await fetch(`${BACKEND_URL}/api/ai/generate-program`, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     // Try to call a dedicated AI schedule endpoint if it exists
     // Otherwise, generate schedule based on topics
     try {
-      const response = await fetch(`${BACKEND_URL}/api/ai/schedule/`, {
+      const response = await fetch(`${BACKEND_URL}/api/ai/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
