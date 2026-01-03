@@ -198,6 +198,45 @@ class GenerateProgramView(APIView):
                     created_count += 1
             
             print(f"Created {created_count} topic plans")
+            
+            # Create Scheduled Tests from AI response
+            scheduled_tests_data = ai_result.get('scheduledTests', [])
+            tests_created = 0
+            for test in scheduled_tests_data:
+                test_title = test.get('title', '')
+                subject_name = test.get('subjectName', test.get('subject_name', ''))
+                scheduled_week = test.get('scheduledWeek', test.get('scheduled_week', 1))
+                topics_covered = test.get('topics', [])
+                test_type = test.get('type', 'WEEKLY_TEST')
+                duration_min = test.get('durationMin', test.get('duration_min', 45))
+                
+                if not test_title:
+                    continue
+                
+                # Find subject for this test
+                subject = None
+                if subject_name:
+                    subject = Subject.objects.filter(name__icontains=subject_name).first()
+                if not subject and subjects:
+                    subject = subjects.first()
+                
+                if subject:
+                    from .models import ScheduledTest
+                    import json as json_module
+                    
+                    ScheduledTest.objects.create(
+                        program=program,
+                        subject=subject,
+                        scheduled_date=timezone.now() + timedelta(weeks=scheduled_week, days=-1),  # End of week
+                        title=test_title,
+                        description=f"Test covering: {', '.join(topics_covered)}",
+                        topics_covered=json_module.dumps(topics_covered),
+                        type=test_type,
+                        status='SCHEDULED'
+                    )
+                    tests_created += 1
+            
+            print(f"Created {tests_created} scheduled tests")
 
             return Response(LearningProgramSerializer(program).data, status=status.HTTP_201_CREATED)
 

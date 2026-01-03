@@ -25,7 +25,7 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     sessions_per_day_max = 3
     session_minutes = 45
     
-    # Build structured subjects input for 61-school style
+    # Build structured subjects input - ONLY include topics 1..K (in-scope)
     subjects_structured = []
     for s in subjects:
         topics_list = s.get('topics', [])
@@ -36,184 +36,134 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
         for sd in subject_deadlines:
             if str(sd.get('subjectId') or sd.get('subject_id')) == str(s.get('id')):
                 if sd.get('milestoneTopicId'):
-                    # Find index of milestone topic
+                    # Find index of milestone topic - this is K, we need topics 1..K
                     for idx, t in enumerate(topics_list):
                         if str(t.get('id')) == str(sd.get('milestoneTopicId')):
-                            end_topic_index = idx + 1
+                            end_topic_index = idx + 1  # idx is 0-based, so idx+1 gives us count of topics
                             break
                 if sd.get('deadline'):
                     deadline = sd.get('deadline')
                 break
         
-        topic_statuses = [t.get('status', 'NOT_STARTED') for t in topics_list]
-        topic_names = [t.get('name', '') for t in topics_list]
+        # CRITICAL: Only pass topics 1..K (in-scope topics) to AI
+        in_scope_topics = topics_list[:end_topic_index]
+        
+        topic_data = []
+        for idx, t in enumerate(in_scope_topics, 1):
+            topic_data.append({
+                'index': idx,
+                'name': t.get('name', ''),
+                'status': t.get('status', 'NOT_STARTED')
+            })
         
         subjects_structured.append({
             'name': s.get('name', ''),
             'id': s.get('id', ''),
             'deadline': deadline,
-            'endTopicIndexK': end_topic_index,
-            'topicsOrdered': topic_names,
-            'topicStatus': topic_statuses,
+            'totalTopicsInScope': len(in_scope_topics),
+            'topics': topic_data,
             'hoursTarget': s.get('target_hours_week', hours_per_week // max(len(subjects), 1))
         })
     
-    # Format subjects for prompt
+    # Format subjects clearly for AI
     subjects_text = ""
     for idx, s in enumerate(subjects_structured, 1):
+        topics_str = ", ".join([f"{t['index']}.{t['name']}({t['status']})" for t in s['topics']])
         subjects_text += f"""
-{idx}) {s['name']}
-deadline={s['deadline'] or 'None'}
-endTopicIndexK={s['endTopicIndexK']}
-topicsOrdered={s['topicsOrdered']}
-topicStatus={s['topicStatus']}
-hoursTarget={s['hoursTarget']}
+SUBJECT {idx}: {s['name']}
+  Deadline: {s['deadline'] or 'None set'}
+  Topics to learn (in order): [{topics_str}]
+  Total topics: {s['totalTopicsInScope']}
+  Target hours/week: {s['hoursTarget']}
 """
     
-    prompt = f"""You are a strict study-program optimizer. Your job is to generate a 61-school-style study program: high workload, clear sequencing, frequent testing, and spaced repetition. Do NOT write generic advice. Produce a concrete weekly plan.
+    # Current date for planning
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
+    prompt = f"""You are a 61-school-style study program generator. Create a COMPLETE weekly study plan.
 
-IMPORTANT: You must follow ALL constraints. If a constraint conflicts, explain the conflict and propose the smallest fix, then generate the plan.
+CURRENT DATE: {current_date}
 
-GOAL
-Build a plan that maximizes mastery by deadline using:
-- Sequenced learning (topic order is mandatory)
-- High practice volume
-- Weekly tests + mini-quizzes
-- Spaced repetition of previously learned material
-- Measurable tasks per session
+CONSTRAINTS:
+- Hours per week: {hours_per_week}
+- Study days per week: {days_per_week}
+- Sessions per day: {sessions_per_day_max}
+- Session duration: {session_minutes} min
+- Total weeks available: {total_weeks}
 
-HARD CONSTRAINTS (must satisfy)
-1) Weekly time budget:
-   - Total study hours per week = {hours_per_week}
-   - Max study days per week = {days_per_week}
-   - Max sessions per day = {sessions_per_day_max}
-   - Default session duration = {session_minutes} minutes
-2) Topic ordering rule (MANDATORY):
-   - For each subject, topics have an explicit order.
-   - If user says "learn up to topic K", then ONLY topics 1..K are in scope for the deadline.
-   - Topics after K can be optionally scheduled ONLY as "light preview" and ONLY if all in-scope topics + reviews fit.
-3) Deadline rule:
-   - Each subject has a deadline date and an "end topic index K".
-   - By the deadline, topics 1..K must be completed at least once + reviewed at least twice.
-4) 61-school testing rule:
-   - Every week must include:
-     a) 2 mini-quizzes (15–20 min) on current-week material
-     b) 1 weekly test (45–60 min) covering current + previous material
-     c) 1 mixed problem set (timed) for speed/accuracy
-5) Spaced repetition rule:
-   - After a topic is first learned, schedule reviews on:
-     +2 days, +7 days, +21 days (or nearest feasible sessions)
-   - Reviews must include practice problems, not only reading.
-6) Workload intensity:
-   - At least 60% of total time must be problem-solving (practice), max 40% theory.
-   - For math/physics, each "practice session" must specify number of problems (e.g., 20 easy + 10 medium + 5 hard).
-7) Output format:
-   - Return ONLY valid JSON (no markdown).
-   - JSON must match the schema described in OUTPUT SCHEMA below.
+{subjects_text}
 
-SOFT PREFERENCES (follow if possible)
-- Prioritize weak topics first IF it does not violate ordering.
-- Keep one "buffer / catch-up" slot per week.
-- Front-load early weeks slightly (more hours early) but never exceed weekly max.
+MANDATORY REQUIREMENTS:
+1. INCLUDE EVERY TOPIC listed above in the plan - no exceptions
+2. Schedule topics in STRICT ORDER (1, 2, 3...) per subject
+3. For each topic, schedule: THEORY session + PRACTICE session
+4. Add REVIEW sessions at +7 days after first learning
+5. MUST generate at least 1 weekly test per week covering learned material
+6. Distribute subject hours proportionally each week
+7. Generate plans for ALL {total_weeks} weeks
 
-INPUT
-HOURS_PER_WEEK_MAX={hours_per_week}
-DAYS_PER_WEEK={days_per_week}
-SESSIONS_PER_DAY_MAX={sessions_per_day_max}
-SESSION_MINUTES={session_minutes}
-TOTAL_WEEKS={total_weeks}
-
-Subjects:{subjects_text}
-
-PLANNING METHOD (must use)
-- Step 1: Determine in-scope topics for each subject: topics[1..K]
-- Step 2: Allocate weekly hours proportionally to subject priorities + closeness of deadline
-- Step 3: For each subject, schedule topics in strict order (no skipping)
-- Step 4: Insert reviews for each topic at +2d, +7d, +21d (approximate)
-- Step 5: Insert quizzes and tests (required)
-- Step 6: Validate constraints and output checks
-
-OUTPUT SCHEMA (must follow exactly):
+OUTPUT FORMAT (JSON only, no markdown):
 {{
-  "programTitle": "string",
-  "description": "string",
-  "strategy": "string",
-  "totalWeeks": number,
-  "weeks": [
+  "programTitle": "61-School Study Program",
+  "description": "Intensive study program with spaced repetition",
+  "strategy": "Sequential learning with frequent testing",
+  "totalWeeks": {total_weeks},
+  "weekPlans": [
     {{
-      "weekIndex": 1,
       "weekNumber": 1,
-      "dateRange": "YYYY-MM-DD..YYYY-MM-DD",
       "startOffset": 0,
       "endOffset": 7,
-      "focus": "string",
-      "notes": "string",
-      "subjectHours": {{ "subject_name": number }},
-      "targets": [
-        {{
-          "subject": "string",
-          "topic": "string",
-          "topicName": "string",
-          "subjectName": "string",
-          "type": "THEORY|PRACTICE|REVIEW|QUIZ|TEST|MIXED_SET",
-          "durationMin": number,
-          "estimatedHours": number,
-          "plannedWeek": number,
-          "priority": 1,
-          "tasks": [
-            {{ "text": "string", "count": number, "difficulty": "EASY|MEDIUM|HARD|MIXED" }}
-          ],
-          "notes": "string"
-        }}
-      ],
-      "weeklyTest": {{
-        "subjectMix": ["string"],
-        "durationMin": number,
-        "coverage": "string",
-        "tasks": [
-          {{ "text": "string", "count": number, "difficulty": "MIXED" }}
-        ]
-      }},
-      "miniQuizzes": [
-        {{
-          "durationMin": number,
-          "coverage": "string",
-          "tasks": [
-            {{ "text": "string", "count": number, "difficulty": "MIXED" }}
-          ]
-        }}
-      ],
-      "bufferSlot": {{
-        "durationMin": number,
-        "rules": "string"
-      }}
+      "focus": "Week focus description",
+      "notes": "Additional notes",
+      "subjectHours": {{"Subject Name": 10, "Another Subject": 8}}
     }}
   ],
-  "weekPlans": [
-    {{ "weekNumber": number, "startOffset": number, "endOffset": number, "focus": "string", "notes": "string", "subjectHours": {{ "subject_name": number }} }}
-  ],
   "topicPlans": [
-    {{ "topicName": "string", "subjectName": "string", "plannedWeek": number, "estimatedHours": number, "priority": number, "deadline": "YYYY-MM-DD", "type": "THEORY|PRACTICE|REVIEW" }}
+    {{
+      "topicName": "Exact topic name from input",
+      "subjectName": "Exact subject name",
+      "plannedWeek": 1,
+      "estimatedHours": 3,
+      "priority": 1,
+      "type": "THEORY"
+    }},
+    {{
+      "topicName": "Same topic name",
+      "subjectName": "Same subject",
+      "plannedWeek": 1,
+      "estimatedHours": 2,
+      "priority": 2,
+      "type": "PRACTICE"
+    }}
   ],
   "scheduledTests": [
-    {{ "title": "string", "scheduledWeek": number, "topics": ["string"], "type": "WEEKLY_TEST|MINI_QUIZ|MIXED_SET", "durationMin": number }}
-  ],
-  "checks": {{
-    "hoursPerWeekUsed": [number],
-    "practiceRatio": [number],
-    "deadlineSatisfaction": [
-      {{ "subject": "string", "deadline": "YYYY-MM-DD", "endTopicIndex": number, "status": "OK|RISK|FAIL", "reason": "string" }}
-    ]
-  }}
+    {{
+      "title": "Week 1 Test - Subject Name",
+      "scheduledWeek": 1,
+      "subjectName": "Subject Name",
+      "topics": ["Topic 1", "Topic 2"],
+      "type": "WEEKLY_TEST",
+      "durationMin": 45
+    }}
+  ]
 }}
 
-CRITICAL: Return ONLY valid JSON, no markdown code fences, no explanations before or after.
+CRITICAL: 
+- Include ALL listed topics in topicPlans
+- Generate weekPlans for EVERY week (1 to {total_weeks})
+- Generate at least 1 test per week in scheduledTests
+- subjectHours must have hours for EACH subject
+- Return ONLY valid JSON, no explanation
 """
     
     try:
         response = model.generate_content(prompt)
         text = response.text.replace('```json', '').replace('```', '').strip()
         result = json.loads(text)
+        
+        # Debug output
+        print(f"AI generated: weekPlans={len(result.get('weekPlans', []))}, topicPlans={len(result.get('topicPlans', []))}, tests={len(result.get('scheduledTests', []))}")
+        
         # Validate required fields
         if not isinstance(result, dict):
             raise ValueError("AI response is not a valid object")
@@ -225,7 +175,7 @@ CRITICAL: Return ONLY valid JSON, no markdown code fences, no explanations befor
         return {
             "description": "AI generation failed - using default program",
             "strategy": "Manual planning recommended",
-            "totalWeeks": 4,
+            "totalWeeks": total_weeks,
             "weekPlans": [],
             "topicPlans": [],
             "scheduledTests": []
@@ -235,7 +185,7 @@ CRITICAL: Return ONLY valid JSON, no markdown code fences, no explanations befor
         return {
             "description": f"Error: {str(e)}",
             "strategy": "Manual planning recommended",
-            "totalWeeks": 4,
+            "totalWeeks": total_weeks,
             "weekPlans": [],
             "topicPlans": [],
             "scheduledTests": []
