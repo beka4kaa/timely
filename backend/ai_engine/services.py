@@ -24,9 +24,16 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     days_per_week = 6
     sessions_per_day_max = 3
     session_minutes = 45
+    hours_per_day_available = hours_per_week / days_per_week
+    
+    # Current date for calculations
+    current_date = datetime.now()
+    current_date_str = current_date.strftime('%Y-%m-%d')
     
     # Build structured subjects input - ONLY include topics 1..K (in-scope)
     subjects_structured = []
+    min_days_until_deadline = 365  # Track closest deadline
+    
     for s in subjects:
         topics_list = s.get('topics', [])
         deadline = s.get('deadline', None)
@@ -45,6 +52,21 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
                     deadline = sd.get('deadline')
                 break
         
+        # Calculate days until deadline
+        days_until_deadline = None
+        if deadline:
+            try:
+                if 'T' in str(deadline):
+                    deadline_date = datetime.fromisoformat(str(deadline).replace('Z', '+00:00'))
+                else:
+                    deadline_date = datetime.strptime(str(deadline)[:10], '%Y-%m-%d')
+                days_until_deadline = (deadline_date.replace(tzinfo=None) - current_date.replace(tzinfo=None)).days
+                days_until_deadline = max(1, days_until_deadline)  # At least 1 day
+                min_days_until_deadline = min(min_days_until_deadline, days_until_deadline)
+            except Exception as e:
+                print(f"Error parsing deadline {deadline}: {e}")
+                days_until_deadline = 30
+        
         # CRITICAL: Only pass topics 1..K (in-scope topics) to AI
         in_scope_topics = topics_list[:end_topic_index]
         
@@ -60,100 +82,186 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
             'name': s.get('name', ''),
             'id': s.get('id', ''),
             'deadline': deadline,
+            'daysUntilDeadline': days_until_deadline,
             'totalTopicsInScope': len(in_scope_topics),
             'topics': topic_data,
             'hoursTarget': s.get('target_hours_week', hours_per_week // max(len(subjects), 1))
         })
     
+    # Determine planning mode: daily (short-term) or weekly (long-term)
+    is_short_term = min_days_until_deadline < 14  # Less than 2 weeks
+    
     # Format subjects clearly for AI
     subjects_text = ""
     for idx, s in enumerate(subjects_structured, 1):
         topics_str = ", ".join([f"{t['index']}.{t['name']}({t['status']})" for t in s['topics']])
+        deadline_info = f"{s['daysUntilDeadline']} days" if s['daysUntilDeadline'] else "No deadline"
         subjects_text += f"""
 SUBJECT {idx}: {s['name']}
-  Deadline: {s['deadline'] or 'None set'}
+  Deadline: {s['deadline'] or 'None'} ({deadline_info} remaining)
   Topics to learn (in order): [{topics_str}]
   Total topics: {s['totalTopicsInScope']}
-  Target hours/week: {s['hoursTarget']}
 """
     
-    # Current date for planning
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    
-    prompt = f"""You are a 61-school-style study program generator. Create a COMPLETE weekly study plan.
-
-CURRENT DATE: {current_date}
-
-CONSTRAINTS:
+    # Adjust prompt based on planning mode
+    if is_short_term:
+        planning_unit = "DAY"
+        time_budget = f"""
+- Total days available: {min_days_until_deadline}
+- Hours per day: {hours_per_day_available:.1f}
+- Sessions per day: {sessions_per_day_max}
+- Session duration: {session_minutes} min
+"""
+        output_structure = f"""
+OUTPUT FORMAT (JSON only, no markdown):
+{{
+  "programTitle": "Intensive Study Plan",
+  "description": "Short-term intensive preparation",
+  "strategy": "Daily focused sessions with immediate practice",
+  "totalWeeks": 1,
+  "totalDays": {min_days_until_deadline},
+  "planningMode": "DAILY",
+  "weekPlans": [
+    {{
+      "weekNumber": 1,
+      "startOffset": 0,
+      "endOffset": {min_days_until_deadline},
+      "focus": "Intensive preparation",
+      "notes": "Daily schedule below",
+      "subjectHours": {{"Subject Name": {hours_per_day_available:.1f}}}
+    }}
+  ],
+  "dayPlans": [
+    {{
+      "dayNumber": 1,
+      "date": "YYYY-MM-DD",
+      "focus": "Day 1 focus",
+      "sessions": [
+        {{
+          "subjectName": "Subject Name",
+          "topicName": "Topic Name",
+          "type": "THEORY|PRACTICE",
+          "durationMin": 45,
+          "order": 1
+        }}
+      ]
+    }}
+  ],
+  "topicPlans": [
+    {{
+      "topicName": "Exact topic name",
+      "subjectName": "Subject name",
+      "plannedWeek": 1,
+      "plannedDay": 1,
+      "estimatedHours": 2,
+      "priority": 1,
+      "type": "THEORY"
+    }}
+  ],
+  "scheduledTests": [
+    {{
+      "title": "Final Test",
+      "scheduledWeek": 1,
+      "scheduledDay": {min_days_until_deadline},
+      "subjectName": "Subject",
+      "topics": ["Topic 1"],
+      "type": "FINAL_TEST",
+      "durationMin": 60
+    }}
+  ]
+}}
+"""
+        special_instructions = f"""
+CRITICAL - SHORT DEADLINE MODE:
+- You only have {min_days_until_deadline} DAYS, not weeks!
+- Create a DAY-BY-DAY schedule in "dayPlans"
+- Each day must have specific study sessions
+- Prioritize most urgent subjects first
+- Focus on core material, skip optional content
+- Schedule mini-tests every 2-3 days
+- Include final test on last day before deadline
+"""
+    else:
+        # Standard weekly planning
+        planning_unit = "WEEK"
+        time_budget = f"""
 - Hours per week: {hours_per_week}
 - Study days per week: {days_per_week}
 - Sessions per day: {sessions_per_day_max}
 - Session duration: {session_minutes} min
-- Total weeks available: {total_weeks}
-
-{subjects_text}
-
-MANDATORY REQUIREMENTS:
-1. INCLUDE EVERY TOPIC listed above in the plan - no exceptions
-2. Schedule topics in STRICT ORDER (1, 2, 3...) per subject
-3. For each topic, schedule: THEORY session + PRACTICE session
-4. Add REVIEW sessions at +7 days after first learning
-5. MUST generate at least 1 weekly test per week covering learned material
-6. Distribute subject hours proportionally each week
-7. Generate plans for ALL {total_weeks} weeks
-
+- Total weeks: {total_weeks}
+"""
+        output_structure = f"""
 OUTPUT FORMAT (JSON only, no markdown):
 {{
   "programTitle": "61-School Study Program",
   "description": "Intensive study program with spaced repetition",
   "strategy": "Sequential learning with frequent testing",
   "totalWeeks": {total_weeks},
+  "planningMode": "WEEKLY",
   "weekPlans": [
     {{
       "weekNumber": 1,
       "startOffset": 0,
       "endOffset": 7,
-      "focus": "Week focus description",
+      "focus": "Week focus",
       "notes": "Additional notes",
-      "subjectHours": {{"Subject Name": 10, "Another Subject": 8}}
+      "subjectHours": {{"Subject Name": 10}}
     }}
   ],
   "topicPlans": [
     {{
-      "topicName": "Exact topic name from input",
-      "subjectName": "Exact subject name",
+      "topicName": "Exact topic name",
+      "subjectName": "Subject name",
       "plannedWeek": 1,
       "estimatedHours": 3,
       "priority": 1,
       "type": "THEORY"
-    }},
-    {{
-      "topicName": "Same topic name",
-      "subjectName": "Same subject",
-      "plannedWeek": 1,
-      "estimatedHours": 2,
-      "priority": 2,
-      "type": "PRACTICE"
     }}
   ],
   "scheduledTests": [
     {{
-      "title": "Week 1 Test - Subject Name",
+      "title": "Week 1 Test",
       "scheduledWeek": 1,
-      "subjectName": "Subject Name",
-      "topics": ["Topic 1", "Topic 2"],
+      "subjectName": "Subject",
+      "topics": ["Topic 1"],
       "type": "WEEKLY_TEST",
       "durationMin": 45
     }}
   ]
 }}
+"""
+        special_instructions = """
+STANDARD WEEKLY PLANNING:
+- Generate plans for ALL weeks
+- Include EVERY topic listed above
+- Add spaced repetition reviews at +7 days
+- Generate at least 1 test per week
+"""
 
-CRITICAL: 
-- Include ALL listed topics in topicPlans
-- Generate weekPlans for EVERY week (1 to {total_weeks})
-- Generate at least 1 test per week in scheduledTests
-- subjectHours must have hours for EACH subject
-- Return ONLY valid JSON, no explanation
+    prompt = f"""You are a 61-school-style study program generator.
+
+CURRENT DATE: {current_date_str}
+PLANNING MODE: {planning_unit}
+
+TIME BUDGET:
+{time_budget}
+
+SUBJECTS TO STUDY:
+{subjects_text}
+
+MANDATORY REQUIREMENTS:
+1. INCLUDE EVERY TOPIC listed above - no exceptions
+2. Schedule topics in STRICT ORDER (1, 2, 3...) per subject
+3. For each topic: THEORY session + PRACTICE session
+4. Generate tests for assessment
+5. Distribute time across all subjects proportionally
+
+{special_instructions}
+
+{output_structure}
+
+CRITICAL: Return ONLY valid JSON. Include ALL topics. No markdown.
 """
     
     try:
