@@ -577,14 +577,14 @@ export default function ProgramPage() {
 
     // Show program
     const currentWeek = getCurrentWeek()
-    const currentWeekPlan = program.weekPlans.find(w => w.weekNumber === selectedWeek)
-    const weekTopics = program.topicPlans.filter(tp => tp.plannedWeek === selectedWeek)
-    const weekTests = program.scheduledTests.filter(t => {
+    const currentWeekPlan = program.weekPlans?.find(w => w.weekNumber === selectedWeek)
+    const weekTopics = program.topicPlans?.filter(tp => tp.plannedWeek === selectedWeek) || []
+    const weekTests = program.scheduledTests?.filter(t => {
         const testDate = new Date(t.scheduledDate)
         const weekStart = new Date(currentWeekPlan?.startDate || '')
         const weekEnd = new Date(currentWeekPlan?.endDate || '')
         return testDate >= weekStart && testDate <= weekEnd
-    })
+    }) || []
 
     return (
         <div className="container max-w-6xl mx-auto py-6 px-4">
@@ -636,7 +636,7 @@ export default function ProgramPage() {
             {/* Week selector */}
             <div className="mb-6">
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                    {program.weekPlans.map(wp => (
+                    {(program.weekPlans || []).map(wp => (
                         <Button
                             key={wp.weekNumber}
                             variant={selectedWeek === wp.weekNumber ? "default" : "outline"}
@@ -730,7 +730,7 @@ export default function ProgramPage() {
                                                     onChange={(e) => updateTopicPlan(tp.id, { plannedWeek: parseInt(e.target.value) })}
                                                     className="text-xs bg-muted rounded px-2 py-1 border"
                                                 >
-                                                    {program.weekPlans.map(w => (
+                                                    {(program.weekPlans || []).map(w => (
                                                         <option key={w.weekNumber} value={w.weekNumber}>
                                                             Неделя {w.weekNumber}
                                                         </option>
@@ -782,7 +782,7 @@ export default function ProgramPage() {
                             <CardContent>
                                 <div className="space-y-2">
                                     {Object.entries(JSON.parse(currentWeekPlan.subjectHours) as Record<string, number>).map(([subjectId, hours]) => {
-                                        const topic = program.topicPlans.find(tp => tp.topic?.subject?.id === subjectId)
+                                        const topic = program.topicPlans?.find(tp => tp.topic?.subject?.id === subjectId)
                                         const subject = topic?.topic?.subject
                                         return (
                                             <div key={subjectId} className="flex items-center justify-between">
@@ -808,11 +808,11 @@ export default function ProgramPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            {program.scheduledTests.length === 0 ? (
+                            {(program.scheduledTests?.length || 0) === 0 ? (
                                 <p className="text-muted-foreground text-sm">Нет запланированных тестов</p>
                             ) : (
                                 <div className="space-y-2">
-                                    {program.scheduledTests.slice(0, 5).map(test => (
+                                    {(program.scheduledTests || []).slice(0, 5).map(test => (
                                         <div
                                             key={test.id}
                                             className={cn(

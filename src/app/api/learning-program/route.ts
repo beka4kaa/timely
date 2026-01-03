@@ -22,7 +22,8 @@ export async function GET() {
     const latestProgram = programs.length > 0 ? toCamelCase(programs[0]) : null;
     
     if (!latestProgram) {
-      return NextResponse.json(null, { status: 404 });
+      // Return 200 with null instead of 404 to indicate no program exists yet
+      return NextResponse.json(null, { status: 200 });
     }
     
     return NextResponse.json(latestProgram);
