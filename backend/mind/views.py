@@ -34,7 +34,7 @@ class TopicViewSet(viewsets.ModelViewSet):
         user_email = getattr(self.request, 'user_email', None)
         queryset = Topic.objects.all().select_related('subject').prefetch_related('subtopics')
         
-        # Filter by user (through subject)
+        # Filter by user (through subject) - this ensures users can only see their own topics
         if user_email:
             queryset = queryset.filter(subject__user_email=user_email)
         
@@ -63,6 +63,10 @@ class TopicViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status='NOT_STARTED')
         
         return queryset.order_by('order_index', 'created_at')
+
+    def perform_create(self, serializer):
+        """Associate topic with a subject that belongs to the user"""
+        serializer.save()
     
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
