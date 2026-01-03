@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { BACKEND_URL } from '@/lib/api-utils'
+import { BACKEND_URL, toCamelCase, toSnakeCase } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function POST(
   request: NextRequest,
@@ -7,18 +8,18 @@ export async function POST(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders(request)
     const body = await request.json()
-    // Add review action to subtopics in Django backend or handle here
-    const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...body,
-        last_reviewed_at: new Date().toISOString(),
-      }),
+    
+    // Try to use the review action endpoint first
+    const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/review/`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(toSnakeCase(body)),
     })
+    
     const data = await response.json()
-    return NextResponse.json(data, { status: response.status })
+    return NextResponse.json(toCamelCase(data), { status: response.status })
   } catch (error) {
     console.error('Error reviewing subtopic:', error)
     return NextResponse.json({ error: 'Failed to review subtopic' }, { status: 500 })

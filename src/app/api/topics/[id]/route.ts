@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { BACKEND_URL } from '@/lib/api-utils'
+import { BACKEND_URL, toCamelCase, toSnakeCase } from '@/lib/api-utils'
 import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function GET(
@@ -11,9 +11,7 @@ export async function GET(
     const headers = await createBackendHeaders(request)
     const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/`, { headers })
     const data = await response.json()
-
-    
-    return NextResponse.json(data)
+    return NextResponse.json(toCamelCase(data), { status: response.status })
   } catch (error) {
     console.error('Error fetching topic:', error)
     return NextResponse.json({ error: 'Failed to fetch topic' }, { status: 500 })
@@ -31,10 +29,10 @@ export async function PUT(
     const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(toSnakeCase(body)),
     })
     const data = await response.json()
-    return NextResponse.json(data, { status: response.status })
+    return NextResponse.json(toCamelCase(data), { status: response.status })
   } catch (error) {
     console.error('Error updating topic:', error)
     return NextResponse.json({ error: 'Failed to update topic' }, { status: 500 })
@@ -52,10 +50,10 @@ export async function PATCH(
     const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(toSnakeCase(body)),
     })
     const data = await response.json()
-    return NextResponse.json(data, { status: response.status })
+    return NextResponse.json(toCamelCase(data), { status: response.status })
   } catch (error) {
     console.error('Error updating topic:', error)
     return NextResponse.json({ error: 'Failed to update topic' }, { status: 500 })

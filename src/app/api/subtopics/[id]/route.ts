@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { BACKEND_URL } from '@/lib/api-utils'
+import { BACKEND_URL, toCamelCase, toSnakeCase } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -7,9 +8,10 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`)
+    const headers = await createBackendHeaders(request)
+    const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, { headers })
     const data = await response.json()
-    return NextResponse.json(data)
+    return NextResponse.json(toCamelCase(data))
   } catch (error) {
     console.error('Error fetching subtopic:', error)
     return NextResponse.json({ error: 'Failed to fetch subtopic' }, { status: 500 })
@@ -22,14 +24,36 @@ export async function PUT(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders(request)
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers,
+      body: JSON.stringify(toSnakeCase(body)),
     })
     const data = await response.json()
-    return NextResponse.json(data, { status: response.status })
+    return NextResponse.json(toCamelCase(data), { status: response.status })
+  } catch (error) {
+    console.error('Error updating subtopic:', error)
+    return NextResponse.json({ error: 'Failed to update subtopic' }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  try {
+    const headers = await createBackendHeaders(request)
+    const body = await request.json()
+    const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(toSnakeCase(body)),
+    })
+    const data = await response.json()
+    return NextResponse.json(toCamelCase(data), { status: response.status })
   } catch (error) {
     console.error('Error updating subtopic:', error)
     return NextResponse.json({ error: 'Failed to update subtopic' }, { status: 500 })
@@ -42,8 +66,10 @@ export async function DELETE(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders(request)
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
       method: 'DELETE',
+      headers,
     })
     if (response.status === 204) {
       return new NextResponse(null, { status: 204 })

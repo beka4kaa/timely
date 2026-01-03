@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, toCamelCase, toSnakeCase } from '@/lib/api-utils';
+import { createBackendHeaders } from '@/lib/backend-helpers';
 
 export async function POST(request: NextRequest) {
   try {
+    const headers = await createBackendHeaders(request);
     const body = await request.json();
     
-    const response = await fetch(`${BACKEND_URL}/api/mind/topics/reorder`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/topics/reorder/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(toSnakeCase(body)),
     });
 
