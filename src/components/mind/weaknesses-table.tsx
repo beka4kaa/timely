@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,7 @@ import {
     ChevronRight,
     ChevronDown,
     Sparkles,
+    GripVertical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -43,12 +44,266 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+// Drag and Drop
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+    DragStartEvent,
+    DragOverlay,
+    defaultDropAnimationSideEffects,
+} from '@dnd-kit/core'
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
 interface WeaknessesTableProps {
     className?: string
     hideAddButton?: boolean
 }
 
 type FilterType = 'overall' | 'picked' | 'urgent' | 'archived'
+
+// Sortable Row Component
+interface SortableRowProps {
+    topic: Topic
+    isExpanded: boolean
+    subtopics: any[]
+    isSelected: boolean
+    onToggleSelect: (id: string | number) => void
+    onToggleExpand: (id: string) => void
+    onTogglePicked: (topic: Topic) => void
+    onReview: (id: string, rating: 'GOOD' | 'AGAIN') => void
+    onToggleArchived: (topic: Topic) => void
+    onUpdateStatus: (id: string, status: string) => void
+    onOpenAddSubtopic: (id: string, name: string) => void
+    onOpenAISubtopics: (id: string, name: string) => void
+    onRefreshSubtopics: (id: string) => void
+    isDragging?: boolean
+}
+
+function SortableRow({
+    topic,
+    isExpanded,
+    subtopics,
+    isSelected,
+    onToggleSelect,
+    onToggleExpand,
+    onTogglePicked,
+    onReview,
+    onToggleArchived,
+    onUpdateStatus,
+    onOpenAddSubtopic,
+    onOpenAISubtopics,
+    onRefreshSubtopics,
+    isDragging = false,
+}: SortableRowProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging: isSortableDragging,
+    } = useSortable({ id: String(topic.id) })
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isSortableDragging ? 0.5 : 1,
+        zIndex: isSortableDragging ? 1000 : undefined,
+    }
+
+    return (
+        <React.Fragment>
+            <tr
+                ref={setNodeRef}
+                style={style}
+                className={cn(
+                    "border-t hover:bg-muted/30 transition-all",
+                    isDueToday(topic.nextReviewAt) && "bg-amber-500/10",
+                    isSelected && "bg-primary/5",
+                    isSortableDragging && "bg-primary/10 shadow-lg"
+                )}
+            >
+                <td className="p-3 w-[30px]">
+                    <div
+                        {...attributes}
+                        {...listeners}
+                        className="cursor-grab active:cursor-grabbing touch-none"
+                    >
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                </td>
+                <td className="p-3">
+                    <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => onToggleSelect(topic.id)}
+                    />
+                </td>
+                <td className="p-3">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onToggleExpand(topic.id)}
+                            className="hover:bg-muted p-0.5 rounded"
+                        >
+                            {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                        </button>
+                        <button onClick={() => onTogglePicked(topic)}>
+                            {topic.picked ? (
+                                <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+                            ) : (
+                                <StarOff className="h-4 w-4 text-muted-foreground" />
+                            )}
+                        </button>
+                        <span className={cn(topic.archived && "line-through text-muted-foreground")}>
+                            {topic.name}
+                        </span>
+                        {isDueToday(topic.nextReviewAt) && (
+                            <Badge variant="destructive" className="text-xs">
+                                Сегодня
+                            </Badge>
+                        )}
+                    </div>
+                </td>
+                <td className="p-3">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className="cursor-pointer hover:opacity-80 transition-opacity">
+                                <Badge className={cn("text-xs", getTopicStatusColor(topic.status as any))}>
+                                    {getTopicStatusLabel(topic.status as any)}
+                                </Badge>
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                                onClick={() => onUpdateStatus(topic.id, 'NOT_STARTED')}
+                                className={topic.status === 'NOT_STARTED' ? 'bg-muted' : ''}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-gray-400 mr-2" />
+                                Не начато
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => onUpdateStatus(topic.id, 'MEDIUM')}
+                                className={topic.status === 'MEDIUM' ? 'bg-muted' : ''}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" />
+                                Знаю немного
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => onUpdateStatus(topic.id, 'SUCCESS')}
+                                className={topic.status === 'SUCCESS' ? 'bg-muted' : ''}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
+                                Знаю хорошо
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                onClick={() => onUpdateStatus(topic.id, 'MASTERED')}
+                                className={topic.status === 'MASTERED' ? 'bg-muted' : ''}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
+                                Мастерство
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </td>
+                <td className="p-3 text-muted-foreground">
+                    {formatInterval(topic.intervalDays)}
+                </td>
+                <td className="p-3 text-muted-foreground">
+                    {formatDaysPast(topic.lastRevisedAt)}
+                </td>
+                <td className="p-3 text-muted-foreground">
+                    {topic.nextReviewAt
+                        ? new Date(topic.nextReviewAt).toLocaleDateString('ru-RU')
+                        : '—'
+                    }
+                </td>
+                <td className="p-3">
+                    <div className="flex items-center justify-end gap-1">
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
+                            onClick={() => onReview(topic.id, 'GOOD')}
+                        >
+                            <ThumbsUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                            onClick={() => onReview(topic.id, 'AGAIN')}
+                        >
+                            <ThumbsDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onToggleArchived(topic)}
+                        >
+                            {topic.archived ? (
+                                <ArchiveRestore className="h-4 w-4" />
+                            ) : (
+                                <Archive className="h-4 w-4" />
+                            )}
+                        </Button>
+                    </div>
+                </td>
+            </tr>
+
+            {/* Expanded Subtopics Row */}
+            {isExpanded && (
+                <tr>
+                    <td colSpan={8} className="p-0 bg-muted/20">
+                        <div className="p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-medium">Subtopics</h4>
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => onOpenAddSubtopic(topic.id, topic.name)}
+                                    >
+                                        <Plus className="h-3.5 w-3.5 mr-1" />
+                                        Add
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-purple-500"
+                                        onClick={() => onOpenAISubtopics(topic.id, topic.name)}
+                                    >
+                                        <Sparkles className="h-3.5 w-3.5 mr-1" />
+                                        AI Generate
+                                    </Button>
+                                </div>
+                            </div>
+                            <SubtopicsTable
+                                topicId={topic.id}
+                                subtopics={subtopics}
+                                onSubtopicsChange={() => onRefreshSubtopics(topic.id)}
+                            />
+                        </div>
+                    </td>
+                </tr>
+            )}
+        </React.Fragment>
+    )
+}
 
 export function WeaknessesTable({ className, hideAddButton = false }: WeaknessesTableProps) {
     const [topics, setTopics] = useState<Topic[]>([])
@@ -62,6 +317,17 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     const [showAddSubtopic, setShowAddSubtopic] = useState(false)
     const [showAISubtopics, setShowAISubtopics] = useState(false)
     const [selectedTopicForSubtopic, setSelectedTopicForSubtopic] = useState<{ id: string, name: string } | null>(null)
+    const [activeId, setActiveId] = useState<string | null>(null)
+
+    // DnD sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 8 },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    )
 
     const fetchData = useCallback(async () => {
         setLoading(true)
@@ -304,6 +570,71 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
         }
     }
 
+    // Drag and Drop handlers
+    const handleDragStart = (event: DragStartEvent) => {
+        setActiveId(String(event.active.id))
+    }
+
+    const handleDragEnd = async (event: DragEndEvent, subjectId: string, subjectTopics: Topic[]) => {
+        const { active, over } = event
+        setActiveId(null)
+
+        if (!over || active.id === over.id) return
+
+        const oldIndex = subjectTopics.findIndex(t => String(t.id) === active.id)
+        const newIndex = subjectTopics.findIndex(t => String(t.id) === over.id)
+
+        if (oldIndex === -1 || newIndex === -1) return
+
+        // Check if we're moving multiple selected items
+        const movingIds = selectedTopics.has(String(active.id)) && selectedTopics.size > 1
+            ? Array.from(selectedTopics)
+            : [String(active.id)]
+
+        // Reorder locally first for instant feedback
+        let newSubjectTopics = [...subjectTopics]
+        
+        if (movingIds.length === 1) {
+            newSubjectTopics = arrayMove(subjectTopics, oldIndex, newIndex)
+        } else {
+            // Move multiple selected items
+            const selectedItems = subjectTopics.filter(t => movingIds.includes(String(t.id)))
+            const otherItems = subjectTopics.filter(t => !movingIds.includes(String(t.id)))
+            
+            // Find where to insert (at the over position among non-selected items)
+            const overIndexInOthers = otherItems.findIndex(t => String(t.id) === String(over.id))
+            if (overIndexInOthers !== -1) {
+                otherItems.splice(overIndexInOthers, 0, ...selectedItems)
+                newSubjectTopics = otherItems
+            } else {
+                newSubjectTopics = [...otherItems, ...selectedItems]
+            }
+        }
+
+        // Update local state
+        setTopics(prev => {
+            const otherTopics = prev.filter(t => {
+                const tSubjectId = typeof t.subject === 'string' ? t.subject : (t.subject?.id || 'no-subject')
+                return tSubjectId !== subjectId
+            })
+            return [...otherTopics, ...newSubjectTopics]
+        })
+
+        // Save to backend
+        try {
+            const newIds = newSubjectTopics.map(t => t.id)
+            await fetch('/api/topics/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: newIds, subjectId }),
+            })
+        } catch (error) {
+            console.error('Error reordering topics:', error)
+            toast.error('Ошибка сохранения порядка')
+            fetchData() // Reload on error
+        }
+    }
+
     const filters: { key: FilterType; label: string }[] = [
         { key: 'overall', label: 'Все' },
         { key: 'picked', label: 'Избранное' },
@@ -372,201 +703,59 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                         </Badge>
                     </div>
 
-                    <div className="rounded-lg border overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50">
-                                <tr>
-                                    <th className="w-[30px] p-3">
-                                        <Checkbox
-                                            checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
-                                            onCheckedChange={() => toggleSelectAll(subjectTopics)}
-                                        />
-                                    </th>
-                                    <th className="text-left p-3 font-medium">Тема</th>
-                                    <th className="text-left p-3 font-medium">Статус</th>
-                                    <th className="text-left p-3 font-medium">Интервал</th>
-                                    <th className="text-left p-3 font-medium">Прошло</th>
-                                    <th className="text-left p-3 font-medium">След. повтор</th>
-                                    <th className="text-right p-3 font-medium">Действия</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {subjectTopics.map((topic) => {
-                                    const isExpanded = expandedTopics.has(topic.id)
-                                    const subtopics = topicSubtopics[topic.id] || []
-
-                                    return (
-                                        <React.Fragment key={topic.id}>
-                                            <tr
-                                                className={cn(
-                                                    "border-t hover:bg-muted/30 transition-colors",
-                                                    isDueToday(topic.nextReviewAt) && "bg-amber-500/10",
-                                                    selectedTopics.has(String(topic.id)) && "bg-primary/5"
-                                                )}
-                                            >
-                                                <td className="p-3">
-                                                    <Checkbox
-                                                        checked={selectedTopics.has(String(topic.id))}
-                                                        onCheckedChange={() => toggleSelect(topic.id)}
-                                                    />
-                                                </td>
-                                                <td className="p-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => toggleExpanded(topic.id)}
-                                                            className="hover:bg-muted p-0.5 rounded"
-                                                        >
-                                                            {isExpanded ? (
-                                                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                                            ) : (
-                                                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                                            )}
-                                                        </button>
-                                                        <button onClick={() => togglePicked(topic)}>
-                                                            {topic.picked ? (
-                                                                <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
-                                                            ) : (
-                                                                <StarOff className="h-4 w-4 text-muted-foreground" />
-                                                            )}
-                                                        </button>
-                                                        <span className={cn(topic.archived && "line-through text-muted-foreground")}>
-                                                            {topic.name}
-                                                        </span>
-                                                        {isDueToday(topic.nextReviewAt) && (
-                                                            <Badge variant="destructive" className="text-xs">
-                                                                Сегодня
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="p-3">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <button className="cursor-pointer hover:opacity-80 transition-opacity">
-                                                                <Badge className={cn("text-xs", getTopicStatusColor(topic.status as any))}>
-                                                                    {getTopicStatusLabel(topic.status as any)}
-                                                                </Badge>
-                                                            </button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="start">
-                                                            <DropdownMenuItem
-                                                                onClick={() => updateStatus(topic.id, 'NOT_STARTED')}
-                                                                className={topic.status === 'NOT_STARTED' ? 'bg-muted' : ''}
-                                                            >
-                                                                <span className="w-2 h-2 rounded-full bg-gray-400 mr-2" />
-                                                                Не начато
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onClick={() => updateStatus(topic.id, 'MEDIUM')}
-                                                                className={topic.status === 'MEDIUM' ? 'bg-muted' : ''}
-                                                            >
-                                                                <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" />
-                                                                Знаю немного
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onClick={() => updateStatus(topic.id, 'SUCCESS')}
-                                                                className={topic.status === 'SUCCESS' ? 'bg-muted' : ''}
-                                                            >
-                                                                <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2" />
-                                                                Знаю хорошо
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onClick={() => updateStatus(topic.id, 'MASTERED')}
-                                                                className={topic.status === 'MASTERED' ? 'bg-muted' : ''}
-                                                            >
-                                                                <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
-                                                                Мастерство
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </td>
-                                                <td className="p-3 text-muted-foreground">
-                                                    {formatInterval(topic.intervalDays)}
-                                                </td>
-                                                <td className="p-3 text-muted-foreground">
-                                                    {formatDaysPast(topic.lastRevisedAt)}
-                                                </td>
-                                                <td className="p-3 text-muted-foreground">
-                                                    {topic.nextReviewAt
-                                                        ? new Date(topic.nextReviewAt).toLocaleDateString('ru-RU')
-                                                        : '—'
-                                                    }
-                                                </td>
-                                                <td className="p-3">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
-                                                            onClick={() => handleReview(topic.id, 'GOOD')}
-                                                        >
-                                                            <ThumbsUp className="h-4 w-4" />
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                                                            onClick={() => handleReview(topic.id, 'AGAIN')}
-                                                        >
-                                                            <ThumbsDown className="h-4 w-4" />
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            onClick={() => toggleArchived(topic)}
-                                                        >
-                                                            {topic.archived ? (
-                                                                <ArchiveRestore className="h-4 w-4" />
-                                                            ) : (
-                                                                <Archive className="h-4 w-4" />
-                                                            )}
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-
-                                            {/* Expanded Subtopics Row */}
-                                            {isExpanded && (
-                                                <tr>
-                                                    <td colSpan={7} className="p-0 bg-muted/20">
-                                                        <div className="p-4 space-y-3">
-                                                            <div className="flex items-center justify-between">
-                                                                <h4 className="text-sm font-medium">Subtopics</h4>
-                                                                <div className="flex gap-2">
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="outline"
-                                                                        onClick={() => handleOpenAddSubtopic(topic.id, topic.name)}
-                                                                    >
-                                                                        <Plus className="h-3.5 w-3.5 mr-1" />
-                                                                        Add
-                                                                    </Button>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="outline"
-                                                                        className="text-purple-500"
-                                                                        onClick={() => handleOpenAISubtopics(topic.id, topic.name)}
-                                                                    >
-                                                                        <Sparkles className="h-3.5 w-3.5 mr-1" />
-                                                                        AI Generate
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
-                                                            <SubtopicsTable
-                                                                topicId={topic.id}
-                                                                subtopics={subtopics}
-                                                                onSubtopicsChange={() => refreshSubtopics(topic.id)}
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragStart={handleDragStart}
+                        onDragEnd={(event) => handleDragEnd(event, subjectId, subjectTopics)}
+                    >
+                        <div className="rounded-lg border overflow-hidden">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50">
+                                    <tr>
+                                        <th className="w-[40px] p-3"></th>
+                                        <th className="w-[30px] p-3">
+                                            <Checkbox
+                                                checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
+                                                onCheckedChange={() => toggleSelectAll(subjectTopics)}
+                                            />
+                                        </th>
+                                        <th className="text-left p-3 font-medium">Тема</th>
+                                        <th className="text-left p-3 font-medium">Статус</th>
+                                        <th className="text-left p-3 font-medium">Интервал</th>
+                                        <th className="text-left p-3 font-medium">Прошло</th>
+                                        <th className="text-left p-3 font-medium">След. повтор</th>
+                                        <th className="text-right p-3 font-medium">Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <SortableContext
+                                        items={subjectTopics.map(t => String(t.id))}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        {subjectTopics.map((topic) => (
+                                            <SortableRow
+                                                key={topic.id}
+                                                topic={topic}
+                                                isExpanded={expandedTopics.has(topic.id)}
+                                                subtopics={topicSubtopics[topic.id] || []}
+                                                isSelected={selectedTopics.has(String(topic.id))}
+                                                onToggleSelect={toggleSelect}
+                                                onToggleExpand={toggleExpanded}
+                                                onTogglePicked={togglePicked}
+                                                onReview={handleReview}
+                                                onToggleArchived={toggleArchived}
+                                                onUpdateStatus={updateStatus}
+                                                onOpenAddSubtopic={handleOpenAddSubtopic}
+                                                onOpenAISubtopics={handleOpenAISubtopics}
+                                                onRefreshSubtopics={refreshSubtopics}
+                                            />
+                                        ))}
+                                    </SortableContext>
+                                </tbody>
+                            </table>
+                        </div>
+                    </DndContext>
                 </div>
             ))}
 
