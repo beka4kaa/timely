@@ -10,8 +10,206 @@ from .services import (
     analyze_progress, 
     modify_program
 )
-from datetime import timedelta
+from datetime import timedelta, datetime
 from django.utils import timezone
+import math
+
+def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_day, session_minutes=45):
+    """
+    Generate schedule PROGRAMMATICALLY - this ALWAYS respects deadline.
+    No AI involved in structure - just pure math.
+    
+    Args:
+        subjects_data: List of subjects with topics
+        subject_deadlines: List of {subjectId, deadline, milestoneTopicId}
+        hours_per_day: Available study hours per day (e.g., 12)
+        session_minutes: Duration of each session in minutes (default 45)
+    
+    Returns:
+        dict with dayPlans, weekPlans, topicPlans structured for storage
+    """
+    now = datetime.now()
+    
+    # Find minimum deadline (most urgent)
+    min_deadline_date = None
+    for sd in subject_deadlines:
+        deadline_str = sd.get('deadline')
+        if deadline_str:
+            try:
+                if 'T' in str(deadline_str):
+                    deadline_date = datetime.fromisoformat(str(deadline_str).replace('Z', '+00:00')).replace(tzinfo=None)
+                else:
+                    deadline_date = datetime.strptime(str(deadline_str)[:10], '%Y-%m-%d')
+                if min_deadline_date is None or deadline_date < min_deadline_date:
+                    min_deadline_date = deadline_date
+            except:
+                pass
+    
+    # Calculate available days (HARD LIMIT)
+    if min_deadline_date:
+        days_available = max(1, (min_deadline_date - now).days)
+    else:
+        days_available = 7  # Default 1 week
+    
+    print(f"PROGRAMMATIC: {days_available} days available until deadline {min_deadline_date}")
+    
+    # Calculate sessions per day from hours
+    sessions_per_day = int(hours_per_day * 60 / session_minutes)
+    sessions_per_day = max(8, min(20, sessions_per_day))  # Between 8-20
+    
+    print(f"PROGRAMMATIC: {sessions_per_day} sessions per day ({hours_per_day}h * 60 / {session_minutes}min)")
+    
+    # Collect all topics from all subjects with scope filtering
+    all_topics = []
+    for subj in subjects_data:
+        subj_id = str(subj.get('id', ''))
+        subj_name = subj.get('name', 'Subject')
+        topics = subj.get('topics', [])
+        
+        # Find milestone topic for this subject
+        end_index = len(topics)
+        for sd in subject_deadlines:
+            if str(sd.get('subjectId') or sd.get('subject_id')) == subj_id:
+                milestone_id = sd.get('milestoneTopicId')
+                if milestone_id:
+                    for idx, t in enumerate(topics):
+                        if str(t.get('id')) == str(milestone_id):
+                            end_index = idx + 1
+                            break
+                break
+        
+        # Only include topics up to milestone
+        for t in topics[:end_index]:
+            all_topics.append({
+                'topic_id': t.get('id'),
+                'topic_name': t.get('name'),
+                'subject_id': subj_id,
+                'subject_name': subj_name,
+                'status': t.get('status', 'NOT_STARTED')
+            })
+    
+    total_topics = len(all_topics)
+    
+    # Session duration based on topic status
+    def get_session_duration(topic):
+        st = topic.get('status', 'NOT_STARTED')
+        if st in ['MASTERED', 'SUCCESS']:
+            return 15  # Quick review
+        elif st == 'MEDIUM':
+            return 30  # Practice focus
+        else:
+            return session_minutes  # Full treatment
+    
+    # Distribute topics across days
+    total_sessions_needed = total_topics * 2  # Theory + Practice for each
+    available_sessions = days_available * sessions_per_day
+    
+    print(f"PROGRAMMATIC: {total_topics} topics, need {total_sessions_needed} sessions, have {available_sessions} slots")
+    
+    # Build day plans
+    day_plans = []
+    topic_plans = []
+    topic_idx = 0
+    
+    for day in range(1, days_available + 1):
+        day_date = now + timedelta(days=day - 1)
+        sessions = []
+        
+        hour = 8  # Start at 8 AM
+        session_order = 0
+        
+        while session_order < sessions_per_day and topic_idx < total_topics:
+            topic = all_topics[topic_idx]
+            duration = get_session_duration(topic)
+            
+            # Add THEORY session
+            session_order += 1
+            sessions.append({
+                'order': session_order,
+                'startTime': f'{hour:02d}:00',
+                'subjectName': topic['subject_name'],
+                'topicName': topic['topic_name'],
+                'topicId': topic['topic_id'],
+                'type': 'THEORY',
+                'durationMin': duration
+            })
+            
+            # Add topic plan
+            topic_plans.append({
+                'topicName': topic['topic_name'],
+                'topicId': topic['topic_id'],
+                'subjectName': topic['subject_name'],
+                'plannedWeek': (day - 1) // 7 + 1,
+                'plannedDay': day,
+                'estimatedHours': duration / 60,
+                'priority': topic_idx + 1,
+                'type': 'THEORY',
+                'status': topic['status']
+            })
+            
+            hour += 1
+            if hour >= 20:  # Stop at 8 PM
+                break
+            
+            # Add PRACTICE session if still have slots
+            if session_order < sessions_per_day:
+                session_order += 1
+                sessions.append({
+                    'order': session_order,
+                    'startTime': f'{hour:02d}:00',
+                    'subjectName': topic['subject_name'],
+                    'topicName': topic['topic_name'],
+                    'topicId': topic['topic_id'],
+                    'type': 'PRACTICE',
+                    'durationMin': duration
+                })
+                hour += 1
+            
+            topic_idx += 1
+            if hour >= 20:
+                break
+        
+        day_plans.append({
+            'dayNumber': day,
+            'date': day_date.strftime('%Y-%m-%d'),
+            'weekNumber': (day - 1) // 7 + 1,
+            'totalHours': len(sessions) * session_minutes / 60,
+            'sessions': sessions
+        })
+    
+    # Build week summaries
+    weeks = {}
+    for dp in day_plans:
+        wn = dp['weekNumber']
+        if wn not in weeks:
+            weeks[wn] = {'weekNumber': wn, 'topics': [], 'sessions': 0}
+        weeks[wn]['sessions'] += len(dp['sessions'])
+        for s in dp['sessions']:
+            topic_key = f"{s['subjectName']}: {s['topicName']}"
+            if topic_key not in weeks[wn]['topics']:
+                weeks[wn]['topics'].append(topic_key)
+    
+    week_summaries = [
+        {
+            'weekNumber': w['weekNumber'],
+            'mainTopics': w['topics'][:10],
+            'totalHours': w['sessions'] * session_minutes / 60,
+            'goals': f"Complete {len(w['topics'])} topics"
+        }
+        for w in weeks.values()
+    ]
+    
+    return {
+        'programTitle': f'Intensive {days_available}-Day Crash Course',
+        'totalDays': days_available,
+        'totalWeeks': max(1, (days_available + 6) // 7),
+        'dayPlans': day_plans,
+        'weekSummaries': week_summaries,
+        'topicPlans': topic_plans,
+        'weekPlans': [{'weekNumber': ws['weekNumber'], 'focus': ', '.join(ws['mainTopics'][:5])} for ws in week_summaries],
+        'scheduledTests': []
+    }
+
 
 class GenerateProgramView(APIView):
     def post(self, request):
@@ -63,17 +261,19 @@ class GenerateProgramView(APIView):
             subject_data.append(subject_info)
         
         try:
-            # Call AI Service with enriched context (61-school style)
-            ai_result = generate_learning_program_content(
-                goal, timeframe, hours_per_day, current_level, subject_data,
-                context={
-                    'totalWeeks': total_weeks, 
-                    'hoursPerWeek': hours_per_week,
-                    'subjectDeadlines': subject_deadlines
-                }
+            # USE PROGRAMMATIC GENERATOR - this GUARANTEES deadline respect
+            print("=" * 60)
+            print("USING PROGRAMMATIC SCHEDULE GENERATOR (not AI)")
+            print("=" * 60)
+            
+            ai_result = generate_programmatic_schedule(
+                subjects_data=subject_data,
+                subject_deadlines=subject_deadlines,
+                hours_per_day=hours_per_day,
+                session_minutes=45  # 45 min per session
             )
             
-            if not ai_result:
+            if not ai_result or not ai_result.get('dayPlans'):
                 return Response({'error': 'AI failed to generate program'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
             # Create Database Objects
