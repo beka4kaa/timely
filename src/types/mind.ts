@@ -19,7 +19,10 @@ export interface Subject {
 export interface Topic {
     id: string
     subjectId: string
-    subject?: Subject
+    subject?: Subject | string  // Can be Subject object or just ID string
+    subjectName?: string        // Subject name from API
+    subjectEmoji?: string       // Subject emoji from API
+    subjectColor?: string       // Subject color from API
     name: string
     status: TopicStatus
     studyState: StudyState

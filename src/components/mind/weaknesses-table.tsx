@@ -91,15 +91,23 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     }, [fetchData])
 
     // Group topics by subject
+    // topic.subject is the ID (string), subjectName/subjectEmoji/subjectColor are separate fields
     const groupedTopics = topics.reduce((acc, topic) => {
-        const subjectName = topic.subject?.name || 'Без предмета'
-        if (!acc[subjectName]) {
-            acc[subjectName] = {
-                subject: topic.subject,
+        const subjectId = topic.subject || 'no-subject'
+        const subjectName = topic.subjectName || 'Без предмета'
+        
+        if (!acc[subjectId]) {
+            acc[subjectId] = {
+                subject: topic.subjectName ? {
+                    id: subjectId,
+                    name: subjectName,
+                    emoji: topic.subjectEmoji || '📚',
+                    color: topic.subjectColor || '#6b7280',
+                } as Subject : undefined,
                 topics: [],
             }
         }
-        acc[subjectName].topics.push(topic)
+        acc[subjectId].topics.push(topic)
         return acc
     }, {} as Record<string, { subject: Subject | undefined; topics: Topic[] }>)
 
