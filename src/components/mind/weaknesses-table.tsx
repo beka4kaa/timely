@@ -189,12 +189,22 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
 
     // Bulk Delete
     const handleBulkDelete = async () => {
+        console.log('🗑️ Bulk delete called, selectedTopics:', selectedTopics)
+        console.log('🗑️ Selected IDs:', Array.from(selectedTopics))
+        
+        if (selectedTopics.size === 0) {
+            toast.error("Выберите темы для удаления")
+            return
+        }
+        
         if (!confirm(`Удалить выбранные ${selectedTopics.size} тем(ы)?`)) return
 
         try {
             const results = await Promise.all(
                 Array.from(selectedTopics).map(async id => {
+                    console.log('🗑️ Deleting topic:', id)
                     const res = await fetch(`/api/topics/${id}`, { method: 'DELETE' })
+                    console.log('🗑️ Delete response:', id, res.status, res.ok)
                     return { id, ok: res.ok || res.status === 204 }
                 })
             )
@@ -218,24 +228,29 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
     }
 
     const toggleSelectAll = (subjectTopics: Topic[]) => {
-        const allSelected = subjectTopics.every(t => selectedTopics.has(t.id))
+        console.log('📋 toggleSelectAll called, topics:', subjectTopics.map(t => ({ id: t.id, name: t.name })))
+        const allSelected = subjectTopics.every(t => selectedTopics.has(String(t.id)))
         const newSelected = new Set(selectedTopics)
 
         if (allSelected) {
-            subjectTopics.forEach(t => newSelected.delete(t.id))
+            subjectTopics.forEach(t => newSelected.delete(String(t.id)))
         } else {
-            subjectTopics.forEach(t => newSelected.add(t.id))
+            subjectTopics.forEach(t => newSelected.add(String(t.id)))
         }
+        console.log('📋 New selected:', Array.from(newSelected))
         setSelectedTopics(newSelected)
     }
 
-    const toggleSelect = (id: string) => {
+    const toggleSelect = (id: string | number) => {
+        const strId = String(id)
+        console.log('☑️ toggleSelect called, id:', id, 'strId:', strId)
         const newSelected = new Set(selectedTopics)
-        if (newSelected.has(id)) {
-            newSelected.delete(id)
+        if (newSelected.has(strId)) {
+            newSelected.delete(strId)
         } else {
-            newSelected.add(id)
+            newSelected.add(strId)
         }
+        console.log('☑️ New selected:', Array.from(newSelected))
         setSelectedTopics(newSelected)
     }
 
@@ -357,7 +372,7 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                                 <tr>
                                     <th className="w-[30px] p-3">
                                         <Checkbox
-                                            checked={subjectTopics.every(t => selectedTopics.has(t.id))}
+                                            checked={subjectTopics.every(t => selectedTopics.has(String(t.id)))}
                                             onCheckedChange={() => toggleSelectAll(subjectTopics)}
                                         />
                                     </th>
@@ -380,12 +395,12 @@ export function WeaknessesTable({ className, hideAddButton = false }: Weaknesses
                                                 className={cn(
                                                     "border-t hover:bg-muted/30 transition-colors",
                                                     isDueToday(topic.nextReviewAt) && "bg-amber-500/10",
-                                                    selectedTopics.has(topic.id) && "bg-primary/5"
+                                                    selectedTopics.has(String(topic.id)) && "bg-primary/5"
                                                 )}
                                             >
                                                 <td className="p-3">
                                                     <Checkbox
-                                                        checked={selectedTopics.has(topic.id)}
+                                                        checked={selectedTopics.has(String(topic.id))}
                                                         onCheckedChange={() => toggleSelect(topic.id)}
                                                     />
                                                 </td>
