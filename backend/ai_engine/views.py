@@ -84,11 +84,27 @@ class GenerateProgramView(APIView):
                 description=ai_result.get('description', ''),
                 strategy=ai_result.get('strategy', '')
             )
+            
+            # Debug log
+            print(f"AI Result keys: {ai_result.keys()}")
+            print(f"weeks count: {len(ai_result.get('weeks', []))}")
+            print(f"weekPlans count: {len(ai_result.get('weekPlans', []))}")
+            print(f"topicPlans count: {len(ai_result.get('topicPlans', []))}")
 
             # Create Week Plans - handle both new 'weeks' array and legacy 'weekPlans'
-            week_plans_data = ai_result.get('weeks', ai_result.get('weekPlans', []))
-            for wp in week_plans_data:
+            # Merge both sources
+            weeks_data = ai_result.get('weeks', [])
+            week_plans_legacy = ai_result.get('weekPlans', [])
+            
+            # Create set of week numbers we've already created
+            created_week_numbers = set()
+            
+            # First process weeks array (primary source in 61-school format)
+            for wp in weeks_data:
                 week_num = wp.get('weekNumber', wp.get('weekIndex', 1))
+                if week_num in created_week_numbers:
+                    continue
+                created_week_numbers.add(week_num)
                 WeekPlan.objects.create(
                     program=program,
                     week_number=week_num,
@@ -98,32 +114,58 @@ class GenerateProgramView(APIView):
                     focus=wp.get('focus', ''),
                     notes=wp.get('notes', '')
                 )
+            
+            # Then process weekPlans (legacy format) for any missing weeks
+            for wp in week_plans_legacy:
+                week_num = wp.get('weekNumber', 1)
+                if week_num in created_week_numbers:
+                    continue
+                created_week_numbers.add(week_num)
+                WeekPlan.objects.create(
+                    program=program,
+                    week_number=week_num,
+                    start_date=timezone.now() + timedelta(days=wp.get('startOffset', (week_num - 1) * 7)),
+                    end_date=timezone.now() + timedelta(days=wp.get('endOffset', week_num * 7)),
+                    subject_hours=str(wp.get('subjectHours', {})),
+                    focus=wp.get('focus', ''),
+                    notes=wp.get('notes', '')
+                )
+            
+            print(f"Created {len(created_week_numbers)} week plans")
 
             # Create Topic Plans - handle both direct topicPlans and targets within weeks
-            topic_plans_data = ai_result.get('topicPlans', [])
+            topic_plans_data = list(ai_result.get('topicPlans', []))  # Make a copy
             
             # Also extract topic plans from weeks.targets if present
             for week in ai_result.get('weeks', []):
                 for target in week.get('targets', []):
-                    if target.get('type') in ['THEORY', 'PRACTICE', 'REVIEW']:
+                    target_type = target.get('type', 'THEORY')
+                    if target_type in ['THEORY', 'PRACTICE', 'REVIEW']:
                         topic_plans_data.append({
                             'topicName': target.get('topicName', target.get('topic', '')),
                             'subjectName': target.get('subjectName', target.get('subject', '')),
                             'plannedWeek': target.get('plannedWeek', week.get('weekNumber', week.get('weekIndex', 1))),
                             'estimatedHours': target.get('estimatedHours', target.get('durationMin', 45) / 60),
                             'priority': target.get('priority', 1),
-                            'type': target.get('type')
+                            'type': target_type
                         })
             
-            # Deduplicate topic plans by topicName
+            print(f"Total topic plans to process: {len(topic_plans_data)}")
+            
+            # Deduplicate by (topicName, plannedWeek) - allow same topic in different weeks
             seen_topics = set()
+            created_count = 0
             for tp in topic_plans_data:
                 topic_name = tp.get('topicName', tp.get('topic_name', ''))
                 subject_name = tp.get('subjectName', tp.get('subject_name', ''))
+                planned_week = tp.get('plannedWeek', tp.get('planned_week', 1))
                 
-                if not topic_name or topic_name in seen_topics:
+                # Create unique key for dedup (same topic can appear in multiple weeks for review)
+                dedup_key = f"{topic_name}||{planned_week}"
+                
+                if not topic_name or dedup_key in seen_topics:
                     continue
-                seen_topics.add(topic_name)
+                seen_topics.add(dedup_key)
                     
                 # Try to find topic by name within selected subjects
                 topic = Topic.objects.filter(name__icontains=topic_name).first()
@@ -141,18 +183,21 @@ class GenerateProgramView(APIView):
                             from datetime import datetime as dt
                             deadline = dt.fromisoformat(deadline_str.replace('Z', '+00:00'))
                         except:
-                            deadline = timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
+                            deadline = timezone.now() + timedelta(weeks=planned_week)
                     else:
-                        deadline = timezone.now() + timedelta(weeks=tp.get('plannedWeek', tp.get('planned_week', 1)))
+                        deadline = timezone.now() + timedelta(weeks=planned_week)
                     
                     TopicPlan.objects.create(
                         program=program,
                         topic=topic,
-                        planned_week=tp.get('plannedWeek', tp.get('planned_week', 1)),
+                        planned_week=planned_week,
                         estimated_hours=tp.get('estimatedHours', tp.get('estimated_hours', 2)),
                         priority=tp.get('priority', 1),
                         deadline=deadline
                     )
+                    created_count += 1
+            
+            print(f"Created {created_count} topic plans")
 
             return Response(LearningProgramSerializer(program).data, status=status.HTTP_201_CREATED)
 
