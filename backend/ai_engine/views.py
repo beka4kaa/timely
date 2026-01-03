@@ -146,24 +146,39 @@ class GenerateProgramView(APIView):
 
             # Create Topic Plans from multiple sources
             topic_plans_data = list(ai_result.get('topicPlans', []))  # Make a copy
+            print(f"Direct topicPlans from AI: {len(topic_plans_data)}")
+            
+            # Debug: print AI response structure
+            day_plans = ai_result.get('dayPlans', [])
+            print(f"dayPlans count from AI: {len(day_plans)}")
             
             # Extract topic plans from dayPlans.sessions (new daily format)
-            for day in ai_result.get('dayPlans', []):
+            sessions_extracted = 0
+            for day in day_plans:
                 day_num = day.get('dayNumber', 1)
                 week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
-                for session in day.get('sessions', []):
+                sessions = day.get('sessions', [])
+                print(f"  Day {day_num}: {len(sessions)} sessions")
+                
+                for session in sessions:
                     session_type = session.get('type', 'THEORY')
-                    if session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
+                    topic_name = session.get('topicName', '')
+                    subject_name = session.get('subjectName', '')
+                    
+                    if session_type in ['THEORY', 'PRACTICE', 'REVIEW'] and topic_name:
                         topic_plans_data.append({
-                            'topicName': session.get('topicName', ''),
-                            'subjectName': session.get('subjectName', ''),
+                            'topicName': topic_name,
+                            'subjectName': subject_name,
                             'plannedWeek': week_num,
                             'plannedDay': day_num,
                             'estimatedHours': session.get('durationMin', 45) / 60,
                             'priority': session.get('order', 1),
                             'type': session_type
                         })
+                        sessions_extracted += 1
+                        print(f"    + Extracted: {topic_name} ({subject_name})")
             
+            print(f"Sessions extracted from dayPlans: {sessions_extracted}")
             print(f"Total topic plans to process: {len(topic_plans_data)}")
             
             # Deduplicate by (topicName, plannedWeek) - allow same topic in different weeks
