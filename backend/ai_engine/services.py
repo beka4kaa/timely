@@ -89,8 +89,8 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
         })
     
     # Calculate total days to plan (use minimum deadline or default 30 days)
-    total_days = min(min_days_until_deadline, 60) if min_days_until_deadline < 365 else 30
-    total_weeks_calc = (total_days + 6) // 7  # Round up to weeks
+    total_days = min(max(min_days_until_deadline, 1), 60) if min_days_until_deadline < 365 else 30
+    total_weeks_calc = max(1, (total_days + 6) // 7)  # Round up to weeks
     
     # Format subjects clearly for AI
     subjects_text = ""
@@ -109,10 +109,11 @@ SUBJECT {idx}: {s['name']}
   MUST COMPLETE: {s['totalTopicsInScope']} topics IN {deadline_info}!
 """
     
-    # Calculate total topics count and sessions needed
+    # Calculate total topics count and sessions needed (with safe division)
     total_topics = sum(s['totalTopicsInScope'] for s in subjects_structured)
-    topics_per_day = total_topics / max(total_days, 1)
-    sessions_needed_per_day = max(6, int(topics_per_day * 2))  # Theory + Practice for each
+    total_topics = max(1, total_topics)  # At least 1 to prevent division errors
+    topics_per_day = total_topics / max(1, total_days)
+    sessions_needed_per_day = max(6, min(20, int(topics_per_day * 2)))  # Cap at 20 sessions
     
     # DEBUG: Print what we're sending to AI
     print("=" * 60)
