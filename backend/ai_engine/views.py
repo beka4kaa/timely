@@ -100,37 +100,49 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         else:
             return session_minutes  # Full treatment
     
-    # Distribute topics across days
-    total_sessions_needed = total_topics * 2  # Theory + Practice for each
+    # Calculate how many topics we can fit per day
+    sessions_per_topic = 1  # Just one session per topic to fit more
+    topics_per_day = sessions_per_day // sessions_per_topic
+    
+    total_sessions_needed = total_topics * sessions_per_topic
     available_sessions = days_available * sessions_per_day
     
-    print(f"PROGRAMMATIC: {total_topics} topics, need {total_sessions_needed} sessions, have {available_sessions} slots")
+    print(f"PROGRAMMATIC: {total_topics} topics, {sessions_per_day} sessions/day, {topics_per_day} topics/day")
+    print(f"PROGRAMMATIC: need {total_sessions_needed} sessions, have {available_sessions} slots")
     
-    # Build day plans
+    # If not enough days, increase topics per day even more
+    if total_topics > topics_per_day * days_available:
+        topics_per_day = math.ceil(total_topics / days_available)
+        print(f"PROGRAMMATIC: Adjusted to {topics_per_day} topics/day to fit all")
+    
+    # Build day plans - PACK DENSELY
     day_plans = []
     topic_plans = []
     topic_idx = 0
     
     for day in range(1, days_available + 1):
+        if topic_idx >= total_topics:
+            break  # All topics scheduled
+            
         day_date = now + timedelta(days=day - 1)
         sessions = []
         
+        # Fill this day with as many topics as needed
+        day_topic_count = 0
         hour = 8  # Start at 8 AM
-        session_order = 0
         
-        while session_order < sessions_per_day and topic_idx < total_topics:
+        while day_topic_count < topics_per_day and topic_idx < total_topics:
             topic = all_topics[topic_idx]
             duration = get_session_duration(topic)
             
-            # Add THEORY session
-            session_order += 1
+            # Add session for this topic
             sessions.append({
-                'order': session_order,
+                'order': len(sessions) + 1,
                 'startTime': f'{hour:02d}:00',
                 'subjectName': topic['subject_name'],
                 'topicName': topic['topic_name'],
                 'topicId': topic['topic_id'],
-                'type': 'THEORY',
+                'type': 'STUDY',
                 'durationMin': duration
             })
             
@@ -139,7 +151,7 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                 'topicName': topic['topic_name'],
                 'topicId': topic['topic_id'],
                 'subjectName': topic['subject_name'],
-                'plannedWeek': (day - 1) // 7 + 1,
+                'plannedWeek': 1,
                 'plannedDay': day,
                 'estimatedHours': duration / 60,
                 'priority': topic_idx + 1,
@@ -147,35 +159,26 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                 'status': topic['status']
             })
             
+            # Move to next slot (every 45 min)
             hour += 1
-            if hour >= 20:  # Stop at 8 PM
-                break
+            if hour >= 22:  # Can study until 10 PM
+                hour = 8  # Reset for calculation purposes
             
-            # Add PRACTICE session if still have slots
-            if session_order < sessions_per_day:
-                session_order += 1
-                sessions.append({
-                    'order': session_order,
-                    'startTime': f'{hour:02d}:00',
-                    'subjectName': topic['subject_name'],
-                    'topicName': topic['topic_name'],
-                    'topicId': topic['topic_id'],
-                    'type': 'PRACTICE',
-                    'durationMin': duration
-                })
-                hour += 1
-            
+            day_topic_count += 1
             topic_idx += 1
-            if hour >= 20:
-                break
+        
+        print(f"PROGRAMMATIC: Day {day} ({day_date.strftime('%Y-%m-%d')}): {len(sessions)} sessions")
         
         day_plans.append({
             'dayNumber': day,
             'date': day_date.strftime('%Y-%m-%d'),
-            'weekNumber': (day - 1) // 7 + 1,
+            'weekNumber': 1,
             'totalHours': len(sessions) * session_minutes / 60,
             'sessions': sessions
         })
+    
+    print(f"PROGRAMMATIC: Total days planned: {len(day_plans)}")
+    print(f"PROGRAMMATIC: Total topics scheduled: {topic_idx} of {total_topics}")
     
     # Build week summaries
     weeks = {}
