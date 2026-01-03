@@ -9,7 +9,7 @@ export async function GET(
   const { id } = await params
   try {
     const headers = await createBackendHeaders(request)
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, { headers })
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}`, { headers })
     const data = await response.json()
     return NextResponse.json(data)
   } catch (error) {
@@ -26,7 +26,7 @@ export async function PUT(
   try {
     const headers = await createBackendHeaders(request)
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
@@ -47,7 +47,7 @@ export async function PATCH(
   try {
     const headers = await createBackendHeaders(request)
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}`, {
       method: 'PATCH',
       headers,
       body: JSON.stringify(body),
@@ -67,7 +67,7 @@ export async function DELETE(
   const { id } = await params
   try {
     const headers = await createBackendHeaders(request)
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}`, {
       method: 'DELETE',
       headers,
     })

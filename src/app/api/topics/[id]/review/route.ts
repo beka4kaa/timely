@@ -8,7 +8,7 @@ export async function POST(
   const { id } = await params
   try {
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/review/`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

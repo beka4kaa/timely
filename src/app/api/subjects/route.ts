@@ -23,7 +23,7 @@ async function getHeaders(request?: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getHeaders(request)
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/`, { headers })
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects`, { headers })
     const data = await response.json()
     return NextResponse.json(toCamelCase(data))
   } catch (error) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   try {
     const headers = await getHeaders(request)
     const body = await request.json()
-    const response = await fetch(`${BACKEND_URL}/api/mind/subjects/`, {
+    const response = await fetch(`${BACKEND_URL}/api/mind/subjects`, {
       method: 'POST',
       headers,
       body: JSON.stringify(toSnakeCase(body)),

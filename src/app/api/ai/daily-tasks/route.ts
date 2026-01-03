@@ -20,7 +20,7 @@ export async function GET() {
     }
     
     // Fetch topics and generate recommendations locally
-    const topicsResponse = await fetch(`${BACKEND_URL}/api/mind/topics/`)
+    const topicsResponse = await fetch(`${BACKEND_URL}/api/mind/topics`)
     let topics = []
     
     if (topicsResponse.ok) {
