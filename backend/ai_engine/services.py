@@ -104,14 +104,15 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
         ])
         subjects_text += f"""
 SUBJECT {idx}: {s['name']}
-  DEADLINE: {s['deadline'] or 'None'} ({deadline_info} remaining) - URGENT!
-  TOPICS (✓=mastered, ~=in progress, ○=not started):
-  [{topics_str}]
-  TOTAL: {s['totalTopicsInScope']} topics MUST be covered before deadline
+  DEADLINE: {s['deadline'] or 'None'} ({deadline_info} remaining) - CRITICAL!
+  TOPICS: [{topics_str}]
+  MUST COMPLETE: {s['totalTopicsInScope']} topics IN {deadline_info}!
 """
     
-    # Calculate total topics count for validation
+    # Calculate total topics count and sessions needed
     total_topics = sum(s['totalTopicsInScope'] for s in subjects_structured)
+    topics_per_day = total_topics / max(total_days, 1)
+    sessions_needed_per_day = max(6, int(topics_per_day * 2))  # Theory + Practice for each
     
     # DEBUG: Print what we're sending to AI
     print("=" * 60)
@@ -125,159 +126,85 @@ SUBJECT {idx}: {s['name']}
             print(f"    {t['index']}. {t['name']} ({t['status']})")
     print(f"Total topics to learn: {total_topics}")
     print(f"Total days available: {total_days}")
+    print(f"Topics per day needed: {topics_per_day:.1f}")
+    print(f"Sessions per day needed: {sessions_needed_per_day}")
     print("=" * 60)
     
-    # ALWAYS daily planning with weekly summaries
-    prompt = f"""You are a HARDCORE 61-school-style study program generator. 
-This student is BEHIND SCHEDULE and needs to cover A LOT of material in a SHORT time.
-DO NOT be gentle. DO NOT skip topics. Create an INTENSIVE day-by-day schedule.
+    # ULTRA AGGRESSIVE prompt
+    prompt = f"""You are an ULTRA-INTENSE study program generator. 
+This student has {total_days} DAYS to learn {total_topics} TOPICS.
+That means {topics_per_day:.1f} topics PER DAY - this is NON-NEGOTIABLE.
+DO NOT spread topics beyond the deadline. ALL material must be covered BY the deadline.
 
 CURRENT DATE: {current_date_str}
+DEADLINE: In {total_days} days - EVERYTHING must be done by then!
 
-TIME BUDGET:
-- Total days to plan: {total_days}
-- Hours per day available: {hours_per_day_available:.1f}
-- Sessions per day: {sessions_per_day_max} (can go UP TO 6 if needed!)
-- Session duration: {session_minutes} min
-- Study days per week: {days_per_week} (add day 7 if needed!)
+MATH (you MUST follow this):
+- Total topics: {total_topics}
+- Days available: {total_days}
+- Topics per day: {topics_per_day:.1f} (MINIMUM)
+- Sessions per day: {sessions_needed_per_day} (MINIMUM - can do more!)
+- Each topic needs: THEORY (30-45min) + PRACTICE (30-45min)
 
-SUBJECTS TO STUDY:
+SUBJECTS:
 {subjects_text}
 
-⚠️ CRITICAL - DO NOT SKIP ANY TOPIC! ⚠️
-- You MUST include ALL {total_topics} topics listed above
-- Topics marked ✓ (mastered) only need quick REVIEW
-- Topics marked ○ (not started) need THEORY + PRACTICE
-- Topics marked ~ (in progress) need PRACTICE + REVIEW
+⚠️ ABSOLUTE REQUIREMENTS - VIOLATION IS FAILURE ⚠️
+1. ALL {total_topics} topics MUST be scheduled WITHIN {total_days} days
+2. Each day needs AT LEAST {sessions_needed_per_day} sessions
+3. DO NOT schedule anything AFTER the deadline!
+4. Pack topics DENSELY - student can handle 8-10 hours/day
+5. ✓ topics = quick 15min review, ○ topics = full treatment
 
-HARDCORE REQUIREMENTS:
-1. Generate sessions for EVERY topic - no exceptions!
-2. Pack multiple sessions per day - student can handle it
-3. Cover 3-4 topics per day if deadline is tight
-4. If deadline is < 7 days, use INTENSIVE mode (5-6 sessions/day)
-5. Include ALL topics in topicPlans array
-6. Student does NOT want mercy - give them the FULL workload
+EXAMPLE for {total_days} days with {total_topics} topics:
+Day 1: {int(topics_per_day) + 1} topics = {(int(topics_per_day) + 1) * 2} sessions
+Day 2: {int(topics_per_day) + 1} topics = {(int(topics_per_day) + 1) * 2} sessions
+... continue until ALL topics covered
 
-OUTPUT FORMAT (JSON only, no markdown):
+OUTPUT FORMAT (JSON only):
 {{
-  "programTitle": "61-School Study Program",
-  "description": "Day-by-day study schedule with weekly summaries",
-  "strategy": "Each day has specific sessions - just follow the plan",
+  "programTitle": "Intensive Crash Course",
+  "description": "All {total_topics} topics in {total_days} days",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
   "planningMode": "DAILY",
   
-  "weekSummaries": [
-    {{
-      "weekNumber": 1,
-      "dateRange": "Jan 3 - Jan 9",
-      "mainTopics": ["Physics: Kinematics, Dynamics", "Math: Functions, Quadratics"],
-      "totalHours": 20,
-      "testsThisWeek": ["Week 1 Physics Quiz", "Week 1 Math Quiz"],
-      "goals": "Master foundational topics"
-    }}
-  ],
+  "weekSummaries": [{{
+    "weekNumber": 1,
+    "mainTopics": ["ALL topics from ALL subjects"],
+    "totalHours": {total_days * 8},
+    "goals": "Complete everything before deadline"
+  }}],
   
   "dayPlans": [
     {{
       "dayNumber": 1,
-      "dayOfWeek": "Friday",
       "date": "{current_date_str}",
       "weekNumber": 1,
-      "totalHours": 4,
+      "totalHours": 8,
       "sessions": [
-        {{
-          "order": 1,
-          "startTime": "09:00",
-          "subjectName": "A Level Physics",
-          "topicName": "Kinematics",
-          "type": "THEORY",
-          "durationMin": 45,
-          "tasks": "Read chapter, take notes, solve 5 examples"
-        }},
-        {{
-          "order": 2,
-          "startTime": "10:00",
-          "subjectName": "A Level Physics",
-          "topicName": "Kinematics",
-          "type": "PRACTICE",
-          "durationMin": 45,
-          "tasks": "Solve 15 problems (10 easy, 5 medium)"
-        }},
-        {{
-          "order": 3,
-          "startTime": "11:00",
-          "subjectName": "A Level Math",
-          "topicName": "Functions",
-          "type": "THEORY",
-          "durationMin": 45,
-          "tasks": "Read chapter, work through examples"
-        }}
+        {{"order": 1, "startTime": "08:00", "subjectName": "Subject", "topicName": "Topic1", "type": "THEORY", "durationMin": 45}},
+        {{"order": 2, "startTime": "09:00", "subjectName": "Subject", "topicName": "Topic1", "type": "PRACTICE", "durationMin": 45}},
+        {{"order": 3, "startTime": "10:00", "subjectName": "Subject", "topicName": "Topic2", "type": "THEORY", "durationMin": 45}},
+        {{"order": 4, "startTime": "11:00", "subjectName": "Subject", "topicName": "Topic2", "type": "PRACTICE", "durationMin": 45}},
+        {{"order": 5, "startTime": "13:00", "subjectName": "Subject", "topicName": "Topic3", "type": "THEORY", "durationMin": 45}},
+        {{"order": 6, "startTime": "14:00", "subjectName": "Subject", "topicName": "Topic3", "type": "PRACTICE", "durationMin": 45}}
       ]
-    }},
-    {{
-      "dayNumber": 2,
-      "dayOfWeek": "Saturday",
-      "date": "YYYY-MM-DD",
-      "weekNumber": 1,
-      "totalHours": 4,
-      "sessions": [...]
     }}
   ],
   
-  "weekPlans": [
-    {{
-      "weekNumber": 1,
-      "startOffset": 0,
-      "endOffset": 7,
-      "focus": "Build foundations in Physics and Math",
-      "notes": "Focus on understanding concepts before heavy practice",
-      "subjectHours": {{"A Level Physics": 10, "A Level Math": 8, "A Level Further Math": 6}}
-    }}
-  ],
+  "weekPlans": [{{"weekNumber": 1, "startOffset": 0, "endOffset": {total_days}, "focus": "Complete all topics", "subjectHours": {{}}}}],
   
   "topicPlans": [
-    {{
-      "topicName": "Kinematics",
-      "subjectName": "A Level Physics",
-      "plannedWeek": 1,
-      "plannedDay": 1,
-      "estimatedHours": 3,
-      "priority": 1,
-      "type": "THEORY"
-    }}
+    {{"topicName": "Topic1", "subjectName": "Subject", "plannedWeek": 1, "plannedDay": 1, "estimatedHours": 1.5, "type": "THEORY"}}
   ],
   
   "scheduledTests": [
-    {{
-      "title": "Day 3 Physics Mini-Quiz",
-      "scheduledWeek": 1,
-      "scheduledDay": 3,
-      "subjectName": "A Level Physics",
-      "topics": ["Kinematics"],
-      "type": "MINI_QUIZ",
-      "durationMin": 20
-    }},
-    {{
-      "title": "Week 1 Comprehensive Test",
-      "scheduledWeek": 1,
-      "scheduledDay": 7,
-      "subjectName": "Mixed",
-      "topics": ["Kinematics", "Functions"],
-      "type": "WEEKLY_TEST",
-      "durationMin": 60
-    }}
+    {{"title": "Final Test Before Deadline", "scheduledWeek": 1, "scheduledDay": {total_days}, "topics": ["all"], "type": "FINAL"}}
   ]
 }}
 
-IMPORTANT:
-- Generate dayPlans for ALL {total_days} days
-- Each day has 2-4 study sessions
-- Alternate between subjects within each day
-- Sessions include SPECIFIC tasks (not generic)
-- Include actual topic names from the input
-- weekSummaries help user see the big picture
-- Return ONLY valid JSON, no explanations
+CRITICAL: Generate {sessions_needed_per_day}+ sessions per day. ALL topics in {total_days} days. NO MERCY.
 """
     
     try:
