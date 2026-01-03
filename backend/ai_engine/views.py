@@ -164,9 +164,43 @@ class AnalyzeView(APIView):
 
 class FastTopicsView(APIView):
     def post(self, request):
-        subject = request.data.get('subject', 'General')
-        prompt = request.data.get('prompt', '')
-        return Response(generate_fast_topics(subject, prompt))
+        subject_id = request.data.get('subjectId') or request.data.get('subject_id')
+        text = request.data.get('text', '')
+        
+        if not subject_id:
+            return Response({'error': 'subjectId is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            subject = Subject.objects.get(id=subject_id)
+        except Subject.DoesNotExist:
+            return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Generate topics using AI
+        result = generate_fast_topics(subject.name, text)
+        generated_topics = result.get('topics', [])
+        
+        # Save topics to database
+        created_topics = []
+        for topic_data in generated_topics:
+            topic_name = topic_data.get('name', '')
+            if topic_name:
+                topic = Topic.objects.create(
+                    subject=subject,
+                    name=topic_name,
+                    status='NOT_STARTED',
+                    study_state='NOT_STUDIED'
+                )
+                created_topics.append({
+                    'id': str(topic.id),
+                    'name': topic.name,
+                    'estimatedHours': topic_data.get('estimatedHours', 0),
+                    'difficulty': topic_data.get('difficulty', 'Medium')
+                })
+        
+        return Response({
+            'topics': created_topics,
+            'message': f'Successfully created {len(created_topics)} topics'
+        })
 
 class ModifyProgramView(APIView):
     def post(self, request):
