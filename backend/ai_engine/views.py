@@ -714,51 +714,64 @@ class GenerateProgramView(APIView):
             # CREATE SUBJECT DEADLINES - SINGLE SOURCE OF TRUTH
             # ==============================================================
             subject_deadline_objs = []
-            for sd in subject_deadlines:
-                subj_id = sd.get('subjectId') or sd.get('subject_id')
-                deadline_raw = sd.get('deadline')
-                milestone_topic_id = sd.get('milestoneTopicId') or sd.get('milestone_topic_id')
-                
-                if not subj_id or not deadline_raw:
-                    continue
-                
-                # Find subject object
-                try:
-                    subject_obj = Subject.objects.get(id=subj_id)
-                except Subject.DoesNotExist:
-                    print(f"WARNING: Subject {subj_id} not found, skipping deadline")
-                    continue
-                
-                # Parse deadline
-                deadline_dt = parse_deadline_date(deadline_raw)
-                if not deadline_dt:
-                    print(f"WARNING: Could not parse deadline {deadline_raw} for {subject_obj.name}")
-                    continue
-                
-                # Find target topic if milestone specified
-                target_topic_obj = None
-                scope_mode = 'ALL_TOPICS'
-                if milestone_topic_id:
-                    try:
-                        target_topic_obj = Topic.objects.get(id=milestone_topic_id, subject=subject_obj)
-                        scope_mode = 'UP_TO_TOPIC'
-                    except Topic.DoesNotExist:
-                        print(f"WARNING: Milestone topic {milestone_topic_id} not found for {subject_obj.name}")
-                
-                # Create SubjectDeadline entity
-                sd_obj = SubjectDeadline.objects.create(
-                    program=program,
-                    subject=subject_obj,
-                    target_topic=target_topic_obj,
-                    due_date=deadline_dt,
-                    scope_mode=scope_mode
-                )
-                subject_deadline_objs.append(sd_obj)
-                
-                scope_desc = f"up to '{target_topic_obj.name}'" if target_topic_obj else "all topics"
-                print(f"  + SubjectDeadline: {subject_obj.name} - {scope_desc} by {deadline_dt.strftime('%Y-%m-%d')}")
             
-            print(f"Created {len(subject_deadline_objs)} subject deadline entities")
+            # Only create SubjectDeadlines if migration has been applied
+            try:
+                from ai_engine.models import SubjectDeadline as SD_Model
+                
+                for sd in subject_deadlines:
+                    try:
+                        subj_id = sd.get('subjectId') or sd.get('subject_id')
+                        deadline_raw = sd.get('deadline')
+                        milestone_topic_id = sd.get('milestoneTopicId') or sd.get('milestone_topic_id')
+                        
+                        if not subj_id or not deadline_raw:
+                            continue
+                        
+                        # Find subject object
+                        subject_obj = Subject.objects.get(id=subj_id)
+                        
+                        # Parse deadline
+                        deadline_dt = parse_deadline_date(deadline_raw)
+                        if not deadline_dt:
+                            print(f"WARNING: Could not parse deadline {deadline_raw} for {subject_obj.name}")
+                            continue
+                        
+                        # Find target topic if milestone specified
+                        target_topic_obj = None
+                        scope_mode = 'ALL_TOPICS'
+                        if milestone_topic_id:
+                            try:
+                                target_topic_obj = Topic.objects.get(id=milestone_topic_id, subject=subject_obj)
+                                scope_mode = 'UP_TO_TOPIC'
+                            except Topic.DoesNotExist:
+                                print(f"WARNING: Milestone topic {milestone_topic_id} not found for {subject_obj.name}")
+                        
+                        # Create SubjectDeadline entity
+                        sd_obj = SD_Model.objects.create(
+                            program=program,
+                            subject=subject_obj,
+                            target_topic=target_topic_obj,
+                            due_date=deadline_dt,
+                            scope_mode=scope_mode
+                        )
+                        subject_deadline_objs.append(sd_obj)
+                        
+                        scope_desc = f"up to '{target_topic_obj.name}'" if target_topic_obj else "all topics"
+                        print(f"  + SubjectDeadline: {subject_obj.name} - {scope_desc} by {deadline_dt.strftime('%Y-%m-%d')}")
+                    
+                    except Exception as sd_create_err:
+                        print(f"WARNING: Could not create SubjectDeadline for subject {sd.get('subjectId')}: {sd_create_err}")
+                        continue
+                
+                print(f"Created {len(subject_deadline_objs)} subject deadline entities")
+            
+            except ImportError:
+                print("WARNING: SubjectDeadline model not available (migration not applied)")
+            except Exception as sd_err:
+                print(f"WARNING: SubjectDeadline creation failed: {sd_err}")
+                import traceback
+                traceback.print_exc()
 
             # Debug log
             print(f"AI Result keys: {ai_result.keys()}")
