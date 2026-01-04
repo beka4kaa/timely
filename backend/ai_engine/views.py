@@ -605,11 +605,25 @@ class GenerateProgramView(APIView):
                     break
             subject_data.append(subject_info)
         
+        # Check if we have any subjects to generate program for
+        if not subject_data:
+            return Response({
+                'error': 'No subjects found',
+                'details': 'Please add subjects with topics before generating a program'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if we have any topics
+        total_topics_count = sum(len(sd.get('topics', [])) for sd in subject_data)
+        if total_topics_count == 0:
+            return Response({
+                'error': 'No topics found',
+                'details': 'Please add topics to your subjects before generating a program'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         # DEBUG: Log all topics being passed to AI
         print("=" * 60)
         print("GENERATING PROGRAM VIA AI")
         print("=" * 60)
-        total_topics_count = sum(len(sd.get('topics', [])) for sd in subject_data)
         print(f"Total subjects: {len(subject_data)}")
         print(f"Total topics: {total_topics_count}")
         for sd in subject_data:

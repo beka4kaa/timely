@@ -234,9 +234,24 @@ SUBJECT {idx}: {s['name']}
     print(f"  {feasibility_msg}")
     print("=" * 60)
     
+    # Handle empty subjects case
+    if not subjects_structured:
+        return {
+            "programTitle": "Empty Program",
+            "description": "No subjects provided",
+            "feasibility": "NO_DATA",
+            "feasibilityMessage": "No subjects or topics to schedule",
+            "totalWeeks": total_weeks,
+            "totalDays": 0,
+            "dayPlans": [],
+            "weekPlans": [],
+            "topicPlans": [],
+            "scheduledTests": []
+        }
+    
     # Get overall planning window (use max deadline for planning, but respect each subject's deadline)
-    max_days = max(s['daysUntilDeadline'] or 30 for s in subjects_structured)
-    min_days = min(s['daysUntilDeadline'] or 30 for s in subjects_structured)
+    max_days = max((s['daysUntilDeadline'] or 30 for s in subjects_structured), default=30)
+    min_days = min((s['daysUntilDeadline'] or 30 for s in subjects_structured), default=30)
     
     # Use intensity settings from frontend
     MIN_TOPICS_PER_DAY = min_topics_per_day  # From frontend
