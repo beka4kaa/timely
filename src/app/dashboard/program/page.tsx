@@ -16,6 +16,7 @@ import {
     Target,
     AlertCircle,
     CheckCircle,
+    ChevronLeft,
     ChevronRight,
     FileText,
     RefreshCw,
@@ -814,127 +815,134 @@ export default function ProgramPage() {
                 </div>
             </div>
 
-            {/* Week selector */}
-            <div className="mb-6">
-                <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                    {(program.weekPlans || []).map(wp => (
+            {/* Calendar Header with Navigation */}
+            <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            const today = new Date()
+                            const start = new Date(program.startDate)
+                            const diff = Math.floor((today.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000))
+                            setSelectedWeek(Math.max(1, Math.min(diff + 1, program.totalWeeks)))
+                        }}
+                    >
+                        Сегодня
+                    </Button>
+                    <div className="flex items-center gap-1">
                         <Button
-                            key={wp.weekNumber}
-                            variant={selectedWeek === wp.weekNumber ? "default" : "outline"}
-                            size="sm"
-                            className={cn("shrink-0", wp.weekNumber === currentWeek && "ring-2 ring-purple-500")}
-                            onClick={() => setSelectedWeek(wp.weekNumber)}
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSelectedWeek(Math.max(1, selectedWeek - 1))}
+                            disabled={selectedWeek <= 1}
                         >
-                            Неделя {wp.weekNumber}
-                            {wp.weekNumber === currentWeek && <Badge className="ml-1 bg-purple-500">Сейчас</Badge>}
+                            <ChevronLeft className="h-4 w-4" />
                         </Button>
-                    ))}
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSelectedWeek(Math.min(program.totalWeeks, selectedWeek + 1))}
+                            disabled={selectedWeek >= program.totalWeeks}
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+                    <h2 className="text-lg font-semibold ml-2">
+                        {(() => {
+                            const start = new Date(program.startDate)
+                            start.setDate(start.getDate() + (selectedWeek - 1) * 7)
+                            const end = new Date(start)
+                            end.setDate(end.getDate() + 6)
+                            const startMonth = start.toLocaleDateString('ru-RU', { month: 'short' })
+                            const endMonth = end.toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' })
+                            return `${start.getDate()} ${startMonth} — ${end.getDate()} ${endMonth}`
+                        })()}
+                    </h2>
+                    <Badge variant="outline" className="ml-2">Неделя {selectedWeek}</Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                    {weekTopics.length} тем на неделе
                 </div>
             </div>
 
-            {/* Week Summary Card */}
-            {currentWeekPlan && (
-                <Card className="mb-6 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-lg font-semibold flex items-center gap-2">
-                                    <Calendar className="h-5 w-5" />
-                                    Неделя {selectedWeek}
-                                </h2>
-                                <p className="text-sm text-muted-foreground">
-                                    {formatDate(currentWeekPlan.startDate)} — {formatDate(currentWeekPlan.endDate)}
-                                </p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-2xl font-bold">{weekTopics.length}</p>
-                                <p className="text-xs text-muted-foreground">тем</p>
-                            </div>
-                        </div>
-                        {currentWeekPlan.focus && (
-                            <div className="mt-3 p-3 rounded-lg bg-background/50">
-                                <p className="text-sm">🎯 <span className="font-medium">Фокус:</span> {currentWeekPlan.focus}</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+            {/* Week Focus Card */}
+            {currentWeekPlan?.focus && (
+                <div className="mb-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                    <p className="text-sm">🎯 <span className="font-medium">Фокус недели:</span> {currentWeekPlan.focus}</p>
+                </div>
             )}
 
-            {/* Daily Schedule */}
-            <div className="space-y-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                    <BookOpen className="h-5 w-5" />
-                    Расписание по дням
-                </h3>
+            {/* Calendar Grid */}
+            <div className="border rounded-lg overflow-hidden bg-card">
+                {/* Day Headers */}
+                <div className="grid grid-cols-7 border-b bg-muted/30">
+                    {['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'].map((dayName, idx) => {
+                        const start = new Date(program.startDate)
+                        start.setDate(start.getDate() + (selectedWeek - 1) * 7 + idx)
+                        const isToday = start.toDateString() === new Date().toDateString()
+                        const isSunday = idx === 6
 
-                <div className="grid gap-3">
-                    {weekDays.map((day) => (
-                        <Card
+                        return (
+                            <div
+                                key={dayName}
+                                className={cn(
+                                    "p-3 text-center border-r last:border-r-0",
+                                    isSunday && "text-red-400"
+                                )}
+                            >
+                                <p className="text-xs text-muted-foreground font-medium">{dayName}</p>
+                                <p className={cn(
+                                    "text-xl font-semibold mt-1",
+                                    isToday && "bg-purple-500 text-white rounded-full w-9 h-9 flex items-center justify-center mx-auto"
+                                )}>
+                                    {start.getDate()}
+                                </p>
+                            </div>
+                        )
+                    })}
+                </div>
+
+                {/* Day Content */}
+                <div className="grid grid-cols-7 min-h-[400px]">
+                    {weekDays.map((day, idx) => (
+                        <div
                             key={day.dayNumber}
                             className={cn(
-                                "overflow-hidden transition-all",
-                                day.isToday && "ring-2 ring-purple-500 bg-purple-500/5"
+                                "border-r last:border-r-0 p-2",
+                                day.isToday && "bg-purple-500/5"
                             )}
                         >
-                            <CardContent className="p-0">
-                                {/* Day Header */}
-                                <div className={cn(
-                                    "flex items-center justify-between p-3 border-b",
-                                    day.isToday ? "bg-purple-500/10" : "bg-muted/30"
-                                )}>
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn(
-                                            "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-sm font-medium",
-                                            day.isToday ? "bg-purple-500 text-white" : "bg-muted"
-                                        )}>
-                                            <span className="text-xs opacity-80">{day.dayName}</span>
-                                            <span>{day.date.getDate()}</span>
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">
-                                                {day.isToday && <span className="text-purple-400">Сегодня • </span>}
-                                                {day.date.toLocaleDateString('ru-RU', { month: 'long', day: 'numeric' })}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {day.topics.length > 0
-                                                    ? `${day.topics.length} занятий`
-                                                    : '🧘 Выходной'
-                                                }
-                                            </p>
-                                        </div>
-                                    </div>
-                                    {day.isToday && <Badge className="bg-purple-500">Сегодня</Badge>}
-                                </div>
-
-                                {/* Sessions */}
-                                {day.topics.length > 0 && (
-                                    <div className="p-3 space-y-2">
-                                        {day.topics.map((tp, idx) => (
-                                            <div
-                                                key={tp.id}
-                                                className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50"
-                                                style={{ borderLeftWidth: 3, borderLeftColor: tp.topic?.subject?.color || '#8b5cf6' }}
-                                            >
-                                                <div className="text-center min-w-[45px]">
-                                                    <p className="text-sm font-medium">{String(9 + idx).padStart(2, '0')}:00</p>
-                                                    <p className="text-xs text-muted-foreground">{tp.estimatedHours}ч</p>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <span>{tp.topic?.subject?.emoji || '📚'}</span>
-                                                        <span className="font-medium">{tp.topic?.name || 'Тема'}</span>
-                                                    </div>
-                                                    <p className="text-sm text-muted-foreground">{tp.topic?.subject?.name}</p>
-                                                </div>
-                                                <Badge variant={tp.status === 'COMPLETED' ? 'default' : 'outline'}>
-                                                    {tp.status === 'COMPLETED' ? '✓ Готово' : `#${tp.priority}`}
-                                                </Badge>
+                            {day.topics.length > 0 ? (
+                                <div className="space-y-2">
+                                    {day.topics.map((tp) => (
+                                        <div
+                                            key={tp.id}
+                                            className={cn(
+                                                "p-2 rounded text-xs cursor-pointer hover:opacity-80 transition-opacity",
+                                                tp.status === 'COMPLETED' ? "bg-emerald-500/20 border-l-2 border-emerald-500" : "bg-muted/50 border-l-2"
+                                            )}
+                                            style={{ borderLeftColor: tp.topic?.subject?.color || '#8b5cf6' }}
+                                        >
+                                            <div className="flex items-center gap-1 mb-1">
+                                                <span>{tp.topic?.subject?.emoji || '📚'}</span>
+                                                <span className="font-medium truncate">{tp.topic?.name || 'Тема'}</span>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                            <p className="text-muted-foreground truncate text-[10px]">
+                                                {tp.topic?.subject?.name}
+                                            </p>
+                                            {tp.status === 'COMPLETED' && (
+                                                <Badge variant="default" className="mt-1 text-[10px] h-4">✓</Badge>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                                    —
+                                </div>
+                            )}
+                        </div>
                     ))}
                 </div>
             </div>
