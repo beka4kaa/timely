@@ -114,47 +114,99 @@ SUBJECT {idx}: {s['name']}
   MUST COMPLETE: {s['totalTopicsInScope']} topics IN {deadline_info}!
 """
     
-    # Calculate total topics count and sessions needed (with safe division)
+    # Calculate total topics count (for reference only)
     total_topics = sum(s['totalTopicsInScope'] for s in subjects_structured)
-    total_topics = max(1, total_topics)  # At least 1 to prevent division errors
-    topics_per_day = total_topics / max(1, total_days)
-    sessions_needed_per_day = max(6, min(20, int(topics_per_day * 2)))  # Cap at 20 sessions
+    total_topics = max(1, total_topics)
     
     # DEBUG: Print what we're sending to AI
     print("=" * 60)
     print("DEBUG: AI INPUT DATA")
     print("=" * 60)
+    
+    # Calculate feasibility PER SUBJECT
+    hours_per_topic = 1.5
+    per_subject_feasibility = []
+    overall_feasible = True
+    overall_tight = False
+    
     for s in subjects_structured:
+        subj_topics = s['totalTopicsInScope']
+        subj_days = s['daysUntilDeadline'] or 30  # Default 30 if no deadline
+        subj_hours_needed = subj_topics * hours_per_topic
+        subj_hours_available = subj_days * hours_per_day_available
+        subj_feasible = subj_hours_needed <= subj_hours_available
+        subj_tight = subj_hours_needed > subj_hours_available * 0.8
+        
+        topics_per_day_subj = subj_topics / max(1, subj_days)
+        
+        status = "POSSIBLE"
+        if not subj_feasible:
+            status = "IMPOSSIBLE"
+            overall_feasible = False
+        elif subj_tight:
+            status = "TIGHT"
+            overall_tight = True
+        
+        per_subject_feasibility.append({
+            'name': s['name'],
+            'topics': subj_topics,
+            'days': subj_days,
+            'hours_needed': subj_hours_needed,
+            'hours_available': subj_hours_available,
+            'topics_per_day': topics_per_day_subj,
+            'status': status,
+            'deadline': s['deadline']
+        })
+        
         print(f"Subject: {s['name']}")
-        print(f"  Deadline: {s['deadline']} ({s['daysUntilDeadline']} days)")
-        print(f"  Topics count: {len(s['topics'])}")
+        print(f"  Deadline: {s['deadline']} ({subj_days} days)")
+        print(f"  Topics: {subj_topics} ({topics_per_day_subj:.1f}/day)")
+        print(f"  Hours needed: {subj_hours_needed}, available: {subj_hours_available}")
+        print(f"  Status: {status}")
         for t in s['topics']:
             print(f"    {t['index']}. {t['name']} ({t['status']})")
-    print(f"Total topics to learn: {total_topics}")
-    print(f"Total days available: {total_days}")
-    print(f"Topics per day needed: {topics_per_day:.1f}")
-    print(f"Sessions per day needed: {sessions_needed_per_day}")
+    
     print("=" * 60)
     
-    # Calculate feasibility
-    # Assume 1.5 hours per topic (theory + practice), 12 hours max per day
-    hours_per_topic = 1.5
-    hours_needed = total_topics * hours_per_topic
-    hours_available = total_days * hours_per_day_available
-    is_feasible = hours_needed <= hours_available
-    is_tight = hours_needed > hours_available * 0.8  # 80%+ capacity = tight
+    # Build per-subject text for AI
+    subjects_text = ""
+    for idx, s in enumerate(subjects_structured, 1):
+        psf = per_subject_feasibility[idx-1]
+        topics_str = ", ".join([
+            f"{t['index']}.{t['name']}({'✓' if t['status'] in ['MASTERED', 'SUCCESS'] else '~' if t['status'] == 'MEDIUM' else '○'})"
+            for t in s['topics']
+        ])
+        subjects_text += f"""
+SUBJECT {idx}: {s['name']}
+  DEADLINE: {s['deadline']} ({psf['days']} days remaining)
+  FEASIBILITY: {psf['status']} ({psf['topics_per_day']:.1f} topics/day needed)
+  TOPICS ({psf['topics']}): [{topics_str}]
+"""
     
-    print(f"FEASIBILITY CHECK:")
-    print(f"  Hours needed: {hours_needed}")
-    print(f"  Hours available: {hours_available}")
-    print(f"  Feasible: {is_feasible}, Tight: {is_tight}")
+    # Overall feasibility
+    feasibility_status = "POSSIBLE" if overall_feasible and not overall_tight else ("TIGHT" if overall_feasible else "IMPOSSIBLE")
     
-    # Calculate deadline date
-    deadline_date = current_date + __import__('datetime').timedelta(days=total_days)
-    deadline_date_str = deadline_date.strftime('%Y-%m-%d')
+    # Build detailed feasibility message
+    problem_subjects = [f for f in per_subject_feasibility if f['status'] == 'IMPOSSIBLE']
+    tight_subjects = [f for f in per_subject_feasibility if f['status'] == 'TIGHT']
     
-    # Build prompt with honest feasibility assessment
-    feasibility_status = "POSSIBLE" if is_feasible and not is_tight else ("TIGHT" if is_feasible else "IMPOSSIBLE")
+    if problem_subjects:
+        problem_msgs = [f"{p['name']} ({p['topics']} topics in {p['days']} days)" for p in problem_subjects]
+        feasibility_msg = f"IMPOSSIBLE for: {', '.join(problem_msgs)}"
+    elif tight_subjects:
+        feasibility_msg = f"TIGHT schedule for: {', '.join([t['name'] for t in tight_subjects])}"
+    else:
+        feasibility_msg = "All subjects achievable within deadlines"
+    
+    print(f"OVERALL FEASIBILITY: {feasibility_status}")
+    print(f"  {feasibility_msg}")
+    print("=" * 60)
+    
+    # Get overall planning window (use max deadline for planning, but respect each subject's deadline)
+    max_days = max(s['daysUntilDeadline'] or 30 for s in subjects_structured)
+    min_days = min(s['daysUntilDeadline'] or 30 for s in subjects_structured)
+    total_days = max_days  # Plan for entire window
+    total_weeks_calc = max(1, (total_days + 6) // 7)
     
     prompt = f"""You are a STRICT study program generator. Be HONEST about what is achievable.
 
