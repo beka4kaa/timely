@@ -363,11 +363,17 @@ export default function ProgramPage() {
     }
 
     // Calculate workload estimation based on deadlines and topics
+    // HIGH-INTENSITY MODE: Minimum 3 topics/day for efficient learning
+    const MIN_TOPICS_PER_DAY = 3
+    const MAX_TOPICS_PER_DAY = 8
+    
     const calculateWorkloadEstimates = (): Array<{
         totalTopics: number
         daysAvailable: number
+        actualDaysNeeded: number
         topicsPerDay: number
         deadline: Date
+        isHighIntensity: boolean
         isIntense: boolean
         isExtreme: boolean
         subjectsAffected: string[]
@@ -429,14 +435,31 @@ export default function ProgramPage() {
             .sort((a, b) => a[0] - b[0])
             .map(([days, subjects]) => {
                 const totalTopics = subjects.reduce((sum, s) => sum + s.topicCount, 0)
-                const topicsPerDay = Math.ceil(totalTopics / days)
+                const rawTopicsPerDay = Math.ceil(totalTopics / days)
+                
+                // HIGH-INTENSITY MODE: Apply minimum topics per day
+                let topicsPerDay = rawTopicsPerDay
+                let actualDaysNeeded = days
+                let isHighIntensity = false
+                
+                if (rawTopicsPerDay < MIN_TOPICS_PER_DAY) {
+                    // Schedule is too relaxed - will be compressed
+                    topicsPerDay = MIN_TOPICS_PER_DAY
+                    actualDaysNeeded = Math.ceil(totalTopics / MIN_TOPICS_PER_DAY)
+                    isHighIntensity = true
+                } else if (rawTopicsPerDay > MAX_TOPICS_PER_DAY) {
+                    topicsPerDay = MAX_TOPICS_PER_DAY
+                }
+                
                 return {
                     totalTopics,
                     daysAvailable: days,
+                    actualDaysNeeded,
                     topicsPerDay,
                     deadline: subjects[0].deadline,
+                    isHighIntensity,
                     isIntense: topicsPerDay > 5,
-                    isExtreme: topicsPerDay > 10,
+                    isExtreme: topicsPerDay > MAX_TOPICS_PER_DAY,
                     subjectsAffected: subjects.map(s => s.name)
                 }
             })
@@ -648,7 +671,7 @@ export default function ProgramPage() {
                             </div>
                         )}
 
-                        {/* Workload estimation - show ALL deadline groups */}
+                        {/* Workload estimation - show ALL deadline groups with high-intensity mode */}
                         {workloadEstimates.length > 0 && (
                             <div className="space-y-3">
                                 {workloadEstimates.map((estimate, idx) => (
@@ -658,13 +681,17 @@ export default function ProgramPage() {
                                             ? "bg-red-500/10 border-red-500/30"
                                             : estimate.isIntense
                                                 ? "bg-yellow-500/10 border-yellow-500/30"
-                                                : "bg-emerald-500/10 border-emerald-500/30"
+                                                : estimate.isHighIntensity
+                                                    ? "bg-blue-500/10 border-blue-500/30"
+                                                    : "bg-emerald-500/10 border-emerald-500/30"
                                     )}>
                                         <div className="flex items-start gap-3">
                                             {estimate.isExtreme ? (
                                                 <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
                                             ) : estimate.isIntense ? (
                                                 <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5" />
+                                            ) : estimate.isHighIntensity ? (
+                                                <Target className="h-5 w-5 text-blue-400 mt-0.5" />
                                             ) : (
                                                 <CheckCircle className="h-5 w-5 text-emerald-400 mt-0.5" />
                                             )}
@@ -674,7 +701,9 @@ export default function ProgramPage() {
                                                         ? "⚠️ Невыполнимо — только быстрый обзор"
                                                         : estimate.isIntense
                                                             ? "⏰ Интенсивный режим"
-                                                            : "✅ Нагрузка в норме"
+                                                            : estimate.isHighIntensity
+                                                                ? "🚀 Режим высокой интенсивности"
+                                                                : "✅ Нагрузка в норме"
                                                     }
                                                 </div>
                                                 <div className="text-sm text-muted-foreground space-y-1">
@@ -682,11 +711,16 @@ export default function ProgramPage() {
                                                         <strong>{estimate.subjectsAffected.join(', ')}</strong>
                                                     </p>
                                                     <p>
-                                                        <strong>{estimate.totalTopics}</strong> тем за <strong>{estimate.daysAvailable}</strong> дней =
+                                                        <strong>{estimate.totalTopics}</strong> тем за <strong>{estimate.actualDaysNeeded}</strong> дней
+                                                        {estimate.actualDaysNeeded < estimate.daysAvailable && (
+                                                            <span className="text-blue-400"> (сжато с {estimate.daysAvailable})</span>
+                                                        )}
+                                                        {' = '}
                                                         <strong className={cn(
                                                             "ml-1",
                                                             estimate.isExtreme && "text-red-400",
-                                                            estimate.isIntense && !estimate.isExtreme && "text-yellow-400"
+                                                            estimate.isIntense && !estimate.isExtreme && "text-yellow-400",
+                                                            estimate.isHighIntensity && "text-blue-400"
                                                         )}>
                                                             {estimate.topicsPerDay} тем/день
                                                         </strong>
@@ -698,6 +732,11 @@ export default function ProgramPage() {
                                                             year: 'numeric'
                                                         })}
                                                     </p>
+                                                    {estimate.isHighIntensity && !estimate.isIntense && !estimate.isExtreme && (
+                                                        <p className="text-xs text-blue-400 mt-2">
+                                                            📚 Программа сжата для эффективного обучения (мин. 3 темы/день)
+                                                        </p>
+                                                    )}
                                                     {estimate.isExtreme && (
                                                         <p className="text-xs text-red-400 mt-2">
                                                             Будет создан быстрый обзор тем (20-30 мин каждая)
@@ -823,17 +862,29 @@ export default function ProgramPage() {
 
             {/* Goals Section - compact, above calendar */}
             {program && program.topicPlans && program.topicPlans.length > 0 && (() => {
-                const subjectsInProgram = new Map<string, { id: string; name: string; emoji: string; color: string; topicCount: number }>()
+                // Group topics by subject and find deadlines per subject
+                const subjectsInProgram = new Map<string, { 
+                    id: string; name: string; emoji: string; color: string; 
+                    topicCount: number; deadline: Date | null 
+                }>()
+                
                 program.topicPlans.forEach(tp => {
                     const subject = tp.topic?.subject
                     if (subject) {
                         const existing = subjectsInProgram.get(subject.id)
+                        const topicDeadline = tp.deadline ? new Date(tp.deadline) : null
+                        
                         if (existing) {
                             existing.topicCount++
+                            // Keep the latest deadline for this subject
+                            if (topicDeadline && (!existing.deadline || topicDeadline > existing.deadline)) {
+                                existing.deadline = topicDeadline
+                            }
                         } else {
                             subjectsInProgram.set(subject.id, {
                                 id: subject.id, name: subject.name, emoji: subject.emoji || '📚',
-                                color: subject.color || '#8b5cf6', topicCount: 1
+                                color: subject.color || '#8b5cf6', topicCount: 1,
+                                deadline: topicDeadline
                             })
                         }
                     }
@@ -841,18 +892,38 @@ export default function ProgramPage() {
                 const subjectsList = Array.from(subjectsInProgram.values())
 
                 return subjectsList.length > 0 ? (
-                    <div className="mb-4 flex items-center gap-4 text-sm">
-                        <span className="text-muted-foreground">🎯 Goals:</span>
-                        {subjectsList.map(s => (
-                            <span key={s.id} className="flex items-center gap-1">
-                                <span style={{ color: s.color }}>{s.emoji}</span>
-                                <span className="font-medium">{s.name}</span>
-                                <span className="text-muted-foreground">({s.topicCount})</span>
-                            </span>
-                        ))}
-                        <span className="text-muted-foreground ml-auto">
-                            Deadline: {program.endDate ? new Date(program.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                        </span>
+                    <div className="mb-4 space-y-2">
+                        <div className="flex items-center gap-4 text-sm flex-wrap">
+                            <span className="text-muted-foreground">🎯 Goals:</span>
+                            {subjectsList.map(s => (
+                                <span key={s.id} className="flex items-center gap-1">
+                                    <span style={{ color: s.color }}>{s.emoji}</span>
+                                    <span className="font-medium">{s.name}</span>
+                                    <span className="text-muted-foreground">({s.topicCount})</span>
+                                </span>
+                            ))}
+                        </div>
+                        {/* Deadlines per subject */}
+                        <div className="flex items-center gap-4 text-sm flex-wrap">
+                            <span className="text-muted-foreground">📅 Deadlines:</span>
+                            {subjectsList.filter(s => s.deadline).map(s => (
+                                <span key={s.id} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted/50">
+                                    <span style={{ color: s.color }}>{s.emoji}</span>
+                                    <span className="font-medium">{s.name}</span>
+                                    <span className="text-muted-foreground">→</span>
+                                    <span className={cn(
+                                        "font-medium",
+                                        s.deadline && s.deadline < new Date() && "text-red-500",
+                                        s.deadline && s.deadline >= new Date() && s.deadline <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) && "text-yellow-500"
+                                    )}>
+                                        {s.deadline?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </span>
+                                </span>
+                            ))}
+                            {subjectsList.filter(s => s.deadline).length === 0 && (
+                                <span className="text-muted-foreground">No deadlines set</span>
+                            )}
+                        </div>
                     </div>
                 ) : null
             })()}

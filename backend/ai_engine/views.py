@@ -108,13 +108,17 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                         break
         
         # Only include topics up to milestone (or all if no milestone)
+        # Get subject-specific deadline
+        subject_deadline = subj_deadline_info.get('deadline') if subj_deadline_info else None
+        
         for t in topics[:end_index]:
             all_topics.append({
                 'topic_id': t.get('id'),
                 'topic_name': t.get('name'),
                 'subject_id': subj_id,
                 'subject_name': subj_name,
-                'status': t.get('status', 'NOT_STARTED')
+                'status': t.get('status', 'NOT_STARTED'),
+                'subject_deadline': subject_deadline  # Store subject's specific deadline
             })
     
     total_topics = len(all_topics)
@@ -135,10 +139,30 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         }
     
     # MATH: Calculate topics per day to FIT ALL within deadline
-    # This is the KEY - we MUST fit all topics, so we calculate how many per day
-    topics_per_day = math.ceil(total_topics / days_available)
+    # HIGH-INTENSITY MODE: Minimum 3 topics/day for efficient learning
+    # If deadline allows more days than needed at 3 topics/day, compress the schedule
+    MIN_TOPICS_PER_DAY = 3  # Minimum for efficient learning
+    MAX_TOPICS_PER_DAY = 8  # Maximum sustainable intensity
     
-    print(f"MATH: {total_topics} topics / {days_available} days = {topics_per_day} topics/day (rounded up)")
+    # Calculate the required topics per day to meet deadline
+    required_topics_per_day = math.ceil(total_topics / days_available)
+    
+    # Apply high-intensity constraints
+    if required_topics_per_day < MIN_TOPICS_PER_DAY:
+        # Schedule is too relaxed - compress it for efficiency
+        topics_per_day = MIN_TOPICS_PER_DAY
+        # Recalculate actual days needed
+        actual_days_needed = math.ceil(total_topics / topics_per_day)
+        days_available = min(days_available, actual_days_needed)
+        print(f"HIGH-INTENSITY MODE: Compressing schedule from {total_topics/required_topics_per_day:.0f} days to {actual_days_needed} days")
+    elif required_topics_per_day > MAX_TOPICS_PER_DAY:
+        # Can't exceed max intensity - schedule will be tight
+        topics_per_day = MAX_TOPICS_PER_DAY
+        print(f"WARNING: Required {required_topics_per_day} topics/day exceeds max {MAX_TOPICS_PER_DAY}. Schedule will be tight!")
+    else:
+        topics_per_day = required_topics_per_day
+    
+    print(f"MATH: {total_topics} topics / {days_available} days = {topics_per_day} topics/day (min={MIN_TOPICS_PER_DAY}, max={MAX_TOPICS_PER_DAY})")
     
     # Session duration based on topic status (shorter for already known topics)
     def get_session_duration(topic):
@@ -191,7 +215,11 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             # Calculate which week this day falls in
             week_number = ((day - 1) // 7) + 1
             
-            # Add topic plan
+            # Add topic plan with subject-specific deadline
+            topic_deadline = topic['subject_deadline'] if topic.get('subject_deadline') else min_deadline_date.strftime('%Y-%m-%d')
+            if isinstance(topic_deadline, datetime):
+                topic_deadline = topic_deadline.strftime('%Y-%m-%d')
+            
             topic_plans.append({
                 'topicName': topic['topic_name'],
                 'topicId': topic['topic_id'],
@@ -203,7 +231,7 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                 'priority': topic_idx + 1,
                 'type': 'THEORY',
                 'status': topic['status'],
-                'deadline': min_deadline_date.strftime('%Y-%m-%d')  # All topics share the deadline
+                'deadline': topic_deadline  # Subject-specific deadline
             })
             
             # Move to next time slot

@@ -205,7 +205,27 @@ SUBJECT {idx}: {s['name']}
     # Get overall planning window (use max deadline for planning, but respect each subject's deadline)
     max_days = max(s['daysUntilDeadline'] or 30 for s in subjects_structured)
     min_days = min(s['daysUntilDeadline'] or 30 for s in subjects_structured)
-    total_days = max_days  # Plan for entire window
+    
+    # HIGH-INTENSITY MODE: Ensure efficient learning with minimum 3 topics/day
+    MIN_TOPICS_PER_DAY = 3  # Minimum for efficient learning
+    MAX_TOPICS_PER_DAY = 8  # Maximum sustainable intensity
+    
+    required_topics_per_day = total_topics / max(1, max_days)
+    
+    if required_topics_per_day < MIN_TOPICS_PER_DAY:
+        # Compress schedule for high-intensity learning
+        actual_days_needed = max(1, total_topics // MIN_TOPICS_PER_DAY + (1 if total_topics % MIN_TOPICS_PER_DAY else 0))
+        total_days = min(max_days, actual_days_needed)
+        topics_per_day = MIN_TOPICS_PER_DAY
+        print(f"HIGH-INTENSITY MODE: Compressing schedule to {total_days} days ({topics_per_day} topics/day)")
+    elif required_topics_per_day > MAX_TOPICS_PER_DAY:
+        topics_per_day = MAX_TOPICS_PER_DAY
+        total_days = max_days
+        print(f"WARNING: Required {required_topics_per_day:.1f} topics/day exceeds max. Using {MAX_TOPICS_PER_DAY}/day")
+    else:
+        topics_per_day = int(required_topics_per_day) + 1
+        total_days = max_days
+    
     total_weeks_calc = max(1, (total_days + 6) // 7)
     
     # Calculate overall hours (for prompt)
@@ -220,7 +240,7 @@ SUBJECT {idx}: {s['name']}
     earliest_deadline_str = earliest_deadline_date.strftime('%Y-%m-%d')
     latest_deadline_str = latest_deadline_date.strftime('%Y-%m-%d')
     
-    prompt = f"""You are a STRICT study program generator. Be BRUTALLY HONEST about what is achievable.
+    prompt = f"""You are a STRICT HIGH-INTENSITY study program generator. Create efficient, compact schedules.
 
 CURRENT SITUATION:
 - Today: {current_date_str}
@@ -228,8 +248,7 @@ CURRENT SITUATION:
 - Latest deadline: {latest_deadline_str} ({max_days} days away)
 - Total topics to cover: {total_topics}
 - Hours per day available: {hours_per_day_available}
-- TOTAL DAYS TO PLAN: {total_days} days (from day 1 to day {total_days})
-- TOTAL WEEKS: {total_weeks_calc}
+- RECOMMENDED SCHEDULE: {total_days} days with {topics_per_day} topics/day
 
 FEASIBILITY STATUS: {feasibility_status}
 {feasibility_msg}
@@ -239,13 +258,13 @@ SUBJECTS (each with OWN deadline):
 
 {'⚠️ SOME SUBJECTS ARE IMPOSSIBLE TO COMPLETE FULLY!' if not is_feasible else ''}
 
-SCHEDULE RULES:
-- You MUST create a plan for ALL {total_days} DAYS, not just day 1!
-- Each subject has its OWN deadline - respect it!
+HIGH-INTENSITY SCHEDULE RULES:
+- MINIMUM {MIN_TOPICS_PER_DAY} TOPICS PER DAY for efficient learning!
 - Sessions: 08:00 to 20:00
 - Session duration: 20-30 min (quick review) or 45 min (full study)
-- Distribute topics EVENLY across all days
-- Each day should have 2-5 topics depending on hours available
+- Front-load harder subjects - tackle them first while energy is high
+- Mix subjects within each day to avoid fatigue
+- Aim for {topics_per_day} topics per day to finish in {total_days} days
 
 CRITICAL REQUIREMENTS:
 1. Generate dayPlans for EVERY day from day 1 to day {total_days}
