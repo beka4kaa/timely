@@ -180,7 +180,7 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
     else:
         topics_per_day = required_topics_per_day
     
-    print(f"MATH: {total_topics} topics / {days_available} days = {topics_per_day} topics/day (min={MIN_TOPICS_PER_DAY}, max={MAX_TOPICS_PER_DAY})")
+    print(f"MATH: {total_topics} topics / {days_available} days = {topics_per_day} topics/day (min={min_topics_per_day}, max={max_topics_per_day})")
     
     # Session duration based on topic status (shorter for already known topics)
     def get_session_duration(topic):
@@ -617,6 +617,21 @@ class GenerateProgramView(APIView):
             # Deduplicate by (topicName, plannedWeek) - allow same topic in different weeks
             seen_topics = set()
             created_count = 0
+            
+            # Build a map of subject name -> deadline from original request
+            subject_deadline_map = {}
+            for sd in subject_deadlines:
+                subj_id = str(sd.get('subjectId') or sd.get('subject_id', ''))
+                deadline_str = sd.get('deadline')
+                if subj_id and deadline_str:
+                    # Find subject name by ID
+                    for subj in subject_data:
+                        if str(subj.get('id')) == subj_id:
+                            subject_deadline_map[subj.get('name', '').lower()] = deadline_str
+                            break
+            
+            print(f"Subject deadline map: {subject_deadline_map}")
+            
             for tp in topic_plans_data:
                 topic_name = tp.get('topicName', tp.get('topic_name', ''))
                 subject_name = tp.get('subjectName', tp.get('subject_name', ''))
@@ -638,16 +653,44 @@ class GenerateProgramView(APIView):
                         topic = Topic.objects.create(subject=subject, name=topic_name)
                 
                 if topic:
-                    # Parse deadline from AI response if provided, else calculate from week
-                    deadline_str = tp.get('deadline')
-                    if deadline_str and deadline_str != 'YYYY-MM-DD':
-                        try:
-                            from datetime import datetime as dt
-                            deadline = dt.fromisoformat(deadline_str.replace('Z', '+00:00'))
-                        except:
-                            deadline = timezone.now() + timedelta(weeks=planned_week)
-                    else:
+                    # CRITICAL: Use the ORIGINAL deadline from frontend request, NOT AI response
+                    # Find deadline by subject name (case-insensitive)
+                    deadline = None
+                    
+                    # First, try to match by subject name from the topic
+                    if topic.subject:
+                        actual_subject_name = topic.subject.name.lower()
+                        for subj_name, dl_str in subject_deadline_map.items():
+                            if subj_name in actual_subject_name or actual_subject_name in subj_name:
+                                try:
+                                    from datetime import datetime as dt
+                                    if 'T' in str(dl_str):
+                                        deadline = dt.fromisoformat(str(dl_str).replace('Z', '+00:00')).replace(tzinfo=None)
+                                    else:
+                                        deadline = dt.strptime(str(dl_str)[:10], '%Y-%m-%d')
+                                except Exception as e:
+                                    print(f"Error parsing deadline {dl_str}: {e}")
+                                break
+                    
+                    # Fallback: try to match by subject_name from AI response
+                    if not deadline and subject_name:
+                        subj_name_lower = subject_name.lower()
+                        for subj_name_key, dl_str in subject_deadline_map.items():
+                            if subj_name_key in subj_name_lower or subj_name_lower in subj_name_key:
+                                try:
+                                    from datetime import datetime as dt
+                                    if 'T' in str(dl_str):
+                                        deadline = dt.fromisoformat(str(dl_str).replace('Z', '+00:00')).replace(tzinfo=None)
+                                    else:
+                                        deadline = dt.strptime(str(dl_str)[:10], '%Y-%m-%d')
+                                except Exception as e:
+                                    print(f"Error parsing deadline {dl_str}: {e}")
+                                break
+                    
+                    # Last fallback: calculate from planned week
+                    if not deadline:
                         deadline = timezone.now() + timedelta(weeks=planned_week)
+                        print(f"WARNING: No deadline found for {topic_name}, using week-based fallback")
                     
                     TopicPlan.objects.create(
                         program=program,
