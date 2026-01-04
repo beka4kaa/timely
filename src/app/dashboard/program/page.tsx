@@ -164,6 +164,26 @@ interface LearningProgram {
     topicPlans: TopicPlan[]
     scheduledTests: ScheduledTest[]
     study_sessions?: StudySession[]
+    subjectDeadlines?: Array<{
+        id: string
+        subject: {
+            id: string
+            name: string
+            emoji: string
+            color: string
+        }
+        targetTopic: {
+            id: string
+            name: string
+            subject: {
+                id: string
+                name: string
+            }
+        } | null
+        dueDate: string
+        scopeMode: 'UP_TO_TOPIC' | 'ALL_TOPICS'
+        createdAt: string
+    }>
 }
 
 import { ProgramChatDialog } from '@/components/mind/program-chat-dialog'
@@ -230,15 +250,15 @@ export default function ProgramPage() {
     const [hoursPerWeek, setHoursPerWeek] = useState(20)
     const [selectedWeek, setSelectedWeek] = useState(1)
     const [rebalancing, setRebalancing] = useState(false)
-    
+
     // New intensity settings
     const [hoursPerDay, setHoursPerDay] = useState(4)
     const [intensityLevel, setIntensityLevel] = useState<'relaxed' | 'normal' | 'intense' | 'extreme'>('normal')
     const [studyDays, setStudyDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]) // 1=Mon, 7=Sun
-    
+
     // Day names for UI
     const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-    
+
     // Intensity presets
     const intensityPresets = {
         relaxed: { hoursPerDay: 2, minTopicsPerDay: 1, label: '😌 Расслабленный', description: '1-2 темы/день, без спешки' },
@@ -414,7 +434,7 @@ export default function ProgramPage() {
     // Use intensity settings for calculations
     const minTopicsPerDay = intensityPresets[intensityLevel].minTopicsPerDay
     const maxTopicsPerDay = intensityLevel === 'extreme' ? 12 : intensityLevel === 'intense' ? 8 : 6
-    
+
     const calculateWorkloadEstimates = (): Array<{
         totalTopics: number
         daysAvailable: number
@@ -444,7 +464,7 @@ export default function ProgramPage() {
             if (deadline?.deadline) {
                 const deadlineDate = new Date(deadline.deadline)
                 const daysUntil = Math.max(1, Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-                
+
                 // Calculate actual study days (accounting for selected study days)
                 const weeksUntil = Math.ceil(daysUntil / 7)
                 const studyDaysUntil = Math.max(1, weeksUntil * studyDays.length)
@@ -492,12 +512,12 @@ export default function ProgramPage() {
                 const totalTopics = subjects.reduce((sum, s) => sum + s.topicCount, 0)
                 const studyDaysAvailable = subjects.reduce((sum, s) => sum + s.studyDaysUntil, 0) / subjects.length
                 const rawTopicsPerDay = Math.ceil(totalTopics / studyDaysAvailable)
-                
+
                 // Apply intensity settings
                 let topicsPerDay = rawTopicsPerDay
                 let actualDaysNeeded = Math.ceil(studyDaysAvailable)
                 let isHighIntensity = false
-                
+
                 if (rawTopicsPerDay < minTopicsPerDay) {
                     // Schedule is too relaxed - will be compressed
                     topicsPerDay = minTopicsPerDay
@@ -506,7 +526,7 @@ export default function ProgramPage() {
                 } else if (rawTopicsPerDay > maxTopicsPerDay) {
                     topicsPerDay = maxTopicsPerDay
                 }
-                
+
                 return {
                     totalTopics,
                     daysAvailable: days,
@@ -646,7 +666,7 @@ export default function ProgramPage() {
                                 ))}
                             </div>
                         </div>
-                        
+
                         {/* Hours per Day */}
                         <div className="space-y-2">
                             <Label>Часов в день</Label>
@@ -674,7 +694,7 @@ export default function ProgramPage() {
                                 </span>
                             </div>
                         </div>
-                        
+
                         {/* Study Days Selection */}
                         <div className="space-y-2">
                             <Label>Дни для учёбы</Label>
@@ -962,10 +982,10 @@ export default function ProgramPage() {
             // Filter topics for this specific day
             const absoluteDay = weekStartDay + i  // e.g. week 2, day 0 = day 8
             const dayTopics = program.topicPlans?.filter(tp => tp.plannedDay === absoluteDay) || []
-            
+
             // Filter study sessions for this specific date
             const dateStr = date.toISOString().split('T')[0]
-            const daySessions = program.study_sessions?.filter(s => 
+            const daySessions = program.study_sessions?.filter(s =>
                 s.scheduled_date === dateStr || s.day_number === absoluteDay
             ).sort((a, b) => {
                 // Sort by time, then by order_in_day
@@ -988,7 +1008,7 @@ export default function ProgramPage() {
     }
 
     const weekDays = getWeekDays()
-    
+
     // Helper function to get session type badge color and icon
     const getSessionTypeStyle = (type: string) => {
         switch (type) {
@@ -1031,17 +1051,17 @@ export default function ProgramPage() {
             {/* Goals Section - compact, above calendar */}
             {program && program.topicPlans && program.topicPlans.length > 0 && (() => {
                 // Group topics by subject and find deadlines per subject
-                const subjectsInProgram = new Map<string, { 
-                    id: string; name: string; emoji: string; color: string; 
-                    topicCount: number; deadline: Date | null 
+                const subjectsInProgram = new Map<string, {
+                    id: string; name: string; emoji: string; color: string;
+                    topicCount: number; deadline: Date | null
                 }>()
-                
+
                 program.topicPlans.forEach(tp => {
                     const subject = tp.topic?.subject
                     if (subject) {
                         const existing = subjectsInProgram.get(subject.id)
                         const topicDeadline = tp.deadline ? new Date(tp.deadline) : null
-                        
+
                         if (existing) {
                             existing.topicCount++
                             // Keep the latest deadline for this subject
@@ -1095,6 +1115,57 @@ export default function ProgramPage() {
                     </div>
                 ) : null
             })()}
+
+            {/* Deadlines Display - Read from canonical SubjectDeadline entities */}
+            {program.subjectDeadlines && program.subjectDeadlines.length > 0 && (
+                <div className="mb-4 p-3 rounded-lg border border-border bg-muted/20">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-sm font-medium text-muted-foreground">📅 Deadlines:</span>
+                        {program.subjectDeadlines.map(sd => {
+                            const dueDate = new Date(sd.dueDate)
+                            const daysRemaining = Math.ceil((dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                            const isOverdue = daysRemaining < 0
+                            const isUrgent = daysRemaining >= 0 && daysRemaining <= 7
+
+                            return (
+                                <span
+                                    key={sd.id}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background border text-sm"
+                                >
+                                    <span style={{ color: sd.subject.color }}>{sd.subject.emoji}</span>
+                                    <span className="font-medium">{sd.subject.name}</span>
+
+                                    {sd.scopeMode === 'UP_TO_TOPIC' && sd.targetTopic && (
+                                        <Badge variant="outline" className="text-xs h-5">
+                                            up to {sd.targetTopic.name}
+                                        </Badge>
+                                    )}
+
+                                    <span className="text-muted-foreground mx-1">→</span>
+                                    <span className={cn(
+                                        "font-medium",
+                                        isOverdue && "text-red-500",
+                                        isUrgent && !isOverdue && "text-yellow-500"
+                                    )}>
+                                        {dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                    </span>
+
+                                    {daysRemaining >= 0 && (
+                                        <span className="text-xs text-muted-foreground">
+                                            ({daysRemaining}d)
+                                        </span>
+                                    )}
+                                    {isOverdue && (
+                                        <span className="text-xs text-red-500">
+                                            (overdue)
+                                        </span>
+                                    )}
+                                </span>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Calendar Header with Navigation */}
             <div className="mb-4 flex items-center justify-between">
@@ -1167,7 +1238,7 @@ export default function ProgramPage() {
                         const daySessions = weekDays[idx]?.sessions || []
                         const dayTopics = weekDays[idx]?.topics || []
                         const totalMinutes = daySessions.reduce((sum, s) => sum + s.duration_minutes, 0)
-                        const totalHours = daySessions.length > 0 
+                        const totalHours = daySessions.length > 0
                             ? (totalMinutes / 60).toFixed(1)
                             : dayTopics.reduce((sum, tp) => sum + (tp.estimatedHours || 1), 0).toFixed(1)
                         const sessionCount = daySessions.length
@@ -1203,7 +1274,7 @@ export default function ProgramPage() {
                         // Calculate total hours for this day
                         const totalMinutes = day.sessions.reduce((sum, s) => sum + s.duration_minutes, 0)
                         const totalHours = (totalMinutes / 60).toFixed(1)
-                        
+
                         return (
                             <div
                                 key={day.dayNumber}

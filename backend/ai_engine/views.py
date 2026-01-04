@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline
 from .serializers import LearningProgramSerializer
 from mind.models import Subject, Topic
 from .services import (
@@ -37,6 +37,109 @@ def parse_deadline_date(deadline_str):
             return datetime.strptime(str(deadline_str)[:10], '%Y-%m-%d')
     except:
         return None
+
+
+def validate_deadlines_strict(subject_deadlines_objs, topic_plans_list, subjects_map):
+    """
+    Verify all topics are scheduled before their subject deadlines.
+    Returns list of violations as dicts with {subject_name, topic_name, scheduled_day, deadline}.
+    """
+    violations = []
+    
+    # Build map of subject_id -> deadline datetime
+    deadline_map = {}
+    for sd_obj in subject_deadlines_objs:
+        deadline_map[str(sd_obj.subject.id)] = sd_obj.due_date
+    
+    for tp_dict in topic_plans_list:
+        topic_id = tp_dict.get('topicId') or tp_dict.get('topic_id')
+        if not topic_id:
+            continue
+            
+        # Find subject for this topic
+        topic_obj = Topic.objects.filter(id=topic_id).first()
+        if not topic_obj or not topic_obj.subject:
+            continue
+            
+        subject_id = str(topic_obj.subject.id)
+        if subject_id not in deadline_map:
+            continue
+            
+        deadline_date = deadline_map[subject_id]
+        scheduled_date_str = tp_dict.get('date')
+        
+        if not scheduled_date_str:
+            continue
+            
+        try:
+            scheduled_date = datetime.strptime(scheduled_date_str[:10], '%Y-%m-%d')
+            if scheduled_date > deadline_date:
+                violations.append({
+                    'subject_name': topic_obj.subject.name,
+                    'topic_name': topic_obj.name,
+                    'scheduled_date': scheduled_date_str,
+                    'deadline': deadline_date.strftime('%Y-%m-%d'),
+                    'days_over': (scheduled_date - deadline_date).days
+                })
+        except:
+            pass
+    
+    return violations
+
+
+def validate_scope(subject_deadlines_objs, topic_plans_list, all_subjects_data):
+    """
+    Ensure topics beyond milestone are not scheduled before deadline.
+    For subjects with scope_mode='UP_TO_TOPIC', verify topics after target_topic are excluded.
+    Returns list of violations.
+    """
+    violations = []
+    
+    for sd_obj in subject_deadlines_objs:
+        if sd_obj.scope_mode != 'UP_TO_TOPIC' or not sd_obj.target_topic:
+            continue
+            
+        subject_id = str(sd_obj.subject.id)
+        target_topic_id = str(sd_obj.target_topic.id)
+        target_order = sd_obj.target_topic.order_index
+        
+        # Get all topics for this subject from the original data
+        subject_data = next((s for s in all_subjects_data if str(s.get('id')) == subject_id), None)
+        if not subject_data:
+            continue
+            
+        # Find topics beyond the milestone (order_index > target_order)
+        excluded_topic_ids = set()
+        for t in subject_data.get('topics', []):
+            if t.get('order') is not None and t.get('order') > target_order:
+                excluded_topic_ids.add(str(t.get('id')))
+        
+        # Check if any excluded topics appear in the topic_plans before deadline
+        deadline_date = sd_obj.due_date
+        for tp_dict in topic_plans_list:
+            topic_id = str(tp_dict.get('topicId') or tp_dict.get('topic_id', ''))
+            if topic_id not in excluded_topic_ids:
+                continue
+                
+            scheduled_date_str = tp_dict.get('date')
+            if not scheduled_date_str:
+                continue
+                
+            try:
+                scheduled_date = datetime.strptime(scheduled_date_str[:10], '%Y-%m-%d')
+                if scheduled_date <= deadline_date:
+                    topic_obj = Topic.objects.filter(id=topic_id).first()
+                    violations.append({
+                        'subject_name': sd_obj.subject.name,
+                        'topic_name': topic_obj.name if topic_obj else topic_id,
+                        'reason': f'Topic beyond milestone (order {topic_obj.order_index if topic_obj else "?"} > {target_order}) scheduled before deadline',
+                        'scheduled_date': scheduled_date_str,
+                        'deadline': deadline_date.strftime('%Y-%m-%d')
+                    })
+            except:
+                pass
+    
+    return violations
 
 
 def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_day, session_minutes=45, 
@@ -200,13 +303,17 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         else:
             return session_minutes  # Full treatment for new topics
     
-    # Build day plans - STRICTLY distribute topics to meet deadline
-    # Only schedule on study days
+    # Build day plans with SPACED REPETITION - STRICTLY distribute topics to meet deadline
+    # Each topic gets: THEORY (day N), PRACTICE (day N+1), REVIEW (day N+3), REVIEW (day N+7)
     day_plans = []
     topic_plans = []
     topic_idx = 0
     study_day_count = 0
     
+    # Track when each topic was introduced for spaced repetition scheduling
+    topic_introduced_on_day = {}  # {topic_id: theory_day_number}
+    
+    # First pass: schedule THEORY sessions for all topics
     for day in range(1, days_available + 1):
         if topic_idx >= total_topics:
             break  # All topics scheduled
@@ -235,14 +342,14 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             topic = all_topics[topic_idx]
             duration = get_session_duration(topic)
             
-            # Add session for this topic
+            # Add THEORY session (initial learning)
             sessions.append({
                 'order': len(sessions) + 1,
                 'startTime': f'{hour:02d}:00',
                 'subjectName': topic['subject_name'],
                 'topicName': topic['topic_name'],
                 'topicId': topic['topic_id'],
-                'type': 'STUDY',
+                'type': 'THEORY',
                 'durationMin': duration
             })
             
@@ -265,8 +372,12 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                 'priority': topic_idx + 1,
                 'type': 'THEORY',
                 'status': topic['status'],
-                'deadline': topic_deadline  # Subject-specific deadline
+                'deadline': topic_deadline,  # Subject-specific deadline
+                'theoryDay': day,  # Track for spaced repetition
             })
+            
+            # Track this topic for spaced repetition
+            topic_introduced_on_day[topic['topic_id']] = day
             
             # Move to next time slot
             hour += 1
@@ -276,7 +387,7 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             topic_idx += 1
         
         total_day_hours = sum(s['durationMin'] for s in sessions) / 60
-        print(f"Day {day} ({day_date.strftime('%Y-%m-%d')}): {len(sessions)} topics, {total_day_hours:.1f}h")
+        print(f"Day {day} ({day_date.strftime('%Y-%m-%d')}): {len(sessions)} THEORY sessions, {total_day_hours:.1f}h")
         
         day_plans.append({
             'dayNumber': day,
@@ -285,6 +396,79 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             'totalHours': total_day_hours,
             'sessions': sessions
         })
+    
+    # Second pass: Add PRACTICE and REVIEW sessions with spaced repetition
+    # For each topic, schedule: PRACTICE (+1d), REVIEW (+3d), REVIEW (+7d)
+    print("\nAdding spaced repetition sessions...")
+    
+    for topic in all_topics:
+        topic_id = topic['topic_id']
+        if topic_id not in topic_introduced_on_day:
+            continue  # Topic wasn't scheduled (shouldn't happen)
+        
+        theory_day = topic_introduced_on_day[topic_id]
+        
+        # PRACTICE session: +1 day after THEORY
+        practice_day = theory_day + 1
+        # REVIEW 1: +3 days after THEORY
+        review1_day = theory_day + 3
+        # REVIEW 2: +7 days after THEORY
+        review2_day = theory_day + 7
+        
+        for session_type, target_day, duration_min in [
+            ('PRACTICE', practice_day, 30),
+            ('REVIEW', review1_day, 20),
+            ('REVIEW', review2_day, 15),
+        ]:
+            # Find or create day plan for this day
+            target_date = today_start + timedelta(days=target_day - 1)
+            
+            # Check if within deadline
+            if target_date > min_deadline_date:
+                continue  # Don't schedule reviews after deadline
+            
+            # Check if it's a study day
+            if target_date.isoweekday() not in study_days:
+                # Find next available study day
+                offset = 1
+                while (target_date + timedelta(days=offset)).isoweekday() not in study_days and offset < 7:
+                    offset += 1
+                target_date = target_date + timedelta(days=offset)
+                target_day = (target_date - today_start).days + 1
+            
+            # Find existing day plan or create new one
+            day_plan = next((dp for dp in day_plans if dp['dayNumber'] == target_day), None)
+            
+            if not day_plan:
+                # Create new day plan for this review day
+                day_plan = {
+                    'dayNumber': target_day,
+                    'date': target_date.strftime('%Y-%m-%d'),
+                    'weekNumber': ((target_day - 1) // 7) + 1,
+                    'totalHours': 0,
+                    'sessions': []
+                }
+                day_plans.append(day_plan)
+            
+            # Add session to this day
+            hour = 14 + len(day_plan['sessions'])  # Afternoon slots for reviews
+            day_plan['sessions'].append({
+                'order': len(day_plan['sessions']) + 1,
+                'startTime': f'{hour:02d}:00',
+                'subjectName': topic['subject_name'],
+                'topicName': topic['topic_name'],
+                'topicId': topic['topic_id'],
+                'type': session_type,
+                'durationMin': duration_min
+            })
+            
+            # Update total hours
+            day_plan['totalHours'] = sum(s['durationMin'] for s in day_plan['sessions']) / 60
+    
+    # Sort day plans by day number
+    day_plans.sort(key=lambda x: x['dayNumber'])
+    
+    print(f"Added spaced repetition sessions. Total days with sessions: {len(day_plans)}")
     
     # Verify all topics scheduled
     topics_scheduled = topic_idx
@@ -526,6 +710,56 @@ class GenerateProgramView(APIView):
             print(f"  End: {end_date}")
             print(f"  Deadline: {deadline_str}")
             
+            # ==============================================================
+            # CREATE SUBJECT DEADLINES - SINGLE SOURCE OF TRUTH
+            # ==============================================================
+            subject_deadline_objs = []
+            for sd in subject_deadlines:
+                subj_id = sd.get('subjectId') or sd.get('subject_id')
+                deadline_raw = sd.get('deadline')
+                milestone_topic_id = sd.get('milestoneTopicId') or sd.get('milestone_topic_id')
+                
+                if not subj_id or not deadline_raw:
+                    continue
+                
+                # Find subject object
+                try:
+                    subject_obj = Subject.objects.get(id=subj_id)
+                except Subject.DoesNotExist:
+                    print(f"WARNING: Subject {subj_id} not found, skipping deadline")
+                    continue
+                
+                # Parse deadline
+                deadline_dt = parse_deadline_date(deadline_raw)
+                if not deadline_dt:
+                    print(f"WARNING: Could not parse deadline {deadline_raw} for {subject_obj.name}")
+                    continue
+                
+                # Find target topic if milestone specified
+                target_topic_obj = None
+                scope_mode = 'ALL_TOPICS'
+                if milestone_topic_id:
+                    try:
+                        target_topic_obj = Topic.objects.get(id=milestone_topic_id, subject=subject_obj)
+                        scope_mode = 'UP_TO_TOPIC'
+                    except Topic.DoesNotExist:
+                        print(f"WARNING: Milestone topic {milestone_topic_id} not found for {subject_obj.name}")
+                
+                # Create SubjectDeadline entity
+                sd_obj = SubjectDeadline.objects.create(
+                    program=program,
+                    subject=subject_obj,
+                    target_topic=target_topic_obj,
+                    due_date=deadline_dt,
+                    scope_mode=scope_mode
+                )
+                subject_deadline_objs.append(sd_obj)
+                
+                scope_desc = f"up to '{target_topic_obj.name}'" if target_topic_obj else "all topics"
+                print(f"  + SubjectDeadline: {subject_obj.name} - {scope_desc} by {deadline_dt.strftime('%Y-%m-%d')}")
+            
+            print(f"Created {len(subject_deadline_objs)} subject deadline entities")
+
             # Debug log
             print(f"AI Result keys: {ai_result.keys()}")
             print(f"dayPlans count: {len(ai_result.get('dayPlans', []))}")
@@ -807,6 +1041,58 @@ class GenerateProgramView(APIView):
                 created_count += 1
             
             print(f"Created {created_count} topic plans")
+            
+            # ==============================================================
+            # VALIDATE GENERATED PLAN (CRITICAL: Enforce scope & deadlines)
+            # ==============================================================
+            print("\n=== VALIDATING GENERATED PLAN ===")
+            
+            # Get all created TopicPlans for validation
+            created_topic_plans = TopicPlan.objects.filter(program=program)
+            topic_plans_list = [{
+                'topicId': tp.topic.id,
+                'topic_id': tp.topic.id,
+                'date': tp.topic_plans.first().date if hasattr(tp, 'topic_plans') else None,
+                # We'll validate using the deadline field
+            } for tp in created_topic_plans]
+            
+            # Validate deadlines (ensure all topics scheduled before their subject deadlines)
+            deadline_violations = validate_deadlines_strict(
+                subject_deadlines_objs=subject_deadline_objs,
+                topic_plans_list=[{
+                    'topicId': tp.topic.id,
+                    'date': timezone.now() + timedelta(days=tp.planned_day - 1) if tp.planned_day else None
+                } for tp in created_topic_plans],
+                subjects_map={}
+            )
+            
+            if deadline_violations:
+                print(f"WARNING: {len(deadline_violations)} deadline violations found:")
+                for v in deadline_violations[:5]:  # Show first 5
+                    print(f"  - {v['subject_name']}/{v['topic_name']}: scheduled {v['scheduled_date']} > deadline {v['deadline']} ({v['days_over']} days over)")
+            
+            # Validate scope (ensure topics beyond milestone are NOT included)
+            scope_violations = validate_scope(
+                subject_deadlines_objs=subject_deadline_objs,
+                topic_plans_list=[{
+                    'topicId': tp.topic.id,
+                    'topic_id': tp.topic.id,
+                    'date': (timezone.now() + timedelta(days=tp.planned_day - 1)).strftime('%Y-%m-%d') if tp.planned_day else None
+                } for tp in created_topic_plans],
+                all_subjects_data=subject_data
+            )
+            
+            if scope_violations:
+                print(f"ERROR: {len(scope_violations)} scope violations found (topics beyond milestone included):")
+                for v in scope_violations[:5]:
+                    print(f"  - {v['subject_name']}/{v['topic_name']}: {v['reason']}")
+                
+                # CRITICAL: If scope violations exist, this is a bug - log and warn but continue
+                # In production, you might want to reject the program or fix automatically
+                print("WARNING: Scope violations detected but program will be created. Review manually.")
+            
+            if not deadline_violations and not scope_violations:
+                print("✓ Validation passed: No deadline or scope violations")
             
             # ==============================================================
             # CREATE SCHEDULED TESTS from AI response

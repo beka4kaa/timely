@@ -109,6 +109,28 @@ class TopicPlan(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     completed_at = models.DateTimeField(null=True, blank=True)
 
+class SubjectDeadline(models.Model):
+    """Canonical deadline entity per subject - single source of truth"""
+    SCOPE_CHOICES = [
+        ('UP_TO_TOPIC', 'Learn up to specific topic'),
+        ('ALL_TOPICS', 'Learn all topics'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    program = models.ForeignKey(LearningProgram, on_delete=models.CASCADE, related_name='subject_deadlines')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='program_deadlines')
+    target_topic = models.ForeignKey(Topic, on_delete=models.SET_NULL, null=True, blank=True, related_name='deadline_milestones')
+    due_date = models.DateTimeField()  # User-local midnight end-of-day
+    scope_mode = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='ALL_TOPICS')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('program', 'subject')
+    
+    def __str__(self):
+        scope = f"up to {self.target_topic.name}" if self.scope_mode == 'UP_TO_TOPIC' and self.target_topic else "all topics"
+        return f"{self.subject.name}: {scope} by {self.due_date.strftime('%Y-%m-%d')}"
+
 class ScheduledTest(models.Model):
     STATUS_CHOICES = [
         ('SCHEDULED', 'Scheduled'),

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, UserContext, AiMemory, AiCache
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache
 from mind.models import Subject, Topic
 
 # Try to import StudySession (may not exist if migration not applied)
@@ -63,10 +63,20 @@ class ScheduledTestSerializer(serializers.ModelSerializer):
         model = ScheduledTest
         fields = '__all__'
 
+class SubjectDeadlineSerializer(serializers.ModelSerializer):
+    """Serializer for canonical subject deadlines"""
+    subject = SubjectNestedSerializer(read_only=True)
+    target_topic = TopicNestedSerializer(read_only=True)
+    
+    class Meta:
+        model = SubjectDeadline
+        fields = ['id', 'subject', 'target_topic', 'due_date', 'scope_mode', 'created_at']
+
 class LearningProgramSerializer(serializers.ModelSerializer):
     week_plans = WeekPlanSerializer(many=True, read_only=True)
     topic_plans = TopicPlanSerializer(many=True, read_only=True)
     scheduled_tests = ScheduledTestSerializer(many=True, read_only=True)
+    subject_deadlines = SubjectDeadlineSerializer(many=True, read_only=True)
     
     # Only include study_sessions if model is available
     if STUDY_SESSION_AVAILABLE:
