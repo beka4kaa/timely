@@ -73,6 +73,7 @@ interface TopicPlan {
     id: string
     topicId: string
     plannedWeek: number
+    plannedDay: number
     estimatedHours: number
     priority: number
     reinforceWeek1: number | null
@@ -750,41 +751,46 @@ export default function ProgramPage() {
     // Show program
     const currentWeek = getCurrentWeek()
     const currentWeekPlan = program.weekPlans?.find(w => w.weekNumber === selectedWeek)
-    const weekTopics = program.topicPlans?.filter(tp => tp.plannedWeek === selectedWeek) || []
 
-    // Generate days for the selected week (7 days)
+    // Filter topics for the selected week based on plannedDay
+    // plannedDay 1-7 = week 1, plannedDay 8-14 = week 2, etc.
+    const weekStartDay = (selectedWeek - 1) * 7 + 1  // e.g. week 1 = day 1, week 2 = day 8
+    const weekEndDay = selectedWeek * 7  // e.g. week 1 = day 7, week 2 = day 14
+
+    const weekTopics = program.topicPlans?.filter(tp => {
+        // If plannedWeek is set, use it
+        if (tp.plannedWeek) {
+            return tp.plannedWeek === selectedWeek
+        }
+        // Otherwise calculate from plannedDay
+        if (tp.plannedDay) {
+            return tp.plannedDay >= weekStartDay && tp.plannedDay <= weekEndDay
+        }
+        return false
+    }) || []
+
+    // Generate days for the selected week (always 7 days)
     const getWeekDays = () => {
-        // Fallback: if no weekPlan, use today as start
-        const startDate = currentWeekPlan
-            ? new Date(currentWeekPlan.startDate)
-            : new Date()
-
-        // If no weekPlan but we have topics, show ALL topics distributed across days
-        const topicsToShow = weekTopics.length > 0
-            ? weekTopics
-            : (program.topicPlans || [])
+        const startDate = new Date(program.startDate)
+        startDate.setDate(startDate.getDate() + (selectedWeek - 1) * 7)
 
         const days = []
-        const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+        const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-        // Calculate how many days we actually need based on topics
-        const daysNeeded = currentWeekPlan ? 7 : Math.min(7, Math.ceil(topicsToShow.length / 4) || 2)
-
-        for (let i = 0; i < daysNeeded; i++) {
+        for (let i = 0; i < 7; i++) {
             const date = new Date(startDate)
             date.setDate(startDate.getDate() + i)
 
-            // Distribute topics across days more evenly
-            const topicsPerDay = Math.ceil(topicsToShow.length / daysNeeded)
-            const startIdx = i * topicsPerDay
-            const dayTopics = topicsToShow.slice(startIdx, startIdx + topicsPerDay)
+            // Filter topics for this specific day
+            const absoluteDay = weekStartDay + i  // e.g. week 2, day 0 = day 8
+            const dayTopics = program.topicPlans?.filter(tp => tp.plannedDay === absoluteDay) || []
 
             days.push({
                 dayNumber: i + 1,
-                dayName: dayNames[i % 7],
+                dayName: dayNames[i],
                 date: date,
                 isToday: date.toDateString() === new Date().toDateString(),
-                topics: dayTopics
+                topics: dayTopics.length > 0 ? dayTopics : weekTopics.filter((_, idx) => idx % 7 === i).slice(0, 3)
             })
         }
         return days
@@ -878,8 +884,7 @@ export default function ProgramPage() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setSelectedWeek(Math.min(program.totalWeeks, selectedWeek + 1))}
-                            disabled={selectedWeek >= program.totalWeeks}
+                            onClick={() => setSelectedWeek(selectedWeek + 1)}
                         >
                             <ChevronRight className="h-4 w-4" />
                         </Button>
