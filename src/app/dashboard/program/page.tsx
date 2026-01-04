@@ -873,34 +873,67 @@ export default function ProgramPage() {
                 </div>
             )}
 
-            {/* Goals Section */}
-            {subjectDeadlines.filter(sd => sd.deadline).length > 0 && (
-                <div className="mb-4 p-4 rounded-lg border bg-gradient-to-r from-blue-500/5 to-purple-500/5">
-                    <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                        🎯 Цели обучения
-                    </h3>
-                    <div className="flex flex-wrap gap-3">
-                        {subjectDeadlines.filter(sd => sd.deadline).map(sd => {
-                            const subject = subjects.find(s => s.id === sd.subjectId)
-                            const milestoneTopicName = sd.milestoneTopicId
-                                ? subject?.topics.find(t => t.id === sd.milestoneTopicId)?.name
-                                : null
-                            return (
-                                <div key={sd.subjectId} className="flex items-center gap-2 text-sm bg-background/50 rounded-lg px-3 py-2 border">
-                                    <span>{subject?.emoji || '📚'}</span>
-                                    <span className="font-medium">{subject?.name}</span>
-                                    {milestoneTopicName && (
-                                        <span className="text-muted-foreground">→ до {milestoneTopicName}</span>
-                                    )}
+            {/* Goals Section - extract from program data */}
+            {program && program.topicPlans && program.topicPlans.length > 0 && (() => {
+                // Extract unique subjects from topicPlans
+                const subjectsInProgram = new Map<string, {
+                    id: string
+                    name: string
+                    emoji: string
+                    color: string
+                    topicCount: number
+                    lastTopic: string
+                }>()
+
+                program.topicPlans.forEach(tp => {
+                    const subject = tp.topic?.subject
+                    if (subject) {
+                        const existing = subjectsInProgram.get(subject.id)
+                        if (existing) {
+                            existing.topicCount++
+                            existing.lastTopic = tp.topic?.name || ''
+                        } else {
+                            subjectsInProgram.set(subject.id, {
+                                id: subject.id,
+                                name: subject.name,
+                                emoji: subject.emoji || '📚',
+                                color: subject.color || '#8b5cf6',
+                                topicCount: 1,
+                                lastTopic: tp.topic?.name || ''
+                            })
+                        }
+                    }
+                })
+
+                const subjectsList = Array.from(subjectsInProgram.values())
+
+                return subjectsList.length > 0 ? (
+                    <div className="mb-4 p-4 rounded-lg border bg-gradient-to-r from-blue-500/5 to-purple-500/5">
+                        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                            🎯 Включённые предметы
+                        </h3>
+                        <div className="flex flex-wrap gap-3">
+                            {subjectsList.map(subj => (
+                                <div
+                                    key={subj.id}
+                                    className="flex items-center gap-2 text-sm bg-background/50 rounded-lg px-3 py-2 border"
+                                    style={{ borderLeftColor: subj.color, borderLeftWidth: 3 }}
+                                >
+                                    <span>{subj.emoji}</span>
+                                    <span className="font-medium">{subj.name}</span>
+                                    <span className="text-muted-foreground">→ {subj.lastTopic}</span>
                                     <Badge variant="outline" className="text-xs">
-                                        {new Date(sd.deadline!).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                                        {subj.topicCount} тем
                                     </Badge>
                                 </div>
-                            )
-                        })}
+                            ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                            Финиш: {program.endDate ? new Date(program.endDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : 'не указан'}
+                        </p>
                     </div>
-                </div>
-            )}
+                ) : null
+            })()}
 
             {/* Calendar Grid */}
             <div className="border rounded-lg overflow-hidden bg-card">
