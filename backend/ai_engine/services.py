@@ -110,9 +110,9 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     for idx, s in enumerate(subjects_structured, 1):
         topics_str = ", ".join([f"{t['index']}.{t['name']}({t['status']})" for t in s['topics']])
         deadline_info = f"{s['daysUntilDeadline']} days" if s['daysUntilDeadline'] else "No deadline"
-        # Show topic status: ✓=MASTERED, ~=IN_PROGRESS, ○=NOT_STARTED
+        # Show topics with their index (status tracked separately)
         topics_str = ", ".join([
-            f"{t['index']}.{t['name']}({'✓' if t['status'] in ['MASTERED', 'SUCCESS'] else '~' if t['status'] == 'MEDIUM' else '○'})"
+            f"{t['index']}.{t['name']}"
             for t in s['topics']
         ])
         subjects_text += f"""
@@ -182,7 +182,7 @@ SUBJECT {idx}: {s['name']}
     for idx, s in enumerate(subjects_structured, 1):
         psf = per_subject_feasibility[idx-1]
         topics_str = ", ".join([
-            f"{t['index']}.{t['name']}({'✓' if t['status'] in ['MASTERED', 'SUCCESS'] else '~' if t['status'] == 'MEDIUM' else '○'})"
+            f"{t['index']}.{t['name']}"
             for t in s['topics']
         ])
         
