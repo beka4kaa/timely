@@ -368,45 +368,65 @@ export default function ProgramPage() {
         deadline: Date
         isIntense: boolean
         isExtreme: boolean
+        subjectsAffected: string[]
     } | null => {
         const today = new Date()
         today.setHours(0, 0, 0, 0)
-        
-        let totalTopics = 0
-        const deadlineDates: Date[] = []
-        
+
+        // Build array of subjects with their topic counts and deadlines
+        const subjectData: Array<{
+            name: string
+            topicCount: number
+            deadline: Date
+            daysUntil: number
+        }> = []
+
         subjects.forEach(subject => {
             const deadline = subjectDeadlines.find(sd => sd.subjectId === subject.id)
             if (deadline?.deadline) {
                 const deadlineDate = new Date(deadline.deadline)
-                deadlineDates.push(deadlineDate)
-                
+                const daysUntil = Math.max(1, Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+
                 // Count topics up to milestone
+                let topicCount = 0
                 if (deadline.milestoneTopicId) {
                     const milestoneIndex = subject.topics.findIndex(t => t.id === deadline.milestoneTopicId)
-                    totalTopics += milestoneIndex >= 0 ? milestoneIndex + 1 : subject.topics.length
+                    topicCount = milestoneIndex >= 0 ? milestoneIndex + 1 : subject.topics.length
                 } else {
-                    totalTopics += subject.topics.length
+                    topicCount = subject.topics.length
                 }
+
+                subjectData.push({
+                    name: subject.name,
+                    topicCount,
+                    deadline: deadlineDate,
+                    daysUntil
+                })
             }
         })
-        
-        if (deadlineDates.length === 0 || totalTopics === 0) {
+
+        if (subjectData.length === 0) {
             return null
         }
-        
-        // Find minimum deadline
-        const minDeadline = deadlineDates.reduce((min, d) => d < min ? d : min, deadlineDates[0])
-        const daysAvailable = Math.max(1, Math.ceil((minDeadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-        const topicsPerDay = Math.ceil(totalTopics / daysAvailable)
-        
+
+        // Find the soonest deadline
+        const minDays = Math.min(...subjectData.map(s => s.daysUntil))
+        const minDeadline = subjectData.find(s => s.daysUntil === minDays)?.deadline || new Date()
+
+        // Only count topics for subjects with this SAME deadline (± 1 day tolerance)
+        const subjectsWithSoonestDeadline = subjectData.filter(s => s.daysUntil <= minDays + 1)
+        const topicsForSoonestDeadline = subjectsWithSoonestDeadline.reduce((sum, s) => sum + s.topicCount, 0)
+
+        const topicsPerDay = Math.ceil(topicsForSoonestDeadline / minDays)
+
         return {
-            totalTopics,
-            daysAvailable,
+            totalTopics: topicsForSoonestDeadline,
+            daysAvailable: minDays,
             topicsPerDay,
             deadline: minDeadline,
             isIntense: topicsPerDay > 5,
-            isExtreme: topicsPerDay > 10
+            isExtreme: topicsPerDay > 10,
+            subjectsAffected: subjectsWithSoonestDeadline.map(s => s.name)
         }
     }
 
@@ -613,9 +633,9 @@ export default function ProgramPage() {
                         {workloadEstimate && (
                             <div className={cn(
                                 "p-4 rounded-lg border",
-                                workloadEstimate.isExtreme 
-                                    ? "bg-red-500/10 border-red-500/30" 
-                                    : workloadEstimate.isIntense 
+                                workloadEstimate.isExtreme
+                                    ? "bg-red-500/10 border-red-500/30"
+                                    : workloadEstimate.isIntense
                                         ? "bg-yellow-500/10 border-yellow-500/30"
                                         : "bg-emerald-500/10 border-emerald-500/30"
                             )}>
@@ -629,16 +649,16 @@ export default function ProgramPage() {
                                     )}
                                     <div className="flex-1">
                                         <div className="font-medium mb-1">
-                                            {workloadEstimate.isExtreme 
+                                            {workloadEstimate.isExtreme
                                                 ? "⚠️ Экстремальная нагрузка"
-                                                : workloadEstimate.isIntense 
+                                                : workloadEstimate.isIntense
                                                     ? "Интенсивный режим"
                                                     : "Нагрузка в норме"
                                             }
                                         </div>
                                         <div className="text-sm text-muted-foreground space-y-1">
                                             <p>
-                                                <strong>{workloadEstimate.totalTopics}</strong> тем за <strong>{workloadEstimate.daysAvailable}</strong> дней = 
+                                                <strong>{workloadEstimate.totalTopics}</strong> тем за <strong>{workloadEstimate.daysAvailable}</strong> дней =
                                                 <strong className={cn(
                                                     "ml-1",
                                                     workloadEstimate.isExtreme && "text-red-400",
@@ -648,8 +668,8 @@ export default function ProgramPage() {
                                                 </strong>
                                             </p>
                                             <p className="text-xs">
-                                                Дедлайн: {workloadEstimate.deadline.toLocaleDateString('ru-RU', { 
-                                                    day: 'numeric', 
+                                                Дедлайн: {workloadEstimate.deadline.toLocaleDateString('ru-RU', {
+                                                    day: 'numeric',
                                                     month: 'long',
                                                     year: 'numeric'
                                                 })}
@@ -690,7 +710,7 @@ export default function ProgramPage() {
                                 </>
                             )}
                         </Button>
-                        
+
                         {!subjectDeadlines.some(sd => sd.deadline) && (
                             <p className="text-xs text-muted-foreground text-center">
                                 Укажите дедлайн хотя бы для одного предмета
