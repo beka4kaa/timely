@@ -9,6 +9,7 @@ from ai_engine.views import (
     AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView,
     DailyTasksView, ScheduleView
 )
+from accounts.views import RegisterView, LoginView
 
 
 def health_check(request):
@@ -32,6 +33,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),
+    
+    # Authentication endpoints (support both with and without trailing slash)
+    path('api/auth/register/', RegisterView.as_view(), name='register'),
+    path('api/auth/register', RegisterView.as_view(), name='register-no-slash'),
+    path('api/auth/login/', LoginView.as_view(), name='login'),
+    path('api/auth/login', LoginView.as_view(), name='login-no-slash'),
     
     # AI Actions with trailing slashes (Django standard)
     path('api/ai/generate-program/', GenerateProgramView.as_view(), name='generate-program'),

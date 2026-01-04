@@ -40,6 +40,8 @@ export default function RegisterPage() {
         body: JSON.stringify({ email, password, name }),
       })
 
+      const data = await response.json()
+
       if (response.ok) {
         // Auto sign in after successful registration
         const result = await signIn('credentials', {
@@ -54,8 +56,16 @@ export default function RegisterPage() {
           router.push('/auth/signin?message=Registration successful, please sign in')
         }
       } else {
-        const data = await response.json()
-        setError(data.message || 'An error occurred during registration')
+        // Handle validation errors from backend
+        if (data.email) {
+          setError(data.email[0])
+        } else if (data.password) {
+          setError(data.password[0])
+        } else if (data.error) {
+          setError(data.error)
+        } else {
+          setError('An error occurred during registration')
+        }
       }
     } catch (error) {
       setError('An error occurred during registration')
@@ -68,9 +78,9 @@ export default function RegisterPage() {
     setIsLoading(true)
     try {
       console.log('Starting Google sign in...')
-      const result = await signIn('google', { 
+      const result = await signIn('google', {
         callbackUrl: '/dashboard',
-        redirect: true 
+        redirect: true
       })
       console.log('Google sign in result:', result)
     } catch (error) {
@@ -93,7 +103,7 @@ export default function RegisterPage() {
                     Join us to manage your time efficiently
                   </p>
                 </div>
-                
+
                 {error && (
                   <div className="rounded-md bg-red-50 p-3 border border-red-200">
                     <p className="text-sm font-medium text-red-800">{error}</p>
@@ -123,14 +133,14 @@ export default function RegisterPage() {
                     disabled={isLoading}
                   />
                 </div>
-                
+
                 <div className="grid gap-3">
                   <Label htmlFor="password">Password</Label>
-                  <Input 
-                    id="password" 
+                  <Input
+                    id="password"
                     name="password"
-                    type="password" 
-                    required 
+                    type="password"
+                    required
                     disabled={isLoading}
                     placeholder="Create a password"
                     minLength={8}
@@ -139,11 +149,11 @@ export default function RegisterPage() {
 
                 <div className="grid gap-3">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
-                  <Input 
-                    id="confirmPassword" 
+                  <Input
+                    id="confirmPassword"
                     name="confirmPassword"
-                    type="password" 
-                    required 
+                    type="password"
+                    required
                     disabled={isLoading}
                     placeholder="Confirm your password"
                     minLength={8}
@@ -152,20 +162,20 @@ export default function RegisterPage() {
                     Password must be at least 8 characters long
                   </p>
                 </div>
-                
+
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? 'Creating account...' : 'Create account'}
                 </Button>
-                
+
                 <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
                   <span className="bg-card text-muted-foreground relative z-10 px-2">
                     Or continue with
                   </span>
                 </div>
-                
-                <Button 
-                  variant="outline" 
-                  type="button" 
+
+                <Button
+                  variant="outline"
+                  type="button"
                   className="w-full"
                   onClick={handleGoogleSignIn}
                   disabled={isLoading}
@@ -178,7 +188,7 @@ export default function RegisterPage() {
                   </svg>
                   {isLoading ? 'Connecting...' : 'Continue with Google'}
                 </Button>
-                
+
                 <div className="text-center text-sm">
                   Already have an account?{" "}
                   <Link href="/auth/signin" className="underline underline-offset-4 hover:text-primary">
@@ -187,7 +197,7 @@ export default function RegisterPage() {
                 </div>
               </div>
             </form>
-            
+
             <div className="bg-muted relative hidden md:block">
               <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-black opacity-95"></div>
               <div className="absolute inset-0 flex items-center justify-center p-8">
@@ -207,9 +217,9 @@ export default function RegisterPage() {
                     </div>
                   </div>
                   <div className="mt-6 text-sm opacity-80">
-                    Calendar Integration<br/>
-                    Goal Tracking<br/>
-                    Achievement System<br/>
+                    Calendar Integration<br />
+                    Goal Tracking<br />
+                    Achievement System<br />
                     Progress Analytics
                   </div>
                 </div>
@@ -217,7 +227,7 @@ export default function RegisterPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <div className="text-muted-foreground text-center text-xs text-balance mt-4">
           By creating an account, you agree to our{" "}
           <a href="#" className="underline underline-offset-4 hover:text-primary">Terms of Service</a>{" "}

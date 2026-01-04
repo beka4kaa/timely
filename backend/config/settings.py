@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "planner",
     "mind",
     "ai_engine",
+    "accounts",
 ]
 
 MIDDLEWARE = [

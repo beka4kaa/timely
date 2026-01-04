@@ -1,5 +1,6 @@
 import { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
+import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
 
 console.log('🔍 ENVIRONMENT CHECK:', {
@@ -15,11 +16,53 @@ console.log('🔍 ENVIRONMENT CHECK:', {
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
-  
+
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
+    CredentialsProvider({
+      name: 'Credentials',
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error('Email and password are required');
+        }
+
+        try {
+          // Call backend login endpoint
+          const response = await fetch('http://localhost:8001/api/auth/login/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Invalid credentials');
+          }
+
+          // Return user object from backend
+          return {
+            id: data.user.id.toString(),
+            email: data.user.email,
+            name: data.user.name,
+          };
+        } catch (error: any) {
+          console.error('Login error:', error);
+          throw new Error(error.message || 'Authentication failed');
+        }
+      }
     })
   ],
 
