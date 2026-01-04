@@ -294,21 +294,31 @@ CRITICAL:
     except json.JSONDecodeError as e:
         print(f"Error parsing AI response JSON: {e}")
         print(f"Raw response: {response.text[:500] if response else 'No response'}")
-        # Return a fallback structure instead of None
+        # Return a fallback structure with dayPlans
         return {
-            "description": "AI generation failed - using default program",
-            "strategy": "Manual planning recommended",
+            "programTitle": "Quick Program",
+            "description": "AI generation failed - using fallback",
+            "feasibility": "UNKNOWN",
+            "feasibilityMessage": f"JSON parse error: {str(e)[:100]}",
             "totalWeeks": total_weeks,
+            "totalDays": total_days,
+            "dayPlans": [],  # Required by views.py
             "weekPlans": [],
             "topicPlans": [],
             "scheduledTests": []
         }
     except Exception as e:
         print(f"Error generating program: {e}")
+        import traceback
+        traceback.print_exc()
         return {
+            "programTitle": "Fallback Program",
             "description": f"Error: {str(e)}",
-            "strategy": "Manual planning recommended",
+            "feasibility": "ERROR",
+            "feasibilityMessage": str(e)[:200],
             "totalWeeks": total_weeks,
+            "totalDays": total_days,
+            "dayPlans": [],  # Required by views.py
             "weekPlans": [],
             "topicPlans": [],
             "scheduledTests": []
