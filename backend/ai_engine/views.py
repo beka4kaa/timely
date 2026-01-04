@@ -605,88 +605,96 @@ class GenerateProgramView(APIView):
             sessions_created = 0
             topic_session_days = {}  # Track which days each topic has sessions: {topic_name: {THEORY: day, PRACTICE: day, ...}}
             
-            for day in day_plans:
-                day_num = day.get('dayNumber', 1)
-                day_date_str = day.get('date', '')
-                week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
-                sessions = day.get('sessions', [])
-                
-                # Parse day date
-                try:
-                    if day_date_str:
-                        day_date = datetime.strptime(str(day_date_str)[:10], '%Y-%m-%d').date()
-                    else:
+            # Try to create study sessions (may fail if migration not applied)
+            try:
+                for day in day_plans:
+                    day_num = day.get('dayNumber', 1)
+                    day_date_str = day.get('date', '')
+                    week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
+                    sessions = day.get('sessions', [])
+                    
+                    # Parse day date
+                    try:
+                        if day_date_str:
+                            day_date = datetime.strptime(str(day_date_str)[:10], '%Y-%m-%d').date()
+                        else:
+                            day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
+                    except:
                         day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
-                except:
-                    day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
-                
-                print(f"  Day {day_num} ({day_date}): {len(sessions)} sessions")
-                
-                for session in sessions:
-                    session_type = session.get('type', 'THEORY')
-                    topic_name = session.get('topicName', '')
-                    subject_name = session.get('subjectName', '')
-                    start_time = session.get('startTime', '08:00')
-                    duration_min = session.get('durationMin', 45)
-                    order_in_day = session.get('order', 1)
                     
-                    # Find or create subject
-                    subject = None
-                    if subject_name:
-                        subject = Subject.objects.filter(name__icontains=subject_name).first()
-                    if not subject and subjects:
-                        subject = subjects.first()
+                    print(f"  Day {day_num} ({day_date}): {len(sessions)} sessions")
                     
-                    if not subject:
-                        print(f"    ! Skipping session - no subject found for {subject_name}")
-                        continue
-                    
-                    # Find or create topic
-                    topic = None
-                    if topic_name and session_type != 'TEST':
-                        topic = Topic.objects.filter(name__icontains=topic_name, subject=subject).first()
-                        if not topic:
-                            topic = Topic.objects.filter(name__icontains=topic_name).first()
-                        if not topic:
-                            # Create topic if it doesn't exist
-                            topic = Topic.objects.create(subject=subject, name=topic_name)
-                    
-                    # Create StudySession
-                    session_obj = StudySession.objects.create(
-                        program=program,
-                        topic=topic,
-                        subject=subject,
-                        session_type=session_type,
-                        scheduled_date=day_date,
-                        scheduled_time=start_time,
-                        duration_minutes=duration_min,
-                        day_number=day_num,
-                        order_in_day=order_in_day,
-                        status='SCHEDULED',
-                        title=session.get('title', f"{session_type}: {topic_name}" if topic_name else session_type),
-                        topics_covered=str(session.get('topicsCovered', [])) if session_type == 'TEST' else None
-                    )
-                    sessions_created += 1
-                    
-                    # Track session days for topic plans
-                    if topic_name and session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
-                        if topic_name not in topic_session_days:
-                            topic_session_days[topic_name] = {'subject': subject_name, 'planned_week': week_num}
+                    for session in sessions:
+                        session_type = session.get('type', 'THEORY')
+                        topic_name = session.get('topicName', '')
+                        subject_name = session.get('subjectName', '')
+                        start_time = session.get('startTime', '08:00')
+                        duration_min = session.get('durationMin', 45)
+                        order_in_day = session.get('order', 1)
                         
-                        if session_type == 'THEORY':
-                            topic_session_days[topic_name]['theory_day'] = day_num
-                            topic_session_days[topic_name]['planned_day'] = day_num
-                        elif session_type == 'PRACTICE':
-                            topic_session_days[topic_name]['practice_day'] = day_num
-                        elif session_type == 'REVIEW':
-                            if 'review1_day' not in topic_session_days[topic_name]:
-                                topic_session_days[topic_name]['review1_day'] = day_num
-                            else:
-                                topic_session_days[topic_name]['review2_day'] = day_num
-                    
-                    print(f"    + Session: {session_type} - {topic_name or 'Test'} at {start_time}")
-            
-            print(f"Created {sessions_created} study sessions")
+                        # Find or create subject
+                        subject = None
+                        if subject_name:
+                            subject = Subject.objects.filter(name__icontains=subject_name).first()
+                        if not subject and subjects:
+                            subject = subjects.first()
+                        
+                        if not subject:
+                            print(f"    ! Skipping session - no subject found for {subject_name}")
+                            continue
+                        
+                        # Find or create topic
+                        topic = None
+                        if topic_name and session_type != 'TEST':
+                            topic = Topic.objects.filter(name__icontains=topic_name, subject=subject).first()
+                            if not topic:
+                                topic = Topic.objects.filter(name__icontains=topic_name).first()
+                            if not topic:
+                                # Create topic if it doesn't exist
+                                topic = Topic.objects.create(subject=subject, name=topic_name)
+                        
+                        # Create StudySession
+                        try:
+                            session_obj = StudySession.objects.create(
+                                program=program,
+                                topic=topic,
+                                subject=subject,
+                                session_type=session_type,
+                                scheduled_date=day_date,
+                                scheduled_time=start_time,
+                                duration_minutes=duration_min,
+                                day_number=day_num,
+                                order_in_day=order_in_day,
+                                status='SCHEDULED',
+                                title=session.get('title', f"{session_type}: {topic_name}" if topic_name else session_type),
+                                topics_covered=str(session.get('topicsCovered', [])) if session_type == 'TEST' else None
+                            )
+                            sessions_created += 1
+                        except Exception as session_err:
+                            print(f"    ! Failed to create session: {session_err}")
+                        
+                        # Track session days for topic plans
+                        if topic_name and session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
+                            if topic_name not in topic_session_days:
+                                topic_session_days[topic_name] = {'subject': subject_name, 'planned_week': week_num}
+                            
+                            if session_type == 'THEORY':
+                                topic_session_days[topic_name]['theory_day'] = day_num
+                                topic_session_days[topic_name]['planned_day'] = day_num
+                            elif session_type == 'PRACTICE':
+                                topic_session_days[topic_name]['practice_day'] = day_num
+                            elif session_type == 'REVIEW':
+                                if 'review1_day' not in topic_session_days[topic_name]:
+                                    topic_session_days[topic_name]['review1_day'] = day_num
+                                else:
+                                    topic_session_days[topic_name]['review2_day'] = day_num
+                        
+                        print(f"    + Session: {session_type} - {topic_name or 'Test'} at {start_time}")
+                
+                print(f"Created {sessions_created} study sessions")
+            except Exception as sessions_error:
+                print(f"WARNING: Could not create study sessions (migration may not be applied): {sessions_error}")
+                # Still continue with topic plans
             
             # ==============================================================
             # CREATE TOPIC PLANS (with spaced repetition day tracking)
@@ -745,19 +753,32 @@ class GenerateProgramView(APIView):
                     deadline = timezone.now() + timedelta(weeks=planned_week)
                     print(f"WARNING: No deadline found for {topic_name}, using week-based fallback")
                 
-                TopicPlan.objects.create(
-                    program=program,
-                    topic=topic,
-                    planned_week=planned_week,
-                    planned_day=planned_day,
-                    estimated_hours=1.5,  # Base hours for initial learning
-                    priority=1,
-                    deadline=deadline,
-                    theory_day=tp_data.get('theory_day'),
-                    practice_day=tp_data.get('practice_day'),
-                    review1_day=tp_data.get('review1_day'),
-                    review2_day=tp_data.get('review2_day'),
-                )
+                # Try to create TopicPlan with new fields, fallback to basic fields if migration not applied
+                try:
+                    TopicPlan.objects.create(
+                        program=program,
+                        topic=topic,
+                        planned_week=planned_week,
+                        planned_day=planned_day,
+                        estimated_hours=1.5,  # Base hours for initial learning
+                        priority=1,
+                        deadline=deadline,
+                        theory_day=tp_data.get('theory_day'),
+                        practice_day=tp_data.get('practice_day'),
+                        review1_day=tp_data.get('review1_day'),
+                        review2_day=tp_data.get('review2_day'),
+                    )
+                except Exception as field_err:
+                    # Fallback: create without new fields (migration may not be applied)
+                    print(f"Creating TopicPlan without new fields: {field_err}")
+                    TopicPlan.objects.create(
+                        program=program,
+                        topic=topic,
+                        planned_week=planned_week,
+                        estimated_hours=1.5,
+                        priority=1,
+                        deadline=deadline,
+                    )
                 created_count += 1
             
             print(f"Created {created_count} topic plans")
