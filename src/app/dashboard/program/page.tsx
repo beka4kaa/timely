@@ -360,7 +360,66 @@ export default function ProgramPage() {
         }
     }
 
+    // Calculate workload estimation based on deadlines and topics
+    const calculateWorkloadEstimate = (): {
+        totalTopics: number
+        daysAvailable: number
+        topicsPerDay: number
+        deadline: Date
+        isIntense: boolean
+        isExtreme: boolean
+    } | null => {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        let totalTopics = 0
+        const deadlineDates: Date[] = []
+        
+        subjects.forEach(subject => {
+            const deadline = subjectDeadlines.find(sd => sd.subjectId === subject.id)
+            if (deadline?.deadline) {
+                const deadlineDate = new Date(deadline.deadline)
+                deadlineDates.push(deadlineDate)
+                
+                // Count topics up to milestone
+                if (deadline.milestoneTopicId) {
+                    const milestoneIndex = subject.topics.findIndex(t => t.id === deadline.milestoneTopicId)
+                    totalTopics += milestoneIndex >= 0 ? milestoneIndex + 1 : subject.topics.length
+                } else {
+                    totalTopics += subject.topics.length
+                }
+            }
+        })
+        
+        if (deadlineDates.length === 0 || totalTopics === 0) {
+            return null
+        }
+        
+        // Find minimum deadline
+        const minDeadline = deadlineDates.reduce((min, d) => d < min ? d : min, deadlineDates[0])
+        const daysAvailable = Math.max(1, Math.ceil((minDeadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+        const topicsPerDay = Math.ceil(totalTopics / daysAvailable)
+        
+        return {
+            totalTopics,
+            daysAvailable,
+            topicsPerDay,
+            deadline: minDeadline,
+            isIntense: topicsPerDay > 5,
+            isExtreme: topicsPerDay > 10
+        }
+    }
+
+    const workloadEstimate = calculateWorkloadEstimate()
+
     const generateProgram = async () => {
+        // Validate at least one deadline is set
+        const deadlinesSet = subjectDeadlines.filter(sd => sd.deadline)
+        if (deadlinesSet.length === 0) {
+            setError('Укажите хотя бы один дедлайн для создания программы')
+            return
+        }
+
         setGenerating(true)
         setError(null)
         try {
@@ -371,7 +430,7 @@ export default function ProgramPage() {
                     totalWeeks,
                     hoursPerWeek,
                     name: 'Моя программа обучения',
-                    subjectDeadlines: subjectDeadlines.filter(sd => sd.deadline), // Only pass ones with deadlines set
+                    subjectDeadlines: deadlinesSet,
                 }),
             })
 
@@ -382,6 +441,7 @@ export default function ProgramPage() {
 
             const data = await res.json()
             setProgram(data)
+            toast.success('Программа создана! Дедлайн будет соблюдён.')
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка генерации')
         } finally {
@@ -549,6 +609,62 @@ export default function ProgramPage() {
                             </div>
                         )}
 
+                        {/* Workload estimation */}
+                        {workloadEstimate && (
+                            <div className={cn(
+                                "p-4 rounded-lg border",
+                                workloadEstimate.isExtreme 
+                                    ? "bg-red-500/10 border-red-500/30" 
+                                    : workloadEstimate.isIntense 
+                                        ? "bg-yellow-500/10 border-yellow-500/30"
+                                        : "bg-emerald-500/10 border-emerald-500/30"
+                            )}>
+                                <div className="flex items-start gap-3">
+                                    {workloadEstimate.isExtreme ? (
+                                        <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
+                                    ) : workloadEstimate.isIntense ? (
+                                        <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5" />
+                                    ) : (
+                                        <CheckCircle className="h-5 w-5 text-emerald-400 mt-0.5" />
+                                    )}
+                                    <div className="flex-1">
+                                        <div className="font-medium mb-1">
+                                            {workloadEstimate.isExtreme 
+                                                ? "⚠️ Экстремальная нагрузка"
+                                                : workloadEstimate.isIntense 
+                                                    ? "Интенсивный режим"
+                                                    : "Нагрузка в норме"
+                                            }
+                                        </div>
+                                        <div className="text-sm text-muted-foreground space-y-1">
+                                            <p>
+                                                <strong>{workloadEstimate.totalTopics}</strong> тем за <strong>{workloadEstimate.daysAvailable}</strong> дней = 
+                                                <strong className={cn(
+                                                    "ml-1",
+                                                    workloadEstimate.isExtreme && "text-red-400",
+                                                    workloadEstimate.isIntense && !workloadEstimate.isExtreme && "text-yellow-400"
+                                                )}>
+                                                    {workloadEstimate.topicsPerDay} тем/день
+                                                </strong>
+                                            </p>
+                                            <p className="text-xs">
+                                                Дедлайн: {workloadEstimate.deadline.toLocaleDateString('ru-RU', { 
+                                                    day: 'numeric', 
+                                                    month: 'long',
+                                                    year: 'numeric'
+                                                })}
+                                            </p>
+                                            {workloadEstimate.isExtreme && (
+                                                <p className="text-xs text-red-400 mt-2">
+                                                    Это очень интенсивно! Но программа будет составлена строго по дедлайну.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {error && (
                             <div className="p-3 rounded-lg bg-red-500/10 text-red-400 flex items-center gap-2">
                                 <AlertCircle className="h-4 w-4" />
@@ -560,7 +676,7 @@ export default function ProgramPage() {
                             size="lg"
                             className="w-full"
                             onClick={generateProgram}
-                            disabled={generating}
+                            disabled={generating || !subjectDeadlines.some(sd => sd.deadline)}
                         >
                             {generating ? (
                                 <>
@@ -574,6 +690,12 @@ export default function ProgramPage() {
                                 </>
                             )}
                         </Button>
+                        
+                        {!subjectDeadlines.some(sd => sd.deadline) && (
+                            <p className="text-xs text-muted-foreground text-center">
+                                Укажите дедлайн хотя бы для одного предмета
+                            </p>
+                        )}
                     </CardContent>
                 </Card>
             </div>

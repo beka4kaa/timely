@@ -135,84 +135,85 @@ SUBJECT {idx}: {s['name']}
     print(f"Topics per day needed: {topics_per_day:.1f}")
     print(f"Sessions per day needed: {sessions_needed_per_day}")
     print("=" * 60)
-    # Calculate exact deadline date string
+    
+    # Calculate feasibility
+    # Assume 1.5 hours per topic (theory + practice), 12 hours max per day
+    hours_per_topic = 1.5
+    hours_needed = total_topics * hours_per_topic
+    hours_available = total_days * hours_per_day_available
+    is_feasible = hours_needed <= hours_available
+    is_tight = hours_needed > hours_available * 0.8  # 80%+ capacity = tight
+    
+    print(f"FEASIBILITY CHECK:")
+    print(f"  Hours needed: {hours_needed}")
+    print(f"  Hours available: {hours_available}")
+    print(f"  Feasible: {is_feasible}, Tight: {is_tight}")
+    
+    # Calculate deadline date
     deadline_date = current_date + __import__('datetime').timedelta(days=total_days)
     deadline_date_str = deadline_date.strftime('%Y-%m-%d')
     
-    # ULTRA AGGRESSIVE prompt
-    prompt = f"""You are an ULTRA-INTENSE study program generator. 
-This student has EXACTLY {total_days} DAYS to learn {total_topics} TOPICS.
-HARD DEADLINE: {deadline_date_str} - NO SESSIONS AFTER THIS DATE!
-Student can study {hours_per_day_available} HOURS PER DAY = {sessions_per_day_max} sessions!
+    # Build prompt with honest feasibility assessment
+    feasibility_status = "POSSIBLE" if is_feasible and not is_tight else ("TIGHT" if is_feasible else "IMPOSSIBLE")
+    
+    prompt = f"""You are a STRICT study program generator. Be HONEST about what is achievable.
 
-CURRENT DATE: {current_date_str}
-⚠️ HARD DEADLINE: {deadline_date_str} (in {total_days} days) - CANNOT BE EXTENDED!
-
-MATH (you MUST follow this):
+CURRENT SITUATION:
+- Date: {current_date_str}
+- Deadline: {deadline_date_str} ({total_days} days available)
 - Total topics: {total_topics}
-- Days available: {total_days} (Days {1} to {total_days} ONLY!)
 - Hours per day: {hours_per_day_available}
-- Sessions per day: {sessions_per_day_max} (each 45 min)
-- Topics per day: {topics_per_day:.1f}
+- Hours needed: {hours_needed} (at 1.5h per topic)
+- Hours available: {hours_available}
 
-SUBJECTS:
+FEASIBILITY ANALYSIS: {feasibility_status}
+{f"⚠️ THIS PROGRAM IS IMPOSSIBLE TO COMPLETE FULLY!" if not is_feasible else ""}
+{f"⚠️ This program is TIGHT - student must study {hours_per_day_available}h/day non-stop!" if is_tight and is_feasible else ""}
+
+SUBJECTS AND TOPICS:
 {subjects_text}
 
-⚠️ ABSOLUTE REQUIREMENTS - VIOLATION = FAILURE ⚠️
-1. ONLY schedule days 1 to {total_days} - NO DAY {total_days + 1} OR LATER!
-2. Each day MUST have {min(sessions_per_day_max, 16)} sessions (student can handle it!)
-3. Cover ALL {total_topics} topics BEFORE deadline
-4. Student studies {hours_per_day_available} hours/day - USE ALL OF IT!
+YOUR TASK:
+{"Since full completion is IMPOSSIBLE, create a QUICK REVIEW program that:" if not is_feasible else "Create a complete study program that:"}
+{"- Covers the MOST IMPORTANT topics from each subject" if not is_feasible else "- Schedules ALL topics before the deadline"}
+{"- Prioritizes topics that are NOT_STARTED over MASTERED" if not is_feasible else "- Uses all available study hours"}
+{"- Gives brief 20-30min review per topic" if not is_feasible else "- Gives proper 45min+ study per topic"}
+- NEVER extends beyond {deadline_date_str}
+- Honestly reports feasibility status
 
-EXAMPLE for {total_days} days with {total_topics} topics:
-Day 1: {int(topics_per_day) + 1} topics = {(int(topics_per_day) + 1) * 2} sessions
-Day 2: {int(topics_per_day) + 1} topics = {(int(topics_per_day) + 1) * 2} sessions
-... continue until ALL topics covered
+SCHEDULE RULES:
+- Day 1 = {current_date_str}
+- Last allowed day = Day {total_days} ({deadline_date_str})
+- NO sessions on Day {total_days + 1} or later!
+- Sessions: 08:00 to 20:00
+- Session duration: 45 min (full) or 20 min (quick review)
 
-OUTPUT FORMAT (JSON only):
+OUTPUT (JSON only, no markdown):
 {{
-  "programTitle": "Intensive Crash Course",
-  "description": "All {total_topics} topics in {total_days} days",
+  "feasibility": "{feasibility_status}",
+  "feasibilityMessage": "{f'Cannot complete {total_topics} topics in {total_days} days. Created quick review instead.' if not is_feasible else f'Program achievable in {total_days} days.'}",
+  "programTitle": "{'Quick Review Program' if not is_feasible else f'{total_days}-Day Intensive Course'}",
+  "description": "...",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
-  "planningMode": "DAILY",
-  
-  "weekSummaries": [{{
-    "weekNumber": 1,
-    "mainTopics": ["ALL topics from ALL subjects"],
-    "totalHours": {total_days * 8},
-    "goals": "Complete everything before deadline"
-  }}],
   
   "dayPlans": [
     {{
       "dayNumber": 1,
       "date": "{current_date_str}",
       "weekNumber": 1,
-      "totalHours": 8,
       "sessions": [
-        {{"order": 1, "startTime": "08:00", "subjectName": "Subject", "topicName": "Topic1", "type": "THEORY", "durationMin": 45}},
-        {{"order": 2, "startTime": "09:00", "subjectName": "Subject", "topicName": "Topic1", "type": "PRACTICE", "durationMin": 45}},
-        {{"order": 3, "startTime": "10:00", "subjectName": "Subject", "topicName": "Topic2", "type": "THEORY", "durationMin": 45}},
-        {{"order": 4, "startTime": "11:00", "subjectName": "Subject", "topicName": "Topic2", "type": "PRACTICE", "durationMin": 45}},
-        {{"order": 5, "startTime": "13:00", "subjectName": "Subject", "topicName": "Topic3", "type": "THEORY", "durationMin": 45}},
-        {{"order": 6, "startTime": "14:00", "subjectName": "Subject", "topicName": "Topic3", "type": "PRACTICE", "durationMin": 45}}
+        {{"order": 1, "startTime": "08:00", "subjectName": "...", "topicName": "...", "type": "STUDY", "durationMin": {20 if not is_feasible else 45}}}
       ]
     }}
   ],
   
-  "weekPlans": [{{"weekNumber": 1, "startOffset": 0, "endOffset": {total_days}, "focus": "Complete all topics", "subjectHours": {{}}}}],
-  
-  "topicPlans": [
-    {{"topicName": "Topic1", "subjectName": "Subject", "plannedWeek": 1, "plannedDay": 1, "estimatedHours": 1.5, "type": "THEORY"}}
-  ],
-  
-  "scheduledTests": [
-    {{"title": "Final Test Before Deadline", "scheduledWeek": 1, "scheduledDay": {total_days}, "topics": ["all"], "type": "FINAL"}}
-  ]
+  "weekPlans": [{{"weekNumber": 1, "focus": "..."}}],
+  "topicPlans": [{{"topicName": "...", "subjectName": "...", "plannedDay": 1, "plannedWeek": 1}}],
+  "scheduledTests": []
 }}
 
-CRITICAL: Generate {sessions_needed_per_day}+ sessions per day. ALL topics in {total_days} days. NO MERCY.
+CRITICAL: Include "feasibility": "{feasibility_status}" in your response!
 """
     
     try:

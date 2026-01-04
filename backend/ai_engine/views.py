@@ -14,10 +14,32 @@ from datetime import timedelta, datetime
 from django.utils import timezone
 import math
 
+
+def parse_deadline_date(deadline_str):
+    """
+    Parse deadline string to datetime object.
+    Returns None if parsing fails.
+    """
+    if not deadline_str:
+        return None
+    try:
+        if 'T' in str(deadline_str):
+            return datetime.fromisoformat(str(deadline_str).replace('Z', '+00:00')).replace(tzinfo=None)
+        else:
+            return datetime.strptime(str(deadline_str)[:10], '%Y-%m-%d')
+    except:
+        return None
+
+
 def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_day, session_minutes=45):
     """
     Generate schedule PROGRAMMATICALLY - this ALWAYS respects deadline.
     No AI involved in structure - just pure math.
+    
+    STRICT DEADLINE GUARANTEE:
+    - If deadline is January 5th, ALL topics MUST be scheduled by January 5th
+    - Program end date will be the deadline date (or earlier)
+    - Topics are evenly distributed across available days
     
     Args:
         subjects_data: List of subjects with topics
@@ -29,35 +51,41 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         dict with dayPlans, weekPlans, topicPlans structured for storage
     """
     now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day)  # Start of today
     
-    # Find minimum deadline (most urgent)
+    print("=" * 60)
+    print("STRICT DEADLINE PROGRAMMATIC SCHEDULER")
+    print("=" * 60)
+    
+    # Parse all deadlines and find the EARLIEST one (most urgent)
+    deadline_by_subject = {}
     min_deadline_date = None
+    
     for sd in subject_deadlines:
-        deadline_str = sd.get('deadline')
-        if deadline_str:
-            try:
-                if 'T' in str(deadline_str):
-                    deadline_date = datetime.fromisoformat(str(deadline_str).replace('Z', '+00:00')).replace(tzinfo=None)
-                else:
-                    deadline_date = datetime.strptime(str(deadline_str)[:10], '%Y-%m-%d')
-                if min_deadline_date is None or deadline_date < min_deadline_date:
-                    min_deadline_date = deadline_date
-            except:
-                pass
+        subj_id = str(sd.get('subjectId') or sd.get('subject_id', ''))
+        deadline_date = parse_deadline_date(sd.get('deadline'))
+        
+        if deadline_date:
+            deadline_by_subject[subj_id] = {
+                'deadline': deadline_date,
+                'milestone_topic_id': sd.get('milestoneTopicId')
+            }
+            if min_deadline_date is None or deadline_date < min_deadline_date:
+                min_deadline_date = deadline_date
     
-    # Calculate available days (HARD LIMIT)
+    # Calculate STRICT available days
     if min_deadline_date:
-        days_available = max(1, (min_deadline_date - now).days)
+        # Days from today until deadline (inclusive of deadline day)
+        days_available = (min_deadline_date - today_start).days
+        if days_available < 1:
+            days_available = 1  # At least today
+        print(f"DEADLINE: {min_deadline_date.strftime('%Y-%m-%d')}")
+        print(f"DAYS AVAILABLE: {days_available} (today to deadline inclusive)")
     else:
-        days_available = 7  # Default 1 week
-    
-    print(f"PROGRAMMATIC: {days_available} days available until deadline {min_deadline_date}")
-    
-    # Calculate sessions per day from hours
-    sessions_per_day = int(hours_per_day * 60 / session_minutes)
-    sessions_per_day = max(8, min(20, sessions_per_day))  # Between 8-20
-    
-    print(f"PROGRAMMATIC: {sessions_per_day} sessions per day ({hours_per_day}h * 60 / {session_minutes}min)")
+        # No deadline set - default to 7 days
+        days_available = 7
+        min_deadline_date = today_start + timedelta(days=7)
+        print("NO DEADLINE SET - defaulting to 7 days")
     
     # Collect all topics from all subjects with scope filtering
     all_topics = []
@@ -66,19 +94,20 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         subj_name = subj.get('name', 'Subject')
         topics = subj.get('topics', [])
         
-        # Find milestone topic for this subject
+        # Find milestone topic for this subject (if any)
         end_index = len(topics)
-        for sd in subject_deadlines:
-            if str(sd.get('subjectId') or sd.get('subject_id')) == subj_id:
-                milestone_id = sd.get('milestoneTopicId')
-                if milestone_id:
-                    for idx, t in enumerate(topics):
-                        if str(t.get('id')) == str(milestone_id):
-                            end_index = idx + 1
-                            break
-                break
+        subj_deadline_info = deadline_by_subject.get(subj_id)
         
-        # Only include topics up to milestone
+        if subj_deadline_info:
+            milestone_id = subj_deadline_info.get('milestone_topic_id')
+            if milestone_id:
+                for idx, t in enumerate(topics):
+                    if str(t.get('id')) == str(milestone_id):
+                        end_index = idx + 1
+                        print(f"Subject '{subj_name}': milestone at topic #{end_index} '{t.get('name')}'")
+                        break
+        
+        # Only include topics up to milestone (or all if no milestone)
         for t in topics[:end_index]:
             all_topics.append({
                 'topic_id': t.get('id'),
@@ -89,8 +118,29 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             })
     
     total_topics = len(all_topics)
+    print(f"TOTAL TOPICS TO SCHEDULE: {total_topics}")
     
-    # Session duration based on topic status
+    if total_topics == 0:
+        print("WARNING: No topics to schedule!")
+        return {
+            'programTitle': 'Empty Program',
+            'totalDays': 0,
+            'totalWeeks': 0,
+            'dayPlans': [],
+            'weekSummaries': [],
+            'topicPlans': [],
+            'weekPlans': [],
+            'scheduledTests': [],
+            'endDate': today_start.strftime('%Y-%m-%d')
+        }
+    
+    # MATH: Calculate topics per day to FIT ALL within deadline
+    # This is the KEY - we MUST fit all topics, so we calculate how many per day
+    topics_per_day = math.ceil(total_topics / days_available)
+    
+    print(f"MATH: {total_topics} topics / {days_available} days = {topics_per_day} topics/day (rounded up)")
+    
+    # Session duration based on topic status (shorter for already known topics)
     def get_session_duration(topic):
         st = topic.get('status', 'NOT_STARTED')
         if st in ['MASTERED', 'SUCCESS']:
@@ -98,24 +148,9 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         elif st == 'MEDIUM':
             return 30  # Practice focus
         else:
-            return session_minutes  # Full treatment
+            return session_minutes  # Full treatment for new topics
     
-    # Calculate how many topics we can fit per day
-    sessions_per_topic = 1  # Just one session per topic to fit more
-    topics_per_day = sessions_per_day // sessions_per_topic
-    
-    total_sessions_needed = total_topics * sessions_per_topic
-    available_sessions = days_available * sessions_per_day
-    
-    print(f"PROGRAMMATIC: {total_topics} topics, {sessions_per_day} sessions/day, {topics_per_day} topics/day")
-    print(f"PROGRAMMATIC: need {total_sessions_needed} sessions, have {available_sessions} slots")
-    
-    # If not enough days, increase topics per day even more
-    if total_topics > topics_per_day * days_available:
-        topics_per_day = math.ceil(total_topics / days_available)
-        print(f"PROGRAMMATIC: Adjusted to {topics_per_day} topics/day to fit all")
-    
-    # Build day plans - PACK DENSELY
+    # Build day plans - STRICTLY distribute topics to meet deadline
     day_plans = []
     topic_plans = []
     topic_idx = 0
@@ -124,14 +159,21 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         if topic_idx >= total_topics:
             break  # All topics scheduled
             
-        day_date = now + timedelta(days=day - 1)
+        day_date = today_start + timedelta(days=day - 1)
         sessions = []
         
-        # Fill this day with as many topics as needed
-        day_topic_count = 0
+        # Schedule exactly topics_per_day topics (or remaining topics on last day)
+        remaining_topics = total_topics - topic_idx
+        topics_for_today = min(topics_per_day, remaining_topics)
+        
+        # Distribute topics throughout the day
+        hours_available = hours_per_day
         hour = 8  # Start at 8 AM
         
-        while day_topic_count < topics_per_day and topic_idx < total_topics:
+        for _ in range(topics_for_today):
+            if topic_idx >= total_topics:
+                break
+                
             topic = all_topics[topic_idx]
             duration = get_session_duration(topic)
             
@@ -146,71 +188,105 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
                 'durationMin': duration
             })
             
+            # Calculate which week this day falls in
+            week_number = ((day - 1) // 7) + 1
+            
             # Add topic plan
             topic_plans.append({
                 'topicName': topic['topic_name'],
                 'topicId': topic['topic_id'],
                 'subjectName': topic['subject_name'],
-                'plannedWeek': 1,
+                'plannedWeek': week_number,
                 'plannedDay': day,
+                'date': day_date.strftime('%Y-%m-%d'),
                 'estimatedHours': duration / 60,
                 'priority': topic_idx + 1,
                 'type': 'THEORY',
-                'status': topic['status']
+                'status': topic['status'],
+                'deadline': min_deadline_date.strftime('%Y-%m-%d')  # All topics share the deadline
             })
             
-            # Move to next slot (every 45 min)
+            # Move to next time slot
             hour += 1
-            if hour >= 22:  # Can study until 10 PM
-                hour = 8  # Reset for calculation purposes
+            if hour >= 22:
+                hour = 8
             
-            day_topic_count += 1
             topic_idx += 1
         
-        print(f"PROGRAMMATIC: Day {day} ({day_date.strftime('%Y-%m-%d')}): {len(sessions)} sessions")
+        total_day_hours = sum(s['durationMin'] for s in sessions) / 60
+        print(f"Day {day} ({day_date.strftime('%Y-%m-%d')}): {len(sessions)} topics, {total_day_hours:.1f}h")
         
         day_plans.append({
             'dayNumber': day,
             'date': day_date.strftime('%Y-%m-%d'),
-            'weekNumber': 1,
-            'totalHours': len(sessions) * session_minutes / 60,
+            'weekNumber': ((day - 1) // 7) + 1,
+            'totalHours': total_day_hours,
             'sessions': sessions
         })
     
-    print(f"PROGRAMMATIC: Total days planned: {len(day_plans)}")
-    print(f"PROGRAMMATIC: Total topics scheduled: {topic_idx} of {total_topics}")
+    # Verify all topics scheduled
+    topics_scheduled = topic_idx
+    print(f"\nSCHEDULE COMPLETE:")
+    print(f"  Topics scheduled: {topics_scheduled}/{total_topics}")
+    print(f"  Days used: {len(day_plans)}/{days_available}")
+    print(f"  End date: {day_plans[-1]['date'] if day_plans else 'N/A'}")
+    print(f"  Deadline: {min_deadline_date.strftime('%Y-%m-%d')}")
     
     # Build week summaries
     weeks = {}
     for dp in day_plans:
         wn = dp['weekNumber']
         if wn not in weeks:
-            weeks[wn] = {'weekNumber': wn, 'topics': [], 'sessions': 0}
+            weeks[wn] = {
+                'weekNumber': wn, 
+                'topics': [], 
+                'sessions': 0,
+                'startDate': dp['date'],
+                'endDate': dp['date']
+            }
         weeks[wn]['sessions'] += len(dp['sessions'])
+        weeks[wn]['endDate'] = dp['date']
         for s in dp['sessions']:
             topic_key = f"{s['subjectName']}: {s['topicName']}"
             if topic_key not in weeks[wn]['topics']:
                 weeks[wn]['topics'].append(topic_key)
     
-    week_summaries = [
-        {
+    week_summaries = []
+    for wn, w in sorted(weeks.items()):
+        week_summaries.append({
             'weekNumber': w['weekNumber'],
+            'startDate': w['startDate'],
+            'endDate': w['endDate'],
             'mainTopics': w['topics'][:10],
             'totalHours': w['sessions'] * session_minutes / 60,
             'goals': f"Complete {len(w['topics'])} topics"
-        }
-        for w in weeks.values()
-    ]
+        })
+    
+    # Calculate actual end date (when last topic is scheduled)
+    actual_end_date = day_plans[-1]['date'] if day_plans else today_start.strftime('%Y-%m-%d')
     
     return {
-        'programTitle': f'Intensive {days_available}-Day Crash Course',
-        'totalDays': days_available,
-        'totalWeeks': max(1, (days_available + 6) // 7),
+        'programTitle': f'{days_available}-Day Study Plan (Deadline: {min_deadline_date.strftime("%b %d")})',
+        'totalDays': len(day_plans),
+        'totalWeeks': max(1, len(weeks)),
+        'startDate': today_start.strftime('%Y-%m-%d'),
+        'endDate': actual_end_date,  # ACTUAL end date (should be <= deadline)
+        'deadline': min_deadline_date.strftime('%Y-%m-%d'),
         'dayPlans': day_plans,
         'weekSummaries': week_summaries,
         'topicPlans': topic_plans,
-        'weekPlans': [{'weekNumber': ws['weekNumber'], 'focus': ', '.join(ws['mainTopics'][:5])} for ws in week_summaries],
-        'scheduledTests': []
+        'weekPlans': [
+            {
+                'weekNumber': ws['weekNumber'], 
+                'startDate': ws['startDate'],
+                'endDate': ws['endDate'],
+                'focus': ', '.join(ws['mainTopics'][:5])
+            } 
+            for ws in week_summaries
+        ],
+        'scheduledTests': [],
+        'topicsPerDay': topics_per_day,
+        'totalTopicsScheduled': topics_scheduled
     }
 
 
@@ -263,30 +339,80 @@ class GenerateProgramView(APIView):
                     break
             subject_data.append(subject_info)
         
+        # DEBUG: Log all topics being passed to AI
+        print("=" * 60)
+        print("GENERATING PROGRAM VIA AI")
+        print("=" * 60)
+        total_topics_count = sum(len(sd.get('topics', [])) for sd in subject_data)
+        print(f"Total subjects: {len(subject_data)}")
+        print(f"Total topics: {total_topics_count}")
+        for sd in subject_data:
+            print(f"  {sd['name']}: {len(sd.get('topics', []))} topics, deadline: {sd.get('deadline')}")
+        print("=" * 60)
+        
         try:
-            # USE PROGRAMMATIC GENERATOR - this GUARANTEES deadline respect
-            print("=" * 60)
-            print("USING PROGRAMMATIC SCHEDULE GENERATOR (not AI)")
-            print("=" * 60)
-            
-            ai_result = generate_programmatic_schedule(
-                subjects_data=subject_data,
-                subject_deadlines=subject_deadlines,
-                hours_per_day=hours_per_day,
-                session_minutes=45  # 45 min per session
+            # Call AI Service for program generation
+            ai_result = generate_learning_program_content(
+                goal=goal, 
+                timeframe=timeframe, 
+                hours_per_day=hours_per_day, 
+                current_level=current_level, 
+                subjects=subject_data,
+                context={
+                    'totalWeeks': total_weeks, 
+                    'hoursPerWeek': hours_per_week,
+                    'subjectDeadlines': subject_deadlines
+                }
             )
             
-            if not ai_result or not ai_result.get('dayPlans'):
+            if not ai_result:
                 return Response({'error': 'AI failed to generate program'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            # Log feasibility status
+            feasibility = ai_result.get('feasibility', 'UNKNOWN')
+            feasibility_msg = ai_result.get('feasibilityMessage', '')
+            print(f"FEASIBILITY: {feasibility} - {feasibility_msg}")
+            
+            if not ai_result.get('dayPlans'):
+                return Response({'error': 'Failed to generate program - no topics to schedule'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Create Database Objects
+            # Parse dates from AI result
+            start_date_str = ai_result.get('startDate')
+            end_date_str = ai_result.get('endDate')
+            deadline_str = ai_result.get('deadline')
+            
+            start_date = None
+            end_date = None
+            
+            if start_date_str:
+                try:
+                    start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                except:
+                    start_date = timezone.now()
+            else:
+                start_date = timezone.now()
+                
+            if end_date_str:
+                try:
+                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                except:
+                    end_date = None
+
+            # Create Database Objects with CORRECT end_date
             program = LearningProgram.objects.create(
                 name=ai_result.get('programTitle', program_name),
+                start_date=start_date,
+                end_date=end_date,  # Use actual end date from scheduler
                 total_weeks=ai_result.get('totalWeeks', total_weeks),
                 hours_per_week=hours_per_week,
-                description=ai_result.get('description', ''),
-                strategy=ai_result.get('strategy', '')
+                description=f"Topics per day: {ai_result.get('topicsPerDay', 'N/A')}. Deadline: {deadline_str or 'Not set'}",
+                strategy=f"Strict deadline mode. {ai_result.get('totalTopicsScheduled', 0)} topics scheduled."
             )
+            
+            print(f"PROGRAM CREATED: {program.name}")
+            print(f"  Start: {start_date}")
+            print(f"  End: {end_date}")
+            print(f"  Deadline: {deadline_str}")
             
             # Debug log
             print(f"AI Result keys: {ai_result.keys()}")
