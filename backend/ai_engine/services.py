@@ -208,44 +208,52 @@ SUBJECT {idx}: {s['name']}
     total_days = max_days  # Plan for entire window
     total_weeks_calc = max(1, (total_days + 6) // 7)
     
-    prompt = f"""You are a STRICT study program generator. Be HONEST about what is achievable.
+    # Calculate overall hours (for prompt)
+    hours_needed = total_topics * hours_per_topic
+    hours_available = max_days * hours_per_day_available
+    is_feasible = overall_feasible
+    is_tight = overall_tight
+    
+    # Calculate deadline dates
+    earliest_deadline_date = current_date + __import__('datetime').timedelta(days=min_days)
+    latest_deadline_date = current_date + __import__('datetime').timedelta(days=max_days)
+    earliest_deadline_str = earliest_deadline_date.strftime('%Y-%m-%d')
+    latest_deadline_str = latest_deadline_date.strftime('%Y-%m-%d')
+    
+    prompt = f"""You are a STRICT study program generator. Be BRUTALLY HONEST about what is achievable.
 
 CURRENT SITUATION:
-- Date: {current_date_str}
-- Deadline: {deadline_date_str} ({total_days} days available)
+- Today: {current_date_str}
+- Earliest deadline: {earliest_deadline_str} ({min_days} days)
+- Latest deadline: {latest_deadline_str} ({max_days} days)
 - Total topics: {total_topics}
-- Hours per day: {hours_per_day_available}
-- Hours needed: {hours_needed} (at 1.5h per topic)
-- Hours available: {hours_available}
+- Hours per day available: {hours_per_day_available}
 
-FEASIBILITY ANALYSIS: {feasibility_status}
-{f"⚠️ THIS PROGRAM IS IMPOSSIBLE TO COMPLETE FULLY!" if not is_feasible else ""}
-{f"⚠️ This program is TIGHT - student must study {hours_per_day_available}h/day non-stop!" if is_tight and is_feasible else ""}
+FEASIBILITY STATUS: {feasibility_status}
+{feasibility_msg}
 
-SUBJECTS AND TOPICS:
+SUBJECTS (each with OWN deadline):
 {subjects_text}
 
-YOUR TASK:
-{"Since full completion is IMPOSSIBLE, create a QUICK REVIEW program that:" if not is_feasible else "Create a complete study program that:"}
-{"- Covers the MOST IMPORTANT topics from each subject" if not is_feasible else "- Schedules ALL topics before the deadline"}
-{"- Prioritizes topics that are NOT_STARTED over MASTERED" if not is_feasible else "- Uses all available study hours"}
-{"- Gives brief 20-30min review per topic" if not is_feasible else "- Gives proper 45min+ study per topic"}
-- NEVER extends beyond {deadline_date_str}
-- Honestly reports feasibility status
+{'⚠️ SOME SUBJECTS ARE IMPOSSIBLE TO COMPLETE FULLY!' if not is_feasible else ''}
+{'Since some subjects CANNOT be completed by their deadline:' if not is_feasible else 'Create a complete study program:'}
+{'- Create QUICK REVIEW (20-30 min per topic) for topics before their deadline' if not is_feasible else '- Schedule all topics before their deadlines'}
+{'- Prioritize NOT_STARTED topics over MASTERED ones' if not is_feasible else '- Use available study hours efficiently'}
+{'- After deadline, schedule REINFORCEMENT sessions for deeper learning' if not is_feasible else '- Pack sessions densely if needed'}
+{'- Be HONEST: say this is a quick review, NOT full study' if not is_feasible else ''}
 
 SCHEDULE RULES:
-- Day 1 = {current_date_str}
-- Last allowed day = Day {total_days} ({deadline_date_str})
-- NO sessions on Day {total_days + 1} or later!
+- Each subject has its OWN deadline - respect it!
+- For impossible subjects: quick review BEFORE deadline, reinforcement AFTER
 - Sessions: 08:00 to 20:00
-- Session duration: 45 min (full) or 20 min (quick review)
+- Session duration: 20-30 min (quick review) or 45 min (full study)
 
 OUTPUT (JSON only, no markdown):
 {{
   "feasibility": "{feasibility_status}",
-  "feasibilityMessage": "{f'Cannot complete {total_topics} topics in {total_days} days. Created quick review instead.' if not is_feasible else f'Program achievable in {total_days} days.'}",
-  "programTitle": "{'Quick Review Program' if not is_feasible else f'{total_days}-Day Intensive Course'}",
-  "description": "...",
+  "feasibilityMessage": "{feasibility_msg}",
+  "programTitle": "{'Quick Review + Reinforcement' if not is_feasible else 'Intensive Study Plan'}",
+  "description": "{'Quick review before deadline, reinforcement after' if not is_feasible else 'Complete study program'}",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
   
@@ -255,7 +263,7 @@ OUTPUT (JSON only, no markdown):
       "date": "{current_date_str}",
       "weekNumber": 1,
       "sessions": [
-        {{"order": 1, "startTime": "08:00", "subjectName": "...", "topicName": "...", "type": "STUDY", "durationMin": {20 if not is_feasible else 45}}}
+        {{"order": 1, "startTime": "08:00", "subjectName": "...", "topicName": "...", "type": "QUICK_REVIEW", "durationMin": 20}}
       ]
     }}
   ],
@@ -265,7 +273,10 @@ OUTPUT (JSON only, no markdown):
   "scheduledTests": []
 }}
 
-CRITICAL: Include "feasibility": "{feasibility_status}" in your response!
+CRITICAL: 
+- Include "feasibility": "{feasibility_status}"
+- For IMPOSSIBLE/TIGHT subjects, create quick review before deadline
+- You may schedule reinforcement AFTER deadline for deeper learning
 """
     
     try:
