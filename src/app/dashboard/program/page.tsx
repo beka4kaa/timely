@@ -119,6 +119,37 @@ interface ScheduledTest {
     }
 }
 
+// Study session types for spaced repetition
+interface StudySession {
+    id: string
+    session_type: 'THEORY' | 'PRACTICE' | 'REVIEW' | 'TEST'
+    scheduled_date: string
+    scheduled_time: string
+    duration_minutes: number
+    day_number: number
+    order_in_day: number
+    status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
+    topic_name: string | null
+    subject_name: string
+    title: string
+    topic?: {
+        id: string
+        name: string
+        subject: {
+            id: string
+            name: string
+            emoji: string
+            color: string
+        }
+    }
+    subject?: {
+        id: string
+        name: string
+        emoji: string
+        color: string
+    }
+}
+
 interface LearningProgram {
     id: string
     name: string
@@ -132,6 +163,7 @@ interface LearningProgram {
     weekPlans: WeekPlan[]
     topicPlans: TopicPlan[]
     scheduledTests: ScheduledTest[]
+    study_sessions?: StudySession[]
 }
 
 import { ProgramChatDialog } from '@/components/mind/program-chat-dialog'
@@ -930,19 +962,48 @@ export default function ProgramPage() {
             // Filter topics for this specific day
             const absoluteDay = weekStartDay + i  // e.g. week 2, day 0 = day 8
             const dayTopics = program.topicPlans?.filter(tp => tp.plannedDay === absoluteDay) || []
+            
+            // Filter study sessions for this specific date
+            const dateStr = date.toISOString().split('T')[0]
+            const daySessions = program.study_sessions?.filter(s => 
+                s.scheduled_date === dateStr || s.day_number === absoluteDay
+            ).sort((a, b) => {
+                // Sort by time, then by order_in_day
+                if (a.scheduled_time !== b.scheduled_time) {
+                    return a.scheduled_time.localeCompare(b.scheduled_time)
+                }
+                return a.order_in_day - b.order_in_day
+            }) || []
 
             days.push({
                 dayNumber: i + 1,
                 dayName: dayNames[i],
                 date: date,
                 isToday: date.toDateString() === new Date().toDateString(),
-                topics: dayTopics.length > 0 ? dayTopics : weekTopics.filter((_, idx) => idx % 7 === i).slice(0, 3)
+                topics: dayTopics.length > 0 ? dayTopics : weekTopics.filter((_, idx) => idx % 7 === i).slice(0, 3),
+                sessions: daySessions
             })
         }
         return days
     }
 
     const weekDays = getWeekDays()
+    
+    // Helper function to get session type badge color and icon
+    const getSessionTypeStyle = (type: string) => {
+        switch (type) {
+            case 'THEORY':
+                return { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-400', icon: '📖', label: 'Theory' }
+            case 'PRACTICE':
+                return { bg: 'bg-green-500/20', border: 'border-green-500', text: 'text-green-400', icon: '✍️', label: 'Practice' }
+            case 'REVIEW':
+                return { bg: 'bg-purple-500/20', border: 'border-purple-500', text: 'text-purple-400', icon: '🔄', label: 'Review' }
+            case 'TEST':
+                return { bg: 'bg-amber-500/20', border: 'border-amber-500', text: 'text-amber-400', icon: '📝', label: 'Test' }
+            default:
+                return { bg: 'bg-muted/50', border: 'border-muted-foreground', text: 'text-muted-foreground', icon: '📚', label: 'Study' }
+        }
+    }
 
     return (
         <div className="container max-w-6xl mx-auto py-6 px-4">
@@ -1102,9 +1163,14 @@ export default function ProgramPage() {
                         const isToday = start.toDateString() === new Date().toDateString()
                         const isSunday = idx === 6
 
-                        // Calculate total hours for this day
+                        // Calculate total hours for this day (prefer sessions over topics)
+                        const daySessions = weekDays[idx]?.sessions || []
                         const dayTopics = weekDays[idx]?.topics || []
-                        const totalHours = dayTopics.reduce((sum, tp) => sum + (tp.estimatedHours || 1), 0)
+                        const totalMinutes = daySessions.reduce((sum, s) => sum + s.duration_minutes, 0)
+                        const totalHours = daySessions.length > 0 
+                            ? (totalMinutes / 60).toFixed(1)
+                            : dayTopics.reduce((sum, tp) => sum + (tp.estimatedHours || 1), 0).toFixed(1)
+                        const sessionCount = daySessions.length
 
                         return (
                             <div
@@ -1121,8 +1187,10 @@ export default function ProgramPage() {
                                 )}>
                                     {start.getDate()}
                                 </p>
-                                {totalHours > 0 && (
-                                    <p className="text-[10px] text-muted-foreground mt-1">{totalHours}h</p>
+                                {parseFloat(totalHours) > 0 && (
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        {totalHours}h {sessionCount > 0 && `• ${sessionCount} sessions`}
+                                    </p>
                                 )}
                             </div>
                         )
@@ -1131,50 +1199,93 @@ export default function ProgramPage() {
 
                 {/* Day Content */}
                 <div className="grid grid-cols-7 min-h-[400px]">
-                    {weekDays.map((day, idx) => (
-                        <div
-                            key={day.dayNumber}
-                            className={cn(
-                                "border-r last:border-r-0 p-2",
-                                day.isToday && "bg-purple-500/5"
-                            )}
-                        >
-                            {day.topics.length > 0 ? (
-                                <div className="space-y-2">
-                                    {day.topics.map((tp) => (
-                                        <div
-                                            key={tp.id}
-                                            className={cn(
-                                                "p-2 rounded text-xs cursor-pointer hover:opacity-80 transition-opacity",
-                                                tp.status === 'COMPLETED' ? "bg-emerald-500/20 border-l-2 border-emerald-500" : "bg-muted/50 border-l-2"
-                                            )}
-                                            style={{ borderLeftColor: tp.topic?.subject?.color || '#8b5cf6' }}
-                                        >
-                                            <div className="flex items-center gap-1 mb-1">
-                                                <span>{tp.topic?.subject?.emoji || '📚'}</span>
-                                                <span className="font-medium truncate">{tp.topic?.name || 'Тема'}</span>
-                                            </div>
-                                            <p className="text-muted-foreground truncate text-[10px]">
-                                                {tp.topic?.subject?.name}
-                                            </p>
-                                            <div className="flex items-center justify-between mt-1">
-                                                <span className="text-[10px] text-muted-foreground">
-                                                    ⏱ {tp.estimatedHours || 1}h
-                                                </span>
-                                                {tp.status === 'COMPLETED' && (
-                                                    <Badge variant="default" className="text-[10px] h-4">✓</Badge>
-                                                )}
-                                            </div>
+                    {weekDays.map((day, idx) => {
+                        // Calculate total hours for this day
+                        const totalMinutes = day.sessions.reduce((sum, s) => sum + s.duration_minutes, 0)
+                        const totalHours = (totalMinutes / 60).toFixed(1)
+                        
+                        return (
+                            <div
+                                key={day.dayNumber}
+                                className={cn(
+                                    "border-r last:border-r-0 p-2",
+                                    day.isToday && "bg-purple-500/5"
+                                )}
+                            >
+                                {/* Show sessions if available, otherwise fall back to topics */}
+                                {day.sessions.length > 0 ? (
+                                    <div className="space-y-1">
+                                        {day.sessions.map((session) => {
+                                            const style = getSessionTypeStyle(session.session_type)
+                                            return (
+                                                <div
+                                                    key={session.id}
+                                                    className={cn(
+                                                        "p-1.5 rounded text-xs cursor-pointer hover:opacity-80 transition-opacity border-l-2",
+                                                        style.bg,
+                                                        style.border,
+                                                        session.status === 'COMPLETED' && "opacity-60"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-1 mb-0.5">
+                                                        <span className="text-[10px]">{style.icon}</span>
+                                                        <span className={cn("font-medium truncate text-[11px]", style.text)}>
+                                                            {session.topic_name || session.title || style.label}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[9px] text-muted-foreground">
+                                                            {session.scheduled_time} • {session.duration_minutes}min
+                                                        </span>
+                                                        {session.status === 'COMPLETED' && (
+                                                            <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                        {/* Show total hours for the day */}
+                                        <div className="text-[10px] text-muted-foreground text-center pt-1 border-t border-dashed mt-1">
+                                            Total: {totalHours}h
                                         </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
-                                    —
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                                    </div>
+                                ) : day.topics.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {day.topics.map((tp) => (
+                                            <div
+                                                key={tp.id}
+                                                className={cn(
+                                                    "p-2 rounded text-xs cursor-pointer hover:opacity-80 transition-opacity",
+                                                    tp.status === 'COMPLETED' ? "bg-emerald-500/20 border-l-2 border-emerald-500" : "bg-muted/50 border-l-2"
+                                                )}
+                                                style={{ borderLeftColor: tp.topic?.subject?.color || '#8b5cf6' }}
+                                            >
+                                                <div className="flex items-center gap-1 mb-1">
+                                                    <span>{tp.topic?.subject?.emoji || '📚'}</span>
+                                                    <span className="font-medium truncate">{tp.topic?.name || 'Topic'}</span>
+                                                </div>
+                                                <p className="text-muted-foreground truncate text-[10px]">
+                                                    {tp.topic?.subject?.name}
+                                                </p>
+                                                <div className="flex items-center justify-between mt-1">
+                                                    <span className="text-[10px] text-muted-foreground">
+                                                        ⏱ {tp.estimatedHours || 1}h
+                                                    </span>
+                                                    {tp.status === 'COMPLETED' && (
+                                                        <Badge variant="default" className="text-[10px] h-4">✓</Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                                        —
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
 

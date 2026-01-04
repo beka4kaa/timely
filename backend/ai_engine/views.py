@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, StudySession
 from .serializers import LearningProgramSerializer
 from mind.models import Subject, Topic
 from .services import (
@@ -585,39 +585,6 @@ class GenerateProgramView(APIView):
             day_plans = ai_result.get('dayPlans', [])
             print(f"dayPlans count from AI: {len(day_plans)}")
             
-            # Extract topic plans from dayPlans.sessions (new daily format)
-            sessions_extracted = 0
-            for day in day_plans:
-                day_num = day.get('dayNumber', 1)
-                week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
-                sessions = day.get('sessions', [])
-                print(f"  Day {day_num}: {len(sessions)} sessions")
-                
-                for session in sessions:
-                    session_type = session.get('type', 'THEORY')
-                    topic_name = session.get('topicName', '')
-                    subject_name = session.get('subjectName', '')
-                    
-                    if session_type in ['THEORY', 'PRACTICE', 'REVIEW'] and topic_name:
-                        topic_plans_data.append({
-                            'topicName': topic_name,
-                            'subjectName': subject_name,
-                            'plannedWeek': week_num,
-                            'plannedDay': day_num,
-                            'estimatedHours': session.get('durationMin', 45) / 60,
-                            'priority': session.get('order', 1),
-                            'type': session_type
-                        })
-                        sessions_extracted += 1
-                        print(f"    + Extracted: {topic_name} ({subject_name})")
-            
-            print(f"Sessions extracted from dayPlans: {sessions_extracted}")
-            print(f"Total topic plans to process: {len(topic_plans_data)}")
-            
-            # Deduplicate by (topicName, plannedWeek) - allow same topic in different weeks
-            seen_topics = set()
-            created_count = 0
-            
             # Build a map of subject name -> deadline from original request
             subject_deadline_map = {}
             for sd in subject_deadlines:
@@ -632,91 +599,194 @@ class GenerateProgramView(APIView):
             
             print(f"Subject deadline map: {subject_deadline_map}")
             
+            # ==============================================================
+            # CREATE STUDY SESSIONS from dayPlans (with spaced repetition)
+            # ==============================================================
+            sessions_created = 0
+            topic_session_days = {}  # Track which days each topic has sessions: {topic_name: {THEORY: day, PRACTICE: day, ...}}
+            
+            for day in day_plans:
+                day_num = day.get('dayNumber', 1)
+                day_date_str = day.get('date', '')
+                week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
+                sessions = day.get('sessions', [])
+                
+                # Parse day date
+                try:
+                    if day_date_str:
+                        day_date = datetime.strptime(str(day_date_str)[:10], '%Y-%m-%d').date()
+                    else:
+                        day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
+                except:
+                    day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
+                
+                print(f"  Day {day_num} ({day_date}): {len(sessions)} sessions")
+                
+                for session in sessions:
+                    session_type = session.get('type', 'THEORY')
+                    topic_name = session.get('topicName', '')
+                    subject_name = session.get('subjectName', '')
+                    start_time = session.get('startTime', '08:00')
+                    duration_min = session.get('durationMin', 45)
+                    order_in_day = session.get('order', 1)
+                    
+                    # Find or create subject
+                    subject = None
+                    if subject_name:
+                        subject = Subject.objects.filter(name__icontains=subject_name).first()
+                    if not subject and subjects:
+                        subject = subjects.first()
+                    
+                    if not subject:
+                        print(f"    ! Skipping session - no subject found for {subject_name}")
+                        continue
+                    
+                    # Find or create topic
+                    topic = None
+                    if topic_name and session_type != 'TEST':
+                        topic = Topic.objects.filter(name__icontains=topic_name, subject=subject).first()
+                        if not topic:
+                            topic = Topic.objects.filter(name__icontains=topic_name).first()
+                        if not topic:
+                            # Create topic if it doesn't exist
+                            topic = Topic.objects.create(subject=subject, name=topic_name)
+                    
+                    # Create StudySession
+                    session_obj = StudySession.objects.create(
+                        program=program,
+                        topic=topic,
+                        subject=subject,
+                        session_type=session_type,
+                        scheduled_date=day_date,
+                        scheduled_time=start_time,
+                        duration_minutes=duration_min,
+                        day_number=day_num,
+                        order_in_day=order_in_day,
+                        status='SCHEDULED',
+                        title=session.get('title', f"{session_type}: {topic_name}" if topic_name else session_type),
+                        topics_covered=str(session.get('topicsCovered', [])) if session_type == 'TEST' else None
+                    )
+                    sessions_created += 1
+                    
+                    # Track session days for topic plans
+                    if topic_name and session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
+                        if topic_name not in topic_session_days:
+                            topic_session_days[topic_name] = {'subject': subject_name, 'planned_week': week_num}
+                        
+                        if session_type == 'THEORY':
+                            topic_session_days[topic_name]['theory_day'] = day_num
+                            topic_session_days[topic_name]['planned_day'] = day_num
+                        elif session_type == 'PRACTICE':
+                            topic_session_days[topic_name]['practice_day'] = day_num
+                        elif session_type == 'REVIEW':
+                            if 'review1_day' not in topic_session_days[topic_name]:
+                                topic_session_days[topic_name]['review1_day'] = day_num
+                            else:
+                                topic_session_days[topic_name]['review2_day'] = day_num
+                    
+                    print(f"    + Session: {session_type} - {topic_name or 'Test'} at {start_time}")
+            
+            print(f"Created {sessions_created} study sessions")
+            
+            # ==============================================================
+            # CREATE TOPIC PLANS (with spaced repetition day tracking)
+            # ==============================================================
+            # Merge topicPlans from AI with tracked session days
             for tp in topic_plans_data:
                 topic_name = tp.get('topicName', tp.get('topic_name', ''))
-                subject_name = tp.get('subjectName', tp.get('subject_name', ''))
-                planned_week = tp.get('plannedWeek', tp.get('planned_week', 1))
+                if topic_name and topic_name not in topic_session_days:
+                    topic_session_days[topic_name] = {
+                        'subject': tp.get('subjectName', tp.get('subject_name', '')),
+                        'planned_week': tp.get('plannedWeek', tp.get('planned_week', 1)),
+                        'planned_day': tp.get('plannedDay', tp.get('theoryDay', 1)),
+                        'theory_day': tp.get('theoryDay'),
+                        'practice_day': tp.get('practiceDay'),
+                        'review1_day': tp.get('review1Day'),
+                        'review2_day': tp.get('review2Day'),
+                    }
+            
+            # Create TopicPlan entries with spaced repetition days
+            created_count = 0
+            for topic_name, tp_data in topic_session_days.items():
+                subject_name = tp_data.get('subject', '')
+                planned_week = tp_data.get('planned_week', 1)
+                planned_day = tp_data.get('planned_day', 1)
                 
-                # Create unique key for dedup (same topic can appear in multiple weeks for review)
-                dedup_key = f"{topic_name}||{planned_week}"
-                
-                if not topic_name or dedup_key in seen_topics:
-                    continue
-                seen_topics.add(dedup_key)
-                    
-                # Try to find topic by name within selected subjects
+                # Find or create topic
                 topic = Topic.objects.filter(name__icontains=topic_name).first()
                 if not topic:
-                    # Create if doesn't exist
                     subject = Subject.objects.filter(name__icontains=subject_name).first() if subject_name else subjects.first()
                     if subject:
                         topic = Topic.objects.create(subject=subject, name=topic_name)
                 
-                if topic:
-                    # CRITICAL: Use the ORIGINAL deadline from frontend request, NOT AI response
-                    # Find deadline by subject name (case-insensitive)
-                    deadline = None
-                    
-                    # First, try to match by subject name from the topic
-                    if topic.subject:
-                        actual_subject_name = topic.subject.name.lower()
-                        for subj_name, dl_str in subject_deadline_map.items():
-                            if subj_name in actual_subject_name or actual_subject_name in subj_name:
-                                try:
-                                    from datetime import datetime as dt
-                                    if 'T' in str(dl_str):
-                                        deadline = dt.fromisoformat(str(dl_str).replace('Z', '+00:00')).replace(tzinfo=None)
-                                    else:
-                                        deadline = dt.strptime(str(dl_str)[:10], '%Y-%m-%d')
-                                except Exception as e:
-                                    print(f"Error parsing deadline {dl_str}: {e}")
-                                break
-                    
-                    # Fallback: try to match by subject_name from AI response
-                    if not deadline and subject_name:
-                        subj_name_lower = subject_name.lower()
-                        for subj_name_key, dl_str in subject_deadline_map.items():
-                            if subj_name_key in subj_name_lower or subj_name_lower in subj_name_key:
-                                try:
-                                    from datetime import datetime as dt
-                                    if 'T' in str(dl_str):
-                                        deadline = dt.fromisoformat(str(dl_str).replace('Z', '+00:00')).replace(tzinfo=None)
-                                    else:
-                                        deadline = dt.strptime(str(dl_str)[:10], '%Y-%m-%d')
-                                except Exception as e:
-                                    print(f"Error parsing deadline {dl_str}: {e}")
-                                break
-                    
-                    # Last fallback: calculate from planned week
-                    if not deadline:
-                        deadline = timezone.now() + timedelta(weeks=planned_week)
-                        print(f"WARNING: No deadline found for {topic_name}, using week-based fallback")
-                    
-                    TopicPlan.objects.create(
-                        program=program,
-                        topic=topic,
-                        planned_week=planned_week,
-                        estimated_hours=tp.get('estimatedHours', tp.get('estimated_hours', 2)),
-                        priority=tp.get('priority', 1),
-                        deadline=deadline
-                    )
-                    created_count += 1
+                if not topic:
+                    print(f"    ! Could not create TopicPlan - no topic for {topic_name}")
+                    continue
+                
+                # Get deadline from original request
+                deadline = None
+                if topic.subject:
+                    actual_subject_name = topic.subject.name.lower()
+                    for subj_name, dl_str in subject_deadline_map.items():
+                        if subj_name in actual_subject_name or actual_subject_name in subj_name:
+                            deadline = parse_deadline_date(dl_str)
+                            break
+                
+                # Fallback: try subject_name from AI
+                if not deadline and subject_name:
+                    subj_name_lower = subject_name.lower()
+                    for subj_name_key, dl_str in subject_deadline_map.items():
+                        if subj_name_key in subj_name_lower or subj_name_lower in subj_name_key:
+                            deadline = parse_deadline_date(dl_str)
+                            break
+                
+                # Last fallback
+                if not deadline:
+                    deadline = timezone.now() + timedelta(weeks=planned_week)
+                    print(f"WARNING: No deadline found for {topic_name}, using week-based fallback")
+                
+                TopicPlan.objects.create(
+                    program=program,
+                    topic=topic,
+                    planned_week=planned_week,
+                    planned_day=planned_day,
+                    estimated_hours=1.5,  # Base hours for initial learning
+                    priority=1,
+                    deadline=deadline,
+                    theory_day=tp_data.get('theory_day'),
+                    practice_day=tp_data.get('practice_day'),
+                    review1_day=tp_data.get('review1_day'),
+                    review2_day=tp_data.get('review2_day'),
+                )
+                created_count += 1
             
             print(f"Created {created_count} topic plans")
             
-            # Create Scheduled Tests from AI response
+            # ==============================================================
+            # CREATE SCHEDULED TESTS from AI response
+            # ==============================================================
             scheduled_tests_data = ai_result.get('scheduledTests', [])
             tests_created = 0
             for test in scheduled_tests_data:
                 test_title = test.get('title', '')
                 subject_name = test.get('subjectName', test.get('subject_name', ''))
-                scheduled_week = test.get('scheduledWeek', test.get('scheduled_week', 1))
-                topics_covered = test.get('topics', [])
-                test_type = test.get('type', 'WEEKLY_TEST')
+                day_number = test.get('dayNumber', test.get('day_number', 1))
+                test_date_str = test.get('date', '')
+                topics_covered = test.get('topicsCovered', test.get('topics', []))
+                test_type = test.get('type', 'KNOWLEDGE_CHECK')
                 duration_min = test.get('durationMin', test.get('duration_min', 45))
                 
                 if not test_title:
                     continue
+                
+                # Parse test date
+                try:
+                    if test_date_str:
+                        test_date = datetime.strptime(str(test_date_str)[:10], '%Y-%m-%d')
+                    else:
+                        test_date = timezone.now() + timedelta(days=day_number - 1)
+                except:
+                    test_date = timezone.now() + timedelta(days=day_number - 1)
                 
                 # Find subject for this test
                 subject = None
@@ -726,16 +796,15 @@ class GenerateProgramView(APIView):
                     subject = subjects.first()
                 
                 if subject:
-                    from .models import ScheduledTest
                     import json as json_module
                     
                     ScheduledTest.objects.create(
                         program=program,
                         subject=subject,
-                        scheduled_date=timezone.now() + timedelta(weeks=scheduled_week, days=-1),  # End of week
+                        scheduled_date=test_date,
                         title=test_title,
-                        description=f"Test covering: {', '.join(topics_covered)}",
-                        topics_covered=json_module.dumps(topics_covered),
+                        description=f"Test covering: {', '.join(topics_covered) if isinstance(topics_covered, list) else topics_covered}",
+                        topics_covered=json_module.dumps(topics_covered) if isinstance(topics_covered, list) else str(topics_covered),
                         type=test_type,
                         status='SCHEDULED'
                     )

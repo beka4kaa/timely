@@ -29,9 +29,53 @@ class WeekPlan(models.Model):
     subject_hours = models.TextField(default="{}") # JSON: { subjectId: hours }
     focus = models.TextField(null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
+    hours_planned = models.FloatField(default=0)  # Total hours planned for this week
 
     class Meta:
         unique_together = ('program', 'week_number')
+
+
+class StudySession(models.Model):
+    """Individual study session within a day - can be THEORY, PRACTICE, REVIEW, or TEST"""
+    SESSION_TYPES = [
+        ('THEORY', 'Theory - Initial Learning'),
+        ('PRACTICE', 'Practice - Exercises'),
+        ('REVIEW', 'Review - Spaced Repetition'),
+        ('TEST', 'Test - Knowledge Check'),
+    ]
+    STATUS_CHOICES = [
+        ('SCHEDULED', 'Scheduled'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('SKIPPED', 'Skipped'),
+    ]
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    program = models.ForeignKey(LearningProgram, on_delete=models.CASCADE, related_name='study_sessions')
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='ai_study_sessions', null=True, blank=True)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='ai_study_sessions')
+    
+    session_type = models.CharField(max_length=20, choices=SESSION_TYPES, default='THEORY')
+    scheduled_date = models.DateField()
+    scheduled_time = models.CharField(max_length=5, default='08:00')  # HH:MM
+    duration_minutes = models.IntegerField(default=45)
+    day_number = models.IntegerField(default=1)
+    order_in_day = models.IntegerField(default=1)  # Order of session within the day
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED')
+    completed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    
+    # For TEST sessions
+    title = models.CharField(max_length=255, null=True, blank=True)
+    topics_covered = models.TextField(null=True, blank=True)  # JSON array of topic names for tests
+    
+    class Meta:
+        ordering = ['scheduled_date', 'scheduled_time', 'order_in_day']
+    
+    def __str__(self):
+        return f"{self.session_type}: {self.topic.name if self.topic else 'Test'} on {self.scheduled_date}"
+
 
 class TopicPlan(models.Model):
     STATUS_CHOICES = [
@@ -45,13 +89,23 @@ class TopicPlan(models.Model):
     program = models.ForeignKey(LearningProgram, on_delete=models.CASCADE, related_name='topic_plans')
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name='topic_plans')
     planned_week = models.IntegerField()
+    planned_day = models.IntegerField(default=1)  # Day number for initial learning
     estimated_hours = models.FloatField()
     priority = models.IntegerField(default=1) # 1-5
     deadline = models.DateTimeField(null=True, blank=True)
     is_flexible = models.BooleanField(default=True)
     manually_moved = models.BooleanField(default=False)
+    
+    # Spaced repetition tracking
+    theory_day = models.IntegerField(null=True, blank=True)  # Day for theory session
+    practice_day = models.IntegerField(null=True, blank=True)  # Day for practice session
+    review1_day = models.IntegerField(null=True, blank=True)  # Day for first review
+    review2_day = models.IntegerField(null=True, blank=True)  # Day for second review
+    
+    # Legacy fields for compatibility
     reinforce_week1 = models.IntegerField(null=True, blank=True)
     reinforce_week2 = models.IntegerField(null=True, blank=True)
+    
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     completed_at = models.DateTimeField(null=True, blank=True)
 

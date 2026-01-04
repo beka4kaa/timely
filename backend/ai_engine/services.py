@@ -285,79 +285,139 @@ SUBJECT {idx}: {s['name']}
     }
     intensity_desc = intensity_descriptions.get(intensity_level, 'Balanced study pace')
     
-    prompt = f"""You are a STRICT study program generator. You MUST respect individual subject deadlines.
+    # Calculate session distribution for HOURS-BASED scheduling
+    # Each topic needs: Theory (30-45 min) + Practice (30-45 min) + Reviews (15-20 min each, multiple times)
+    # Total per topic: ~2-3 hours initial + 1-2 hours reviews = 3-5 hours total
+    hours_per_topic_initial = 1.5  # Theory + first practice
+    hours_per_topic_review = 0.5   # Each review session
+    num_reviews_per_topic = 2      # Spaced repetition reviews
+    total_hours_per_topic = hours_per_topic_initial + (hours_per_topic_review * num_reviews_per_topic)
+    
+    # Calculate total study hours available
+    total_study_hours = hours_per_day_available * effective_days_available
+    
+    # Calculate how to fill the user's time
+    total_initial_hours = total_topics * hours_per_topic_initial
+    total_review_hours = total_topics * hours_per_topic_review * num_reviews_per_topic
+    total_needed_hours = total_initial_hours + total_review_hours
+    
+    # Add periodic tests (every 3-5 topics or weekly)
+    num_tests = max(1, total_topics // 4)  # One test per ~4 topics
+    test_hours = num_tests * 0.75  # 45 min per test
+    
+    print(f"HOURS CALCULATION:")
+    print(f"  Total study hours available: {total_study_hours:.1f}h ({hours_per_day_available}h/day × {effective_days_available} days)")
+    print(f"  Hours for initial learning: {total_initial_hours:.1f}h ({total_topics} topics × {hours_per_topic_initial}h)")
+    print(f"  Hours for reviews: {total_review_hours:.1f}h ({total_topics} topics × {num_reviews_per_topic} reviews × {hours_per_topic_review}h)")
+    print(f"  Hours for tests: {test_hours:.1f}h ({num_tests} tests)")
+    print(f"  Total needed: {total_needed_hours + test_hours:.1f}h")
+    
+    prompt = f"""You are a COMPREHENSIVE study program generator that creates COMPLETE schedules with theory, practice, and spaced repetition.
 
-CURRENT SITUATION:
+📅 SCHEDULE PARAMETERS:
 - Today: {current_date_str}
-- Total topics to cover: {total_topics}
-- Hours per day available: {hours_per_day_available}
-- Planning window: {total_days} days
+- Study days: {study_days_text} ({len(study_days)} days/week)
+- Hours per day: {hours_per_day_available} hours (MUST be filled!)
+- Total study days: {effective_days_available} days
+- Total available hours: {total_study_hours:.0f} hours
 
-🚨 CRITICAL DEADLINE CONSTRAINTS (MUST BE RESPECTED):
+📚 TOPICS TO LEARN:
+- Total topics: {total_topics}
+- Hours per topic (initial): {hours_per_topic_initial}h (theory + practice)
+- Review sessions per topic: {num_reviews_per_topic} (spaced over time)
+- Periodic tests: {num_tests} (to consolidate knowledge)
+
+🚨 HARD DEADLINE CONSTRAINTS:
 {deadline_constraints_text}
 
-STUDY PREFERENCES:
-- Intensity: {intensity_level.upper()} ({intensity_desc})
-- Study days: {study_days_text} ({len(study_days)} days/week)
-- Topics per day: {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY}
-
-FEASIBILITY STATUS: {feasibility_status}
-{feasibility_msg}
-
-SUBJECTS WITH INDIVIDUAL DEADLINES:
+SUBJECTS DETAILS:
 {subjects_text}
 
-{'⚠️ WARNING: SOME SUBJECTS MAY NOT BE COMPLETABLE BY DEADLINE!' if not is_feasible else ''}
+{'⚠️ TIGHT SCHEDULE - Some deadlines may be challenging!' if not is_feasible else '✅ Schedule is feasible'}
 
-SCHEDULING RULES:
-1. 🚨 EACH SUBJECT has its OWN deadline - schedule ALL topics for that subject BEFORE its deadline!
-2. For subjects with earlier deadlines, prioritize them first
-3. {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY} topics per day
-4. Sessions: 08:00 to 20:00, duration 30-45 min each
-5. Mix subjects within days to avoid fatigue
-6. ONLY schedule on: {study_days_text}
+📖 SESSION TYPES (each topic needs ALL of these):
+1. THEORY (30-45 min): Initial learning, reading, understanding concepts
+2. PRACTICE (30-45 min): Problem solving, exercises, application
+3. REVIEW_1 (20 min): First review, 1-2 days after initial learning
+4. REVIEW_2 (15 min): Second review, 4-7 days after initial learning
+5. TEST (45 min): Periodic knowledge check covering multiple topics
 
-DEADLINE PRIORITY ORDER:
-- Schedule subjects with EARLIEST deadlines FIRST
-- A topic for Subject A (deadline Jan 10) should come BEFORE a topic for Subject B (deadline Jan 20)
-- Each topicPlan must include the deadline date from its subject
+⏰ DAILY SCHEDULE STRUCTURE (fill {hours_per_day_available} hours):
+- Morning (08:00-12:00): New topic THEORY + PRACTICE sessions
+- Afternoon (13:00-17:00): Continue new topics OR do REVIEWS of previous topics
+- Evening (18:00-20:00): Light reviews, test prep, or catch-up
 
-OUTPUT FORMAT (JSON only, no markdown):
+🎯 SCHEDULING RULES:
+1. FILL ALL {hours_per_day_available} HOURS each study day with sessions!
+2. Each topic MUST have: 1 THEORY + 1 PRACTICE + 2 REVIEW sessions
+3. Schedule REVIEWS 2-3 days and 5-7 days after initial learning
+4. Subjects with EARLIER deadlines get priority - complete them FIRST!
+5. All sessions for a subject must finish BEFORE its deadline
+6. Include TESTS every 3-4 topics to consolidate knowledge
+7. Mix subjects within a day to avoid fatigue
+
+📊 OUTPUT FORMAT (JSON only, no markdown):
 {{
   "feasibility": "{feasibility_status}",
-  "feasibilityMessage": "Deadline-aware analysis",
-  "programTitle": "Study Plan",
-  "description": "Deadline-optimized study program",
+  "feasibilityMessage": "Analysis with hours breakdown",
+  "programTitle": "Complete Study Plan with Spaced Repetition",
+  "description": "Comprehensive plan: {total_topics} topics × (theory + practice + 2 reviews) + {num_tests} tests",
   "startDate": "{current_date_str}",
   "endDate": "{latest_deadline_str}",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
+  "hoursPerDay": {hours_per_day_available},
   
   "dayPlans": [
-    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectA", "topicName": "Topic1", "durationMin": 45}}]}}
+    {{
+      "dayNumber": 1, 
+      "date": "{current_date_str}", 
+      "weekNumber": 1,
+      "totalHours": {hours_per_day_available},
+      "sessions": [
+        {{"order": 1, "startTime": "08:00", "subjectName": "Subject", "topicName": "Topic1", "type": "THEORY", "durationMin": 45}},
+        {{"order": 2, "startTime": "09:00", "subjectName": "Subject", "topicName": "Topic1", "type": "PRACTICE", "durationMin": 45}},
+        {{"order": 3, "startTime": "10:00", "subjectName": "Subject", "topicName": "Topic2", "type": "THEORY", "durationMin": 45}},
+        {{"order": 4, "startTime": "11:00", "subjectName": "Subject", "topicName": "Topic2", "type": "PRACTICE", "durationMin": 45}}
+      ]
+    }},
+    {{
+      "dayNumber": 3,
+      "date": "YYYY-MM-DD",
+      "weekNumber": 1,
+      "totalHours": {hours_per_day_available},
+      "sessions": [
+        {{"order": 1, "startTime": "08:00", "subjectName": "Subject", "topicName": "Topic3", "type": "THEORY", "durationMin": 45}},
+        {{"order": 2, "startTime": "14:00", "subjectName": "Subject", "topicName": "Topic1", "type": "REVIEW", "durationMin": 20}},
+        {{"order": 3, "startTime": "15:00", "subjectName": "Subject", "topicName": "Topic2", "type": "REVIEW", "durationMin": 20}}
+      ]
+    }}
   ],
   
   "topicPlans": [
-    {{"topicName": "Topic1", "subjectName": "SubjectA", "plannedDay": 1, "plannedWeek": 1, "deadline": "YYYY-MM-DD"}}
+    {{"topicName": "Topic1", "subjectName": "Subject", "plannedDay": 1, "plannedWeek": 1, "deadline": "YYYY-MM-DD", "theoryDay": 1, "practiceDay": 1, "review1Day": 3, "review2Day": 6}},
+    {{"topicName": "Topic2", "subjectName": "Subject", "plannedDay": 1, "plannedWeek": 1, "deadline": "YYYY-MM-DD", "theoryDay": 1, "practiceDay": 1, "review1Day": 3, "review2Day": 6}}
   ],
   
   "weekPlans": [
-    {{"weekNumber": 1, "startDate": "{current_date_str}", "endDate": "YYYY-MM-DD", "focus": "Week focus"}}
+    {{"weekNumber": 1, "startDate": "{current_date_str}", "endDate": "YYYY-MM-DD", "focus": "Initial learning phase", "hoursPlanned": {hours_per_day_available * min(7, len(study_days))}}}
   ],
-  "scheduledTests": []
+  
+  "scheduledTests": [
+    {{"dayNumber": 5, "date": "YYYY-MM-DD", "subjectName": "Subject", "title": "Test: Topics 1-4", "topicsCovered": ["Topic1", "Topic2", "Topic3", "Topic4"], "durationMin": 45}}
+  ]
 }}
 
-IMPORTANT: 
-- Generate dayPlans and topicPlans for ALL {total_days} days!
-- ALL topic names and subject names must EXACTLY match the subjects and topics listed above
-- Each topicPlan MUST include the "deadline" field with the subject's deadline date (YYYY-MM-DD format)
+🚨 CRITICAL REQUIREMENTS:
+1. Generate sessions for ALL {effective_days_available} study days
+2. Each day MUST have {hours_per_day_available} hours of sessions (within 10% tolerance)
+3. Every topic MUST appear in: 1 THEORY + 1 PRACTICE + 2 REVIEW sessions
+4. ALL topics for a subject must complete BEFORE that subject's deadline
+5. Include {num_tests} TEST sessions spread across the schedule
+6. Use EXACT topic names and subject names from the list above
 
-🚨 DEADLINE VERIFICATION:
-- For EACH subject, verify ALL its topics are scheduled BEFORE that subject's deadline
-- Topics for subjects with earlier deadlines should be scheduled FIRST
-- The "deadline" field in topicPlans must match the subject's deadline from the constraints above
-
-REMEMBER: ALL {total_topics} topics must be assigned. Prioritize subjects with earlier deadlines!
+REMEMBER: The user wants to study {hours_per_day_available} hours per day. Fill that time with meaningful sessions!
+Generate a COMPLETE schedule with ALL {total_topics} topics having full learning cycles (theory → practice → review → review → test).
 """
     
     # Debug: Log prompt details before AI call
