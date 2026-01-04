@@ -370,11 +370,18 @@ class GenerateProgramView(APIView):
             
             # Log feasibility status
             feasibility = ai_result.get('feasibility', 'UNKNOWN')
-            feasibility_msg = ai_result.get('feasibilityMessage', '')
+            feasibility_msg = ai_result.get('feasibilityMessage', 'No message from AI')
             print(f"FEASIBILITY: {feasibility} - {feasibility_msg}")
             
+            # Check if dayPlans is empty - might be due to AI error
             if not ai_result.get('dayPlans'):
-                return Response({'error': 'Failed to generate program - no topics to schedule'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                error_detail = feasibility_msg if feasibility_msg else ai_result.get('description', 'Unknown error')
+                print(f"ERROR: No dayPlans generated. Feasibility: {feasibility}, Message: {error_detail}")
+                return Response({
+                    'error': f'AI не смог создать программу: {error_detail}',
+                    'feasibility': feasibility,
+                    'details': error_detail
+                }, status=status.HTTP_400_BAD_REQUEST)  # 400 not 500 - it's a client-side issue
 
             # Parse dates from AI result
             start_date_str = ai_result.get('startDate')
