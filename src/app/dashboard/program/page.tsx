@@ -801,19 +801,55 @@ export default function ProgramPage() {
                         📚 {program.name}
                     </h1>
                     <p className="text-muted-foreground">
-                        {program.totalWeeks} недель • {program.hoursPerWeek} ч/неделю •
-                        Создано {formatDate(program.generatedAt)}
+                        {program.totalWeeks} weeks • {program.hoursPerWeek} hrs/week •
+                        Created {formatDate(program.generatedAt)}
                     </p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={rebalanceProgram} disabled={rebalancing}>
                         {rebalancing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                        Ребалансировать
+                        Rebalance
                     </Button>
                     <ProgramChatDialog programId={program.id} onProgramUpdated={loadProgram} />
-                    <Button variant="outline" onClick={() => setProgram(null)}>Пересоздать</Button>
+                    <Button variant="outline" onClick={() => setProgram(null)}>Recreate</Button>
                 </div>
             </div>
+
+            {/* Goals Section - compact, above calendar */}
+            {program && program.topicPlans && program.topicPlans.length > 0 && (() => {
+                const subjectsInProgram = new Map<string, { id: string; name: string; emoji: string; color: string; topicCount: number }>()
+                program.topicPlans.forEach(tp => {
+                    const subject = tp.topic?.subject
+                    if (subject) {
+                        const existing = subjectsInProgram.get(subject.id)
+                        if (existing) {
+                            existing.topicCount++
+                        } else {
+                            subjectsInProgram.set(subject.id, {
+                                id: subject.id, name: subject.name, emoji: subject.emoji || '📚',
+                                color: subject.color || '#8b5cf6', topicCount: 1
+                            })
+                        }
+                    }
+                })
+                const subjectsList = Array.from(subjectsInProgram.values())
+
+                return subjectsList.length > 0 ? (
+                    <div className="mb-4 flex items-center gap-4 text-sm">
+                        <span className="text-muted-foreground">🎯 Goals:</span>
+                        {subjectsList.map(s => (
+                            <span key={s.id} className="flex items-center gap-1">
+                                <span style={{ color: s.color }}>{s.emoji}</span>
+                                <span className="font-medium">{s.name}</span>
+                                <span className="text-muted-foreground">({s.topicCount})</span>
+                            </span>
+                        ))}
+                        <span className="text-muted-foreground ml-auto">
+                            Deadline: {program.endDate ? new Date(program.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                        </span>
+                    </div>
+                ) : null
+            })()}
 
             {/* Calendar Header with Navigation */}
             <div className="mb-4 flex items-center justify-between">
@@ -828,7 +864,7 @@ export default function ProgramPage() {
                             setSelectedWeek(Math.max(1, Math.min(diff + 1, program.totalWeeks)))
                         }}
                     >
-                        Сегодня
+                        Today
                     </Button>
                     <div className="flex items-center gap-1">
                         <Button
@@ -854,92 +890,30 @@ export default function ProgramPage() {
                             start.setDate(start.getDate() + (selectedWeek - 1) * 7)
                             const end = new Date(start)
                             end.setDate(end.getDate() + 6)
-                            const startMonth = start.toLocaleDateString('ru-RU', { month: 'short' })
-                            const endMonth = end.toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' })
-                            return `${start.getDate()} ${startMonth} — ${end.getDate()} ${endMonth}`
+                            const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                            const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            return `${startStr} – ${endStr}`
                         })()}
                     </h2>
-                    <Badge variant="outline" className="ml-2">Неделя {selectedWeek}</Badge>
+                    <Badge variant="outline" className="ml-2">Week {selectedWeek}</Badge>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                    {weekTopics.length} тем на неделе
+                    {weekTopics.length} topics this week
                 </div>
             </div>
 
             {/* Week Focus Card */}
             {currentWeekPlan?.focus && (
                 <div className="mb-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                    <p className="text-sm">🎯 <span className="font-medium">Фокус недели:</span> {currentWeekPlan.focus}</p>
+                    <p className="text-sm">🎯 <span className="font-medium">Week Focus:</span> {currentWeekPlan.focus}</p>
                 </div>
             )}
-
-            {/* Goals Section - extract from program data */}
-            {program && program.topicPlans && program.topicPlans.length > 0 && (() => {
-                // Extract unique subjects from topicPlans
-                const subjectsInProgram = new Map<string, {
-                    id: string
-                    name: string
-                    emoji: string
-                    color: string
-                    topicCount: number
-                    lastTopic: string
-                }>()
-
-                program.topicPlans.forEach(tp => {
-                    const subject = tp.topic?.subject
-                    if (subject) {
-                        const existing = subjectsInProgram.get(subject.id)
-                        if (existing) {
-                            existing.topicCount++
-                            existing.lastTopic = tp.topic?.name || ''
-                        } else {
-                            subjectsInProgram.set(subject.id, {
-                                id: subject.id,
-                                name: subject.name,
-                                emoji: subject.emoji || '📚',
-                                color: subject.color || '#8b5cf6',
-                                topicCount: 1,
-                                lastTopic: tp.topic?.name || ''
-                            })
-                        }
-                    }
-                })
-
-                const subjectsList = Array.from(subjectsInProgram.values())
-
-                return subjectsList.length > 0 ? (
-                    <div className="mb-4 p-4 rounded-lg border bg-gradient-to-r from-blue-500/5 to-purple-500/5">
-                        <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                            🎯 Включённые предметы
-                        </h3>
-                        <div className="flex flex-wrap gap-3">
-                            {subjectsList.map(subj => (
-                                <div
-                                    key={subj.id}
-                                    className="flex items-center gap-2 text-sm bg-background/50 rounded-lg px-3 py-2 border"
-                                    style={{ borderLeftColor: subj.color, borderLeftWidth: 3 }}
-                                >
-                                    <span>{subj.emoji}</span>
-                                    <span className="font-medium">{subj.name}</span>
-                                    <span className="text-muted-foreground">→ {subj.lastTopic}</span>
-                                    <Badge variant="outline" className="text-xs">
-                                        {subj.topicCount} тем
-                                    </Badge>
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">
-                            Финиш: {program.endDate ? new Date(program.endDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : 'не указан'}
-                        </p>
-                    </div>
-                ) : null
-            })()}
 
             {/* Calendar Grid */}
             <div className="border rounded-lg overflow-hidden bg-card">
                 {/* Day Headers */}
                 <div className="grid grid-cols-7 border-b bg-muted/30">
-                    {['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'].map((dayName, idx) => {
+                    {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((dayName, idx) => {
                         const start = new Date(program.startDate)
                         start.setDate(start.getDate() + (selectedWeek - 1) * 7 + idx)
                         const isToday = start.toDateString() === new Date().toDateString()
@@ -965,7 +939,7 @@ export default function ProgramPage() {
                                     {start.getDate()}
                                 </p>
                                 {totalHours > 0 && (
-                                    <p className="text-[10px] text-muted-foreground mt-1">{totalHours}ч</p>
+                                    <p className="text-[10px] text-muted-foreground mt-1">{totalHours}h</p>
                                 )}
                             </div>
                         )
@@ -1002,7 +976,7 @@ export default function ProgramPage() {
                                             </p>
                                             <div className="flex items-center justify-between mt-1">
                                                 <span className="text-[10px] text-muted-foreground">
-                                                    ⏱ {tp.estimatedHours || 1}ч
+                                                    ⏱ {tp.estimatedHours || 1}h
                                                 </span>
                                                 {tp.status === 'COMPLETED' && (
                                                     <Badge variant="default" className="text-[10px] h-4">✓</Badge>
@@ -1027,7 +1001,7 @@ export default function ProgramPage() {
                     <CardHeader className="pb-2">
                         <CardTitle className="text-lg flex items-center gap-2">
                             <FileText className="h-5 w-5" />
-                            Тесты
+                            Tests
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
