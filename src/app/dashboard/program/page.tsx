@@ -361,7 +361,7 @@ export default function ProgramPage() {
     }
 
     // Calculate workload estimation based on deadlines and topics
-    const calculateWorkloadEstimate = (): {
+    const calculateWorkloadEstimates = (): Array<{
         totalTopics: number
         daysAvailable: number
         topicsPerDay: number
@@ -369,7 +369,7 @@ export default function ProgramPage() {
         isIntense: boolean
         isExtreme: boolean
         subjectsAffected: string[]
-    } | null => {
+    }> => {
         const today = new Date()
         today.setHours(0, 0, 0, 0)
 
@@ -406,31 +406,43 @@ export default function ProgramPage() {
         })
 
         if (subjectData.length === 0) {
-            return null
+            return []
         }
 
-        // Find the soonest deadline
-        const minDays = Math.min(...subjectData.map(s => s.daysUntil))
-        const minDeadline = subjectData.find(s => s.daysUntil === minDays)?.deadline || new Date()
+        // Group subjects by deadline (± 1 day tolerance)
+        const groups: Map<number, typeof subjectData> = new Map()
+        subjectData.forEach(s => {
+            // Round to nearest day group
+            const dayKey = s.daysUntil
+            const existingGroup = Array.from(groups.entries()).find(([key]) => Math.abs(key - dayKey) <= 1)
+            if (existingGroup) {
+                existingGroup[1].push(s)
+            } else {
+                groups.set(dayKey, [s])
+            }
+        })
 
-        // Only count topics for subjects with this SAME deadline (± 1 day tolerance)
-        const subjectsWithSoonestDeadline = subjectData.filter(s => s.daysUntil <= minDays + 1)
-        const topicsForSoonestDeadline = subjectsWithSoonestDeadline.reduce((sum, s) => sum + s.topicCount, 0)
+        // Convert groups to estimates, sorted by urgency
+        const estimates = Array.from(groups.entries())
+            .sort((a, b) => a[0] - b[0])
+            .map(([days, subjects]) => {
+                const totalTopics = subjects.reduce((sum, s) => sum + s.topicCount, 0)
+                const topicsPerDay = Math.ceil(totalTopics / days)
+                return {
+                    totalTopics,
+                    daysAvailable: days,
+                    topicsPerDay,
+                    deadline: subjects[0].deadline,
+                    isIntense: topicsPerDay > 5,
+                    isExtreme: topicsPerDay > 10,
+                    subjectsAffected: subjects.map(s => s.name)
+                }
+            })
 
-        const topicsPerDay = Math.ceil(topicsForSoonestDeadline / minDays)
-
-        return {
-            totalTopics: topicsForSoonestDeadline,
-            daysAvailable: minDays,
-            topicsPerDay,
-            deadline: minDeadline,
-            isIntense: topicsPerDay > 5,
-            isExtreme: topicsPerDay > 10,
-            subjectsAffected: subjectsWithSoonestDeadline.map(s => s.name)
-        }
+        return estimates
     }
 
-    const workloadEstimate = calculateWorkloadEstimate()
+    const workloadEstimates = calculateWorkloadEstimates()
 
     const generateProgram = async () => {
         // Validate at least one deadline is set
@@ -629,59 +641,66 @@ export default function ProgramPage() {
                             </div>
                         )}
 
-                        {/* Workload estimation */}
-                        {workloadEstimate && (
-                            <div className={cn(
-                                "p-4 rounded-lg border",
-                                workloadEstimate.isExtreme
-                                    ? "bg-red-500/10 border-red-500/30"
-                                    : workloadEstimate.isIntense
-                                        ? "bg-yellow-500/10 border-yellow-500/30"
-                                        : "bg-emerald-500/10 border-emerald-500/30"
-                            )}>
-                                <div className="flex items-start gap-3">
-                                    {workloadEstimate.isExtreme ? (
-                                        <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
-                                    ) : workloadEstimate.isIntense ? (
-                                        <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5" />
-                                    ) : (
-                                        <CheckCircle className="h-5 w-5 text-emerald-400 mt-0.5" />
-                                    )}
-                                    <div className="flex-1">
-                                        <div className="font-medium mb-1">
-                                            {workloadEstimate.isExtreme
-                                                ? "⚠️ Экстремальная нагрузка"
-                                                : workloadEstimate.isIntense
-                                                    ? "Интенсивный режим"
-                                                    : "Нагрузка в норме"
-                                            }
-                                        </div>
-                                        <div className="text-sm text-muted-foreground space-y-1">
-                                            <p>
-                                                <strong>{workloadEstimate.totalTopics}</strong> тем за <strong>{workloadEstimate.daysAvailable}</strong> дней =
-                                                <strong className={cn(
-                                                    "ml-1",
-                                                    workloadEstimate.isExtreme && "text-red-400",
-                                                    workloadEstimate.isIntense && !workloadEstimate.isExtreme && "text-yellow-400"
-                                                )}>
-                                                    {workloadEstimate.topicsPerDay} тем/день
-                                                </strong>
-                                            </p>
-                                            <p className="text-xs">
-                                                Дедлайн: {workloadEstimate.deadline.toLocaleDateString('ru-RU', {
-                                                    day: 'numeric',
-                                                    month: 'long',
-                                                    year: 'numeric'
-                                                })}
-                                            </p>
-                                            {workloadEstimate.isExtreme && (
-                                                <p className="text-xs text-red-400 mt-2">
-                                                    Это очень интенсивно! Но программа будет составлена строго по дедлайну.
-                                                </p>
+                        {/* Workload estimation - show ALL deadline groups */}
+                        {workloadEstimates.length > 0 && (
+                            <div className="space-y-3">
+                                {workloadEstimates.map((estimate, idx) => (
+                                    <div key={idx} className={cn(
+                                        "p-4 rounded-lg border",
+                                        estimate.isExtreme
+                                            ? "bg-red-500/10 border-red-500/30"
+                                            : estimate.isIntense
+                                                ? "bg-yellow-500/10 border-yellow-500/30"
+                                                : "bg-emerald-500/10 border-emerald-500/30"
+                                    )}>
+                                        <div className="flex items-start gap-3">
+                                            {estimate.isExtreme ? (
+                                                <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
+                                            ) : estimate.isIntense ? (
+                                                <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5" />
+                                            ) : (
+                                                <CheckCircle className="h-5 w-5 text-emerald-400 mt-0.5" />
                                             )}
+                                            <div className="flex-1">
+                                                <div className="font-medium mb-1">
+                                                    {estimate.isExtreme
+                                                        ? "⚠️ Невыполнимо — только быстрый обзор"
+                                                        : estimate.isIntense
+                                                            ? "⏰ Интенсивный режим"
+                                                            : "✅ Нагрузка в норме"
+                                                    }
+                                                </div>
+                                                <div className="text-sm text-muted-foreground space-y-1">
+                                                    <p>
+                                                        <strong>{estimate.subjectsAffected.join(', ')}</strong>
+                                                    </p>
+                                                    <p>
+                                                        <strong>{estimate.totalTopics}</strong> тем за <strong>{estimate.daysAvailable}</strong> дней =
+                                                        <strong className={cn(
+                                                            "ml-1",
+                                                            estimate.isExtreme && "text-red-400",
+                                                            estimate.isIntense && !estimate.isExtreme && "text-yellow-400"
+                                                        )}>
+                                                            {estimate.topicsPerDay} тем/день
+                                                        </strong>
+                                                    </p>
+                                                    <p className="text-xs">
+                                                        Дедлайн: {estimate.deadline.toLocaleDateString('ru-RU', {
+                                                            day: 'numeric',
+                                                            month: 'long',
+                                                            year: 'numeric'
+                                                        })}
+                                                    </p>
+                                                    {estimate.isExtreme && (
+                                                        <p className="text-xs text-red-400 mt-2">
+                                                            Будет создан быстрый обзор тем (20-30 мин каждая)
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                ))}
                             </div>
                         )}
 
