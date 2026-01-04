@@ -176,20 +176,41 @@ SUBJECT {idx}: {s['name']}
     
     print("=" * 60)
     
-    # Build per-subject text for AI
+    # Build per-subject text for AI with STRICT deadline requirements
     subjects_text = ""
+    deadline_constraints = []
     for idx, s in enumerate(subjects_structured, 1):
         psf = per_subject_feasibility[idx-1]
         topics_str = ", ".join([
             f"{t['index']}.{t['name']}({'✓' if t['status'] in ['MASTERED', 'SUCCESS'] else '~' if t['status'] == 'MEDIUM' else '○'})"
             for t in s['topics']
         ])
+        
+        # Calculate actual deadline date string
+        deadline_date_str = "No deadline"
+        if s['deadline']:
+            try:
+                if 'T' in str(s['deadline']):
+                    dl_date = datetime.fromisoformat(str(s['deadline']).replace('Z', '+00:00'))
+                else:
+                    dl_date = datetime.strptime(str(s['deadline'])[:10], '%Y-%m-%d')
+                deadline_date_str = dl_date.strftime('%Y-%m-%d')
+            except:
+                deadline_date_str = str(s['deadline'])[:10]
+        
         subjects_text += f"""
 SUBJECT {idx}: {s['name']}
-  DEADLINE: {s['deadline']} ({psf['days']} days remaining)
+  ⚠️ HARD DEADLINE: {deadline_date_str} ({psf['days']} days from today)
   FEASIBILITY: {psf['status']} ({psf['topics_per_day']:.1f} topics/day needed)
-  TOPICS ({psf['topics']}): [{topics_str}]
+  TOPICS TO COMPLETE ({psf['topics']} total): [{topics_str}]
+  🚨 ALL {psf['topics']} TOPICS MUST BE SCHEDULED BEFORE {deadline_date_str}!
 """
+        # Add to constraints list for emphasis
+        if deadline_date_str != "No deadline":
+            deadline_constraints.append(f"- {s['name']}: ALL topics must finish by {deadline_date_str} (day {psf['days']})")
+    
+    # Build deadline constraints section
+    deadline_constraints_text = "\n".join(deadline_constraints) if deadline_constraints else "No specific deadlines set"
     
     # Overall feasibility
     feasibility_status = "POSSIBLE" if overall_feasible and not overall_tight else ("TIGHT" if overall_feasible else "IMPOSSIBLE")
@@ -264,64 +285,60 @@ SUBJECT {idx}: {s['name']}
     }
     intensity_desc = intensity_descriptions.get(intensity_level, 'Balanced study pace')
     
-    prompt = f"""You are a STRICT study program generator. Create efficient schedules based on user preferences.
+    prompt = f"""You are a STRICT study program generator. You MUST respect individual subject deadlines.
 
 CURRENT SITUATION:
 - Today: {current_date_str}
-- Earliest deadline: {earliest_deadline_str} ({min_days} days away)
-- Latest deadline: {latest_deadline_str} ({max_days} days away)
 - Total topics to cover: {total_topics}
 - Hours per day available: {hours_per_day_available}
-- RECOMMENDED SCHEDULE: {total_days} days with {topics_per_day} topics/day
+- Planning window: {total_days} days
+
+🚨 CRITICAL DEADLINE CONSTRAINTS (MUST BE RESPECTED):
+{deadline_constraints_text}
 
 STUDY PREFERENCES:
 - Intensity: {intensity_level.upper()} ({intensity_desc})
 - Study days: {study_days_text} ({len(study_days)} days/week)
 - Topics per day: {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY}
-- ONLY schedule on: {study_days_text}
 
 FEASIBILITY STATUS: {feasibility_status}
 {feasibility_msg}
 
-SUBJECTS (each with OWN deadline):
+SUBJECTS WITH INDIVIDUAL DEADLINES:
 {subjects_text}
 
-{'⚠️ SOME SUBJECTS ARE IMPOSSIBLE TO COMPLETE FULLY!' if not is_feasible else ''}
+{'⚠️ WARNING: SOME SUBJECTS MAY NOT BE COMPLETABLE BY DEADLINE!' if not is_feasible else ''}
 
-SCHEDULE RULES ({intensity_level.upper()} INTENSITY):
-- {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY} TOPICS PER DAY!
-- Sessions: 08:00 to 20:00
-- Session duration: 20-30 min (quick review) or 45 min (full study)
-- ONLY schedule on {study_days_text} - NO sessions on other days!
-- Front-load harder subjects - tackle them first while energy is high
-- Mix subjects within each day to avoid fatigue
-- Aim for {topics_per_day} topics per day to finish in {total_days} days
+SCHEDULING RULES:
+1. 🚨 EACH SUBJECT has its OWN deadline - schedule ALL topics for that subject BEFORE its deadline!
+2. For subjects with earlier deadlines, prioritize them first
+3. {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY} topics per day
+4. Sessions: 08:00 to 20:00, duration 30-45 min each
+5. Mix subjects within days to avoid fatigue
+6. ONLY schedule on: {study_days_text}
 
-CRITICAL REQUIREMENTS:
-1. Generate dayPlans for EVERY day from day 1 to day {total_days}
-2. Generate topicPlans with plannedDay from 1 to {total_days}
-3. Include startDate="{current_date_str}" and endDate (the deadline)
-4. Distribute ALL topics across ALL days - don't put everything on day 1!
+DEADLINE PRIORITY ORDER:
+- Schedule subjects with EARLIEST deadlines FIRST
+- A topic for Subject A (deadline Jan 10) should come BEFORE a topic for Subject B (deadline Jan 20)
+- Each topicPlan must include the deadline date from its subject
 
-OUTPUT (JSON only, no markdown):
+OUTPUT FORMAT (JSON only, no markdown):
 {{
   "feasibility": "{feasibility_status}",
-  "feasibilityMessage": "Feasibility analysis",
+  "feasibilityMessage": "Deadline-aware analysis",
   "programTitle": "Study Plan",
-  "description": "Study program",
+  "description": "Deadline-optimized study program",
   "startDate": "{current_date_str}",
-  "endDate": "{earliest_deadline_str}",
+  "endDate": "{latest_deadline_str}",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
   
   "dayPlans": [
-    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectA", "topicName": "Topic1", "durationMin": 45}}]}},
-    {{"dayNumber": 2, "date": "YYYY-MM-DD", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectB", "topicName": "Topic2", "durationMin": 45}}]}}
+    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectA", "topicName": "Topic1", "durationMin": 45}}]}}
   ],
   
   "topicPlans": [
-    {{"topicName": "Topic1", "subjectName": "SubjectA", "plannedDay": 1, "plannedWeek": 1}},
-    {{"topicName": "Topic2", "subjectName": "SubjectB", "plannedDay": 2, "plannedWeek": 1}}
+    {{"topicName": "Topic1", "subjectName": "SubjectA", "plannedDay": 1, "plannedWeek": 1, "deadline": "YYYY-MM-DD"}}
   ],
   
   "weekPlans": [
@@ -330,10 +347,17 @@ OUTPUT (JSON only, no markdown):
   "scheduledTests": []
 }}
 
-IMPORTANT: Generate dayPlans and topicPlans for ALL {total_days} days! The example above only shows 2 days - you must continue for all days.
-CRITICAL: ALL topic names and subject names must EXACTLY match the subjects and topics listed above.
+IMPORTANT: 
+- Generate dayPlans and topicPlans for ALL {total_days} days!
+- ALL topic names and subject names must EXACTLY match the subjects and topics listed above
+- Each topicPlan MUST include the "deadline" field with the subject's deadline date (YYYY-MM-DD format)
 
-REMEMBER: ALL {total_topics} topics must be assigned to a specific day. Distribute them evenly from day 1 to day {total_days}!
+🚨 DEADLINE VERIFICATION:
+- For EACH subject, verify ALL its topics are scheduled BEFORE that subject's deadline
+- Topics for subjects with earlier deadlines should be scheduled FIRST
+- The "deadline" field in topicPlans must match the subject's deadline from the constraints above
+
+REMEMBER: ALL {total_topics} topics must be assigned. Prioritize subjects with earlier deadlines!
 """
     
     # Debug: Log prompt details before AI call
