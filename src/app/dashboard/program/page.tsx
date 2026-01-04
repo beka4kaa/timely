@@ -471,9 +471,14 @@ export default function ProgramPage() {
                 throw new Error(data.error || 'Failed to generate')
             }
 
-            const data = await res.json()
-            setProgram(data)
-            toast.success('Программа создана! Дедлайн будет соблюдён.')
+            // Program created successfully - now load the full program data
+            toast.success('Программа создана! Загружаю...')
+
+            // Wait a moment for DB to sync, then load program
+            await new Promise(resolve => setTimeout(resolve, 500))
+            await loadProgram()
+
+            toast.success('Программа готова!')
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка генерации')
         } finally {
