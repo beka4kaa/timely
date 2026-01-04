@@ -286,8 +286,19 @@ CRITICAL: ALL topic names and subject names must EXACTLY match the subjects and 
 REMEMBER: ALL {total_topics} topics must be assigned to a specific day. Distribute them evenly from day 1 to day {total_days}!
 """
     
+    # Debug: Log prompt details before AI call
+    print(f"=== CALLING AI ===")
+    print(f"Prompt length: {len(prompt)} chars")
+    print(f"Total days: {total_days}, Total weeks: {total_weeks_calc}, Total topics: {total_topics}")
+    print(f"Hours per day: {hours_per_day_available}")
+    
     try:
         response = model.generate_content(prompt)
+        if not response or not response.text:
+            print("ERROR: AI returned empty response!")
+            raise Exception("Empty AI response")
+        
+        print(f"AI response length: {len(response.text)} chars")
         text = response.text.replace('```json', '').replace('```', '').strip()
         result = json.loads(text)
         
