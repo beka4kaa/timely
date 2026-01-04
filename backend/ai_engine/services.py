@@ -256,34 +256,34 @@ CRITICAL REQUIREMENTS:
 OUTPUT (JSON only, no markdown):
 {{
   "feasibility": "{feasibility_status}",
-  "feasibilityMessage": "{feasibility_msg[:100]}...",
-  "programTitle": "{'Quick Review + Reinforcement' if not is_feasible else 'Intensive Study Plan'}",
-  "description": "{'Quick review before deadline' if not is_feasible else 'Complete study program for all subjects'}",
+  "feasibilityMessage": "Feasibility analysis",
+  "programTitle": "Study Plan",
+  "description": "Study program",
   "startDate": "{current_date_str}",
   "endDate": "{earliest_deadline_str}",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
   
   "dayPlans": [
-    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "...", "topicName": "...", "durationMin": 45}}]}},
-    {{"dayNumber": 2, "date": "...", "weekNumber": 1, "sessions": [...]}},
-    ... continue for ALL {total_days} days ...
-    {{"dayNumber": {total_days}, "date": "{earliest_deadline_str}", "weekNumber": {total_weeks_calc}, "sessions": [...]}}
+    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectA", "topicName": "Topic1", "durationMin": 45}}]}},
+    {{"dayNumber": 2, "date": "YYYY-MM-DD", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "SubjectB", "topicName": "Topic2", "durationMin": 45}}]}}
   ],
   
   "topicPlans": [
-    {{"topicName": "...", "subjectName": "...", "plannedDay": 1, "plannedWeek": 1}},
-    ... one entry per topic, distributed across days 1-{total_days} ...
+    {{"topicName": "Topic1", "subjectName": "SubjectA", "plannedDay": 1, "plannedWeek": 1}},
+    {{"topicName": "Topic2", "subjectName": "SubjectB", "plannedDay": 2, "plannedWeek": 1}}
   ],
   
   "weekPlans": [
-    {{"weekNumber": 1, "startDate": "{current_date_str}", "endDate": "...", "focus": "..."}},
-    ... for all {total_weeks_calc} weeks ...
+    {{"weekNumber": 1, "startDate": "{current_date_str}", "endDate": "YYYY-MM-DD", "focus": "Week focus"}}
   ],
   "scheduledTests": []
 }}
 
-REMEMBER: You MUST generate plans for ALL {total_days} days, and ALL {total_topics} topics!
+IMPORTANT: Generate dayPlans and topicPlans for ALL {total_days} days! The example above only shows 2 days - you must continue for all days.
+CRITICAL: ALL topic names and subject names must EXACTLY match the subjects and topics listed above.
+
+REMEMBER: ALL {total_topics} topics must be assigned to a specific day. Distribute them evenly from day 1 to day {total_days}!
 """
     
     try:
