@@ -1165,10 +1165,23 @@ class GenerateProgramView(APIView):
 
             return Response(LearningProgramSerializer(program).data, status=status.HTTP_201_CREATED)
 
+        except ValueError as ve:
+            # Configuration errors (like missing API key)
+            import traceback
+            traceback.print_exc()
+            return Response({
+                'error': str(ve),
+                'type': 'configuration_error',
+                'hint': 'Check server environment variables'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            error_type = type(e).__name__
+            return Response({
+                'error': str(e),
+                'type': error_type
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class LearningProgramViewSet(viewsets.ModelViewSet):
     queryset = LearningProgram.objects.all().order_by('-created_at')

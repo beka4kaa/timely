@@ -7,10 +7,13 @@ from datetime import datetime
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+else:
+    print("WARNING: GEMINI_API_KEY is not set - AI features will not work!")
 
 def generate_learning_program_content(goal, timeframe, hours_per_day, current_level, subjects, context=None):
     if not GEMINI_API_KEY:
-        raise Exception("GEMINI_API_KEY is not set")
+        print("ERROR: GEMINI_API_KEY is not configured in environment")
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
 
     model = genai.GenerativeModel('gemini-2.0-flash')
 
@@ -477,7 +480,8 @@ Generate a COMPLETE schedule with ALL {total_topics} topics having full learning
         }
 
 def generate_fast_topics(subject_name, extra_prompt=""):
-    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
     model = genai.GenerativeModel('gemini-2.0-flash')
     
     prompt = f"""
@@ -524,7 +528,8 @@ def generate_fast_topics(subject_name, extra_prompt=""):
         return []
 
 def analyze_progress(context_data):
-    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
     model = genai.GenerativeModel('gemini-2.0-flash')
     
     prompt = f"""
@@ -548,7 +553,8 @@ def analyze_progress(context_data):
         return {"error": "Failed to analyze"}
 
 def modify_program(current_program_summary, user_request):
-    if not GEMINI_API_KEY: raise Exception("GEMINI_API_KEY is not set")
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
     model = genai.GenerativeModel('gemini-2.0-flash')
     
     prompt = f"""
