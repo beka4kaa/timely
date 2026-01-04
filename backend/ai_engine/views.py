@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, StudySession
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest
 from .serializers import LearningProgramSerializer
 from mind.models import Subject, Topic
 from .services import (
@@ -13,6 +13,14 @@ from .services import (
 from datetime import timedelta, datetime
 from django.utils import timezone
 import math
+
+# Try to import StudySession (may not exist if migration not applied)
+try:
+    from .models import StudySession
+    STUDY_SESSION_AVAILABLE = True
+except ImportError:
+    STUDY_SESSION_AVAILABLE = False
+    StudySession = None
 
 
 def parse_deadline_date(deadline_str):
@@ -605,24 +613,25 @@ class GenerateProgramView(APIView):
             sessions_created = 0
             topic_session_days = {}  # Track which days each topic has sessions: {topic_name: {THEORY: day, PRACTICE: day, ...}}
             
-            # Try to create study sessions (may fail if migration not applied)
-            try:
-                for day in day_plans:
-                    day_num = day.get('dayNumber', 1)
-                    day_date_str = day.get('date', '')
-                    week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
-                    sessions = day.get('sessions', [])
-                    
-                    # Parse day date
-                    try:
-                        if day_date_str:
-                            day_date = datetime.strptime(str(day_date_str)[:10], '%Y-%m-%d').date()
-                        else:
+            # Only try to create study sessions if model is available
+            if STUDY_SESSION_AVAILABLE and StudySession is not None:
+                try:
+                    for day in day_plans:
+                        day_num = day.get('dayNumber', 1)
+                        day_date_str = day.get('date', '')
+                        week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
+                        sessions = day.get('sessions', [])
+                        
+                        # Parse day date
+                        try:
+                            if day_date_str:
+                                day_date = datetime.strptime(str(day_date_str)[:10], '%Y-%m-%d').date()
+                            else:
+                                day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
+                        except:
                             day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
-                    except:
-                        day_date = (timezone.now() + timedelta(days=day_num - 1)).date()
-                    
-                    print(f"  Day {day_num} ({day_date}): {len(sessions)} sessions")
+                        
+                        print(f"  Day {day_num} ({day_date}): {len(sessions)} sessions")
                     
                     for session in sessions:
                         session_type = session.get('type', 'THEORY')
@@ -691,10 +700,26 @@ class GenerateProgramView(APIView):
                         
                         print(f"    + Session: {session_type} - {topic_name or 'Test'} at {start_time}")
                 
-                print(f"Created {sessions_created} study sessions")
-            except Exception as sessions_error:
-                print(f"WARNING: Could not create study sessions (migration may not be applied): {sessions_error}")
-                # Still continue with topic plans
+                    print(f"Created {sessions_created} study sessions")
+                except Exception as sessions_error:
+                    print(f"WARNING: Could not create study sessions (migration may not be applied): {sessions_error}")
+                    # Still continue with topic plans
+            else:
+                # StudySession not available - extract topic info from dayPlans for TopicPlan creation
+                print("StudySession model not available, extracting topic info from dayPlans...")
+                for day in day_plans:
+                    day_num = day.get('dayNumber', 1)
+                    week_num = day.get('weekNumber', (day_num - 1) // 7 + 1)
+                    sessions = day.get('sessions', [])
+                    
+                    for session in sessions:
+                        session_type = session.get('type', 'THEORY')
+                        topic_name = session.get('topicName', '')
+                        subject_name = session.get('subjectName', '')
+                        
+                        if topic_name and session_type in ['THEORY', 'PRACTICE', 'REVIEW']:
+                            if topic_name not in topic_session_days:
+                                topic_session_days[topic_name] = {'subject': subject_name, 'planned_week': week_num, 'planned_day': day_num}
             
             # ==============================================================
             # CREATE TOPIC PLANS (with spaced repetition day tracking)
