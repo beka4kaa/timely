@@ -404,6 +404,25 @@ class GenerateProgramView(APIView):
                     end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
                 except:
                     end_date = None
+            
+            # Fallback: if no end_date, use the earliest deadline from subject_deadlines
+            if not end_date and subject_deadlines:
+                earliest_deadline = None
+                for sd in subject_deadlines:
+                    deadline_str_raw = sd.get('deadline')
+                    if deadline_str_raw:
+                        try:
+                            if 'T' in str(deadline_str_raw):
+                                dl = datetime.fromisoformat(str(deadline_str_raw).replace('Z', '+00:00')).replace(tzinfo=None)
+                            else:
+                                dl = datetime.strptime(str(deadline_str_raw)[:10], '%Y-%m-%d')
+                            if earliest_deadline is None or dl < earliest_deadline:
+                                earliest_deadline = dl
+                        except:
+                            pass
+                if earliest_deadline:
+                    end_date = earliest_deadline
+                    print(f"Computed end_date from deadlines: {end_date}")
 
             # Create Database Objects with CORRECT end_date
             program = LearningProgram.objects.create(

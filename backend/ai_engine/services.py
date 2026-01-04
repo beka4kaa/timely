@@ -224,10 +224,12 @@ SUBJECT {idx}: {s['name']}
 
 CURRENT SITUATION:
 - Today: {current_date_str}
-- Earliest deadline: {earliest_deadline_str} ({min_days} days)
-- Latest deadline: {latest_deadline_str} ({max_days} days)
-- Total topics: {total_topics}
+- Earliest deadline: {earliest_deadline_str} ({min_days} days away)
+- Latest deadline: {latest_deadline_str} ({max_days} days away)
+- Total topics to cover: {total_topics}
 - Hours per day available: {hours_per_day_available}
+- TOTAL DAYS TO PLAN: {total_days} days (from day 1 to day {total_days})
+- TOTAL WEEKS: {total_weeks_calc}
 
 FEASIBILITY STATUS: {feasibility_status}
 {feasibility_msg}
@@ -236,47 +238,52 @@ SUBJECTS (each with OWN deadline):
 {subjects_text}
 
 {'⚠️ SOME SUBJECTS ARE IMPOSSIBLE TO COMPLETE FULLY!' if not is_feasible else ''}
-{'Since some subjects CANNOT be completed by their deadline:' if not is_feasible else 'Create a complete study program:'}
-{'- Create QUICK REVIEW (20-30 min per topic) for topics before their deadline' if not is_feasible else '- Schedule all topics before their deadlines'}
-{'- Prioritize NOT_STARTED topics over MASTERED ones' if not is_feasible else '- Use available study hours efficiently'}
-{'- After deadline, schedule REINFORCEMENT sessions for deeper learning' if not is_feasible else '- Pack sessions densely if needed'}
-{'- Be HONEST: say this is a quick review, NOT full study' if not is_feasible else ''}
 
 SCHEDULE RULES:
+- You MUST create a plan for ALL {total_days} DAYS, not just day 1!
 - Each subject has its OWN deadline - respect it!
-- For impossible subjects: quick review BEFORE deadline, reinforcement AFTER
 - Sessions: 08:00 to 20:00
 - Session duration: 20-30 min (quick review) or 45 min (full study)
+- Distribute topics EVENLY across all days
+- Each day should have 2-5 topics depending on hours available
+
+CRITICAL REQUIREMENTS:
+1. Generate dayPlans for EVERY day from day 1 to day {total_days}
+2. Generate topicPlans with plannedDay from 1 to {total_days}
+3. Include startDate="{current_date_str}" and endDate (the deadline)
+4. Distribute ALL topics across ALL days - don't put everything on day 1!
 
 OUTPUT (JSON only, no markdown):
 {{
   "feasibility": "{feasibility_status}",
-  "feasibilityMessage": "{feasibility_msg}",
+  "feasibilityMessage": "{feasibility_msg[:100]}...",
   "programTitle": "{'Quick Review + Reinforcement' if not is_feasible else 'Intensive Study Plan'}",
-  "description": "{'Quick review before deadline, reinforcement after' if not is_feasible else 'Complete study program'}",
+  "description": "{'Quick review before deadline' if not is_feasible else 'Complete study program for all subjects'}",
+  "startDate": "{current_date_str}",
+  "endDate": "{earliest_deadline_str}",
   "totalWeeks": {total_weeks_calc},
   "totalDays": {total_days},
   
   "dayPlans": [
-    {{
-      "dayNumber": 1,
-      "date": "{current_date_str}",
-      "weekNumber": 1,
-      "sessions": [
-        {{"order": 1, "startTime": "08:00", "subjectName": "...", "topicName": "...", "type": "QUICK_REVIEW", "durationMin": 20}}
-      ]
-    }}
+    {{"dayNumber": 1, "date": "{current_date_str}", "weekNumber": 1, "sessions": [{{"order": 1, "subjectName": "...", "topicName": "...", "durationMin": 45}}]}},
+    {{"dayNumber": 2, "date": "...", "weekNumber": 1, "sessions": [...]}},
+    ... continue for ALL {total_days} days ...
+    {{"dayNumber": {total_days}, "date": "{earliest_deadline_str}", "weekNumber": {total_weeks_calc}, "sessions": [...]}}
   ],
   
-  "weekPlans": [{{"weekNumber": 1, "focus": "..."}}],
-  "topicPlans": [{{"topicName": "...", "subjectName": "...", "plannedDay": 1, "plannedWeek": 1}}],
+  "topicPlans": [
+    {{"topicName": "...", "subjectName": "...", "plannedDay": 1, "plannedWeek": 1}},
+    ... one entry per topic, distributed across days 1-{total_days} ...
+  ],
+  
+  "weekPlans": [
+    {{"weekNumber": 1, "startDate": "{current_date_str}", "endDate": "...", "focus": "..."}},
+    ... for all {total_weeks_calc} weeks ...
+  ],
   "scheduledTests": []
 }}
 
-CRITICAL: 
-- Include "feasibility": "{feasibility_status}"
-- For IMPOSSIBLE/TIGHT subjects, create quick review before deadline
-- You may schedule reinforcement AFTER deadline for deeper learning
+REMEMBER: You MUST generate plans for ALL {total_days} days, and ALL {total_topics} topics!
 """
     
     try:
