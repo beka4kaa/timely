@@ -873,6 +873,35 @@ export default function ProgramPage() {
                 </div>
             )}
 
+            {/* Goals Section */}
+            {subjectDeadlines.filter(sd => sd.deadline).length > 0 && (
+                <div className="mb-4 p-4 rounded-lg border bg-gradient-to-r from-blue-500/5 to-purple-500/5">
+                    <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                        🎯 Цели обучения
+                    </h3>
+                    <div className="flex flex-wrap gap-3">
+                        {subjectDeadlines.filter(sd => sd.deadline).map(sd => {
+                            const subject = subjects.find(s => s.id === sd.subjectId)
+                            const milestoneTopicName = sd.milestoneTopicId
+                                ? subject?.topics.find(t => t.id === sd.milestoneTopicId)?.name
+                                : null
+                            return (
+                                <div key={sd.subjectId} className="flex items-center gap-2 text-sm bg-background/50 rounded-lg px-3 py-2 border">
+                                    <span>{subject?.emoji || '📚'}</span>
+                                    <span className="font-medium">{subject?.name}</span>
+                                    {milestoneTopicName && (
+                                        <span className="text-muted-foreground">→ до {milestoneTopicName}</span>
+                                    )}
+                                    <Badge variant="outline" className="text-xs">
+                                        {new Date(sd.deadline!).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                                    </Badge>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
+
             {/* Calendar Grid */}
             <div className="border rounded-lg overflow-hidden bg-card">
                 {/* Day Headers */}
@@ -882,6 +911,10 @@ export default function ProgramPage() {
                         start.setDate(start.getDate() + (selectedWeek - 1) * 7 + idx)
                         const isToday = start.toDateString() === new Date().toDateString()
                         const isSunday = idx === 6
+
+                        // Calculate total hours for this day
+                        const dayTopics = weekDays[idx]?.topics || []
+                        const totalHours = dayTopics.reduce((sum, tp) => sum + (tp.estimatedHours || 1), 0)
 
                         return (
                             <div
@@ -898,6 +931,9 @@ export default function ProgramPage() {
                                 )}>
                                     {start.getDate()}
                                 </p>
+                                {totalHours > 0 && (
+                                    <p className="text-[10px] text-muted-foreground mt-1">{totalHours}ч</p>
+                                )}
                             </div>
                         )
                     })}
@@ -931,9 +967,14 @@ export default function ProgramPage() {
                                             <p className="text-muted-foreground truncate text-[10px]">
                                                 {tp.topic?.subject?.name}
                                             </p>
-                                            {tp.status === 'COMPLETED' && (
-                                                <Badge variant="default" className="mt-1 text-[10px] h-4">✓</Badge>
-                                            )}
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    ⏱ {tp.estimatedHours || 1}ч
+                                                </span>
+                                                {tp.status === 'COMPLETED' && (
+                                                    <Badge variant="default" className="text-[10px] h-4">✓</Badge>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
