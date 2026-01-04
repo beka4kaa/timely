@@ -31,7 +31,8 @@ def parse_deadline_date(deadline_str):
         return None
 
 
-def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_day, session_minutes=45):
+def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_day, session_minutes=45, 
+                                   min_topics_per_day=3, max_topics_per_day=8, study_days=None):
     """
     Generate schedule PROGRAMMATICALLY - this ALWAYS respects deadline.
     No AI involved in structure - just pure math.
@@ -46,6 +47,9 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         subject_deadlines: List of {subjectId, deadline, milestoneTopicId}
         hours_per_day: Available study hours per day (e.g., 12)
         session_minutes: Duration of each session in minutes (default 45)
+        min_topics_per_day: Minimum topics per day based on intensity
+        max_topics_per_day: Maximum topics per day based on intensity
+        study_days: List of days of week for studying (1=Mon, 7=Sun), default all days
     
     Returns:
         dict with dayPlans, weekPlans, topicPlans structured for storage
@@ -138,27 +142,41 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             'endDate': today_start.strftime('%Y-%m-%d')
         }
     
-    # MATH: Calculate topics per day to FIT ALL within deadline
-    # HIGH-INTENSITY MODE: Minimum 3 topics/day for efficient learning
-    # If deadline allows more days than needed at 3 topics/day, compress the schedule
-    MIN_TOPICS_PER_DAY = 3  # Minimum for efficient learning
-    MAX_TOPICS_PER_DAY = 8  # Maximum sustainable intensity
+    # Use provided intensity settings or defaults
+    if study_days is None:
+        study_days = [1, 2, 3, 4, 5, 6, 7]  # All days by default
     
-    # Calculate the required topics per day to meet deadline
-    required_topics_per_day = math.ceil(total_topics / days_available)
+    # Calculate actual study days available until deadline
+    # Filter days_available to only count study days
+    actual_study_days = 0
+    for day in range(days_available):
+        day_date = today_start + timedelta(days=day)
+        day_of_week = day_date.isoweekday()  # 1=Mon, 7=Sun
+        if day_of_week in study_days:
+            actual_study_days += 1
     
-    # Apply high-intensity constraints
-    if required_topics_per_day < MIN_TOPICS_PER_DAY:
+    if actual_study_days == 0:
+        actual_study_days = 1  # At least 1 day
+    
+    print(f"STUDY DAYS CONFIG: {study_days}")
+    print(f"Calendar days until deadline: {days_available}")
+    print(f"Actual study days: {actual_study_days}")
+    
+    # MATH: Calculate topics per day based on intensity settings
+    required_topics_per_day = math.ceil(total_topics / actual_study_days)
+    
+    # Apply intensity constraints from parameters
+    if required_topics_per_day < min_topics_per_day:
         # Schedule is too relaxed - compress it for efficiency
-        topics_per_day = MIN_TOPICS_PER_DAY
+        topics_per_day = min_topics_per_day
         # Recalculate actual days needed
         actual_days_needed = math.ceil(total_topics / topics_per_day)
-        days_available = min(days_available, actual_days_needed)
-        print(f"HIGH-INTENSITY MODE: Compressing schedule from {total_topics/required_topics_per_day:.0f} days to {actual_days_needed} days")
-    elif required_topics_per_day > MAX_TOPICS_PER_DAY:
+        print(f"INTENSITY MODE: Compressing schedule from {actual_study_days} to {actual_days_needed} study days")
+        print(f"  Min topics/day: {min_topics_per_day}, using: {topics_per_day}")
+    elif required_topics_per_day > max_topics_per_day:
         # Can't exceed max intensity - schedule will be tight
-        topics_per_day = MAX_TOPICS_PER_DAY
-        print(f"WARNING: Required {required_topics_per_day} topics/day exceeds max {MAX_TOPICS_PER_DAY}. Schedule will be tight!")
+        topics_per_day = max_topics_per_day
+        print(f"WARNING: Required {required_topics_per_day} topics/day exceeds max {max_topics_per_day}. Schedule will be tight!")
     else:
         topics_per_day = required_topics_per_day
     
@@ -175,15 +193,24 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
             return session_minutes  # Full treatment for new topics
     
     # Build day plans - STRICTLY distribute topics to meet deadline
+    # Only schedule on study days
     day_plans = []
     topic_plans = []
     topic_idx = 0
+    study_day_count = 0
     
     for day in range(1, days_available + 1):
         if topic_idx >= total_topics:
             break  # All topics scheduled
             
         day_date = today_start + timedelta(days=day - 1)
+        day_of_week = day_date.isoweekday()  # 1=Mon, 7=Sun
+        
+        # Skip non-study days
+        if day_of_week not in study_days:
+            continue
+            
+        study_day_count += 1
         sessions = []
         
         # Schedule exactly topics_per_day topics (or remaining topics on last day)
@@ -191,7 +218,6 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
         topics_for_today = min(topics_per_day, remaining_topics)
         
         # Distribute topics throughout the day
-        hours_available = hours_per_day
         hour = 8  # Start at 8 AM
         
         for _ in range(topics_for_today):
@@ -323,13 +349,33 @@ class GenerateProgramView(APIView):
         data = request.data
         
         # Handle both parameter formats for compatibility
-        # New format from frontend: totalWeeks, hoursPerWeek, name, subjectDeadlines
+        # New format from frontend: totalWeeks, hoursPerWeek, hoursPerDay, intensityLevel, studyDays, name, subjectDeadlines
         # Old format: goal, timeframe, hoursPerDay, currentLevel, subjectIds
         
         total_weeks = data.get('totalWeeks', data.get('total_weeks', 4))
         hours_per_week = data.get('hoursPerWeek', data.get('hours_per_week', 20))
         hours_per_day = data.get('hoursPerDay', hours_per_week / 7)
         program_name = data.get('name', 'Моя программа обучения')
+        
+        # New intensity settings
+        intensity_level = data.get('intensityLevel', 'normal')  # relaxed, normal, intense, extreme
+        min_topics_per_day = data.get('minTopicsPerDay', 3)  # From intensity presets
+        study_days = data.get('studyDays', [1, 2, 3, 4, 5, 6, 7])  # Days of week for studying
+        
+        # Intensity presets
+        intensity_config = {
+            'relaxed': {'min_topics': 1, 'max_topics': 3},
+            'normal': {'min_topics': 3, 'max_topics': 6},
+            'intense': {'min_topics': 5, 'max_topics': 8},
+            'extreme': {'min_topics': 8, 'max_topics': 12},
+        }
+        config = intensity_config.get(intensity_level, intensity_config['normal'])
+        
+        print(f"=== INTENSITY SETTINGS ===")
+        print(f"Level: {intensity_level}")
+        print(f"Hours/day: {hours_per_day}")
+        print(f"Study days: {study_days} ({len(study_days)} days/week)")
+        print(f"Min topics/day: {config['min_topics']}, Max: {config['max_topics']}")
         
         # Get subject deadlines - this contains subjectId and deadline info
         subject_deadlines = data.get('subjectDeadlines', data.get('subject_deadlines', []))
@@ -389,7 +435,11 @@ class GenerateProgramView(APIView):
                 context={
                     'totalWeeks': total_weeks, 
                     'hoursPerWeek': hours_per_week,
-                    'subjectDeadlines': subject_deadlines
+                    'subjectDeadlines': subject_deadlines,
+                    'intensityLevel': intensity_level,
+                    'minTopicsPerDay': config['min_topics'],
+                    'maxTopicsPerDay': config['max_topics'],
+                    'studyDays': study_days
                 }
             )
             

@@ -198,6 +198,22 @@ export default function ProgramPage() {
     const [hoursPerWeek, setHoursPerWeek] = useState(20)
     const [selectedWeek, setSelectedWeek] = useState(1)
     const [rebalancing, setRebalancing] = useState(false)
+    
+    // New intensity settings
+    const [hoursPerDay, setHoursPerDay] = useState(4)
+    const [intensityLevel, setIntensityLevel] = useState<'relaxed' | 'normal' | 'intense' | 'extreme'>('normal')
+    const [studyDays, setStudyDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]) // 1=Mon, 7=Sun
+    
+    // Day names for UI
+    const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+    
+    // Intensity presets
+    const intensityPresets = {
+        relaxed: { hoursPerDay: 2, minTopicsPerDay: 1, label: '😌 Расслабленный', description: '1-2 темы/день, без спешки' },
+        normal: { hoursPerDay: 4, minTopicsPerDay: 3, label: '📚 Нормальный', description: '3-4 темы/день, стабильный прогресс' },
+        intense: { hoursPerDay: 6, minTopicsPerDay: 5, label: '🔥 Интенсивный', description: '5-6 тем/день, быстрый прогресс' },
+        extreme: { hoursPerDay: 10, minTopicsPerDay: 8, label: '⚡ Экстремальный', description: '8+ тем/день, максимум' },
+    }
 
     // Subjects and deadlines for program creation
     const [subjects, setSubjects] = useState<SubjectWithTopics[]>([])
@@ -363,13 +379,14 @@ export default function ProgramPage() {
     }
 
     // Calculate workload estimation based on deadlines and topics
-    // HIGH-INTENSITY MODE: Minimum 3 topics/day for efficient learning
-    const MIN_TOPICS_PER_DAY = 3
-    const MAX_TOPICS_PER_DAY = 8
+    // Use intensity settings for calculations
+    const minTopicsPerDay = intensityPresets[intensityLevel].minTopicsPerDay
+    const maxTopicsPerDay = intensityLevel === 'extreme' ? 12 : intensityLevel === 'intense' ? 8 : 6
     
     const calculateWorkloadEstimates = (): Array<{
         totalTopics: number
         daysAvailable: number
+        studyDaysAvailable: number
         actualDaysNeeded: number
         topicsPerDay: number
         deadline: Date
@@ -387,6 +404,7 @@ export default function ProgramPage() {
             topicCount: number
             deadline: Date
             daysUntil: number
+            studyDaysUntil: number
         }> = []
 
         subjects.forEach(subject => {
@@ -394,6 +412,10 @@ export default function ProgramPage() {
             if (deadline?.deadline) {
                 const deadlineDate = new Date(deadline.deadline)
                 const daysUntil = Math.max(1, Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+                
+                // Calculate actual study days (accounting for selected study days)
+                const weeksUntil = Math.ceil(daysUntil / 7)
+                const studyDaysUntil = Math.max(1, weeksUntil * studyDays.length)
 
                 // Count topics up to milestone
                 let topicCount = 0
@@ -408,7 +430,8 @@ export default function ProgramPage() {
                     name: subject.name,
                     topicCount,
                     deadline: deadlineDate,
-                    daysUntil
+                    daysUntil,
+                    studyDaysUntil
                 })
             }
         })
@@ -435,31 +458,33 @@ export default function ProgramPage() {
             .sort((a, b) => a[0] - b[0])
             .map(([days, subjects]) => {
                 const totalTopics = subjects.reduce((sum, s) => sum + s.topicCount, 0)
-                const rawTopicsPerDay = Math.ceil(totalTopics / days)
+                const studyDaysAvailable = subjects.reduce((sum, s) => sum + s.studyDaysUntil, 0) / subjects.length
+                const rawTopicsPerDay = Math.ceil(totalTopics / studyDaysAvailable)
                 
-                // HIGH-INTENSITY MODE: Apply minimum topics per day
+                // Apply intensity settings
                 let topicsPerDay = rawTopicsPerDay
-                let actualDaysNeeded = days
+                let actualDaysNeeded = Math.ceil(studyDaysAvailable)
                 let isHighIntensity = false
                 
-                if (rawTopicsPerDay < MIN_TOPICS_PER_DAY) {
+                if (rawTopicsPerDay < minTopicsPerDay) {
                     // Schedule is too relaxed - will be compressed
-                    topicsPerDay = MIN_TOPICS_PER_DAY
-                    actualDaysNeeded = Math.ceil(totalTopics / MIN_TOPICS_PER_DAY)
+                    topicsPerDay = minTopicsPerDay
+                    actualDaysNeeded = Math.ceil(totalTopics / minTopicsPerDay)
                     isHighIntensity = true
-                } else if (rawTopicsPerDay > MAX_TOPICS_PER_DAY) {
-                    topicsPerDay = MAX_TOPICS_PER_DAY
+                } else if (rawTopicsPerDay > maxTopicsPerDay) {
+                    topicsPerDay = maxTopicsPerDay
                 }
                 
                 return {
                     totalTopics,
                     daysAvailable: days,
+                    studyDaysAvailable: Math.ceil(studyDaysAvailable),
                     actualDaysNeeded,
                     topicsPerDay,
                     deadline: subjects[0].deadline,
                     isHighIntensity,
                     isIntense: topicsPerDay > 5,
-                    isExtreme: topicsPerDay > MAX_TOPICS_PER_DAY,
+                    isExtreme: topicsPerDay > maxTopicsPerDay,
                     subjectsAffected: subjects.map(s => s.name)
                 }
             })
@@ -485,7 +510,11 @@ export default function ProgramPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     totalWeeks,
-                    hoursPerWeek,
+                    hoursPerWeek: hoursPerDay * studyDays.length,
+                    hoursPerDay,
+                    intensityLevel,
+                    minTopicsPerDay: intensityPresets[intensityLevel].minTopicsPerDay,
+                    studyDays,
                     name: 'Моя программа обучения',
                     subjectDeadlines: deadlinesSet,
                 }),
@@ -559,18 +588,96 @@ export default function ProgramPage() {
                             AI проанализирует ваши предметы, темы и прогресс для создания плана
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-6">
+                        {/* Intensity Level Selection */}
+                        <div className="space-y-3">
+                            <Label className="text-base">Уровень интенсивности</Label>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                {(Object.entries(intensityPresets) as [typeof intensityLevel, typeof intensityPresets[typeof intensityLevel]][]).map(([key, preset]) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => {
+                                            setIntensityLevel(key)
+                                            setHoursPerDay(preset.hoursPerDay)
+                                        }}
+                                        className={cn(
+                                            "p-3 rounded-lg border text-left transition-all",
+                                            intensityLevel === key
+                                                ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                                                : "border-border hover:border-primary/50"
+                                        )}
+                                    >
+                                        <div className="font-medium text-sm">{preset.label}</div>
+                                        <div className="text-xs text-muted-foreground mt-1">{preset.description}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        {/* Hours per Day */}
                         <div className="space-y-2">
-                            <Label>Часов в неделю (максимум)</Label>
-                            <Input
-                                type="number"
-                                min={5}
-                                max={60}
-                                value={hoursPerWeek}
-                                onChange={e => setHoursPerWeek(parseInt(e.target.value) || 20)}
-                            />
+                            <Label>Часов в день</Label>
+                            <div className="flex items-center gap-4">
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    max={16}
+                                    value={hoursPerDay}
+                                    onChange={e => setHoursPerDay(Math.min(16, Math.max(1, parseInt(e.target.value) || 4)))}
+                                    className="w-24"
+                                />
+                                <div className="flex-1">
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={16}
+                                        value={hoursPerDay}
+                                        onChange={e => setHoursPerDay(parseInt(e.target.value))}
+                                        className="w-full accent-primary"
+                                    />
+                                </div>
+                                <span className="text-sm text-muted-foreground w-20">
+                                    {hoursPerDay * studyDays.length}ч/нед
+                                </span>
+                            </div>
+                        </div>
+                        
+                        {/* Study Days Selection */}
+                        <div className="space-y-2">
+                            <Label>Дни для учёбы</Label>
+                            <div className="flex gap-2">
+                                {dayNames.map((day, idx) => {
+                                    const dayNum = idx + 1
+                                    const isSelected = studyDays.includes(dayNum)
+                                    return (
+                                        <button
+                                            key={dayNum}
+                                            type="button"
+                                            onClick={() => {
+                                                if (isSelected) {
+                                                    if (studyDays.length > 1) {
+                                                        setStudyDays(studyDays.filter(d => d !== dayNum))
+                                                    }
+                                                } else {
+                                                    setStudyDays([...studyDays, dayNum].sort())
+                                                }
+                                            }}
+                                            className={cn(
+                                                "w-10 h-10 rounded-full text-sm font-medium transition-all",
+                                                isSelected
+                                                    ? "bg-primary text-primary-foreground"
+                                                    : "bg-muted text-muted-foreground hover:bg-muted/80",
+                                                dayNum === 6 || dayNum === 7 ? "ring-1 ring-orange-500/30" : ""
+                                            )}
+                                        >
+                                            {day}
+                                        </button>
+                                    )
+                                })}
+                            </div>
                             <p className="text-xs text-muted-foreground">
-                                Количество недель рассчитается автоматически на основе дедлайнов
+                                {studyDays.length} дней × {hoursPerDay}ч = <strong>{studyDays.length * hoursPerDay}ч в неделю</strong>
                             </p>
                         </div>
 
@@ -671,7 +778,7 @@ export default function ProgramPage() {
                             </div>
                         )}
 
-                        {/* Workload estimation - show ALL deadline groups with high-intensity mode */}
+                        {/* Workload estimation - show ALL deadline groups with intensity settings */}
                         {workloadEstimates.length > 0 && (
                             <div className="space-y-3">
                                 {workloadEstimates.map((estimate, idx) => (
@@ -711,9 +818,9 @@ export default function ProgramPage() {
                                                         <strong>{estimate.subjectsAffected.join(', ')}</strong>
                                                     </p>
                                                     <p>
-                                                        <strong>{estimate.totalTopics}</strong> тем за <strong>{estimate.actualDaysNeeded}</strong> дней
-                                                        {estimate.actualDaysNeeded < estimate.daysAvailable && (
-                                                            <span className="text-blue-400"> (сжато с {estimate.daysAvailable})</span>
+                                                        <strong>{estimate.totalTopics}</strong> тем за <strong>{estimate.studyDaysAvailable}</strong> учебных дней
+                                                        {estimate.actualDaysNeeded < estimate.studyDaysAvailable && (
+                                                            <span className="text-blue-400"> (сжато до {estimate.actualDaysNeeded})</span>
                                                         )}
                                                         {' = '}
                                                         <strong className={cn(
@@ -722,7 +829,7 @@ export default function ProgramPage() {
                                                             estimate.isIntense && !estimate.isExtreme && "text-yellow-400",
                                                             estimate.isHighIntensity && "text-blue-400"
                                                         )}>
-                                                            {estimate.topicsPerDay} тем/день
+                                                            {estimate.topicsPerDay} тем/день × {hoursPerDay}ч
                                                         </strong>
                                                     </p>
                                                     <p className="text-xs">
@@ -730,11 +837,11 @@ export default function ProgramPage() {
                                                             day: 'numeric',
                                                             month: 'long',
                                                             year: 'numeric'
-                                                        })}
+                                                        })} ({estimate.daysAvailable} дней, {estimate.studyDaysAvailable} учебных)
                                                     </p>
                                                     {estimate.isHighIntensity && !estimate.isIntense && !estimate.isExtreme && (
                                                         <p className="text-xs text-blue-400 mt-2">
-                                                            📚 Программа сжата для эффективного обучения (мин. 3 темы/день)
+                                                            📚 Программа сжата для эффективного обучения (мин. {minTopicsPerDay} тем/день)
                                                         </p>
                                                     )}
                                                     {estimate.isExtreme && (

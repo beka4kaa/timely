@@ -20,8 +20,16 @@ def generate_learning_program_content(goal, timeframe, hours_per_day, current_le
     hours_per_week = ctx.get('hoursPerWeek', hours_per_day * 7)
     subject_deadlines = ctx.get('subjectDeadlines', [])
     
+    # Intensity settings from frontend
+    intensity_level = ctx.get('intensityLevel', 'normal')
+    min_topics_per_day = ctx.get('minTopicsPerDay', 3)
+    max_topics_per_day = ctx.get('maxTopicsPerDay', 6)
+    study_days = ctx.get('studyDays', [1, 2, 3, 4, 5, 6, 7])  # 1=Mon, 7=Sun
+    
+    print(f"INTENSITY CONFIG: {intensity_level}, {min_topics_per_day}-{max_topics_per_day} topics/day, study days: {study_days}")
+    
     # Calculate derived constraints - user can study up to hours_per_day!
-    days_per_week = 7  # Study every day for tight deadlines
+    days_per_week = len(study_days)  # Only count study days
     session_minutes = 45
     hours_per_day_available = hours_per_day  # Use actual hours user specified
     sessions_per_day_max = int(hours_per_day * 60 / session_minutes)  # e.g. 12 hours = 16 sessions
@@ -206,11 +214,14 @@ SUBJECT {idx}: {s['name']}
     max_days = max(s['daysUntilDeadline'] or 30 for s in subjects_structured)
     min_days = min(s['daysUntilDeadline'] or 30 for s in subjects_structured)
     
-    # HIGH-INTENSITY MODE: Ensure efficient learning with minimum 3 topics/day
-    MIN_TOPICS_PER_DAY = 3  # Minimum for efficient learning
-    MAX_TOPICS_PER_DAY = 8  # Maximum sustainable intensity
+    # Use intensity settings from frontend
+    MIN_TOPICS_PER_DAY = min_topics_per_day  # From frontend
+    MAX_TOPICS_PER_DAY = max_topics_per_day  # From frontend
     
-    required_topics_per_day = total_topics / max(1, max_days)
+    # Calculate effective study days (only count days user is willing to study)
+    effective_days_available = max_days * len(study_days) // 7  # Scale by study days per week
+    
+    required_topics_per_day = total_topics / max(1, effective_days_available)
     
     if required_topics_per_day < MIN_TOPICS_PER_DAY:
         # Compress schedule for high-intensity learning
@@ -240,7 +251,20 @@ SUBJECT {idx}: {s['name']}
     earliest_deadline_str = earliest_deadline_date.strftime('%Y-%m-%d')
     latest_deadline_str = latest_deadline_date.strftime('%Y-%m-%d')
     
-    prompt = f"""You are a STRICT HIGH-INTENSITY study program generator. Create efficient, compact schedules.
+    # Map study days to names
+    day_names = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'}
+    study_days_text = ', '.join([day_names.get(d, str(d)) for d in sorted(study_days)])
+    
+    # Intensity level descriptions
+    intensity_descriptions = {
+        'relaxed': 'Relaxed pace with plenty of breaks',
+        'normal': 'Balanced study pace',
+        'intense': 'High-intensity focused learning',
+        'extreme': 'Maximum intensity sprint mode'
+    }
+    intensity_desc = intensity_descriptions.get(intensity_level, 'Balanced study pace')
+    
+    prompt = f"""You are a STRICT study program generator. Create efficient schedules based on user preferences.
 
 CURRENT SITUATION:
 - Today: {current_date_str}
@@ -250,6 +274,12 @@ CURRENT SITUATION:
 - Hours per day available: {hours_per_day_available}
 - RECOMMENDED SCHEDULE: {total_days} days with {topics_per_day} topics/day
 
+STUDY PREFERENCES:
+- Intensity: {intensity_level.upper()} ({intensity_desc})
+- Study days: {study_days_text} ({len(study_days)} days/week)
+- Topics per day: {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY}
+- ONLY schedule on: {study_days_text}
+
 FEASIBILITY STATUS: {feasibility_status}
 {feasibility_msg}
 
@@ -258,10 +288,11 @@ SUBJECTS (each with OWN deadline):
 
 {'⚠️ SOME SUBJECTS ARE IMPOSSIBLE TO COMPLETE FULLY!' if not is_feasible else ''}
 
-HIGH-INTENSITY SCHEDULE RULES:
-- MINIMUM {MIN_TOPICS_PER_DAY} TOPICS PER DAY for efficient learning!
+SCHEDULE RULES ({intensity_level.upper()} INTENSITY):
+- {MIN_TOPICS_PER_DAY}-{MAX_TOPICS_PER_DAY} TOPICS PER DAY!
 - Sessions: 08:00 to 20:00
 - Session duration: 20-30 min (quick review) or 45 min (full study)
+- ONLY schedule on {study_days_text} - NO sessions on other days!
 - Front-load harder subjects - tackle them first while energy is high
 - Mix subjects within each day to avoid fatigue
 - Aim for {topics_per_day} topics per day to finish in {total_days} days
