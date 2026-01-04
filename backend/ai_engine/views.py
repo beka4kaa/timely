@@ -1045,54 +1045,60 @@ class GenerateProgramView(APIView):
             # ==============================================================
             # VALIDATE GENERATED PLAN (CRITICAL: Enforce scope & deadlines)
             # ==============================================================
-            print("\n=== VALIDATING GENERATED PLAN ===")
             
-            # Get all created TopicPlans for validation
-            created_topic_plans = TopicPlan.objects.filter(program=program)
-            topic_plans_list = [{
-                'topicId': tp.topic.id,
-                'topic_id': tp.topic.id,
-                'date': tp.topic_plans.first().date if hasattr(tp, 'topic_plans') else None,
-                # We'll validate using the deadline field
-            } for tp in created_topic_plans]
-            
-            # Validate deadlines (ensure all topics scheduled before their subject deadlines)
-            deadline_violations = validate_deadlines_strict(
-                subject_deadlines_objs=subject_deadline_objs,
-                topic_plans_list=[{
-                    'topicId': tp.topic.id,
-                    'date': timezone.now() + timedelta(days=tp.planned_day - 1) if tp.planned_day else None
-                } for tp in created_topic_plans],
-                subjects_map={}
-            )
-            
-            if deadline_violations:
-                print(f"WARNING: {len(deadline_violations)} deadline violations found:")
-                for v in deadline_violations[:5]:  # Show first 5
-                    print(f"  - {v['subject_name']}/{v['topic_name']}: scheduled {v['scheduled_date']} > deadline {v['deadline']} ({v['days_over']} days over)")
-            
-            # Validate scope (ensure topics beyond milestone are NOT included)
-            scope_violations = validate_scope(
-                subject_deadlines_objs=subject_deadline_objs,
-                topic_plans_list=[{
-                    'topicId': tp.topic.id,
-                    'topic_id': tp.topic.id,
-                    'date': (timezone.now() + timedelta(days=tp.planned_day - 1)).strftime('%Y-%m-%d') if tp.planned_day else None
-                } for tp in created_topic_plans],
-                all_subjects_data=subject_data
-            )
-            
-            if scope_violations:
-                print(f"ERROR: {len(scope_violations)} scope violations found (topics beyond milestone included):")
-                for v in scope_violations[:5]:
-                    print(f"  - {v['subject_name']}/{v['topic_name']}: {v['reason']}")
-                
-                # CRITICAL: If scope violations exist, this is a bug - log and warn but continue
-                # In production, you might want to reject the program or fix automatically
-                print("WARNING: Scope violations detected but program will be created. Review manually.")
-            
-            if not deadline_violations and not scope_violations:
-                print("✓ Validation passed: No deadline or scope violations")
+            # Only validate if we have subject deadlines
+            if subject_deadline_objs:
+                try:
+                    print("\n=== VALIDATING GENERATED PLAN ===")
+                    
+                    # Get all created TopicPlans for validation
+                    created_topic_plans = TopicPlan.objects.filter(program=program)
+                    
+                    # Validate deadlines (ensure all topics scheduled before their subject deadlines)
+                    deadline_violations = validate_deadlines_strict(
+                        subject_deadlines_objs=subject_deadline_objs,
+                        topic_plans_list=[{
+                            'topicId': tp.topic.id,
+                            'date': (start_date + timedelta(days=tp.planned_day - 1)).strftime('%Y-%m-%d') if tp.planned_day else None
+                        } for tp in created_topic_plans],
+                        subjects_map={}
+                    )
+                    
+                    if deadline_violations:
+                        print(f"WARNING: {len(deadline_violations)} deadline violations found:")
+                        for v in deadline_violations[:5]:  # Show first 5
+                            print(f"  - {v['subject_name']}/{v['topic_name']}: scheduled {v['scheduled_date']} > deadline {v['deadline']} ({v['days_over']} days over)")
+                    
+                    # Validate scope (ensure topics beyond milestone are NOT included)
+                    scope_violations = validate_scope(
+                        subject_deadlines_objs=subject_deadline_objs,
+                        topic_plans_list=[{
+                            'topicId': tp.topic.id,
+                            'topic_id': tp.topic.id,
+                            'date': (start_date + timedelta(days=tp.planned_day - 1)).strftime('%Y-%m-%d') if tp.planned_day else None
+                        } for tp in created_topic_plans],
+                        all_subjects_data=subject_data
+                    )
+                    
+                    if scope_violations:
+                        print(f"ERROR: {len(scope_violations)} scope violations found (topics beyond milestone included):")
+                        for v in scope_violations[:5]:
+                            print(f"  - {v['subject_name']}/{v['topic_name']}: {v['reason']}")
+                        
+                        # CRITICAL: If scope violations exist, this is a bug - log and warn but continue
+                        # In production, you might want to reject the program or fix automatically
+                        print("WARNING: Scope violations detected but program will be created. Review manually.")
+                    
+                    if not deadline_violations and not scope_violations:
+                        print("✓ Validation passed: No deadline or scope violations")
+                        
+                except Exception as validation_error:
+                    # Don't let validation errors break program generation
+                    print(f"WARNING: Validation failed with error: {validation_error}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print("Skipping validation - no subject deadlines specified")
             
             # ==============================================================
             # CREATE SCHEDULED TESTS from AI response
