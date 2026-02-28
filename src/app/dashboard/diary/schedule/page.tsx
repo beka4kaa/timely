@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeftIcon,
@@ -9,6 +9,7 @@ import {
   Loader2,
   Settings2Icon,
   CheckIcon,
+  GripVertical,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -148,6 +149,36 @@ export default function SchedulePage() {
     }))
   }
 
+  // Drag-and-drop state
+  const dragKey = useRef<string | null>(null)
+  const dragDay = useRef<DayOfWeek | null>(null)
+
+  function handleDragStart(day: DayOfWeek, key: string) {
+    dragKey.current = key
+    dragDay.current = day
+  }
+
+  function handleDragOver(e: React.DragEvent, day: DayOfWeek, key: string) {
+    e.preventDefault()
+    if (dragDay.current !== day || dragKey.current === key) return
+    setSlotsByDay(prev => {
+      const slots = [...prev[day]]
+      const fromIdx = slots.findIndex(s => s._key === dragKey.current)
+      const toIdx = slots.findIndex(s => s._key === key)
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return prev
+      const reordered = [...slots]
+      const [moved] = reordered.splice(fromIdx, 1)
+      reordered.splice(toIdx, 0, moved)
+      const renumbered = reordered.map((s, i) => ({ ...s, lessonNumber: i + 1 }))
+      return { ...prev, [day]: renumbered }
+    })
+  }
+
+  function handleDrop() {
+    dragKey.current = null
+    dragDay.current = null
+  }
+
   async function handleSave() {
     const allSlots = DAYS_ORDER.flatMap(d => slotsByDay[d]).map(({ _key, ...s }) => s)
     setSaving(true)
@@ -258,7 +289,16 @@ export default function SchedulePage() {
               {slots.length > 0 ? (
                 <div className="divide-y divide-border/50">
                   {slots.map(slot => (
-                    <div key={slot._key} className="flex items-center gap-2 px-3 py-2 flex-wrap">
+                    <div
+                      key={slot._key}
+                      className="flex items-center gap-2 px-3 py-2 flex-wrap group"
+                      draggable
+                      onDragStart={() => handleDragStart(dow, slot._key)}
+                      onDragOver={e => handleDragOver(e, dow, slot._key)}
+                      onDrop={handleDrop}
+                    >
+                      {/* Drag handle */}
+                      <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground cursor-grab active:cursor-grabbing shrink-0 transition-colors" />
                       {/* Lesson number badge */}
                       <span className="text-xs font-bold text-muted-foreground min-w-[20px] text-center">
                         {slot.lessonNumber}

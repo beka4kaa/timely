@@ -1,0 +1,35 @@
+
+> time-schedule-platform@0.1.0 build
+> next build --debug
+
+   ▲ Next.js 15.5.9
+   - Environments: .env.local, .env.production
+
+   Creating an optimized production build ...
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+ ✓ Compiled successfully in 7.8s
+   Linting and checking validity of types ...
+
+./src/app/dashboard/diary/grades/page.tsx
+329:27  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/components/dashboard/schedule-component.tsx
+96:6  Warning: React Hook useEffect has a missing dependency: 'loadSchedule'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/diary/day-youtube-links.tsx
+109:19  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+Failed to compile.
+
+./src/app/api/diary/seed/route.ts:59:89
+Type error: Property 'id' does not exist on type 'Promise<WeeklyTemplate | null>'.
+
+[0m [90m 57 |[39m   [36mconst[39m existing [33m=[39m getActiveTemplate(userId)
+ [90m 58 |[39m   [36mif[39m (existing) {
+[31m[1m>[22m[39m[90m 59 |[39m     [36mreturn[39m [33mNextResponse[39m[33m.[39mjson({ message[33m:[39m [32m'Template already exists'[39m[33m,[39m templateId[33m:[39m existing[33m.[39mid })
+ [90m    |[39m                                                                                         [31m[1m^[22m[39m
+ [90m 60 |[39m   }
+ [90m 61 |[39m
+ [90m 62 |[39m   [36mconst[39m slots [33m=[39m [33mObject[39m[33m.[39mentries([33mDEMO_SCHEDULE[39m)[33m.[39mflatMap(([day[33m,[39m lessons]) [33m=>[39m[0m
+Next.js build worker exited with code: 1 and signal: null
