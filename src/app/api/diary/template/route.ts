@@ -13,8 +13,11 @@ import {
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const templates = getTemplatesForUser(session.user.email)
-  return NextResponse.json({ templates, active: getActiveTemplate(session.user.email) })
+  const [templates, active] = await Promise.all([
+    getTemplatesForUser(session.user.email),
+    getActiveTemplate(session.user.email),
+  ])
+  return NextResponse.json({ templates, active })
 }
 
 /** POST /api/diary/template — create a new template (becomes active) */
@@ -26,7 +29,7 @@ export async function POST(req: NextRequest) {
   const { name, slots } = body as { name: string; slots: any[] }
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
 
-  const template = createTemplate(session.user.email, name, slots ?? [])
+  const template = await createTemplate(session.user.email, name, slots ?? [])
   return NextResponse.json(template, { status: 201 })
 }
 
@@ -39,7 +42,7 @@ export async function PUT(req: NextRequest) {
   const { id, name, slots, isActive } = body as { id: string; name?: string; slots?: any[]; isActive?: boolean }
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  const updated = updateTemplate(id, session.user.email, {
+  const updated = await updateTemplate(id, session.user.email, {
     ...(name !== undefined ? { name } : {}),
     ...(slots !== undefined ? { slots } : {}),
     ...(isActive !== undefined ? { isActive } : {}),
@@ -56,7 +59,7 @@ export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  const ok = deleteTemplate(id, session.user.email)
+  const ok = await deleteTemplate(id, session.user.email)
   if (!ok) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json({ ok: true })
 }

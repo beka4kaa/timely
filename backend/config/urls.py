@@ -10,6 +10,7 @@ from ai_engine.views import (
     DailyTasksView, ScheduleView
 )
 from accounts.views import RegisterView, LoginView
+from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 
 
 def health_check(request):
@@ -28,6 +29,8 @@ router.register(r'mind/subtopics', SubtopicViewSet)
 router.register(r'mind/sessions', MindSessionViewSet)
 router.register(r'ai_engine/learning-program', LearningProgramViewSet)
 router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
+router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-template')
+router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

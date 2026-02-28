@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   const userId = session.user.email
 
   // Only seed if no active template
-  const existing = getActiveTemplate(userId)
+  const existing = await getActiveTemplate(userId)
   if (existing) {
     return NextResponse.json({ message: 'Template already exists', templateId: existing.id })
   }
@@ -63,11 +63,11 @@ export async function POST(req: NextRequest) {
     lessons.map(l => ({ dayOfWeek: day as any, ...l }))
   )
 
-  const template = createTemplate(userId, 'Демо-расписание', slots)
+  const template = await createTemplate(userId, 'Демо-расписание', slots)
 
   const subjectMap = Object.fromEntries(DEMO_SUBJECTS.map(s => [s.id, s]))
   const weekStart = getMondayOf(new Date())
-  const week = getOrCreateWeek(userId, weekStart, id => subjectMap[id] ?? { name: 'Предмет', emoji: '📚', color: '#6366f1' })
+  const week = await getOrCreateWeek(userId, weekStart, id => subjectMap[id] ?? { name: 'Предмет', emoji: '📚', color: '#6366f1' })
 
   return NextResponse.json({ template, week })
 }

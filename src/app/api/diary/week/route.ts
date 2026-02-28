@@ -40,6 +40,6 @@ export async function GET(req: NextRequest) {
     return subjectsMap[id] ?? { name: 'Предмет', emoji: '📚', color: '#6366f1' }
   }
 
-  const week = getOrCreateWeek(userId, weekStart, resolveSubject)
+  const week = await getOrCreateWeek(userId, weekStart, resolveSubject)
   return NextResponse.json(week)
 }

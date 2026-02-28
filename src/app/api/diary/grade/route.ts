@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid grade type' }, { status: 400 })
     }
     const grade: Grade = value === null ? null : (Number(value) as Grade)
-    const updated = updateGrade(userId, weekId, dayId, { lessonId, type, value: grade })
+    const updated = await updateGrade(userId, weekId, dayId, { lessonId, type, value: grade })
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(updated)
   }
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest) {
     if (!['homework', 'notes'].includes(field)) {
       return NextResponse.json({ error: 'Invalid field' }, { status: 400 })
     }
-    const updated = updateLessonField(userId, weekId, dayId, { lessonId, field, value })
+    const updated = await updateLessonField(userId, weekId, dayId, { lessonId, field, value })
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(updated)
   }

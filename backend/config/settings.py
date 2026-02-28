@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "mind",
     "ai_engine",
     "accounts",
+    "diary",
 ]
 
 MIDDLEWARE = [

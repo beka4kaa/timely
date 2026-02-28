@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest) {
     createdAt: (l as any).createdAt || now,
   }))
 
-  const updated = updateDayYoutubeLinks(session.user.email, weekId, dayId, fullLinks)
+  const updated = await updateDayYoutubeLinks(session.user.email, weekId, dayId, fullLinks)
   if (!updated) return NextResponse.json({ error: 'Week or day not found' }, { status: 404 })
   return NextResponse.json({ ok: true })
 }

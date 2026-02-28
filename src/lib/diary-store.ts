@@ -1,28 +1,18 @@
 /**
  * diary-store.ts
- * File-based storage for Diary (WeeklyTemplate + DiaryWeek snapshots).
+ * Async storage for Diary — backed by Django/PostgreSQL on Railway.
  *
- * Files:
- *   .data/weekly-templates.json   — WeeklyTemplate[]
- *   .data/diary-weeks.json        — DiaryWeek[]
- *
- * Snapshot contract:
- *   When a user opens a week for the first time, the active template is
- *   "frozen" into a DiaryWeek. Subsequent changes to the template
- *   do NOT touch already-created weeks.
+ * All functions are async; they call the Django REST API via BACKEND_URL.
+ * Next.js API routes stay thin: auth via NextAuth, then call these helpers.
  */
 
-import fs from 'fs'
-import path from 'path'
-import { findUserByEmail } from '@/lib/local-users'
+import { BACKEND_URL } from '@/lib/api-utils'
 import type {
   WeeklyTemplate,
   TemplateLessonSlot,
   DiaryWeek,
   DiaryDay,
   DiaryLesson,
-  LessonGrades,
-  Grade,
   DayOfWeek,
   GradeUpdate,
   LessonFieldUpdate,
@@ -30,48 +20,31 @@ import type {
 } from '@/types/diary'
 import { DAYS_ORDER } from '@/types/diary'
 
-// ── File paths ────────────────────────────────────────────────
+// ── Django API helper ────────────────────────────────────────
 
-// Vercel (and other serverless platforms) have a read-only filesystem except /tmp
-const DATA_DIR = process.env.NODE_ENV === 'production' || process.env.VERCEL
-  ? '/tmp/.diary-data'
-  : path.join(process.cwd(), '.data')
-const TEMPLATES_FILE = path.join(DATA_DIR, 'weekly-templates.json')
-const DIARY_FILE = path.join(DATA_DIR, 'diary-weeks.json')
-
-function ensureDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
-}
-
-// ── Generic read/write ────────────────────────────────────────
-
-function readJson<T>(file: string, defaultValue: T): T {
-  ensureDir()
-  if (!fs.existsSync(file)) return defaultValue
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf-8')) as T
-  } catch {
-    return defaultValue
-  }
-}
-
-function writeJson<T>(file: string, data: T) {
-  ensureDir()
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
+function diaryFetch(userEmail: string, path: string, opts: RequestInit = {}): Promise<Response> {
+  const url = `${BACKEND_URL}/api/diary${path}`
+  return fetch(url, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-email': userEmail,
+      ...(opts.headers ?? {}),
+    },
+    cache: 'no-store',
+  })
 }
 
 // ── Week date helpers ─────────────────────────────────────────
 
-/** Returns ISO string of Monday for the week containing `date`. */
 export function getMondayOf(date: Date): string {
   const d = new Date(date)
   const day = d.getDay()
-  const diff = (day === 0 ? -6 : 1 - day) // make Sunday go back 6 days
+  const diff = day === 0 ? -6 : 1 - day
   d.setDate(d.getDate() + diff)
   return d.toISOString().slice(0, 10)
 }
 
-/** Returns ISO string of Sunday for the week containing `date`. */
 export function getSundayOf(date: Date): string {
   const monday = new Date(getMondayOf(date))
   const sunday = new Date(monday)
@@ -79,7 +52,6 @@ export function getSundayOf(date: Date): string {
   return sunday.toISOString().slice(0, 10)
 }
 
-/** Returns ISO date string for each day mon–sun of the week. */
 function weekDates(weekStart: string): Record<DayOfWeek, string> {
   const base = new Date(weekStart)
   const result = {} as Record<DayOfWeek, string>
@@ -93,36 +65,30 @@ function weekDates(weekStart: string): Record<DayOfWeek, string> {
 
 // ── Template CRUD ─────────────────────────────────────────────
 
-function readTemplates(): WeeklyTemplate[] {
-  return readJson<WeeklyTemplate[]>(TEMPLATES_FILE, [])
+export async function getTemplatesForUser(userId: string): Promise<WeeklyTemplate[]> {
+  try {
+    const res = await diaryFetch(userId, '/templates/')
+    if (!res.ok) return []
+    return res.json()
+  } catch { return [] }
 }
 
-function writeTemplates(templates: WeeklyTemplate[]) {
-  writeJson(TEMPLATES_FILE, templates)
+export async function getActiveTemplate(userId: string): Promise<WeeklyTemplate | null> {
+  try {
+    const res = await diaryFetch(userId, '/templates/?is_active=true')
+    if (!res.ok) return null
+    const data: WeeklyTemplate[] = await res.json()
+    return data[0] ?? null
+  } catch { return null }
 }
 
-export function getTemplatesForUser(userId: string): WeeklyTemplate[] {
-  return readTemplates().filter(t => t.userId === userId)
-}
-
-export function getActiveTemplate(userId: string): WeeklyTemplate | null {
-  return readTemplates().find(t => t.userId === userId && t.isActive) ?? null
-}
-
-export function createTemplate(
+export async function createTemplate(
   userId: string,
   name: string,
   slots: Omit<TemplateLessonSlot, 'id'>[] = [],
-): WeeklyTemplate {
-  const templates = readTemplates()
-
-  // Deactivate existing active templates for this user
-  const updated = templates.map(t =>
-    t.userId === userId ? { ...t, isActive: false } : t
-  )
-
+): Promise<WeeklyTemplate> {
   const now = new Date().toISOString()
-  const template: WeeklyTemplate = {
+  const template = {
     id: crypto.randomUUID(),
     userId,
     name,
@@ -131,68 +97,50 @@ export function createTemplate(
     createdAt: now,
     updatedAt: now,
   }
-
-  writeTemplates([...updated, template])
-  return template
+  const res = await diaryFetch(userId, '/templates/', {
+    method: 'POST',
+    body: JSON.stringify(template),
+  })
+  if (!res.ok) throw new Error(`Failed to create template: ${res.status}`)
+  return res.json()
 }
 
-export function updateTemplate(
+export async function updateTemplate(
   templateId: string,
   userId: string,
   patch: Partial<Pick<WeeklyTemplate, 'name' | 'slots' | 'isActive'>>,
-): WeeklyTemplate | null {
-  const templates = readTemplates()
-  const idx = templates.findIndex(t => t.id === templateId && t.userId === userId)
-  if (idx === -1) return null
+): Promise<WeeklyTemplate | null> {
+  try {
+    const payload: Record<string, unknown> = {}
+    if (patch.name !== undefined) payload.name = patch.name
+    if (patch.slots !== undefined) {
+      payload.slots = patch.slots.map(s => ({ ...s, id: (s as any).id || crypto.randomUUID() }))
+    }
+    if (patch.isActive !== undefined) payload.isActive = patch.isActive
 
-  // If activating this template, deactivate others
-  let list = templates
-  if (patch.isActive) {
-    list = templates.map(t =>
-      t.userId === userId ? { ...t, isActive: false } : t
-    )
-  }
-
-  const existing = list[idx] ?? templates[idx]
-  const updated: WeeklyTemplate = {
-    ...existing,
-    ...patch,
-    slots: patch.slots
-      ? patch.slots.map(s => ({ ...s, id: s.id || crypto.randomUUID() }))
-      : existing.slots,
-    updatedAt: new Date().toISOString(),
-  }
-
-  list[idx] = updated
-  writeTemplates(list)
-  return updated
+    const res = await diaryFetch(userId, `/templates/${templateId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch { return null }
 }
 
-export function deleteTemplate(templateId: string, userId: string): boolean {
-  const templates = readTemplates()
-  const filtered = templates.filter(t => !(t.id === templateId && t.userId === userId))
-  if (filtered.length === templates.length) return false
-  writeTemplates(filtered)
-  return true
+export async function deleteTemplate(templateId: string, userId: string): Promise<boolean> {
+  try {
+    const res = await diaryFetch(userId, `/templates/${templateId}/`, { method: 'DELETE' })
+    return res.ok || res.status === 204
+  } catch { return false }
 }
 
-// ── Snapshot: generate DiaryWeek from template  ───────────────
+// ── Snapshot builder (pure, no DB) ───────────────────────────
 
-/**
- * Builds a DiaryWeek snapshot from the given template.
- * Subject names/emojis/colors are looked up via the `resolveSubject` callback —
- * this lets the caller pass in live subject data while keeping the store
- * free of HTTP calls.
- */
 export function buildWeekSnapshot(
   userId: string,
   weekStart: string,
   template: WeeklyTemplate | null,
-  resolveSubject: (subjectId: string) => {
-    name: string
-    emoji: string
-    color: string
-  },
+  resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
 ): DiaryWeek {
   const now = new Date().toISOString()
   const weekId = crypto.randomUUID()
@@ -246,31 +194,12 @@ export function buildWeekSnapshot(
   }
 }
 
-// ── DiaryWeek CRUD ────────────────────────────────────────────
-
-function readWeeks(): DiaryWeek[] {
-  return readJson<DiaryWeek[]>(DIARY_FILE, [])
-}
-
-function writeWeeks(weeks: DiaryWeek[]) {
-  writeJson(DIARY_FILE, weeks)
-}
-
-/**
- * Returns true if the user has made no data entries on this week
- * (all grades null, all homework/notes empty, no youtube links).
- * Such weeks can be safely rebuilt from the latest template.
- */
 function isWeekUnchanged(week: DiaryWeek): boolean {
   for (const day of week.days) {
     if (day.youtubeLinks && day.youtubeLinks.length > 0) return false
     for (const lesson of day.lessons) {
-      const grades = lesson.grades
-      if (
-        grades.retelling !== null ||
-        grades.exercises !== null ||
-        grades.test !== null
-      ) return false
+      const g = lesson.grades
+      if (g.retelling !== null || g.exercises !== null || g.test !== null) return false
       if (lesson.homework && lesson.homework.trim() !== '') return false
       if (lesson.notes && lesson.notes.trim() !== '') return false
     }
@@ -278,124 +207,142 @@ function isWeekUnchanged(week: DiaryWeek): boolean {
   return true
 }
 
-/**
- * Returns the DiaryWeek for a given Monday date:
- * - If the week doesn't exist → create from active template.
- * - If the week exists but has NO user changes → rebuild from the current
- *   active template (so template updates propagate to untouched weeks).
- * - If the week exists and has ANY user data → return as-is.
- *
- * @param resolveSubject  Callback to get subject display data by ID.
- */
-export function getOrCreateWeek(
+// ── DiaryWeek persistence ─────────────────────────────────────
+
+async function persistWeek(userId: string, week: DiaryWeek): Promise<void> {
+  await diaryFetch(userId, '/weeks/', {
+    method: 'POST',
+    body: JSON.stringify(week),
+  })
+}
+
+async function replaceWeek(userId: string, weekId: string, week: DiaryWeek): Promise<void> {
+  await diaryFetch(userId, `/weeks/${weekId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(week),
+  })
+}
+
+export async function getOrCreateWeek(
   userId: string,
   weekStart: string,
   resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
-): DiaryWeek {
-  // Block lessons for weeks before the user's registration date
-  const localUser = findUserByEmail(userId)
-  if (localUser?.createdAt) {
-    const registrationMonday = getMondayOf(new Date(localUser.createdAt))
-    if (weekStart < registrationMonday) {
-      // Return an empty week (no lessons) — don't persist it
-      return buildWeekSnapshot(userId, weekStart, null, resolveSubject)
+): Promise<DiaryWeek> {
+  const template = await getActiveTemplate(userId)
+
+  // Try to load existing week
+  try {
+    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
+    if (res.ok) {
+      const data: DiaryWeek[] = await res.json()
+      const existing = data[0]
+      if (existing) {
+        if (isWeekUnchanged(existing)) {
+          // Refresh from latest template (propagates template changes)
+          const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+          refreshed.id = existing.id
+          await replaceWeek(userId, existing.id, refreshed)
+          return refreshed
+        }
+        return existing
+      }
     }
-  }
-
-  const weeks = readWeeks()
-  const existingIdx = weeks.findIndex(w => w.userId === userId && w.weekStart === weekStart)
-
-  const template = getActiveTemplate(userId)
-
-  if (existingIdx !== -1) {
-    const existing = weeks[existingIdx]
-    // If the user hasn't entered anything, refresh from the current template
-    if (isWeekUnchanged(existing)) {
-      const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
-      weeks[existingIdx] = refreshed
-      writeWeeks(weeks)
-      return refreshed
-    }
-    return existing
-  }
+  } catch { /* fallthrough to create */ }
 
   const newWeek = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
-  writeWeeks([...weeks, newWeek])
+  await persistWeek(userId, newWeek)
   return newWeek
 }
 
-export function getWeeksForUser(userId: string): DiaryWeek[] {
-  return readWeeks()
-    .filter(w => w.userId === userId)
-    .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+export async function getWeeksForUser(userId: string): Promise<DiaryWeek[]> {
+  try {
+    const res = await diaryFetch(userId, '/weeks/')
+    if (!res.ok) return []
+    return res.json()
+  } catch { return [] }
 }
 
-// ── Lesson mutations (grades, homework, notes) ────────────────
-
-function updateDay(
-  userId: string,
-  weekId: string,
-  dayId: string,
-  mutate: (day: DiaryDay) => DiaryDay,
-): DiaryWeek | null {
-  const weeks = readWeeks()
-  const weekIdx = weeks.findIndex(w => w.id === weekId && w.userId === userId)
-  if (weekIdx === -1) return null
-
-  const week = weeks[weekIdx]
-  const dayIdx = week.days.findIndex(d => d.id === dayId)
-  if (dayIdx === -1) return null
-
-  const updatedDay = mutate({ ...week.days[dayIdx] })
-  updatedDay.updatedAt = new Date().toISOString()
-
-  const updatedWeek = {
-    ...week,
-    days: week.days.map((d, i) => (i === dayIdx ? updatedDay : d)),
-  }
-  weeks[weekIdx] = updatedWeek
-  writeWeeks(weeks)
-  return updatedWeek
+async function getWeekById(userId: string, weekId: string): Promise<DiaryWeek | null> {
+  try {
+    const res = await diaryFetch(userId, `/weeks/${weekId}/`)
+    if (!res.ok) return null
+    return res.json()
+  } catch { return null }
 }
 
-export function updateGrade(
+// ── Lesson mutations ──────────────────────────────────────────
+
+export async function updateGrade(
   userId: string,
   weekId: string,
   dayId: string,
   update: GradeUpdate,
-): DiaryWeek | null {
-  return updateDay(userId, weekId, dayId, day => ({
-    ...day,
-    lessons: day.lessons.map(l =>
-      l.id === update.lessonId
-        ? { ...l, grades: { ...l.grades, [update.type]: update.value } }
-        : l
+): Promise<DiaryWeek | null> {
+  const week = await getWeekById(userId, weekId)
+  if (!week) return null
+
+  const now = new Date().toISOString()
+  const updated: DiaryWeek = {
+    ...week,
+    days: week.days.map(d =>
+      d.id !== dayId ? d : {
+        ...d,
+        updatedAt: now,
+        lessons: d.lessons.map(l =>
+          l.id !== update.lessonId ? l : {
+            ...l,
+            grades: { ...l.grades, [update.type]: update.value },
+          }
+        ),
+      }
     ),
-  }))
+  }
+  await replaceWeek(userId, weekId, updated)
+  return updated
 }
 
-export function updateLessonField(
+export async function updateLessonField(
   userId: string,
   weekId: string,
   dayId: string,
   update: LessonFieldUpdate,
-): DiaryWeek | null {
-  return updateDay(userId, weekId, dayId, day => ({
-    ...day,
-    lessons: day.lessons.map(l =>
-      l.id === update.lessonId ? { ...l, [update.field]: update.value } : l
+): Promise<DiaryWeek | null> {
+  const week = await getWeekById(userId, weekId)
+  if (!week) return null
+
+  const now = new Date().toISOString()
+  const updated: DiaryWeek = {
+    ...week,
+    days: week.days.map(d =>
+      d.id !== dayId ? d : {
+        ...d,
+        updatedAt: now,
+        lessons: d.lessons.map(l =>
+          l.id !== update.lessonId ? l : { ...l, [update.field]: update.value }
+        ),
+      }
     ),
-  }))
+  }
+  await replaceWeek(userId, weekId, updated)
+  return updated
 }
 
-export function updateDayYoutubeLinks(
+export async function updateDayYoutubeLinks(
   userId: string,
   weekId: string,
   dayId: string,
   links: YoutubeLink[],
-): DiaryWeek | null {
-  return updateDay(userId, weekId, dayId, day => ({
-    ...day,
-    youtubeLinks: links,
-  }))
+): Promise<DiaryWeek | null> {
+  const week = await getWeekById(userId, weekId)
+  if (!week) return null
+
+  const now = new Date().toISOString()
+  const updated: DiaryWeek = {
+    ...week,
+    days: week.days.map(d =>
+      d.id !== dayId ? d : { ...d, updatedAt: now, youtubeLinks: links }
+    ),
+  }
+  await replaceWeek(userId, weekId, updated)
+  return updated
 }

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const year = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()), 10)
 
-  const allWeeks = getWeeksForUser(session.user.email)
+  const allWeeks = await getWeeksForUser(session.user.email)
 
   // Keep weeks that overlap the requested year
   const weeks = allWeeks.filter(w => {
