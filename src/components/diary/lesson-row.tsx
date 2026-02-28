@@ -6,6 +6,7 @@ import { LessonDetailDialog } from "./lesson-detail-dialog"
 import type { DiaryLesson, Grade, LessonGrades } from "@/types/diary"
 import { isTestBlock, isLessonBlock, isFeynmanBlock } from "@/types/diary"
 import { cn } from "@/lib/utils"
+import { pushGradeUndo } from "@/lib/diary-undo"
 
 interface LessonRowProps {
   lesson: DiaryLesson
@@ -45,9 +46,16 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   useEffect(() => { setNotes(lesson.notes) }, [lesson.notes])
 
   async function handleGrade(type: keyof LessonGrades, value: Grade) {
+    const before = lesson.grades[type]
     const updated: DiaryLesson = { ...lesson, grades: { ...lesson.grades, [type]: value } }
     onChange(updated)
     await patchGrade(weekId, dayId, lesson.id, type, value)
+    const typeLabel: Record<keyof LessonGrades, string> = { retelling: 'Пересказ', exercises: 'Упр.', test: 'Тест' }
+    pushGradeUndo({
+      weekId, dayId, lessonId: lesson.id, gradeField: type,
+      before, after: value,
+      label: `${typeLabel[type]}: ${value ?? '—'} (предмет: ${lesson.subjectName})`,
+    })
   }
 
   function handleHwChange(val: string) {

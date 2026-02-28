@@ -280,6 +280,31 @@ export async function getOrCreateWeek(
   return newWeek
 }
 
+/** Force-rebuild week from active template, even if it has grades/notes. */
+export async function forceRecreateWeek(
+  userId: string,
+  weekStart: string,
+  resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
+): Promise<DiaryWeek> {
+  const template = await getActiveTemplate(userId)
+  try {
+    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
+    if (res.ok) {
+      const data: DiaryWeek[] = await res.json()
+      const existing = data[0]
+      if (existing) {
+        const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+        refreshed.id = existing.id
+        await replaceWeek(userId, existing.id, refreshed)
+        return refreshed
+      }
+    }
+  } catch { /* fallthrough */ }
+  const newWeek = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+  await persistWeek(userId, newWeek)
+  return newWeek
+}
+
 export async function getWeeksForUser(userId: string): Promise<DiaryWeek[]> {
   try {
     const res = await diaryFetch(userId, '/weeks/')
