@@ -8,6 +8,7 @@ import {
   updateTemplate,
   deleteTemplate,
 } from '@/lib/diary-store'
+import type { CustomBlockPreset } from '@/types/diary'
 
 /** GET /api/diary/template — list user's templates */
 export async function GET() {
@@ -39,7 +40,7 @@ export async function PUT(req: NextRequest) {
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { id, name, slots, isActive, customPresets } = body as { id: string; name?: string; slots?: any[]; isActive?: boolean; customPresets?: string[] }
+  const { id, name, slots, isActive, customPresets } = body as { id: string; name?: string; slots?: any[]; isActive?: boolean; customPresets?: CustomBlockPreset[] }
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   const updated = await updateTemplate(id, session.user.email, {

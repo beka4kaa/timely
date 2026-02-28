@@ -114,8 +114,15 @@ export interface WeeklyTemplate {
   /** All lesson slots across all days of the week */
   slots: TemplateLessonSlot[]
   isActive: boolean
+  customPresets?: CustomBlockPreset[]
   createdAt: string
   updatedAt: string
+}
+
+export interface CustomBlockPreset {
+  value: string
+  label: string
+  emoji: string
 }
 
 // ----- Concrete diary entities (historical snapshots) --------
