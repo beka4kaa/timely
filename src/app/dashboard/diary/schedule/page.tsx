@@ -10,6 +10,8 @@ import {
   Settings2Icon,
   CheckIcon,
   GripVertical,
+  BookmarkIcon,
+  XIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +36,9 @@ interface Subject {
 }
 
 type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string; blockType: BlockType; label: string }
+
+const DEFAULT_PRESETS = ['Разбор Ошибок', 'Мини-Тест', 'Недельный Тест', 'Тест ошибок']
+const PRESETS_KEY = 'schedule-custom-presets'
 
 const DEFAULT_TIMES = [
   { start: '08:00', end: '08:45' },
@@ -61,6 +66,28 @@ export default function SchedulePage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('Моё расписание')
+
+  const [customPresets, setCustomPresets] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PRESETS
+    try {
+      const stored = localStorage.getItem(PRESETS_KEY)
+      return stored ? JSON.parse(stored) : DEFAULT_PRESETS
+    } catch { return DEFAULT_PRESETS }
+  })
+
+  useEffect(() => {
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(customPresets))
+  }, [customPresets])
+
+  function savePreset(label: string) {
+    const trimmed = label.trim()
+    if (!trimmed || customPresets.includes(trimmed)) return
+    setCustomPresets(prev => [...prev, trimmed])
+  }
+
+  function removePreset(label: string) {
+    setCustomPresets(prev => prev.filter(p => p !== label))
+  }
 
   // Slots per day: map DayOfWeek → SlotDraft[]
   const [slotsByDay, setSlotsByDay] = useState<Record<DayOfWeek, SlotDraft[]>>(
@@ -386,12 +413,54 @@ export default function SchedulePage() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Input
-                            value={slot.label ?? ''}
-                            onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
-                            placeholder={BLOCK_TYPE_META[slot.blockType].label + '...'}
-                            className="h-7 text-xs px-2"
-                          />
+                          <div className="flex flex-col gap-1">
+                            {/* Preset chips */}
+                            <div className="flex flex-wrap gap-1">
+                              {customPresets.map(preset => (
+                                <span key={preset} className="group/chip flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateSlot(dow, slot._key, { label: preset })}
+                                    className={cn(
+                                      "text-[10px] px-1.5 py-0.5 rounded-full border transition-colors",
+                                      slot.label === preset
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                    )}
+                                  >
+                                    {preset}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removePreset(preset)}
+                                    className="opacity-0 group-hover/chip:opacity-100 transition-opacity text-muted-foreground/50 hover:text-destructive"
+                                    title="Удалить пресет"
+                                  >
+                                    <XIcon className="h-2.5 w-2.5" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                            {/* Input + save button */}
+                            <div className="flex gap-1">
+                              <Input
+                                value={slot.label ?? ''}
+                                onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
+                                placeholder="Введите название..."
+                                className="h-7 text-xs px-2 flex-1"
+                              />
+                              {slot.label && slot.label.trim() && !customPresets.includes(slot.label.trim()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => savePreset(slot.label!)}
+                                  className="h-7 px-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                                  title="Сохранить как пресет"
+                                >
+                                  <BookmarkIcon className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
 
