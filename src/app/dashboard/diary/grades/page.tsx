@@ -224,7 +224,7 @@ export default function GradesPage() {
             <p className="text-sm text-muted-foreground/60">Заполняйте оценки в дневнике, и они появятся здесь.</p>
           </div>
         ) : (
-          <div className="rounded-xl border border-border overflow-hidden">
+          <div className="rounded-xl border border-border overflow-x-auto">
             <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: "140px" }} />
@@ -239,7 +239,7 @@ export default function GradesPage() {
                       {d}
                     </th>
                   ))}
-                  <th className="py-2 text-center text-xs font-semibold border-l border-border">Итог</th>
+                  <th className="py-2 text-center text-xs font-semibold border-l border-border sticky right-0 z-20 bg-muted/80 backdrop-blur-sm">Итог</th>
                 </tr>
               </thead>
               <tbody>
@@ -259,7 +259,7 @@ export default function GradesPage() {
                         </td>
                       )
                     })}
-                    <td className="py-2 text-center border-l border-border">
+                    <td className="py-2 text-center border-l border-border sticky right-0 z-10" style={{ backgroundColor: "hsl(var(--background))" }}>
                       <span className={cn("text-xs font-bold tabular-nums", gradeClass(row.monthGrade))}>
                         {row.monthGrade === null ? "—" : row.monthGrade.toFixed(1)}
                       </span>
@@ -382,7 +382,7 @@ export default function GradesPage() {
                       {MONTH_SHORT[m]}
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-center font-semibold border-l border-border min-w-[72px]">Год</th>
+                  <th className="px-4 py-3 text-center font-semibold border-l border-border min-w-[72px] sticky right-0 z-20 bg-muted/80 backdrop-blur-sm">Год</th>
                 </tr>
               </thead>
               <tbody>
@@ -399,7 +399,7 @@ export default function GradesPage() {
                         </span>
                       </td>
                     ))}
-                    <td className="px-4 py-3 text-center border-l border-border">
+                    <td className="px-4 py-3 text-center border-l border-border sticky right-0 z-10" style={{ backgroundColor: "hsl(var(--background))" }}>
                       <span className={cn("inline-flex items-center justify-center rounded-md px-2.5 py-1 text-sm font-bold tabular-nums border", yearlyBg(row.yearlyGrade), gradeClass(row.yearlyGrade))}>
                         {row.yearlyGrade === null ? "" : row.yearlyGrade.toFixed(1)}
                       </span>
@@ -419,7 +419,7 @@ export default function GradesPage() {
                       </td>
                     )
                   })}
-                  <td className="px-4 py-3 text-center border-l border-border">
+                  <td className="px-4 py-3 text-center border-l border-border sticky right-0 z-10 bg-muted/80 backdrop-blur-sm">
                     {(() => {
                       const all = yearRows.map(r => r.yearlyGrade).filter((v): v is number => v !== null)
                       const avg = all.length === 0 ? null : Math.round(all.reduce((a, b) => a + b, 0) / all.length * 10) / 10
