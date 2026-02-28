@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -7,9 +7,26 @@ import { Toaster } from '@/components/ui/sonner'
 
 const inter = Inter({ subsets: ['latin'] })
 
+export const viewport: Viewport = {
+  themeColor: '#3b82f6',
+  viewportFit: 'cover',
+}
+
 export const metadata: Metadata = {
-  title: 'Time Schedule Platform',
-  description: 'A modern platform for managing schedules and time tracking',
+  title: 'TimelyPlan',
+  description: 'Школьный дневник, планировщик и не только',
+  applicationName: 'TimelyPlan',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'TimelyPlan',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    apple: '/icons/icon-192.svg',
+  },
 }
 
 export default function RootLayout({
