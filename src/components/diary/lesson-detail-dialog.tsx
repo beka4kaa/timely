@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { GradeCell } from "./grade-cell"
 import type { DiaryLesson, Grade, LessonGrades } from "@/types/diary"
-import { isTestBlock, isLessonBlock } from "@/types/diary"
+import { isTestBlock, isLessonBlock, isFeynmanBlock } from "@/types/diary"
 import { cn } from "@/lib/utils"
 
 interface Subject { id: string; name: string; emoji: string }
@@ -72,19 +72,20 @@ export function LessonDetailDialog({
 
   const isLesson = isLessonBlock(localLesson?.blockType)
   const isTest = isTestBlock(localLesson?.blockType)
+  const isFeynman = isFeynmanBlock(localLesson?.blockType)
 
   useEffect(() => {
     if (lesson) setLocalLesson(lesson)
   }, [lesson])
 
-  // Load subjects when test block opens
+  // Load subjects when test or feynman block opens
   useEffect(() => {
-    if (!open || !isTest) return
+    if (!open || (!isTest && !isFeynman)) return
     fetch("/api/subjects").then(r => r.json()).then(data => {
       const list = Array.isArray(data) ? data : (data.results ?? data.subjects ?? [])
       setSubjects(list.map((s: any) => ({ id: String(s.id), name: s.name, emoji: s.emoji ?? "📚" })))
     }).catch(() => {})
-  }, [open, isTest])
+  }, [open, isTest, isFeynman])
 
   if (!localLesson) return null
 
@@ -122,8 +123,10 @@ export function LessonDetailDialog({
 
   const grades = localLesson.grades
   const gradeValues = isLesson
-    ? Object.values(grades).filter((v): v is number => v !== null)
-    : (grades.test !== null ? [grades.test] : [])
+    ? (grades.exercises !== null ? [grades.exercises] : [])
+    : isFeynman
+      ? (grades.retelling !== null ? [grades.retelling] : [])
+      : (grades.test !== null ? [grades.test] : [])
   const avg = gradeValues.length ? gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length : null
   const avgRounded = avg !== null ? Math.round(avg) as 1 | 2 | 3 | 4 | 5 : null
   const linkedIds = localLesson.linkedSubjectIds ?? []
@@ -150,21 +153,12 @@ export function LessonDetailDialog({
 
         <div className="flex flex-col gap-4">
 
-          {/* LESSON: 3 grade cells + homework + notes */}
+          {/* LESSON: exercises grade + homework + notes */}
           {isLesson && (
             <>
-              <div className="grid grid-cols-3 gap-2">
-                {(["retelling", "exercises", "test"] as const).map(type => {
-                  const labels = { retelling: "Пересказ", exercises: "Упражнения", test: "Тест" }
-                  return (
-                    <div key={type} className="flex flex-col items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
-                        {labels[type]}
-                      </span>
-                      <GradeCell type={type} value={grades[type]} onSave={val => handleGrade(type, val)} />
-                    </div>
-                  )
-                })}
+              <div className="flex flex-col items-center gap-1.5 self-start">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Упражнения</span>
+                <GradeCell type="exercises" value={grades.exercises} onSave={val => handleGrade("exercises", val)} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label className="text-xs">Описание</Label>
@@ -181,6 +175,53 @@ export function LessonDetailDialog({
                   value={localLesson.notes}
                   onChange={e => handleField("notes", e.target.value)}
                   placeholder="Дополнительные заметки..."
+                  className="text-sm resize-none min-h-[60px]"
+                />
+              </div>
+            </>
+          )}
+
+          {/* FEYNMAN: retelling grade + subject picker + notes */}
+          {isFeynman && (
+            <>
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Пересказ</span>
+                  <GradeCell type="retelling" value={grades.retelling} onSave={val => handleGrade("retelling", val)} />
+                </div>
+                <p className="text-xs text-muted-foreground flex-1">Выберите предметы, к которым относится этот пересказ</p>
+              </div>
+              {subjects.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <Label className="text-xs">Предметы</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {subjects.map(s => {
+                      const selected = linkedIds.includes(s.id)
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleLinkedSubject(s.id)}
+                          className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded-md text-xs border transition-colors",
+                            selected
+                              ? "bg-primary/15 border-primary/50 text-primary font-medium"
+                              : "border-border text-muted-foreground hover:bg-muted"
+                          )}
+                        >
+                          <span>{s.emoji}</span>
+                          <span>{s.name}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs">Заметки</Label>
+                <Textarea
+                  value={localLesson.notes}
+                  onChange={e => handleField("notes", e.target.value)}
+                  placeholder="Темы, трудные места..."
                   className="text-sm resize-none min-h-[60px]"
                 />
               </div>

@@ -77,29 +77,37 @@ export const GRADE_TYPE_LABELS: Record<keyof LessonGrades, string> = {
  */
 export type BlockType = string
 
-export type PresetBlockType = 'lesson' | 'break' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'other'
+export type PresetBlockType = 'lesson' | 'break' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'feynman' | 'error-review' | 'other'
 
 export const BLOCK_TYPE_META: Record<PresetBlockType, { label: string; emoji: string; color: string }> = {
-  lesson:          { label: 'Урок',            emoji: '📚', color: 'text-blue-400' },
-  break:           { label: 'Перерыв',        emoji: '☕', color: 'text-slate-400' },
-  focus:           { label: 'Фокус',          emoji: '🎯', color: 'text-violet-400' },
-  test:            { label: 'Тест',             emoji: '📝', color: 'text-orange-400' },
-  'weakness-test': { label: 'Weakness Test',  emoji: '🔴', color: 'text-red-400' },
-  'cumulative-test':{ label: 'Cumulative Test', emoji: '🔴', color: 'text-rose-400' },
-  'error-test':    { label: 'Error Test',     emoji: '🔴', color: 'text-pink-400' },
-  other:           { label: 'Другое',          emoji: '🔖', color: 'text-green-400' },
+  lesson:            { label: 'Урок',            emoji: '📚', color: 'text-blue-400' },
+  break:             { label: 'Перерыв',         emoji: '☕', color: 'text-slate-400' },
+  focus:             { label: 'Фокус',           emoji: '🎯', color: 'text-violet-400' },
+  test:              { label: 'Тест',            emoji: '📝', color: 'text-orange-400' },
+  'weakness-test':   { label: 'Weakness Test',   emoji: '🔴', color: 'text-red-400' },
+  'cumulative-test': { label: 'Cumulative Test', emoji: '🔴', color: 'text-rose-400' },
+  'error-test':      { label: 'Error Test',      emoji: '🔴', color: 'text-pink-400' },
+  feynman:           { label: 'Feynman',         emoji: '🧠', color: 'text-purple-400' },
+  'error-review':    { label: 'Разбор Ошибок',  emoji: '🔍', color: 'text-amber-400' },
+  other:             { label: 'Другое',          emoji: '🔖', color: 'text-green-400' },
 }
 
-export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'other']
+export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'feynman', 'error-review', 'other']
 
-/** Block types that show a single test grade in the diary */
-export const TEST_BLOCK_TYPES: string[] = ['test', 'weakness-test', 'cumulative-test', 'error-test']
+/** Block types that show a single test grade + subject picker */
+export const TEST_BLOCK_TYPES: string[] = ['test', 'weakness-test', 'cumulative-test', 'error-test', 'error-review']
+
+/** Block types that show a retelling (Пересказ) grade + subject picker */
+export const FEYNMAN_BLOCK_TYPES: string[] = ['feynman']
 
 export function isTestBlock(blockType?: string): boolean {
   return TEST_BLOCK_TYPES.includes(blockType ?? '')
 }
 export function isLessonBlock(blockType?: string): boolean {
   return !blockType || blockType === 'lesson'
+}
+export function isFeynmanBlock(blockType?: string): boolean {
+  return FEYNMAN_BLOCK_TYPES.includes(blockType ?? '')
 }
 
 export interface TemplateLessonSlot {

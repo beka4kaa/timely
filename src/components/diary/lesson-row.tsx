@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { GradeCell } from "./grade-cell"
 import { LessonDetailDialog } from "./lesson-detail-dialog"
 import type { DiaryLesson, Grade, LessonGrades } from "@/types/diary"
-import { GRADE_TYPE_LABELS, isTestBlock, isLessonBlock } from "@/types/diary"
+import { isTestBlock, isLessonBlock, isFeynmanBlock } from "@/types/diary"
 import { cn } from "@/lib/utils"
 
 interface LessonRowProps {
@@ -38,7 +38,8 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
 
   const isLesson = isLessonBlock(lesson.blockType)
   const isTest = isTestBlock(lesson.blockType)
-  const showGrades = isLesson || isTest
+  const isFeynman = isFeynmanBlock(lesson.blockType)
+  const showGrades = isLesson || isTest || isFeynman
 
   useEffect(() => { setHw(lesson.homework) }, [lesson.homework])
   useEffect(() => { setNotes(lesson.notes) }, [lesson.notes])
@@ -58,14 +59,10 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   }
 
   const avgGrade = (() => {
-    if (!showGrades) return null
-    if (isLesson) {
-      const vals = Object.values(lesson.grades).filter(v => v !== null) as number[]
-      if (!vals.length) return null
-      return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)
-    }
-    // test block — just the test score
-    return lesson.grades.test !== null ? String(lesson.grades.test) : null
+    if (isLesson) return lesson.grades.exercises !== null ? String(lesson.grades.exercises) : null
+    if (isFeynman) return lesson.grades.retelling !== null ? String(lesson.grades.retelling) : null
+    if (isTest) return lesson.grades.test !== null ? String(lesson.grades.test) : null
+    return null
   })()
 
   return (
@@ -118,30 +115,22 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
         <div className="min-w-[28px] text-center">
           {avgGrade && (
             <span className="text-xs font-semibold text-muted-foreground tabular-nums">
-              {isLesson ? "∅" : ""}{avgGrade}
+              {avgGrade}
             </span>
           )}
         </div>
 
-        {/* Grade cells */}
-        <div className="flex gap-1.5 items-center">
-          {isLesson && (Object.keys(GRADE_TYPE_LABELS) as Array<keyof LessonGrades>).map(type => (
-            <GradeCell
-              key={type}
-              type={type}
-              value={lesson.grades[type]}
-              onSave={val => handleGrade(type, val)}
-            />
-          ))}
-          {isTest && (
-            <GradeCell
-              type="test"
-              value={lesson.grades.test}
-              onSave={val => handleGrade("test", val)}
-            />
+        {/* Grade cell — one per block type */}
+        <div className="flex items-center w-10 justify-center">
+          {isLesson && (
+            <GradeCell type="exercises" value={lesson.grades.exercises} onSave={val => handleGrade("exercises", val)} />
           )}
-          {/* Non-graded blocks: spacer to keep alignment */}
-          {!showGrades && <div className="w-[97px]" />}
+          {isFeynman && (
+            <GradeCell type="retelling" value={lesson.grades.retelling} onSave={val => handleGrade("retelling", val)} />
+          )}
+          {isTest && (
+            <GradeCell type="test" value={lesson.grades.test} onSave={val => handleGrade("test", val)} />
+          )}
         </div>
       </div>
 

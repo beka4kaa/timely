@@ -34,10 +34,8 @@ export function DiaryDayCard({ day, weekId, isToday }: DiaryDayCardProps) {
             Предмет / Д/З
           </div>
           <div className="min-w-[28px]" />
-          <div className="flex gap-1.5 text-[9px] text-muted-foreground font-medium uppercase tracking-wide">
-            <span className="w-10 text-center">Пер.</span>
-            <span className="w-10 text-center">Упр.</span>
-            <span className="w-10 text-center">Тест</span>
+          <div className="w-10 text-[9px] text-muted-foreground font-medium uppercase tracking-wide text-center">
+            Оценка
           </div>
         </div>
       )}

@@ -11,7 +11,8 @@
  *   calcYearStats   — агрегатор: принимает DiaryWeek[] за год, возвращает статистику по всем предметам
  */
 
-import type { DiaryWeek, DiaryLesson, LessonGrades, Grade } from '@/types/diary'
+import type { DiaryWeek, LessonGrades } from '@/types/diary'
+import { isLessonBlock, isTestBlock, isFeynmanBlock } from '@/types/diary'
 
 // ─────────────────────────────────────────────────────────────────
 //  Примитивы
@@ -38,8 +39,16 @@ function round1(v: number | null): number | null {
  * Считается по заполненным полям (пересказ / упражнения / тест).
  * Возвращает null если ни одна оценка не выставлена.
  */
-export function lessonGrade(grades: LessonGrades): number | null {
-  return round1(avg([grades.retelling, grades.exercises, grades.test]))
+/**
+ * Grade value for a single lesson depending on block type:
+ *  - lesson  → exercises
+ *  - feynman → retelling
+ *  - test/*  → test
+ */
+export function lessonGrade(grades: LessonGrades, blockType?: string): number | null {
+  if (isLessonBlock(blockType)) return grades.exercises
+  if (isFeynmanBlock(blockType)) return grades.retelling
+  return grades.test
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -80,41 +89,68 @@ export function calcYearStats(
   weeks: DiaryWeek[],
   year = new Date().getFullYear(),
 ): SubjectYearStat[] {
-  // subjectId → month(0-11) → список lesson-grade-значений
+  // Pass 1: build subject metadata registry from lesson blocks
+  const subjectMeta = new Map<string, { name: string; emoji: string; color: string }>()
+  for (const week of weeks) {
+    for (const day of week.days) {
+      for (const lesson of day.lessons) {
+        if (lesson.subjectId && isLessonBlock(lesson.blockType)) {
+          if (!subjectMeta.has(lesson.subjectId)) {
+            subjectMeta.set(lesson.subjectId, {
+              name: lesson.subjectName,
+              emoji: lesson.subjectEmoji,
+              color: lesson.subjectColor,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  // subjectId → month(0-11) → list of grade values
   const accumulator = new Map<
     string,
-    {
-      name: string
-      emoji: string
-      color: string
-      byMonth: Map<number, number[]>
-    }
+    { name: string; emoji: string; color: string; byMonth: Map<number, number[]> }
   >()
+
+  function pushYear(id: string, name: string, emoji: string, color: string, grade: number, month: number) {
+    if (!accumulator.has(id)) {
+      accumulator.set(id, { name, emoji, color, byMonth: new Map() })
+    }
+    const subj = accumulator.get(id)!
+    if (!subj.byMonth.has(month)) subj.byMonth.set(month, [])
+    subj.byMonth.get(month)!.push(grade)
+  }
 
   for (const week of weeks) {
     for (const day of week.days) {
-      // Берём только уроки нужного года
       const dayYear = new Date(day.date).getFullYear()
       if (dayYear !== year) continue
-
-      const month = new Date(day.date).getMonth() // 0-11
+      const month = new Date(day.date).getMonth()
 
       for (const lesson of day.lessons) {
-        const grade = lessonGrade(lesson.grades)
-        if (grade === null) continue // урок без оценок — не учитываем
+        const bt = lesson.blockType ?? 'lesson'
 
-        if (!accumulator.has(lesson.subjectId)) {
-          accumulator.set(lesson.subjectId, {
-            name: lesson.subjectName,
-            emoji: lesson.subjectEmoji,
-            color: lesson.subjectColor,
-            byMonth: new Map(),
-          })
+        if (isLessonBlock(bt)) {
+          const grade = lesson.grades.exercises
+          if (grade === null || !lesson.subjectId) continue
+          pushYear(lesson.subjectId, lesson.subjectName, lesson.subjectEmoji, lesson.subjectColor, grade, month)
+        } else if (isFeynmanBlock(bt)) {
+          const grade = lesson.grades.retelling
+          if (grade === null) continue
+          for (const id of lesson.linkedSubjectIds ?? []) {
+            const meta = subjectMeta.get(id)
+            if (meta) pushYear(id, meta.name, meta.emoji, meta.color, grade, month)
+          }
+        } else if (isTestBlock(bt)) {
+          const grade = lesson.grades.test
+          if (grade === null) continue
+          for (const id of lesson.linkedSubjectIds ?? []) {
+            const meta = subjectMeta.get(id)
+            if (meta) pushYear(id, meta.name, meta.emoji, meta.color, grade, month)
+          }
         }
-
-        const subj = accumulator.get(lesson.subjectId)!
-        if (!subj.byMonth.has(month)) subj.byMonth.set(month, [])
-        subj.byMonth.get(month)!.push(grade)
+        // break / focus / other: skip
       }
     }
   }
@@ -122,15 +158,12 @@ export function calcYearStats(
   const result: SubjectYearStat[] = []
 
   for (const [subjectId, data] of Array.from(accumulator.entries())) {
-    // Сформировать массив из 12 месяцев
     const monthlyGrades: (number | null)[] = Array.from({ length: 12 }, (_, m) => {
       const grades = data.byMonth.get(m)
       if (!grades || grades.length === 0) return null
       return round1(avg(grades))
     })
-
     const yearlyGrade = round1(avg(monthlyGrades))
-
     result.push({
       subjectId,
       subjectName: data.name,
@@ -141,7 +174,6 @@ export function calcYearStats(
     })
   }
 
-  // Стабильная сортировка: сначала предметы с лучшей годовой оценкой
   result.sort((a, b) => {
     if (a.yearlyGrade === null && b.yearlyGrade === null) return 0
     if (a.yearlyGrade === null) return 1
@@ -184,26 +216,61 @@ export function calcMonthStats(
     { name: string; emoji: string; color: string; byDay: Map<string, number[]> }
   >()
 
+  // Pass 1: build subject metadata registry from lesson blocks
+  const subjectMeta = new Map<string, { name: string; emoji: string; color: string }>()
+  for (const week of weeks) {
+    for (const day of week.days) {
+      for (const lesson of day.lessons) {
+        if (lesson.subjectId && isLessonBlock(lesson.blockType)) {
+          if (!subjectMeta.has(lesson.subjectId)) {
+            subjectMeta.set(lesson.subjectId, {
+              name: lesson.subjectName,
+              emoji: lesson.subjectEmoji,
+              color: lesson.subjectColor,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  function pushMonth(id: string, name: string, emoji: string, color: string, grade: number, date: string) {
+    if (!acc.has(id)) {
+      acc.set(id, { name, emoji, color, byDay: new Map() })
+    }
+    const subj = acc.get(id)!
+    if (!subj.byDay.has(date)) subj.byDay.set(date, [])
+    subj.byDay.get(date)!.push(grade)
+  }
+
   for (const week of weeks) {
     for (const day of week.days) {
       const d = new Date(day.date)
       if (d.getFullYear() !== year || d.getMonth() !== month) continue
 
       for (const lesson of day.lessons) {
-        const grade = lessonGrade(lesson.grades)
-        if (grade === null) continue
+        const bt = lesson.blockType ?? 'lesson'
 
-        if (!acc.has(lesson.subjectId)) {
-          acc.set(lesson.subjectId, {
-            name: lesson.subjectName,
-            emoji: lesson.subjectEmoji,
-            color: lesson.subjectColor,
-            byDay: new Map(),
-          })
+        if (isLessonBlock(bt)) {
+          const grade = lesson.grades.exercises
+          if (grade === null || !lesson.subjectId) continue
+          pushMonth(lesson.subjectId, lesson.subjectName, lesson.subjectEmoji, lesson.subjectColor, grade, day.date)
+        } else if (isFeynmanBlock(bt)) {
+          const grade = lesson.grades.retelling
+          if (grade === null) continue
+          for (const id of lesson.linkedSubjectIds ?? []) {
+            const meta = subjectMeta.get(id)
+            if (meta) pushMonth(id, meta.name, meta.emoji, meta.color, grade, day.date)
+          }
+        } else if (isTestBlock(bt)) {
+          const grade = lesson.grades.test
+          if (grade === null) continue
+          for (const id of lesson.linkedSubjectIds ?? []) {
+            const meta = subjectMeta.get(id)
+            if (meta) pushMonth(id, meta.name, meta.emoji, meta.color, grade, day.date)
+          }
         }
-        const subj = acc.get(lesson.subjectId)!
-        if (!subj.byDay.has(day.date)) subj.byDay.set(day.date, [])
-        subj.byDay.get(day.date)!.push(grade)
+        // break / focus / other: skip
       }
     }
   }
