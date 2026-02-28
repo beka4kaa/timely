@@ -18,7 +18,7 @@ import type {
   LessonFieldUpdate,
   YoutubeLink,
 } from '@/types/diary'
-import { DAYS_ORDER } from '@/types/diary'
+import { DAYS_ORDER, BLOCK_TYPE_META } from '@/types/diary'
 
 // ── Django API helper ────────────────────────────────────────
 
@@ -157,16 +157,39 @@ export function buildWeekSnapshot(
       : []
 
     const lessons: DiaryLesson[] = slots.map(slot => {
-      const subject = resolveSubject(slot.subjectId)
+      const bt = slot.blockType ?? 'lesson'
+      const isLesson = bt === 'lesson'
+
+      let subjectName = ''
+      let subjectEmoji = '🔖'
+      let subjectColor = '#64748b'
+      let subjectId = ''
+
+      if (isLesson) {
+        const subject = resolveSubject(slot.subjectId)
+        subjectName = subject.name
+        subjectEmoji = subject.emoji
+        subjectColor = subject.color
+        subjectId = slot.subjectId
+      } else {
+        const meta = (BLOCK_TYPE_META as Record<string, { label: string; emoji: string; color: string }>)[bt]
+        subjectName = slot.label || (meta?.label ?? bt)
+        subjectEmoji = meta?.emoji ?? '🔖'
+        subjectColor = '#64748b'
+      }
+
       return {
         id: crypto.randomUUID(),
         lessonNumber: slot.lessonNumber,
         startTime: slot.startTime,
         endTime: slot.endTime,
-        subjectId: slot.subjectId,
-        subjectName: subject.name,
-        subjectEmoji: subject.emoji,
-        subjectColor: subject.color,
+        blockType: bt,
+        blockLabel: slot.label ?? '',
+        linkedSubjectIds: [],
+        subjectId,
+        subjectName,
+        subjectEmoji,
+        subjectColor,
         grades: { retelling: null, exercises: null, test: null },
         homework: '',
         notes: '',
@@ -322,6 +345,33 @@ export async function updateLessonField(
         updatedAt: now,
         lessons: d.lessons.map(l =>
           l.id !== update.lessonId ? l : { ...l, [update.field]: update.value }
+        ),
+      }
+    ),
+  }
+  await replaceWeek(userId, weekId, updated)
+  return updated
+}
+
+export async function updateLinkedSubjects(
+  userId: string,
+  weekId: string,
+  dayId: string,
+  lessonId: string,
+  linkedSubjectIds: string[],
+): Promise<DiaryWeek | null> {
+  const week = await getWeekById(userId, weekId)
+  if (!week) return null
+
+  const now = new Date().toISOString()
+  const updated: DiaryWeek = {
+    ...week,
+    days: week.days.map(d =>
+      d.id !== dayId ? d : {
+        ...d,
+        updatedAt: now,
+        lessons: d.lessons.map(l =>
+          l.id !== lessonId ? l : { ...l, linkedSubjectIds }
         ),
       }
     ),

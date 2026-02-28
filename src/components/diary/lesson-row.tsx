@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { GradeCell } from "./grade-cell"
 import { LessonDetailDialog } from "./lesson-detail-dialog"
 import type { DiaryLesson, Grade, LessonGrades } from "@/types/diary"
-import { GRADE_TYPE_LABELS } from "@/types/diary"
+import { GRADE_TYPE_LABELS, isTestBlock, isLessonBlock } from "@/types/diary"
 import { cn } from "@/lib/utils"
 
 interface LessonRowProps {
@@ -35,6 +35,10 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   const [hwTimer, setHwTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
 
+  const isLesson = isLessonBlock(lesson.blockType)
+  const isTest = isTestBlock(lesson.blockType)
+  const showGrades = isLesson || isTest
+
   useEffect(() => { setHw(lesson.homework) }, [lesson.homework])
 
   async function handleGrade(type: keyof LessonGrades, value: Grade) {
@@ -52,9 +56,14 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   }
 
   const avgGrade = (() => {
-    const vals = Object.values(lesson.grades).filter(v => v !== null) as number[]
-    if (!vals.length) return null
-    return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)
+    if (!showGrades) return null
+    if (isLesson) {
+      const vals = Object.values(lesson.grades).filter(v => v !== null) as number[]
+      if (!vals.length) return null
+      return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1)
+    }
+    // test block — just the test score
+    return lesson.grades.test !== null ? String(lesson.grades.test) : null
   })()
 
   return (
@@ -67,7 +76,7 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
           <span className="text-[10px] text-muted-foreground leading-none">{lesson.endTime}</span>
         </div>
 
-        {/* Subject + inline description */}
+        {/* Subject / block name + inline description */}
         <div className="flex items-center gap-2 flex-1 min-w-0 relative">
           <button
             onClick={() => setDetailOpen(true)}
@@ -83,31 +92,33 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
             >
               {lesson.subjectName}
             </button>
-            <input
-              value={hw}
-              onChange={e => handleHwChange(e.target.value)}
-              placeholder="Описание..."
-              className={cn(
-                "w-full text-xs text-muted-foreground bg-transparent border-0 border-b border-transparent",
-                "focus:border-primary/40 focus:outline-none focus:text-foreground transition-colors",
-                "placeholder:text-muted-foreground/40 mt-0.5 pb-px"
-              )}
-            />
+            {isLesson && (
+              <input
+                value={hw}
+                onChange={e => handleHwChange(e.target.value)}
+                placeholder="Описание..."
+                className={cn(
+                  "w-full text-xs text-muted-foreground bg-transparent border-0 border-b border-transparent",
+                  "focus:border-primary/40 focus:outline-none focus:text-foreground transition-colors",
+                  "placeholder:text-muted-foreground/40 mt-0.5 pb-px"
+                )}
+              />
+            )}
           </div>
         </div>
 
-        {/* Average badge */}
+        {/* Average / score badge */}
         <div className="min-w-[28px] text-center">
           {avgGrade && (
             <span className="text-xs font-semibold text-muted-foreground tabular-nums">
-              {"\u2300"}{avgGrade}
+              {isLesson ? "∅" : ""}{avgGrade}
             </span>
           )}
         </div>
 
         {/* Grade cells */}
         <div className="flex gap-1.5 items-center">
-          {(Object.keys(GRADE_TYPE_LABELS) as Array<keyof LessonGrades>).map(type => (
+          {isLesson && (Object.keys(GRADE_TYPE_LABELS) as Array<keyof LessonGrades>).map(type => (
             <GradeCell
               key={type}
               type={type}
@@ -115,6 +126,15 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
               onSave={val => handleGrade(type, val)}
             />
           ))}
+          {isTest && (
+            <GradeCell
+              type="test"
+              value={lesson.grades.test}
+              onSave={val => handleGrade("test", val)}
+            />
+          )}
+          {/* Non-graded blocks: spacer to keep alignment */}
+          {!showGrades && <div className="w-[97px]" />}
         </div>
       </div>
 

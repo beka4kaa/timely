@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { updateGrade, updateLessonField } from '@/lib/diary-store'
+import { updateGrade, updateLessonField, updateLinkedSubjects } from '@/lib/diary-store'
 import type { Grade } from '@/types/diary'
 
 /**
@@ -42,6 +42,13 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid field' }, { status: 400 })
     }
     const updated = await updateLessonField(userId, weekId, dayId, { lessonId, field, value })
+    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json(updated)
+  }
+
+  // Linked subjects update (for test blocks)
+  if ('linkedSubjectIds' in body) {
+    const updated = await updateLinkedSubjects(userId, weekId, dayId, lessonId, body.linkedSubjectIds)
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(updated)
   }

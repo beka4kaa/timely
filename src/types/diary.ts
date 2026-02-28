@@ -77,17 +77,30 @@ export const GRADE_TYPE_LABELS: Record<keyof LessonGrades, string> = {
  */
 export type BlockType = string
 
-export type PresetBlockType = 'lesson' | 'break' | 'focus' | 'test' | 'other'
+export type PresetBlockType = 'lesson' | 'break' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'other'
 
 export const BLOCK_TYPE_META: Record<PresetBlockType, { label: string; emoji: string; color: string }> = {
-  lesson:  { label: 'Урок',     emoji: '📚', color: 'text-blue-400' },
-  break:   { label: 'Перерыв', emoji: '☕', color: 'text-slate-400' },
-  focus:   { label: 'Фокус',   emoji: '🎯', color: 'text-violet-400' },
-  test:    { label: 'Тест',    emoji: '📝', color: 'text-orange-400' },
-  other:   { label: 'Другое',  emoji: '🔖', color: 'text-green-400' },
+  lesson:          { label: 'Урок',            emoji: '📚', color: 'text-blue-400' },
+  break:           { label: 'Перерыв',        emoji: '☕', color: 'text-slate-400' },
+  focus:           { label: 'Фокус',          emoji: '🎯', color: 'text-violet-400' },
+  test:            { label: 'Тест',             emoji: '📝', color: 'text-orange-400' },
+  'weakness-test': { label: 'Weakness Test',  emoji: '🔴', color: 'text-red-400' },
+  'cumulative-test':{ label: 'Cumulative Test', emoji: '🔴', color: 'text-rose-400' },
+  'error-test':    { label: 'Error Test',     emoji: '🔴', color: 'text-pink-400' },
+  other:           { label: 'Другое',          emoji: '🔖', color: 'text-green-400' },
 }
 
-export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'focus', 'test', 'other']
+export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'other']
+
+/** Block types that show a single test grade in the diary */
+export const TEST_BLOCK_TYPES: string[] = ['test', 'weakness-test', 'cumulative-test', 'error-test']
+
+export function isTestBlock(blockType?: string): boolean {
+  return TEST_BLOCK_TYPES.includes(blockType ?? '')
+}
+export function isLessonBlock(blockType?: string): boolean {
+  return !blockType || blockType === 'lesson'
+}
 
 export interface TemplateLessonSlot {
   id: string
@@ -139,6 +152,11 @@ export interface DiaryLesson {
   lessonNumber: number
   startTime: string        // "08:00"
   endTime: string          // "08:45"
+
+  // Block type info (for non-lesson slots)
+  blockType?: string       // 'lesson' | 'test' | 'weakness-test' | ... | custom
+  blockLabel?: string      // display label for non-lesson blocks
+  linkedSubjectIds?: string[] // for test blocks: which subjects this test is for
 
   // Subject reference + denormalized snapshot fields
   subjectId: string
