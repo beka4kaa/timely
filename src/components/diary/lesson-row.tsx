@@ -32,6 +32,7 @@ async function patchField(weekId: string, dayId: string, lessonId: string, field
 
 export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   const [hw, setHw] = useState(lesson.homework)
+  const [notes, setNotes] = useState(lesson.notes)
   const [hwTimer, setHwTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
 
@@ -40,6 +41,7 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
   const showGrades = isLesson || isTest
 
   useEffect(() => { setHw(lesson.homework) }, [lesson.homework])
+  useEffect(() => { setNotes(lesson.notes) }, [lesson.notes])
 
   async function handleGrade(type: keyof LessonGrades, value: Grade) {
     const updated: DiaryLesson = { ...lesson, grades: { ...lesson.grades, [type]: value } }
@@ -104,6 +106,11 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
                 )}
               />
             )}
+            {notes && (
+              <p className="text-[11px] font-light text-muted-foreground/70 truncate mt-0.5 leading-snug italic">
+                {notes}
+              </p>
+            )}
           </div>
         </div>
 
@@ -147,6 +154,7 @@ export function LessonRow({ lesson, weekId, dayId, onChange }: LessonRowProps) {
         onUpdate={updated => {
           onChange(updated)
           setHw(updated.homework)
+          setNotes(updated.notes)
         }}
       />
     </>
