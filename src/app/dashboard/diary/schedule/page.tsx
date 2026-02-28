@@ -10,8 +10,7 @@ import {
   Settings2Icon,
   CheckIcon,
   GripVertical,
-  BookmarkIcon,
-  XIcon,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,10 +22,166 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek, BlockType } from "@/types/diary"
-import { DAYS_ORDER, DAY_OF_WEEK_LABELS, BLOCK_TYPE_META } from "@/types/diary"
+import { DAYS_ORDER, DAY_OF_WEEK_LABELS, BLOCK_TYPE_META, PRESET_BLOCK_TYPES } from "@/types/diary"
+
+// ── Custom preset persistence ──────────────────────────────────────
+const CUSTOM_KEY = 'schedule_custom_block_types'
+
+interface CustomPreset { value: string; label: string; emoji: string }
+
+function loadCustomPresets(): CustomPreset[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch { return [] }
+}
+
+function saveCustomPresets(presets: CustomPreset[]) {
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(presets))
+}
+
+// ── BlockTypeCombobox ──────────────────────────────────────────────
+function getBlockLabel(type: BlockType, label: string, customs: CustomPreset[]) {
+  if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].label
+  const custom = customs.find(c => c.value === type)
+  return custom?.label ?? label ?? type
+}
+
+function getBlockEmoji(type: BlockType, customs: CustomPreset[]) {
+  if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].emoji
+  return customs.find(c => c.value === type)?.emoji ?? '🔖'
+}
+
+function getBlockColor(type: BlockType) {
+  if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].color
+  return 'text-pink-400'
+}
+
+interface BlockTypeComboboxProps {
+  value: BlockType
+  onValueChange: (type: BlockType, label: string) => void
+  customs: CustomPreset[]
+  onCustomsChange: (presets: CustomPreset[]) => void
+}
+
+function BlockTypeCombobox({ value, onValueChange, customs, onCustomsChange }: BlockTypeComboboxProps) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const allOptions = [
+    ...PRESET_BLOCK_TYPES.map(t => ({ value: t, label: BLOCK_TYPE_META[t].label, emoji: BLOCK_TYPE_META[t].emoji, isPreset: true })),
+    ...customs.map(c => ({ ...c, isPreset: false })),
+  ]
+
+  const filtered = query
+    ? allOptions.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
+    : allOptions
+
+  const exactMatch = allOptions.some(o => o.label.toLowerCase() === query.toLowerCase())
+  const canCreate = query.trim().length > 0 && !exactMatch
+
+  function select(opt: { value: string; label: string }) {
+    onValueChange(opt.value, opt.label)
+    setQuery('')
+    setOpen(false)
+  }
+
+  function create() {
+    const newPreset: CustomPreset = {
+      value: query.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-Ѐ-ӿ]/gi, ''),
+      label: query.trim(),
+      emoji: '🔖',
+    }
+    const updated = [...customs, newPreset]
+    onCustomsChange(updated)
+    saveCustomPresets(updated)
+    onValueChange(newPreset.value, newPreset.label)
+    setQuery('')
+    setOpen(false)
+  }
+
+  function removeCustom(e: React.MouseEvent, val: string) {
+    e.stopPropagation()
+    const updated = customs.filter(c => c.value !== val)
+    onCustomsChange(updated)
+    saveCustomPresets(updated)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex items-center gap-1 h-7 px-2 rounded-md border border-input bg-transparent text-xs hover:bg-accent transition-colors w-28 shrink-0',
+            getBlockColor(value)
+          )}
+        >
+          <span>{getBlockEmoji(value, customs)}</span>
+          <span className="truncate">{getBlockLabel(value, '', customs)}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-52 p-0" align="start">
+        <div className="flex flex-col">
+          <div className="border-b px-3 py-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && canCreate) create() }}
+              placeholder="Поиск или создать..."
+              className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <div className="py-1 max-h-48 overflow-auto">
+            {filtered.map(opt => (
+              <div
+                key={opt.value}
+                onClick={() => select(opt)}
+                className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-accent cursor-pointer rounded-sm mx-1 group"
+              >
+                <span className={cn('flex items-center gap-2', getBlockColor(opt.value))}>
+                  <span>{opt.emoji}</span>
+                  <span>{opt.label}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  {value === opt.value && <CheckIcon className="h-3 w-3 text-primary" />}
+                  {!opt.isPreset && (
+                    <button
+                      onClick={e => removeCustom(e, opt.value)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 hover:text-destructive transition-all"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+            {canCreate && (
+              <div
+                onClick={create}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent cursor-pointer rounded-sm mx-1 text-muted-foreground"
+              >
+                <PlusIcon className="h-3 w-3" />
+                <span>Создать «{query}»</span>
+              </div>
+            )}
+            {filtered.length === 0 && !canCreate && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Ничего не найдено</div>
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 interface Subject {
   id: string
@@ -36,8 +191,6 @@ interface Subject {
 }
 
 type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string; blockType: BlockType; label: string }
-
-const DEFAULT_PRESETS = ['Разбор Ошибок', 'Мини-Тест', 'Недельный Тест', 'Тест ошибок']
 
 const DEFAULT_TIMES = [
   { start: '08:00', end: '08:45' },
@@ -65,31 +218,10 @@ export default function SchedulePage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('Моё расписание')
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>([])
 
-  const [customPresets, setCustomPresets] = useState<string[]>(DEFAULT_PRESETS)
-
-  async function patchPresets(newPresets: string[]) {
-    if (!templateId) return
-    await fetch('/api/diary/template', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: templateId, customPresets: newPresets }),
-    })
-  }
-
-  function savePreset(label: string) {
-    const trimmed = label.trim()
-    if (!trimmed || customPresets.includes(trimmed)) return
-    const next = [...customPresets, trimmed]
-    setCustomPresets(next)
-    patchPresets(next)
-  }
-
-  function removePreset(label: string) {
-    const next = customPresets.filter(p => p !== label)
-    setCustomPresets(next)
-    patchPresets(next)
-  }
+  // Load custom presets from localStorage on mount
+  useEffect(() => { setCustomPresets(loadCustomPresets()) }, [])
 
   // Slots per day: map DayOfWeek → SlotDraft[]
   const [slotsByDay, setSlotsByDay] = useState<Record<DayOfWeek, SlotDraft[]>>(
@@ -122,7 +254,6 @@ export default function SchedulePage() {
           if (active) {
             setTemplateId(active.id)
             setTemplateName(active.name)
-            setCustomPresets(active.customPresets?.length ? active.customPresets : DEFAULT_PRESETS)
             const map: Record<DayOfWeek, SlotDraft[]> = Object.fromEntries(
               DAYS_ORDER.map(d => [d, []])
             ) as unknown as Record<DayOfWeek, SlotDraft[]>
@@ -220,13 +351,13 @@ export default function SchedulePage() {
         res = await fetch('/api/diary/template', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: templateId, name: templateName, slots: allSlots, customPresets }),
+          body: JSON.stringify({ id: templateId, name: templateName, slots: allSlots }),
         })
       } else {
         res = await fetch('/api/diary/template', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: templateName, slots: allSlots, customPresets }),
+          body: JSON.stringify({ name: templateName, slots: allSlots }),
         })
         if (res.ok) {
           const data = await res.json()
@@ -336,29 +467,12 @@ export default function SchedulePage() {
                       </span>
 
                       {/* Block type selector */}
-                      <Select
+                      <BlockTypeCombobox
                         value={slot.blockType ?? 'lesson'}
-                        onValueChange={v => updateSlot(dow, slot._key, { blockType: v as BlockType })}
-                      >
-                        <SelectTrigger className="h-7 w-28 text-xs px-2 shrink-0">
-                          <SelectValue>
-                            <span className={`flex items-center gap-1 ${BLOCK_TYPE_META[slot.blockType ?? 'lesson'].color}`}>
-                              <span>{BLOCK_TYPE_META[slot.blockType ?? 'lesson'].emoji}</span>
-                              <span>{BLOCK_TYPE_META[slot.blockType ?? 'lesson'].label}</span>
-                            </span>
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(Object.entries(BLOCK_TYPE_META) as [BlockType, typeof BLOCK_TYPE_META[BlockType]][]).map(([type, meta]) => (
-                            <SelectItem key={type} value={type}>
-                              <span className={`flex items-center gap-1.5 ${meta.color}`}>
-                                <span>{meta.emoji}</span>
-                                <span>{meta.label}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onValueChange={(type, lbl) => updateSlot(dow, slot._key, { blockType: type, label: lbl })}
+                        customs={customPresets}
+                        onCustomsChange={setCustomPresets}
+                      />
 
                       {/* Start time */}
                       <div className="flex flex-col gap-0.5 w-20">
@@ -416,54 +530,12 @@ export default function SchedulePage() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <div className="flex flex-col gap-1">
-                            {/* Preset chips */}
-                            <div className="flex flex-wrap gap-1">
-                              {customPresets.map(preset => (
-                                <span key={preset} className="group/chip flex items-center gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateSlot(dow, slot._key, { label: preset })}
-                                    className={cn(
-                                      "text-[10px] px-1.5 py-0.5 rounded-full border transition-colors",
-                                      slot.label === preset
-                                        ? "bg-primary text-primary-foreground border-primary"
-                                        : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                                    )}
-                                  >
-                                    {preset}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => removePreset(preset)}
-                                    className="opacity-0 group-hover/chip:opacity-100 transition-opacity text-muted-foreground/50 hover:text-destructive"
-                                    title="Удалить пресет"
-                                  >
-                                    <XIcon className="h-2.5 w-2.5" />
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                            {/* Input + save button */}
-                            <div className="flex gap-1">
-                              <Input
-                                value={slot.label ?? ''}
-                                onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
-                                placeholder="Введите название..."
-                                className="h-7 text-xs px-2 flex-1"
-                              />
-                              {slot.label && slot.label.trim() && !customPresets.includes(slot.label.trim()) && (
-                                <button
-                                  type="button"
-                                  onClick={() => savePreset(slot.label!)}
-                                  className="h-7 px-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
-                                  title="Сохранить как пресет"
-                                >
-                                  <BookmarkIcon className="h-3 w-3" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                          <Input
+                            value={slot.label ?? ''}
+                            onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
+                            placeholder={getBlockLabel(slot.blockType, slot.label ?? '', customPresets) + '...'}
+                            className="h-7 text-xs px-2"
+                          />
                         )}
                       </div>
 
