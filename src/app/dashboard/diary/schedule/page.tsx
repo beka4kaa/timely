@@ -1,0 +1,354 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import {
+  ArrowLeftIcon,
+  PlusIcon,
+  Trash2Icon,
+  Loader2,
+  Settings2Icon,
+  CheckIcon,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek } from "@/types/diary"
+import { DAYS_ORDER, DAY_OF_WEEK_LABELS } from "@/types/diary"
+
+interface Subject {
+  id: string
+  name: string
+  emoji: string
+  color: string
+}
+
+type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string }
+
+const DEFAULT_TIMES = [
+  { start: '08:00', end: '08:45' },
+  { start: '09:00', end: '09:45' },
+  { start: '10:00', end: '10:45' },
+  { start: '11:00', end: '11:45' },
+  { start: '12:00', end: '12:45' },
+  { start: '13:00', end: '13:45' },
+  { start: '14:00', end: '14:45' },
+]
+
+function pad(n: number) { return String(n).padStart(2, '0') }
+
+function formatHHMM(value: string): string {
+  // Accept "HH:MM" or raw input — clean to HH:MM
+  const digits = value.replace(/\D/g, '').slice(0, 4)
+  if (digits.length <= 2) return digits
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`
+}
+
+export default function SchedulePage() {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [templateId, setTemplateId] = useState<string | null>(null)
+  const [templateName, setTemplateName] = useState('Моё расписание')
+
+  // Slots per day: map DayOfWeek → SlotDraft[]
+  const [slotsByDay, setSlotsByDay] = useState<Record<DayOfWeek, SlotDraft[]>>(
+    () => Object.fromEntries(DAYS_ORDER.map(d => [d, []])) as unknown as Record<DayOfWeek, SlotDraft[]>
+  )
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      try {
+        const [tplRes, subRes] = await Promise.all([
+          fetch('/api/diary/template'),
+          fetch('/api/subjects'),
+        ])
+
+        const subData = await subRes.json()
+        const subList: Subject[] = Array.isArray(subData)
+          ? subData
+          : (subData.results ?? subData.subjects ?? [])
+        setSubjects(subList.map((s: any) => ({
+          id: String(s.id),
+          name: s.name,
+          emoji: s.emoji || '📚',
+          color: s.color || '#6366f1',
+        })))
+
+        if (tplRes.ok) {
+          const tplData = await tplRes.json()
+          const active: WeeklyTemplate | null = tplData.active
+          if (active) {
+            setTemplateId(active.id)
+            setTemplateName(active.name)
+            const map: Record<DayOfWeek, SlotDraft[]> = Object.fromEntries(
+              DAYS_ORDER.map(d => [d, []])
+            ) as unknown as Record<DayOfWeek, SlotDraft[]>
+            for (const s of active.slots) {
+              map[s.dayOfWeek].push({ ...s, _key: s.id })
+            }
+            // Sort each day by lesson number
+            for (const d of DAYS_ORDER) {
+              map[d] = map[d].sort((a, b) => a.lessonNumber - b.lessonNumber)
+            }
+            setSlotsByDay(map)
+          }
+        }
+      } catch (e) {
+        toast.error('Ошибка загрузки расписания')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  function addSlot(day: DayOfWeek) {
+    setSlotsByDay(prev => {
+      const existing = prev[day]
+      const lessonNumber = existing.length + 1
+      const times = DEFAULT_TIMES[existing.length] ?? { start: '08:00', end: '08:45' }
+      const newSlot: SlotDraft = {
+        id: crypto.randomUUID(),
+        _key: crypto.randomUUID(),
+        dayOfWeek: day,
+        lessonNumber,
+        startTime: times.start,
+        endTime: times.end,
+        subjectId: subjects[0]?.id ?? '',
+      }
+      return { ...prev, [day]: [...existing, newSlot] }
+    })
+  }
+
+  function removeSlot(day: DayOfWeek, key: string) {
+    setSlotsByDay(prev => {
+      const updated = prev[day].filter(s => s._key !== key)
+      // Renumber
+      const renumbered = updated.map((s, i) => ({ ...s, lessonNumber: i + 1 }))
+      return { ...prev, [day]: renumbered }
+    })
+  }
+
+  function updateSlot(day: DayOfWeek, key: string, patch: Partial<SlotDraft>) {
+    setSlotsByDay(prev => ({
+      ...prev,
+      [day]: prev[day].map(s => s._key === key ? { ...s, ...patch } : s),
+    }))
+  }
+
+  async function handleSave() {
+    const allSlots = DAYS_ORDER.flatMap(d => slotsByDay[d]).map(({ _key, ...s }) => s)
+    setSaving(true)
+    try {
+      let res: Response
+      if (templateId) {
+        res = await fetch('/api/diary/template', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: templateId, name: templateName, slots: allSlots }),
+        })
+      } else {
+        res = await fetch('/api/diary/template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: templateName, slots: allSlots }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setTemplateId(data.id)
+        }
+      }
+      if (!res.ok) throw new Error(await res.text())
+      toast.success('Расписание сохранено! Новые недели будут использовать его.')
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка сохранения')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto p-4 md:p-6 flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push('/dashboard/diary')}>
+          <ArrowLeftIcon className="h-4 w-4" />
+        </Button>
+        <Settings2Icon className="h-5 w-5 text-primary" />
+        <div>
+          <h1 className="text-lg font-bold leading-none">Настройка расписания</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Шаблон применяется к новым неделям. Уже открытые недели не меняются.
+          </p>
+        </div>
+      </div>
+
+      {/* Template name */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="tpl-name" className="text-xs font-medium">Название шаблона</Label>
+        <Input
+          id="tpl-name"
+          value={templateName}
+          onChange={e => setTemplateName(e.target.value)}
+          className="max-w-xs h-8 text-sm"
+          placeholder="Моё расписание"
+        />
+      </div>
+
+      {subjects.length === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          Предметы не найдены. Добавьте предметы во вкладке Subjects, затем вернитесь сюда.
+        </div>
+      )}
+
+      {/* Days */}
+      <div className="flex flex-col gap-4">
+        {DAYS_ORDER.map(dow => {
+          const slots = slotsByDay[dow]
+          const isWeekend = dow === 'saturday' || dow === 'sunday'
+          return (
+            <div
+              key={dow}
+              className={cn(
+                "rounded-xl border bg-card overflow-hidden",
+                isWeekend && slots.length === 0 && "opacity-50"
+              )}
+            >
+              {/* Day header */}
+              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/20">
+                <span className="font-semibold text-sm">{DAY_OF_WEEK_LABELS[dow]}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {slots.length} {slots.length === 1 ? 'урок' : slots.length < 5 ? 'урока' : 'уроков'}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-xs px-2 gap-1"
+                    onClick={() => addSlot(dow)}
+                    disabled={subjects.length === 0}
+                  >
+                    <PlusIcon className="h-3 w-3" />
+                    Добавить
+                  </Button>
+                </div>
+              </div>
+
+              {/* Slot rows */}
+              {slots.length > 0 ? (
+                <div className="divide-y divide-border/50">
+                  {slots.map(slot => (
+                    <div key={slot._key} className="flex items-center gap-2 px-3 py-2 flex-wrap">
+                      {/* Lesson number badge */}
+                      <span className="text-xs font-bold text-muted-foreground min-w-[20px] text-center">
+                        {slot.lessonNumber}
+                      </span>
+
+                      {/* Start time */}
+                      <div className="flex flex-col gap-0.5 w-20">
+                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Начало</span>
+                        <Input
+                          value={slot.startTime}
+                          onChange={e => updateSlot(dow, slot._key, { startTime: formatHHMM(e.target.value) })}
+                          placeholder="08:00"
+                          className="h-7 text-xs px-2 font-mono"
+                          maxLength={5}
+                        />
+                      </div>
+
+                      {/* End time */}
+                      <div className="flex flex-col gap-0.5 w-20">
+                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Конец</span>
+                        <Input
+                          value={slot.endTime}
+                          onChange={e => updateSlot(dow, slot._key, { endTime: formatHHMM(e.target.value) })}
+                          placeholder="08:45"
+                          className="h-7 text-xs px-2 font-mono"
+                          maxLength={5}
+                        />
+                      </div>
+
+                      {/* Subject select */}
+                      <div className="flex flex-col gap-0.5 flex-1 min-w-[140px]">
+                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Предмет</span>
+                        <Select
+                          value={slot.subjectId}
+                          onValueChange={v => updateSlot(dow, slot._key, { subjectId: v })}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="Выберите предмет">
+                              {subjects.find(s => s.id === slot.subjectId) ? (
+                                <span>
+                                  {subjects.find(s => s.id === slot.subjectId)!.emoji}{' '}
+                                  {subjects.find(s => s.id === slot.subjectId)!.name}
+                                </span>
+                              ) : 'Выберите предмет'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {subjects.map(s => (
+                              <SelectItem key={s.id} value={s.id}>
+                                <span className="flex items-center gap-1.5">
+                                  <span>{s.emoji}</span>
+                                  <span>{s.name}</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Remove button */}
+                      <button
+                        onClick={() => removeSlot(dow, slot._key)}
+                        className="mt-3.5 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+                        title="Удалить урок"
+                      >
+                        <Trash2Icon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-4 py-3 text-xs text-muted-foreground/60">
+                  Нет уроков — {isWeekend ? 'выходной день' : 'нажмите «Добавить»'}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Save */}
+      <div className="flex items-center gap-3 sticky bottom-4">
+        <Button onClick={handleSave} disabled={saving} className="gap-2 shadow-lg">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckIcon className="h-4 w-4" />}
+          {saving ? 'Сохраняю...' : 'Сохранить расписание'}
+        </Button>
+        <Button variant="ghost" onClick={() => router.push('/dashboard/diary')}>
+          Назад к дневнику
+        </Button>
+      </div>
+    </div>
+  )
+}

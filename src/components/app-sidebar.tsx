@@ -46,16 +46,8 @@ const data = {
       url: "/dashboard/diary",
       icon: NotebookPenIcon,
     },
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: LayoutDashboardIcon,
-    },
-    {
-      title: "Study Planner",
-      url: "/dashboard/study",
-      icon: BookOpenIcon,
-    },
+    // { title: "Dashboard", url: "/dashboard", icon: LayoutDashboardIcon },
+    // { title: "Study Planner", url: "/dashboard/study", icon: BookOpenIcon },
     {
       title: "Subjects",
       url: "/dashboard/subjects",
@@ -66,46 +58,18 @@ const data = {
       url: "/dashboard/weaknesses",
       icon: ZapIcon,
     },
-    {
-      title: "Study Tracker",
-      url: "/dashboard/study-tracker",
-      icon: TimerIcon,
-    },
-    {
-      title: "Review",
-      url: "/dashboard/review",
-      icon: BrainIcon,
-    },
-    {
-      title: "AI Assistant",
-      url: "/dashboard/ai",
-      icon: Sparkles,
-    },
+    // { title: "Study Tracker", url: "/dashboard/study-tracker", icon: TimerIcon },
+    // { title: "Review", url: "/dashboard/review", icon: BrainIcon },
+    // { title: "AI Assistant", url: "/dashboard/ai", icon: Sparkles },
     {
       title: "Program",
       url: "/dashboard/program",
       icon: TargetIcon,
     },
-    {
-      title: "Profile",
-      url: "/dashboard/profile",
-      icon: User,
-    },
-    {
-      title: "History",
-      url: "/dashboard/history",
-      icon: HistoryIcon,
-    },
-    {
-      title: "Calendar",
-      url: "/dashboard/calendar",
-      icon: CalendarIcon,
-    },
-    {
-      title: "Goals",
-      url: "/dashboard/goals",
-      icon: TargetIcon,
-    },
+    // { title: "Profile", url: "/dashboard/profile", icon: User },
+    // { title: "History", url: "/dashboard/history", icon: HistoryIcon },
+    // { title: "Calendar", url: "/dashboard/calendar", icon: CalendarIcon },
+    // { title: "Goals", url: "/dashboard/goals", icon: TargetIcon },
     {
       title: "Achievements",
       url: "/dashboard/achievements",
