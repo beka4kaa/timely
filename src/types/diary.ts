@@ -75,13 +75,25 @@ export const GRADE_TYPE_LABELS: Record<keyof LessonGrades, string> = {
  * One lesson slot inside a WeeklyTemplate.
  * Contains NO grades — only structural info for a specific day.
  */
+export type BlockType = 'lesson' | 'break' | 'focus' | 'test' | 'other'
+
+export const BLOCK_TYPE_META: Record<BlockType, { label: string; emoji: string; color: string }> = {
+  lesson:  { label: 'Урок',     emoji: '📚', color: 'text-blue-400' },
+  break:   { label: 'Перерыв', emoji: '☕', color: 'text-slate-400' },
+  focus:   { label: 'Фокус',   emoji: '🎯', color: 'text-violet-400' },
+  test:    { label: 'Тест',    emoji: '📝', color: 'text-orange-400' },
+  other:   { label: 'Другое',  emoji: '🔖', color: 'text-green-400' },
+}
+
 export interface TemplateLessonSlot {
   id: string
   dayOfWeek: DayOfWeek
   lessonNumber: number   // порядковый номер урока в дне (1, 2, 3…)
   startTime: string      // "08:00"
   endTime: string        // "08:45"
-  subjectId: string      // ссылка на Subject
+  subjectId: string      // ссылка на Subject (только для blockType=lesson)
+  blockType?: BlockType  // тип блока (по умолчанию 'lesson')
+  label?: string         // название для не-урочных блоков
 }
 
 /**

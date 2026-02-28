@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek } from "@/types/diary"
-import { DAYS_ORDER, DAY_OF_WEEK_LABELS } from "@/types/diary"
+import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek, BlockType } from "@/types/diary"
+import { DAYS_ORDER, DAY_OF_WEEK_LABELS, BLOCK_TYPE_META } from "@/types/diary"
 
 interface Subject {
   id: string
@@ -33,7 +33,7 @@ interface Subject {
   color: string
 }
 
-type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string }
+type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string; blockType: BlockType; label: string }
 
 const DEFAULT_TIMES = [
   { start: '08:00', end: '08:45' },
@@ -97,7 +97,7 @@ export default function SchedulePage() {
               DAYS_ORDER.map(d => [d, []])
             ) as unknown as Record<DayOfWeek, SlotDraft[]>
             for (const s of active.slots) {
-              map[s.dayOfWeek].push({ ...s, _key: s.id })
+              map[s.dayOfWeek].push({ ...s, _key: s.id, blockType: s.blockType ?? 'lesson', label: s.label ?? '' })
             }
             // Sort each day by lesson number
             for (const d of DAYS_ORDER) {
@@ -128,6 +128,8 @@ export default function SchedulePage() {
         startTime: times.start,
         endTime: times.end,
         subjectId: subjects[0]?.id ?? '',
+        blockType: 'lesson',
+        label: '',
       }
       return { ...prev, [day]: [...existing, newSlot] }
     })
@@ -248,7 +250,7 @@ export default function SchedulePage() {
 
       {subjects.length === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-          Предметы не найдены. Добавьте предметы во вкладке Subjects, затем вернитесь сюда.
+          Предметы не найдены. Добавьте предметы во вкладке Subjects, чтобы добавлять уроки. Другие блоки (перерыв, фокус, тест) доступны всегда.
         </div>
       )}
 
@@ -277,7 +279,6 @@ export default function SchedulePage() {
                     variant="outline"
                     className="h-6 text-xs px-2 gap-1"
                     onClick={() => addSlot(dow)}
-                    disabled={subjects.length === 0}
                   >
                     <PlusIcon className="h-3 w-3" />
                     Добавить
@@ -304,6 +305,31 @@ export default function SchedulePage() {
                         {slot.lessonNumber}
                       </span>
 
+                      {/* Block type selector */}
+                      <Select
+                        value={slot.blockType ?? 'lesson'}
+                        onValueChange={v => updateSlot(dow, slot._key, { blockType: v as BlockType })}
+                      >
+                        <SelectTrigger className="h-7 w-28 text-xs px-2 shrink-0">
+                          <SelectValue>
+                            <span className={`flex items-center gap-1 ${BLOCK_TYPE_META[slot.blockType ?? 'lesson'].color}`}>
+                              <span>{BLOCK_TYPE_META[slot.blockType ?? 'lesson'].emoji}</span>
+                              <span>{BLOCK_TYPE_META[slot.blockType ?? 'lesson'].label}</span>
+                            </span>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(Object.entries(BLOCK_TYPE_META) as [BlockType, typeof BLOCK_TYPE_META[BlockType]][]).map(([type, meta]) => (
+                            <SelectItem key={type} value={type}>
+                              <span className={`flex items-center gap-1.5 ${meta.color}`}>
+                                <span>{meta.emoji}</span>
+                                <span>{meta.label}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
                       {/* Start time */}
                       <div className="flex flex-col gap-0.5 w-20">
                         <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Начало</span>
@@ -328,34 +354,45 @@ export default function SchedulePage() {
                         />
                       </div>
 
-                      {/* Subject select */}
+                      {/* Subject select OR label input */}
                       <div className="flex flex-col gap-0.5 flex-1 min-w-[140px]">
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Предмет</span>
-                        <Select
-                          value={slot.subjectId}
-                          onValueChange={v => updateSlot(dow, slot._key, { subjectId: v })}
-                        >
-                          <SelectTrigger className="h-7 text-xs">
-                            <SelectValue placeholder="Выберите предмет">
-                              {subjects.find(s => s.id === slot.subjectId) ? (
-                                <span>
-                                  {subjects.find(s => s.id === slot.subjectId)!.emoji}{' '}
-                                  {subjects.find(s => s.id === slot.subjectId)!.name}
-                                </span>
-                              ) : 'Выберите предмет'}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {subjects.map(s => (
-                              <SelectItem key={s.id} value={s.id}>
-                                <span className="flex items-center gap-1.5">
-                                  <span>{s.emoji}</span>
-                                  <span>{s.name}</span>
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
+                          {slot.blockType === 'lesson' || !slot.blockType ? 'Предмет' : 'Название'}
+                        </span>
+                        {(slot.blockType === 'lesson' || !slot.blockType) ? (
+                          <Select
+                            value={slot.subjectId}
+                            onValueChange={v => updateSlot(dow, slot._key, { subjectId: v })}
+                          >
+                            <SelectTrigger className="h-7 text-xs">
+                              <SelectValue placeholder="Выберите предмет">
+                                {subjects.find(s => s.id === slot.subjectId) ? (
+                                  <span>
+                                    {subjects.find(s => s.id === slot.subjectId)!.emoji}{' '}
+                                    {subjects.find(s => s.id === slot.subjectId)!.name}
+                                  </span>
+                                ) : 'Выберите предмет'}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {subjects.map(s => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  <span className="flex items-center gap-1.5">
+                                    <span>{s.emoji}</span>
+                                    <span>{s.name}</span>
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={slot.label ?? ''}
+                            onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
+                            placeholder={BLOCK_TYPE_META[slot.blockType].label + '...'}
+                            className="h-7 text-xs px-2"
+                          />
+                        )}
                       </div>
 
                       {/* Remove button */}
