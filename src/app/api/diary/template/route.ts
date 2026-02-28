@@ -26,10 +26,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { name, slots } = body as { name: string; slots: any[] }
+  const { name, slots, customPresets } = body as { name: string; slots: any[]; customPresets?: string[] }
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
 
-  const template = await createTemplate(session.user.email, name, slots ?? [])
+  const template = await createTemplate(session.user.email, name, slots ?? [], customPresets ?? [])
   return NextResponse.json(template, { status: 201 })
 }
 
@@ -39,13 +39,14 @@ export async function PUT(req: NextRequest) {
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { id, name, slots, isActive } = body as { id: string; name?: string; slots?: any[]; isActive?: boolean }
+  const { id, name, slots, isActive, customPresets } = body as { id: string; name?: string; slots?: any[]; isActive?: boolean; customPresets?: string[] }
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   const updated = await updateTemplate(id, session.user.email, {
     ...(name !== undefined ? { name } : {}),
     ...(slots !== undefined ? { slots } : {}),
     ...(isActive !== undefined ? { isActive } : {}),
+    ...(customPresets !== undefined ? { customPresets } : {}),
   })
   if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(updated)

@@ -38,7 +38,6 @@ interface Subject {
 type SlotDraft = Omit<TemplateLessonSlot, 'id'> & { id: string; _key: string; blockType: BlockType; label: string }
 
 const DEFAULT_PRESETS = ['Разбор Ошибок', 'Мини-Тест', 'Недельный Тест', 'Тест ошибок']
-const PRESETS_KEY = 'schedule-custom-presets'
 
 const DEFAULT_TIMES = [
   { start: '08:00', end: '08:45' },
@@ -67,26 +66,29 @@ export default function SchedulePage() {
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('Моё расписание')
 
-  const [customPresets, setCustomPresets] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_PRESETS
-    try {
-      const stored = localStorage.getItem(PRESETS_KEY)
-      return stored ? JSON.parse(stored) : DEFAULT_PRESETS
-    } catch { return DEFAULT_PRESETS }
-  })
+  const [customPresets, setCustomPresets] = useState<string[]>(DEFAULT_PRESETS)
 
-  useEffect(() => {
-    localStorage.setItem(PRESETS_KEY, JSON.stringify(customPresets))
-  }, [customPresets])
+  async function patchPresets(newPresets: string[]) {
+    if (!templateId) return
+    await fetch('/api/diary/template', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: templateId, customPresets: newPresets }),
+    })
+  }
 
   function savePreset(label: string) {
     const trimmed = label.trim()
     if (!trimmed || customPresets.includes(trimmed)) return
-    setCustomPresets(prev => [...prev, trimmed])
+    const next = [...customPresets, trimmed]
+    setCustomPresets(next)
+    patchPresets(next)
   }
 
   function removePreset(label: string) {
-    setCustomPresets(prev => prev.filter(p => p !== label))
+    const next = customPresets.filter(p => p !== label)
+    setCustomPresets(next)
+    patchPresets(next)
   }
 
   // Slots per day: map DayOfWeek → SlotDraft[]
@@ -120,6 +122,7 @@ export default function SchedulePage() {
           if (active) {
             setTemplateId(active.id)
             setTemplateName(active.name)
+            setCustomPresets(active.customPresets?.length ? active.customPresets : DEFAULT_PRESETS)
             const map: Record<DayOfWeek, SlotDraft[]> = Object.fromEntries(
               DAYS_ORDER.map(d => [d, []])
             ) as unknown as Record<DayOfWeek, SlotDraft[]>
@@ -217,13 +220,13 @@ export default function SchedulePage() {
         res = await fetch('/api/diary/template', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: templateId, name: templateName, slots: allSlots }),
+          body: JSON.stringify({ id: templateId, name: templateName, slots: allSlots, customPresets }),
         })
       } else {
         res = await fetch('/api/diary/template', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: templateName, slots: allSlots }),
+          body: JSON.stringify({ name: templateName, slots: allSlots, customPresets }),
         })
         if (res.ok) {
           const data = await res.json()

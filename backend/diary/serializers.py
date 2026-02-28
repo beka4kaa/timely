@@ -6,12 +6,13 @@ class WeeklyTemplateSerializer(serializers.ModelSerializer):
     # Expose camelCase fields to match the TypeScript interface
     userId = serializers.EmailField(source='user_email')
     isActive = serializers.BooleanField(source='is_active')
+    customPresets = serializers.JSONField(source='custom_presets', default=list)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
 
     class Meta:
         model = WeeklyTemplate
-        fields = ['id', 'userId', 'name', 'slots', 'isActive', 'createdAt', 'updatedAt']
+        fields = ['id', 'userId', 'name', 'slots', 'customPresets', 'isActive', 'createdAt', 'updatedAt']
 
     def create(self, validated_data):
         return WeeklyTemplate.objects.create(**validated_data)

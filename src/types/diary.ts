@@ -109,6 +109,8 @@ export interface WeeklyTemplate {
   name: string
   /** All lesson slots across all days of the week */
   slots: TemplateLessonSlot[]
+  /** User-saved block name presets */
+  customPresets: string[]
   isActive: boolean
   createdAt: string
   updatedAt: string

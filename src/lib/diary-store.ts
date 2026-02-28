@@ -86,6 +86,7 @@ export async function createTemplate(
   userId: string,
   name: string,
   slots: Omit<TemplateLessonSlot, 'id'>[] = [],
+  customPresets: string[] = [],
 ): Promise<WeeklyTemplate> {
   const now = new Date().toISOString()
   const template = {
@@ -93,6 +94,7 @@ export async function createTemplate(
     userId,
     name,
     slots: slots.map(s => ({ ...s, id: crypto.randomUUID() })),
+    customPresets,
     isActive: true,
     createdAt: now,
     updatedAt: now,
@@ -108,7 +110,7 @@ export async function createTemplate(
 export async function updateTemplate(
   templateId: string,
   userId: string,
-  patch: Partial<Pick<WeeklyTemplate, 'name' | 'slots' | 'isActive'>>,
+  patch: Partial<Pick<WeeklyTemplate, 'name' | 'slots' | 'isActive' | 'customPresets'>>,
 ): Promise<WeeklyTemplate | null> {
   try {
     const payload: Record<string, unknown> = {}
@@ -117,6 +119,7 @@ export async function updateTemplate(
       payload.slots = patch.slots.map(s => ({ ...s, id: (s as any).id || crypto.randomUUID() }))
     }
     if (patch.isActive !== undefined) payload.isActive = patch.isActive
+    if (patch.customPresets !== undefined) payload.customPresets = patch.customPresets
 
     const res = await diaryFetch(userId, `/templates/${templateId}/`, {
       method: 'PATCH',

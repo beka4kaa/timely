@@ -12,6 +12,7 @@ class WeeklyTemplate(models.Model):
     user_email = models.EmailField(db_index=True)
     name = models.CharField(max_length=255)
     slots = models.JSONField(default=list)
+    custom_presets = models.JSONField(default=list)  # user-saved block name presets
     is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

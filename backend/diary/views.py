@@ -53,6 +53,7 @@ class WeeklyTemplateViewSet(viewsets.ModelViewSet):
             user_email=user_email,
             name=request.data.get('name', 'Моё расписание'),
             slots=request.data.get('slots', []),
+            custom_presets=request.data.get('customPresets', []),
             is_active=is_active,
         )
         return Response(WeeklyTemplateSerializer(template).data, status=status.HTTP_201_CREATED)
@@ -68,6 +69,8 @@ class WeeklyTemplateViewSet(viewsets.ModelViewSet):
             instance.name = request.data['name']
         if 'slots' in request.data:
             instance.slots = request.data['slots']
+        if 'customPresets' in request.data:
+            instance.custom_presets = request.data['customPresets']
         if is_active is not None:
             instance.is_active = is_active
         instance.save()
