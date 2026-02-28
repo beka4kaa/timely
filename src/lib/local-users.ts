@@ -14,7 +14,10 @@ export interface LocalUser {
   createdAt: string
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data')
+// Vercel (and other serverless platforms) have a read-only filesystem except /tmp
+const DATA_DIR = process.env.NODE_ENV === 'production' || process.env.VERCEL
+  ? '/tmp/.diary-data'
+  : path.join(process.cwd(), '.data')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 
 function ensureFile() {

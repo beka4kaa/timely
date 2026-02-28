@@ -32,7 +32,10 @@ import { DAYS_ORDER } from '@/types/diary'
 
 // ── File paths ────────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), '.data')
+// Vercel (and other serverless platforms) have a read-only filesystem except /tmp
+const DATA_DIR = process.env.NODE_ENV === 'production' || process.env.VERCEL
+  ? '/tmp/.diary-data'
+  : path.join(process.cwd(), '.data')
 const TEMPLATES_FILE = path.join(DATA_DIR, 'weekly-templates.json')
 const DIARY_FILE = path.join(DATA_DIR, 'diary-weeks.json')
 
