@@ -4,6 +4,7 @@ import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { GeminiChat } from '@/components/gemini-chat'
+import { Toaster } from '@/components/ui/sonner'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -30,6 +31,7 @@ export default function RootLayout({
             <div className="min-h-screen bg-background">
               {children}
               <GeminiChat />
+              <Toaster position="top-right" richColors closeButton />
             </div>
           </NextAuthProvider>
         </ThemeProvider>

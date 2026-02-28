@@ -8,16 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { toast } from 'sonner'
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
   const router = useRouter()
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsLoading(true)
-    setError('')
 
     const formData = new FormData(event.currentTarget)
     const email = formData.get('email') as string
@@ -26,7 +25,9 @@ export default function RegisterPage() {
     const confirmPassword = formData.get('confirmPassword') as string
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      toast.error('Пароли не совпадают', {
+        description: 'Убедитесь, что оба поля пароля заполнены одинаково.',
+      })
       setIsLoading(false)
       return
     }
@@ -34,16 +35,14 @@ export default function RegisterPage() {
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
       })
 
       const data = await response.json()
 
       if (response.ok) {
-        // Auto sign in after successful registration
+        toast.success('Аккаунт создан!', { description: 'Выполняем вход...' })
         const result = await signIn('credentials', {
           email,
           password,
@@ -51,24 +50,16 @@ export default function RegisterPage() {
         })
 
         if (result?.ok) {
-          router.push('/dashboard')
+          router.push('/dashboard/diary')
         } else {
-          router.push('/auth/signin?message=Registration successful, please sign in')
+          router.push('/auth/signin')
         }
       } else {
-        // Handle validation errors from backend
-        if (data.email) {
-          setError(data.email[0])
-        } else if (data.password) {
-          setError(data.password[0])
-        } else if (data.error) {
-          setError(data.error)
-        } else {
-          setError('An error occurred during registration')
-        }
+        const msg = data.email?.[0] || data.password?.[0] || data.error || 'Ошибка при регистрации'
+        toast.error(msg)
       }
     } catch (error) {
-      setError('An error occurred during registration')
+      toast.error('Произошла ошибка при регистрации')
     } finally {
       setIsLoading(false)
     }
@@ -77,15 +68,9 @@ export default function RegisterPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      console.log('Starting Google sign in...')
-      const result = await signIn('google', {
-        callbackUrl: '/dashboard',
-        redirect: true
-      })
-      console.log('Google sign in result:', result)
+      await signIn('google', { callbackUrl: '/dashboard/diary', redirect: true })
     } catch (error) {
-      console.error('Google sign in error:', error)
-      setError('Error signing in with Google')
+      toast.error('Ошибка входа через Google')
       setIsLoading(false)
     }
   }
@@ -103,12 +88,6 @@ export default function RegisterPage() {
                     Join us to manage your time efficiently
                   </p>
                 </div>
-
-                {error && (
-                  <div className="rounded-md bg-red-50 p-3 border border-red-200">
-                    <p className="text-sm font-medium text-red-800">{error}</p>
-                  </div>
-                )}
 
                 <div className="grid gap-3">
                   <Label htmlFor="name">Full Name</Label>

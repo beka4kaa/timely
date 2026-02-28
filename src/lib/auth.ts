@@ -34,29 +34,17 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          // Call backend login endpoint
-          const response = await fetch('http://localhost:8001/api/auth/login/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: credentials.email,
-              password: credentials.password,
-            }),
-          });
+          const { verifyUser } = await import('./local-users');
+          const user = await verifyUser(credentials.email, credentials.password);
 
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || 'Invalid credentials');
+          if (!user) {
+            throw new Error('Неверный email или пароль');
           }
 
-          // Return user object from backend
           return {
-            id: data.user.id.toString(),
-            email: data.user.email,
-            name: data.user.name,
+            id: user.id,
+            email: user.email,
+            name: user.name,
           };
         } catch (error: any) {
           console.error('Login error:', error);
@@ -89,9 +77,9 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       if (url.includes('/dashboard')) return url;
       if (url.startsWith('/')) return new URL(url, baseUrl).toString();
-      if (url === baseUrl || url === `${baseUrl}/`) return `${baseUrl}/dashboard`;
+      if (url === baseUrl || url === `${baseUrl}/`) return `${baseUrl}/dashboard/diary`;
       if (url.startsWith(baseUrl)) return url;
-      return `${baseUrl}/dashboard`;
+      return `${baseUrl}/dashboard/diary`;
     },
 
     async signIn({ user, account, profile }) {

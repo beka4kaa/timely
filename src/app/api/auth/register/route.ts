@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createUser } from '@/lib/local-users';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const { email, password, name } = body;
 
-        // Validate input
         if (!email || !password) {
             return NextResponse.json(
                 { error: 'Email and password are required' },
@@ -13,38 +13,23 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Call backend registration endpoint
-        const response = await fetch('http://localhost:8001/api/auth/register/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                email,
-                password,
-                password2: password,
-                name: name || '',
-            }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            // Return backend validation errors
-            return NextResponse.json(data, { status: response.status });
+        if (password.length < 6) {
+            return NextResponse.json(
+                { error: 'Password must be at least 6 characters' },
+                { status: 400 }
+            );
         }
 
-        // Success - return user data
+        const user = await createUser(email, password, name || '');
+
         return NextResponse.json({
-            message: data.message,
-            user: data.user,
+            message: 'Registration successful',
+            user: { id: user.id, email: user.email, name: user.name },
         }, { status: 201 });
 
     } catch (error: any) {
         console.error('Registration error:', error);
-        return NextResponse.json(
-            { error: 'Registration failed. Please try again.' },
-            { status: 500 }
-        );
+        const message = error?.message || 'Registration failed. Please try again.';
+        return NextResponse.json({ error: message }, { status: 400 });
     }
 }

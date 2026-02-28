@@ -39,5 +39,8 @@ next-env.d.ts
 *.db
 *.sqlite
 
+# local user store (contains hashed passwords)
+.data/
+
 /generated/prisma
 .env

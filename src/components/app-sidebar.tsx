@@ -14,6 +14,7 @@ import {
   HelpCircleIcon,
   HistoryIcon,
   LayoutDashboardIcon,
+  NotebookPenIcon,
   SearchIcon,
   SettingsIcon,
   Sparkles,
@@ -40,6 +41,11 @@ import {
 
 const data = {
   navMain: [
+    {
+      title: "Дневник",
+      url: "/dashboard/diary",
+      icon: NotebookPenIcon,
+    },
     {
       title: "Dashboard",
       url: "/dashboard",

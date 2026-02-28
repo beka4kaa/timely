@@ -8,16 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { toast } from 'sonner'
 
 export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
   const router = useRouter()
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsLoading(true)
-    setError('')
 
     const formData = new FormData(event.currentTarget)
     const email = formData.get('email') as string
@@ -31,15 +30,20 @@ export default function SignInPage() {
       })
 
       if (result?.error) {
-        setError('Invalid email or password')
+        toast.error('Неверный email или пароль', {
+          description: 'Проверьте введённые данные и попробуйте снова.',
+        })
       } else {
         const session = await getSession()
         if (session) {
-          router.push('/dashboard')
+          toast.success('Вы вошли в систему!', {
+            description: `Добро пожаловать, ${session.user?.name || session.user?.email}!`,
+          })
+          router.push('/dashboard/diary')
         }
       }
     } catch (error) {
-      setError('An error occurred during sign in')
+      toast.error('Произошла ошибка при входе')
     } finally {
       setIsLoading(false)
     }
@@ -48,15 +52,9 @@ export default function SignInPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      console.log('Starting Google sign in...')
-      const result = await signIn('google', { 
-        callbackUrl: '/dashboard',
-        redirect: true 
-      })
-      console.log('Google sign in result:', result)
+      await signIn('google', { callbackUrl: '/dashboard/diary', redirect: true })
     } catch (error) {
-      console.error('Google sign in error:', error)
-      setError('Error signing in with Google')
+      toast.error('Ошибка входа через Google')
       setIsLoading(false)
     }
   }
@@ -75,12 +73,6 @@ export default function SignInPage() {
                   </p>
                 </div>
                 
-                {error && (
-                  <div className="rounded-md bg-red-50 p-3 border border-red-200">
-                    <p className="text-sm font-medium text-red-800">{error}</p>
-                  </div>
-                )}
-
                 <div className="grid gap-3">
                   <Label htmlFor="email">Email</Label>
                   <Input
