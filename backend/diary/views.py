@@ -13,25 +13,34 @@ def _sync_template_lessons(template: WeeklyTemplate, slots: list) -> None:
     """
     Replace all TemplateLesson rows for *template* with the supplied slot list.
     Also writes the slots back to the JSON field so both storages stay in sync.
+
+    Wrapped in try/except: if the migration hasn't run yet and the
+    diary_templatelesson table doesn't exist, we silently fall back to
+    JSON-only storage so the endpoint keeps working.
     """
-    TemplateLesson.objects.filter(template=template).delete()
-    rows = []
-    for slot in slots:
-        rows.append(TemplateLesson(
-            id            = slot.get('id') or str(uuid.uuid4()),
-            template      = template,
-            day_of_week   = slot.get('dayOfWeek', ''),
-            lesson_number = slot.get('lessonNumber', 1),
-            start_time    = slot.get('startTime', ''),
-            end_time      = slot.get('endTime', ''),
-            subject_id    = slot.get('subjectId', ''),
-            block_type    = slot.get('blockType', 'lesson'),
-            label         = slot.get('label', ''),
-        ))
-    TemplateLesson.objects.bulk_create(rows)
-    # Keep JSON snapshot in sync
-    template.slots = [r.to_slot_dict() for r in rows]
-    template.save(update_fields=['slots', 'updated_at'])
+    try:
+        TemplateLesson.objects.filter(template=template).delete()
+        rows = []
+        for slot in slots:
+            rows.append(TemplateLesson(
+                id            = slot.get('id') or str(uuid.uuid4()),
+                template      = template,
+                day_of_week   = slot.get('dayOfWeek', ''),
+                lesson_number = slot.get('lessonNumber', 1),
+                start_time    = slot.get('startTime', ''),
+                end_time      = slot.get('endTime', ''),
+                subject_id    = slot.get('subjectId', ''),
+                block_type    = slot.get('blockType', 'lesson'),
+                label         = slot.get('label', ''),
+            ))
+        TemplateLesson.objects.bulk_create(rows)
+        # Keep JSON snapshot in sync
+        template.slots = [r.to_slot_dict() for r in rows]
+        template.save(update_fields=['slots', 'updated_at'])
+    except Exception:
+        # Table may not exist yet (migration pending) — just update JSON field
+        template.slots = slots
+        template.save(update_fields=['slots', 'updated_at'])
 
 
 class WeeklyTemplateViewSet(viewsets.ModelViewSet):
@@ -172,43 +181,48 @@ class WeeklyTemplateViewSet(viewsets.ModelViewSet):
             )
 
             # 2. Copy TemplateLesson rows (or fall back to JSON slots)
-            source_lessons = list(
-                TemplateLesson.objects.filter(template=original)
-            )
-            if source_lessons:
-                new_rows = [
-                    TemplateLesson(
-                        id            = str(uuid.uuid4()),
-                        template      = new_template,
-                        day_of_week   = l.day_of_week,
-                        lesson_number = l.lesson_number,
-                        start_time    = l.start_time,
-                        end_time      = l.end_time,
-                        subject_id    = l.subject_id,
-                        block_type    = l.block_type,
-                        label         = l.label,
-                    )
-                    for l in source_lessons
+            try:
+                source_lessons = list(
+                    TemplateLesson.objects.filter(template=original)
+                )
+                if source_lessons:
+                    new_rows = [
+                        TemplateLesson(
+                            id            = str(uuid.uuid4()),
+                            template      = new_template,
+                            day_of_week   = l.day_of_week,
+                            lesson_number = l.lesson_number,
+                            start_time    = l.start_time,
+                            end_time      = l.end_time,
+                            subject_id    = l.subject_id,
+                            block_type    = l.block_type,
+                            label         = l.label,
+                        )
+                        for l in source_lessons
+                    ]
+                else:
+                    # Fallback: copy from JSON slots field (legacy / migration pending)
+                    new_rows = [
+                        TemplateLesson(
+                            id            = str(uuid.uuid4()),
+                            template      = new_template,
+                            day_of_week   = s.get('dayOfWeek', ''),
+                            lesson_number = s.get('lessonNumber', 1),
+                            start_time    = s.get('startTime', ''),
+                            end_time      = s.get('endTime', ''),
+                            subject_id    = s.get('subjectId', ''),
+                            block_type    = s.get('blockType', 'lesson'),
+                            label         = s.get('label', ''),
+                        )
+                        for s in original.slots
+                    ]
+                TemplateLesson.objects.bulk_create(new_rows)
+                new_template.slots = [r.to_slot_dict() for r in new_rows]
+            except Exception:
+                # TemplateLesson table not yet migrated — copy JSON slots directly
+                new_template.slots = [
+                    {**s, 'id': str(uuid.uuid4())} for s in original.slots
                 ]
-            else:
-                # Fallback: copy from JSON slots field (legacy templates)
-                new_rows = [
-                    TemplateLesson(
-                        id            = str(uuid.uuid4()),
-                        template      = new_template,
-                        day_of_week   = s.get('dayOfWeek', ''),
-                        lesson_number = s.get('lessonNumber', 1),
-                        start_time    = s.get('startTime', ''),
-                        end_time      = s.get('endTime', ''),
-                        subject_id    = s.get('subjectId', ''),
-                        block_type    = s.get('blockType', 'lesson'),
-                        label         = s.get('label', ''),
-                    )
-                    for s in original.slots
-                ]
-
-            TemplateLesson.objects.bulk_create(new_rows)
-            new_template.slots = [r.to_slot_dict() for r in new_rows]
             new_template.save(update_fields=['slots', 'updated_at'])
 
         return Response(

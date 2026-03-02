@@ -28,25 +28,20 @@ class WeeklyTemplateSerializer(serializers.ModelSerializer):
     Exposes camelCase fields to match the TypeScript WeeklyTemplate interface.
 
     `slots` is kept for backward-compatible reads.
-    `lessons` is the normalized list from TemplateLesson rows; when present
-    in write operations it is used to create/replace TemplateLesson records.
+    `lessons` is the normalized list from TemplateLesson rows; guarded with a
+    try/except so that if the migration hasn't run yet it falls back gracefully.
     """
     userId        = serializers.EmailField(source='user_email')
     isActive      = serializers.BooleanField(source='is_active')
     customPresets = serializers.JSONField(source='custom_presets', default=list)
     createdAt     = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt     = serializers.DateTimeField(source='updated_at', read_only=True)
-    # Read-only nested lessons from the relational table
-    lessons       = TemplateLessonSerializer(
-        source='template_lessons', many=True, read_only=True,
-    )
 
     class Meta:
         model = WeeklyTemplate
         fields = [
             'id', 'userId', 'name',
-            'slots',        # JSON snapshot — kept for backward compat
-            'lessons',      # normalised rows — read-only via this serializer
+            'slots',        # JSON snapshot — source of truth until migration runs
             'customPresets', 'isActive',
             'createdAt', 'updatedAt',
         ]

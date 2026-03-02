@@ -19,11 +19,29 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # ── WeeklyTemplate: add custom_presets column (safe; default=[]) ─────
-        migrations.AddField(
-            model_name='weeklytemplate',
-            name='custom_presets',
-            field=models.JSONField(default=list),
+        # ── WeeklyTemplate: add custom_presets — use raw SQL with IF NOT EXISTS
+        # so the migration is idempotent even if the column was added out-of-band.
+        migrations.RunSQL(
+            sql="""
+                ALTER TABLE diary_weeklytemplate
+                ADD COLUMN IF NOT EXISTS custom_presets jsonb NOT NULL DEFAULT '[]'::jsonb;
+            """,
+            reverse_sql="""
+                ALTER TABLE diary_weeklytemplate
+                DROP COLUMN IF EXISTS custom_presets;
+            """,
+        ),
+
+        # Record the state change so Django knows about the field
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],   # already done above via RunSQL
+            state_operations=[
+                migrations.AddField(
+                    model_name='weeklytemplate',
+                    name='custom_presets',
+                    field=models.JSONField(default=list),
+                ),
+            ],
         ),
 
         # ── TemplateLesson: normalised lesson rows ────────────────────────────
