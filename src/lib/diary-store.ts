@@ -137,7 +137,146 @@ export async function deleteTemplate(templateId: string, userId: string): Promis
   } catch { return false }
 }
 
-// ── Snapshot builder (pure, no DB) ───────────────────────────
+// ── New template management functions ─────────────────────────
+
+/**
+ * Fetch a specific template by ID.
+ * Returns null if not found or on error.
+ */
+export async function getTemplateById(
+  userId: string,
+  templateId: string,
+): Promise<WeeklyTemplate | null> {
+  try {
+    const res = await diaryFetch(userId, `/templates/${templateId}/`)
+    if (!res.ok) return null
+    return res.json()
+  } catch { return null }
+}
+
+/**
+ * Create a brand-new, empty template (no lesson slots).
+ * The new template starts as inactive so it does not replace the current one.
+ */
+export async function createEmptyTemplate(
+  userId: string,
+  name: string,
+): Promise<WeeklyTemplate> {
+  const res = await diaryFetch(userId, '/templates/create_empty/', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(`Failed to create empty template: ${res.status}`)
+  return res.json()
+}
+
+/**
+ * Duplicate an existing template.
+ * The backend copies all TemplateLesson rows with fresh IDs.
+ * The copy starts as inactive.
+ *
+ * @param userId      - owner's email
+ * @param templateId  - ID of the template to copy
+ * @param name        - optional name override; defaults to "<original> (Copy)"
+ */
+export async function duplicateTemplate(
+  userId: string,
+  templateId: string,
+  name?: string,
+): Promise<WeeklyTemplate> {
+  const res = await diaryFetch(userId, `/templates/${templateId}/duplicate/`, {
+    method: 'POST',
+    body: JSON.stringify(name ? { name } : {}),
+  })
+  if (!res.ok) throw new Error(`Failed to duplicate template: ${res.status}`)
+  return res.json()
+}
+
+/**
+ * Activate a specific template (deactivates all others for this user).
+ */
+export async function setActiveTemplate(
+  userId: string,
+  templateId: string,
+): Promise<WeeklyTemplate | null> {
+  return updateTemplate(templateId, userId, { isActive: true })
+}
+
+/**
+ * Apply a template to a diary week (startDate → startDate + 6 days).
+ *
+ * Strategy:
+ *  1. Fetch the target template by ID.
+ *  2. Build a fresh DiaryWeek snapshot from that template.
+ *  3. If a week already exists for those dates:
+ *       - Overwrite lesson structure but PRESERVE grades/homework/notes
+ *         for any matching lesson (same day + lessonNumber).
+ *  4. Persist / replace the week in the database.
+ *
+ * @param userId        - owner's email
+ * @param templateId    - ID of the template to apply
+ * @param weekStart     - ISO "YYYY-MM-DD" Monday date
+ * @param resolveSubject - map subjectId → display fields
+ */
+export async function applyTemplateToWeek(
+  userId: string,
+  templateId: string,
+  weekStart: string,
+  resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
+): Promise<DiaryWeek> {
+  // 1. Fetch the requested template
+  const template = await getTemplateById(userId, templateId)
+  if (!template) throw new Error(`Template ${templateId} not found`)
+
+  // 2. Build fresh snapshot from the template
+  const fresh = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+
+  // 3. Check for existing week and merge preserved data
+  try {
+    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
+    if (res.ok) {
+      const data: DiaryWeek[] = await res.json()
+      const existing = data[0]
+      if (existing) {
+        // Build lookup: dayOfWeek+lessonNumber → existing lesson data
+        type LessonKey = string // `${dayOfWeek}:${lessonNumber}`
+        const preserved = new Map<LessonKey, Pick<DiaryLesson, 'grades' | 'homework' | 'notes'>>()
+        for (const day of existing.days) {
+          for (const lesson of day.lessons) {
+            const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
+            preserved.set(key, {
+              grades:   lesson.grades,
+              homework: lesson.homework,
+              notes:    lesson.notes,
+            })
+          }
+        }
+
+        // Merge: overlay preserved grades/homework/notes onto fresh lessons
+        for (const day of fresh.days) {
+          for (const lesson of day.lessons) {
+            const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
+            const saved = preserved.get(key)
+            if (saved) {
+              lesson.grades   = saved.grades
+              lesson.homework = saved.homework
+              lesson.notes    = saved.notes
+            }
+          }
+        }
+
+        // Carry over the existing week ID and persist
+        fresh.id = existing.id
+        await replaceWeek(userId, existing.id, fresh)
+        return fresh
+      }
+    }
+  } catch { /* no existing week — fall through to create */ }
+
+  // 4. No existing week: just persist the fresh snapshot
+  await persistWeek(userId, fresh)
+  return fresh
+}
 
 export function buildWeekSnapshot(
   userId: string,

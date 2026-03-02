@@ -1,18 +1,55 @@
 from rest_framework import serializers
-from .models import WeeklyTemplate, DiaryWeek
+from .models import WeeklyTemplate, TemplateLesson, DiaryWeek
+
+
+class TemplateLessonSerializer(serializers.ModelSerializer):
+    """
+    Serializes a TemplateLesson row into the TemplateLessonSlot shape expected
+    by the TypeScript frontend (camelCase keys).
+    """
+    dayOfWeek    = serializers.CharField(source='day_of_week')
+    lessonNumber = serializers.IntegerField(source='lesson_number')
+    startTime    = serializers.CharField(source='start_time')
+    endTime      = serializers.CharField(source='end_time')
+    subjectId    = serializers.CharField(source='subject_id')
+    blockType    = serializers.CharField(source='block_type')
+
+    class Meta:
+        model = TemplateLesson
+        fields = [
+            'id', 'dayOfWeek', 'lessonNumber',
+            'startTime', 'endTime',
+            'subjectId', 'blockType', 'label',
+        ]
 
 
 class WeeklyTemplateSerializer(serializers.ModelSerializer):
-    # Expose camelCase fields to match the TypeScript interface
-    userId = serializers.EmailField(source='user_email')
-    isActive = serializers.BooleanField(source='is_active')
+    """
+    Exposes camelCase fields to match the TypeScript WeeklyTemplate interface.
+
+    `slots` is kept for backward-compatible reads.
+    `lessons` is the normalized list from TemplateLesson rows; when present
+    in write operations it is used to create/replace TemplateLesson records.
+    """
+    userId        = serializers.EmailField(source='user_email')
+    isActive      = serializers.BooleanField(source='is_active')
     customPresets = serializers.JSONField(source='custom_presets', default=list)
-    createdAt = serializers.DateTimeField(source='created_at', read_only=True)
-    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+    createdAt     = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt     = serializers.DateTimeField(source='updated_at', read_only=True)
+    # Read-only nested lessons from the relational table
+    lessons       = TemplateLessonSerializer(
+        source='template_lessons', many=True, read_only=True,
+    )
 
     class Meta:
         model = WeeklyTemplate
-        fields = ['id', 'userId', 'name', 'slots', 'customPresets', 'isActive', 'createdAt', 'updatedAt']
+        fields = [
+            'id', 'userId', 'name',
+            'slots',        # JSON snapshot — kept for backward compat
+            'lessons',      # normalised rows — read-only via this serializer
+            'customPresets', 'isActive',
+            'createdAt', 'updatedAt',
+        ]
 
     def create(self, validated_data):
         return WeeklyTemplate.objects.create(**validated_data)

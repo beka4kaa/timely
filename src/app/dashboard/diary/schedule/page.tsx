@@ -11,6 +11,10 @@ import {
   CheckIcon,
   GripVertical,
   X,
+  Copy,
+  FilePlus,
+  Layers3,
+  Star,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -216,8 +220,18 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [subjects, setSubjects] = useState<Subject[]>([])
+
+  // ── Template list (for selector) ──────────────────────────────
+  const [allTemplates, setAllTemplates] = useState<WeeklyTemplate[]>([])
+  /** ID of the template currently open in the editor */
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('Моё расписание')
+  /** True when the template being edited is the active (applied) template */
+  const [isActiveTemplate, setIsActiveTemplate] = useState(false)
+  const [activatingTemplate, setActivatingTemplate] = useState(false)
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+  const [duplicatingTemplate, setDuplicatingTemplate] = useState(false)
+
   const [customPresets, setCustomPresets] = useState<CustomPreset[]>([])
 
   // Load custom presets from localStorage on mount
@@ -227,6 +241,23 @@ export default function SchedulePage() {
   const [slotsByDay, setSlotsByDay] = useState<Record<DayOfWeek, SlotDraft[]>>(
     () => Object.fromEntries(DAYS_ORDER.map(d => [d, []])) as unknown as Record<DayOfWeek, SlotDraft[]>
   )
+
+  /** Load a template object into the editor fields */
+  function loadTemplateIntoEditor(tpl: WeeklyTemplate, activeId: string | null) {
+    setTemplateId(tpl.id)
+    setTemplateName(tpl.name)
+    setIsActiveTemplate(tpl.id === activeId)
+    const map: Record<DayOfWeek, SlotDraft[]> = Object.fromEntries(
+      DAYS_ORDER.map(d => [d, []])
+    ) as unknown as Record<DayOfWeek, SlotDraft[]>
+    for (const s of tpl.slots) {
+      map[s.dayOfWeek].push({ ...s, _key: s.id, blockType: s.blockType ?? 'lesson', label: s.label ?? '' })
+    }
+    for (const d of DAYS_ORDER) {
+      map[d] = map[d].sort((a, b) => a.lessonNumber - b.lessonNumber)
+    }
+    setSlotsByDay(map)
+  }
 
   useEffect(() => {
     async function load() {
@@ -250,21 +281,12 @@ export default function SchedulePage() {
 
         if (tplRes.ok) {
           const tplData = await tplRes.json()
+          const templates: WeeklyTemplate[] = tplData.templates ?? []
           const active: WeeklyTemplate | null = tplData.active
-          if (active) {
-            setTemplateId(active.id)
-            setTemplateName(active.name)
-            const map: Record<DayOfWeek, SlotDraft[]> = Object.fromEntries(
-              DAYS_ORDER.map(d => [d, []])
-            ) as unknown as Record<DayOfWeek, SlotDraft[]>
-            for (const s of active.slots) {
-              map[s.dayOfWeek].push({ ...s, _key: s.id, blockType: s.blockType ?? 'lesson', label: s.label ?? '' })
-            }
-            // Sort each day by lesson number
-            for (const d of DAYS_ORDER) {
-              map[d] = map[d].sort((a, b) => a.lessonNumber - b.lessonNumber)
-            }
-            setSlotsByDay(map)
+          setAllTemplates(templates)
+          const toEdit = active ?? templates[0] ?? null
+          if (toEdit) {
+            loadTemplateIntoEditor(toEdit, active?.id ?? null)
           }
         }
       } catch (e) {
@@ -274,6 +296,7 @@ export default function SchedulePage() {
       }
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function addSlot(day: DayOfWeek) {
@@ -342,6 +365,84 @@ export default function SchedulePage() {
     dragDay.current = null
   }
 
+  /** Switch the editor to a different template from the list */
+  async function handleSwitchTemplate(id: string) {
+    if (id === templateId) return
+    const tpl = allTemplates.find(t => t.id === id)
+    if (!tpl) return
+    const activeId = allTemplates.find(t => t.isActive)?.id ?? null
+    loadTemplateIntoEditor(tpl, activeId)
+  }
+
+  /** Create a blank new template and open it for editing */
+  async function handleCreateEmpty() {
+    setCreatingTemplate(true)
+    try {
+      const res = await fetch('/api/diary/template/create-empty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Новый шаблон' }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const created: WeeklyTemplate = await res.json()
+      setAllTemplates(prev => [created, ...prev])
+      const activeId = allTemplates.find(t => t.isActive)?.id ?? null
+      loadTemplateIntoEditor(created, activeId)
+      toast.success('Новый шаблон создан')
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка создания шаблона')
+    } finally {
+      setCreatingTemplate(false)
+    }
+  }
+
+  /** Duplicate the currently open template and open the copy for editing */
+  async function handleDuplicate() {
+    if (!templateId) return
+    setDuplicatingTemplate(true)
+    try {
+      const res = await fetch('/api/diary/template/duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateId }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const copy: WeeklyTemplate = await res.json()
+      setAllTemplates(prev => [copy, ...prev])
+      const activeId = allTemplates.find(t => t.isActive)?.id ?? null
+      loadTemplateIntoEditor(copy, activeId)
+      toast.success(`Копия «${copy.name}» создана`)
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка дублирования')
+    } finally {
+      setDuplicatingTemplate(false)
+    }
+  }
+
+  /** Activate the currently edited template (makes it the live schedule) */
+  async function handleSetActive() {
+    if (!templateId || isActiveTemplate) return
+    setActivatingTemplate(true)
+    try {
+      const res = await fetch('/api/diary/template', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: templateId, isActive: true }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setIsActiveTemplate(true)
+      // Update the list to reflect new active state
+      setAllTemplates(prev =>
+        prev.map(t => ({ ...t, isActive: t.id === templateId }))
+      )
+      toast.success('Шаблон активирован — новые недели будут его использовать')
+    } catch (e: any) {
+      toast.error(e.message || 'Ошибка активации')
+    } finally {
+      setActivatingTemplate(false)
+    }
+  }
+
   async function handleSave() {
     const allSlots = DAYS_ORDER.flatMap(d => slotsByDay[d]).map(({ _key, ...s }) => s)
     setSaving(true)
@@ -364,8 +465,12 @@ export default function SchedulePage() {
           setTemplateId(data.id)
         }
       }
-      if (!res.ok) throw new Error(await res.text())
+      if (!res!.ok) throw new Error(await res!.text())
       toast.success('Расписание сохранено! Новые недели будут использовать его.')
+      // Keep the local template list in sync with the new name
+      setAllTemplates(prev =>
+        prev.map(t => t.id === templateId ? { ...t, name: templateName } : t)
+      )
     } catch (e: any) {
       toast.error(e.message || 'Ошибка сохранения')
     } finally {
@@ -397,16 +502,99 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Template name */}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="tpl-name" className="text-xs font-medium">Название шаблона</Label>
-        <Input
-          id="tpl-name"
-          value={templateName}
-          onChange={e => setTemplateName(e.target.value)}
-          className="max-w-xs h-8 text-sm"
-          placeholder="Моё расписание"
-        />
+      {/* ── Template selector + actions ─────────────────────────────── */}
+      <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-4">
+        <div className="flex items-center gap-2">
+          <Layers3 className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Шаблон расписания
+          </span>
+          {isActiveTemplate && (
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-medium">
+              <Star className="h-2.5 w-2.5" /> Активный
+            </span>
+          )}
+        </div>
+
+        {/* Template picker */}
+        {allTemplates.length > 1 && (
+          <Select value={templateId ?? ''} onValueChange={handleSwitchTemplate}>
+            <SelectTrigger className="h-8 text-sm max-w-xs">
+              <SelectValue placeholder="Выберите шаблон" />
+            </SelectTrigger>
+            <SelectContent>
+              {allTemplates.map(t => (
+                <SelectItem key={t.id} value={t.id}>
+                  <span className="flex items-center gap-1.5">
+                    {t.isActive && <Star className="h-3 w-3 text-primary" />}
+                    {t.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Template name input */}
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="tpl-name" className="text-xs font-medium">Название шаблона</Label>
+          <Input
+            id="tpl-name"
+            value={templateName}
+            onChange={e => setTemplateName(e.target.value)}
+            className="max-w-xs h-8 text-sm"
+            placeholder="Моё расписание"
+          />
+        </div>
+
+        {/* Actions row */}
+        <div className="flex flex-wrap gap-2">
+          {/* Create new empty template */}
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-xs gap-1.5"
+            onClick={handleCreateEmpty}
+            disabled={creatingTemplate}
+          >
+            {creatingTemplate
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <FilePlus className="h-3 w-3" />
+            }
+            Новый шаблон
+          </Button>
+
+          {/* Duplicate current template */}
+          {templateId && (
+            <Button
+              size="sm" variant="outline"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleDuplicate}
+              disabled={duplicatingTemplate}
+            >
+              {duplicatingTemplate
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <Copy className="h-3 w-3" />
+              }
+              Дублировать
+            </Button>
+          )}
+
+          {/* Set as active (only shown when editing a non-active template) */}
+          {templateId && !isActiveTemplate && (
+            <Button
+              size="sm" variant="secondary"
+              className="h-7 text-xs gap-1.5"
+              onClick={handleSetActive}
+              disabled={activatingTemplate}
+            >
+              {activatingTemplate
+                ? <Loader2 className="h-3 w-3 animate-spin" />
+                : <Star className="h-3 w-3" />
+              }
+              Сделать активным
+            </Button>
+          )}
+        </div>
       </div>
 
       {subjects.length === 0 && (
