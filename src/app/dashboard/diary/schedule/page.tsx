@@ -231,7 +231,18 @@ export default function SchedulePage() {
   const [activatingTemplate, setActivatingTemplate] = useState(false)
   const [creatingTemplate, setCreatingTemplate] = useState(false)
   const [duplicatingTemplate, setDuplicatingTemplate] = useState(false)
-  const [deletingTemplate, setDeletingTemplate] = useState(false)
+
+  // Pending soft-delete: holds the template being "undone" until timeout fires
+  const pendingDeleteRef = useRef<{
+    template: WeeklyTemplate
+    previousTemplates: WeeklyTemplate[]
+    previousEditorId: string | null
+    previousEditorName: string
+    previousSlots: Record<DayOfWeek, SlotDraft[]>
+    previousIsActive: boolean
+    timer: ReturnType<typeof setTimeout>
+    toastId: string | number
+  } | null>(null)
 
   const [customPresets, setCustomPresets] = useState<CustomPreset[]>([])
 
@@ -420,31 +431,95 @@ export default function SchedulePage() {
     }
   }
 
-  /** Delete the currently edited template (not allowed for active template) */
-  async function handleDeleteTemplate() {
-    if (!templateId || isActiveTemplate) return
-    if (!confirm(`Удалить шаблон «${templateName}»? Это действие необратимо.`)) return
-    setDeletingTemplate(true)
-    try {
-      const res = await fetch(`/api/diary/template?id=${templateId}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(await res.text())
-      const remaining = allTemplates.filter(t => t.id !== templateId)
-      setAllTemplates(remaining)
-      // Switch editor to the next available template
-      const next = remaining[0] ?? null
-      if (next) {
-        const activeId = remaining.find(t => t.isActive)?.id ?? null
-        loadTemplateIntoEditor(next, activeId)
-      } else {
-        setTemplateId(null)
-        setTemplateName('Моё расписание')
-        setSlotsByDay(Object.fromEntries(DAYS_ORDER.map(d => [d, []])) as any)
+  /** Undo the last soft-deleted template */
+  function undoDelete() {
+    const p = pendingDeleteRef.current
+    if (!p) return
+    clearTimeout(p.timer)
+    toast.dismiss(p.toastId)
+    // Restore UI
+    setAllTemplates(p.previousTemplates)
+    setTemplateId(p.previousEditorId)
+    setTemplateName(p.previousEditorName)
+    setIsActiveTemplate(p.previousIsActive)
+    setSlotsByDay(p.previousSlots)
+    pendingDeleteRef.current = null
+  }
+
+  // Ctrl+Z = undo delete, Ctrl+Shift+Z = nothing extra needed (no redo)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        if (pendingDeleteRef.current) {
+          e.preventDefault()
+          undoDelete()
+        }
       }
-      toast.success('Шаблон удалён')
-    } catch (e: any) {
-      toast.error(e.message || 'Ошибка удаления')
-    } finally {
-      setDeletingTemplate(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  /** Delete the currently edited template (not allowed for active template) */
+  function handleDeleteTemplate() {
+    if (!templateId || isActiveTemplate) return
+
+    // Snapshot current state for undo
+    const snapshotTemplates = [...allTemplates]
+    const snapshotId       = templateId
+    const snapshotName     = templateName
+    const snapshotSlots    = slotsByDay
+    const snapshotIsActive = isActiveTemplate
+    const deletedTemplate  = allTemplates.find(t => t.id === templateId)!
+
+    // Optimistically remove from UI
+    const remaining = allTemplates.filter(t => t.id !== templateId)
+    setAllTemplates(remaining)
+    const next = remaining[0] ?? null
+    if (next) {
+      const activeId = remaining.find(t => t.isActive)?.id ?? null
+      loadTemplateIntoEditor(next, activeId)
+    } else {
+      setTemplateId(null)
+      setTemplateName('Моё расписание')
+      setSlotsByDay(Object.fromEntries(DAYS_ORDER.map(d => [d, []])) as any)
+    }
+
+    // Schedule actual API delete after 6 s
+    const timer = setTimeout(async () => {
+      pendingDeleteRef.current = null
+      try {
+        const res = await fetch(`/api/diary/template?id=${snapshotId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error(await res.text())
+      } catch {
+        // If delete failed, silently restore
+        setAllTemplates(snapshotTemplates)
+        setTemplateId(snapshotId)
+        setTemplateName(snapshotName)
+        setIsActiveTemplate(snapshotIsActive)
+        setSlotsByDay(snapshotSlots)
+        toast.error('Ошибка удаления — шаблон восстановлен')
+      }
+    }, 6000)
+
+    const toastId = toast('Шаблон «' + deletedTemplate.name + '» удалён', {
+      duration: 6000,
+      action: {
+        label: 'Отменить',
+        onClick: undoDelete,
+      },
+      description: 'Ctrl+Z — тоже отменяет',
+    })
+
+    pendingDeleteRef.current = {
+      template:            deletedTemplate,
+      previousTemplates:   snapshotTemplates,
+      previousEditorId:    snapshotId,
+      previousEditorName:  snapshotName,
+      previousSlots:       snapshotSlots,
+      previousIsActive:    snapshotIsActive,
+      timer,
+      toastId,
     }
   }
 
@@ -630,12 +705,8 @@ export default function SchedulePage() {
               size="sm" variant="ghost"
               className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto"
               onClick={handleDeleteTemplate}
-              disabled={deletingTemplate}
             >
-              {deletingTemplate
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Trash2Icon className="h-3 w-3" />
-              }
+              <Trash2Icon className="h-3 w-3" />
               Удалить
             </Button>
           )}
