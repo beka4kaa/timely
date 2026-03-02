@@ -16,6 +16,7 @@ import {
   Layers3,
   Star,
   Download,
+  Upload,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -266,6 +267,69 @@ function exportToCsv(
   URL.revokeObjectURL(url)
 }
 
+/** Parse a single CSV row, respecting quoted fields */
+function parseCSVRow(row: string): string[] {
+  const cells: string[] = []
+  let i = 0
+  while (i < row.length) {
+    if (row[i] === '"') {
+      let val = ''; i++
+      while (i < row.length) {
+        if (row[i] === '"' && row[i + 1] === '"') { val += '"'; i += 2 }
+        else if (row[i] === '"') { i++; break }
+        else { val += row[i++] }
+      }
+      cells.push(val)
+      if (row[i] === ',') i++
+    } else {
+      const end = row.indexOf(',', i)
+      if (end === -1) { cells.push(row.slice(i)); break }
+      cells.push(row.slice(i, end)); i = end + 1
+    }
+  }
+  return cells
+}
+
+const DAY_NAME_TO_KEY: Record<string, DayOfWeek> = {
+  'понедельник': 'monday', 'вторник': 'tuesday', 'среда': 'wednesday',
+  'четверг': 'thursday', 'пятница': 'friday', 'суббота': 'saturday', 'воскресенье': 'sunday',
+  monday: 'monday', tuesday: 'tuesday', wednesday: 'wednesday',
+  thursday: 'thursday', friday: 'friday', saturday: 'saturday', sunday: 'sunday',
+}
+
+type ParsedRow = {
+  dayOfWeek: DayOfWeek
+  lessonNumber: number
+  startTime: string
+  endTime: string
+  blockType: string
+  rawName: string
+}
+
+function parseCsvToRows(csv: string): ParsedRow[] {
+  // Strip UTF-8 BOM if present
+  const content = csv.replace(/^\uFEFF/, '')
+  const lines = content.split(/\r?\n/).filter(l => l.trim())
+  if (lines.length < 2) return []
+  const rows: ParsedRow[] = []
+  for (const line of lines.slice(1)) {          // skip header
+    const cells = parseCSVRow(line)
+    if (cells.length < 5) continue
+    const [dayRaw, numRaw, start, end, type, name = ''] = cells
+    const dayKey = DAY_NAME_TO_KEY[dayRaw.trim().toLowerCase()]
+    if (!dayKey) continue
+    rows.push({
+      dayOfWeek: dayKey,
+      lessonNumber: parseInt(numRaw) || 1,
+      startTime: start.trim(),
+      endTime: end.trim(),
+      blockType: type.trim() || 'lesson',
+      rawName: name.trim(),
+    })
+  }
+  return rows
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -282,6 +346,8 @@ export default function SchedulePage() {
   const [activatingTemplate, setActivatingTemplate] = useState(false)
   const [creatingTemplate, setCreatingTemplate] = useState(false)
   const [duplicatingTemplate, setDuplicatingTemplate] = useState(false)
+  const [importingTemplate, setImportingTemplate] = useState(false)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   // Pending soft-delete: holds the template being "undone" until timeout fires
   const pendingDeleteRef = useRef<{
@@ -479,6 +545,77 @@ export default function SchedulePage() {
       toast.error(e.message || 'Ошибка дублирования')
     } finally {
       setDuplicatingTemplate(false)
+    }
+  }
+
+  /** Import a CSV file and create a new template from it */
+  async function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!importFileRef.current) return
+    importFileRef.current.value = ''   // reset so same file can be re-selected
+    if (!file) return
+
+    setImportingTemplate(true)
+    try {
+      const text = await file.text()
+      const rows = parseCsvToRows(text)
+      if (rows.length === 0) {
+        toast.error('Не удалось распознать уроки — проверьте формат CSV')
+        return
+      }
+
+      // Resolve subject names to IDs (strip leading emoji + space)
+      const nameToSubject = new Map(
+        subjects.map(s => [s.name.toLowerCase().trim(), s])
+      )
+      /** Strip a leading emoji/symbol (codePoint > U+2000) and any trailing space */
+      const stripEmoji = (s: string) =>
+        (s.codePointAt(0) ?? 0) > 0x2000 ? s.replace(/^\S+\s*/, '').trim() : s.trim()
+
+      const slots = rows.map((r) => {
+        const isLesson = !r.blockType || r.blockType === 'lesson'
+        const cleanName = stripEmoji(r.rawName)
+        const matched = nameToSubject.get(cleanName.toLowerCase())
+        return {
+          id: crypto.randomUUID(),
+          dayOfWeek: r.dayOfWeek,
+          lessonNumber: r.lessonNumber,
+          startTime: r.startTime,
+          endTime: r.endTime,
+          blockType: r.blockType,
+          subjectId: isLesson ? (matched?.id ?? '') : '',
+          label: isLesson ? '' : (r.rawName || ''),
+        }
+      })
+
+      // Derive template name from filename (strip extension)
+      const importedName = file.name.replace(/\.csv$/i, '').replace(/_/g, ' ') || 'Импорт'
+
+      // Create empty template then save slots via PUT
+      const createRes = await fetch('/api/diary/template/create-empty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: importedName }),
+      })
+      if (!createRes.ok) throw new Error('Ошибка создания шаблона')
+      const created: WeeklyTemplate = await createRes.json()
+
+      const saveRes = await fetch('/api/diary/template', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: created.id, name: importedName, slots }),
+      })
+      if (!saveRes.ok) throw new Error('Ошибка сохранения')
+      const saved: WeeklyTemplate = await saveRes.json()
+
+      const activeId = allTemplates.find(t => t.isActive)?.id ?? null
+      setAllTemplates(prev => [saved, ...prev])
+      loadTemplateIntoEditor(saved, activeId)
+      toast.success(`Импортировано ${rows.length} уроков — «${importedName}»`)
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка импорта')
+    } finally {
+      setImportingTemplate(false)
     }
   }
 
@@ -750,6 +887,27 @@ export default function SchedulePage() {
               CSV
             </Button>
           )}
+
+          {/* Import from CSV */}
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-xs gap-1.5"
+            disabled={importingTemplate}
+            onClick={() => importFileRef.current?.click()}
+          >
+            {importingTemplate
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <Upload className="h-3 w-3" />
+            }
+            Импорт CSV
+          </Button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleImportCsv}
+          />
 
           {/* Set as active (only shown when editing a non-active template) */}
           {templateId && !isActiveTemplate && (
