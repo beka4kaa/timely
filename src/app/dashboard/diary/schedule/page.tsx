@@ -15,6 +15,7 @@ import {
   FilePlus,
   Layers3,
   Star,
+  Download,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -213,6 +214,56 @@ function formatHHMM(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 4)
   if (digits.length <= 2) return digits
   return `${digits.slice(0, 2)}:${digits.slice(2)}`
+}
+
+/** Wrap a cell value for CSV: escape quotes, wrap in quotes if needed */
+function csvCell(val: string): string {
+  const s = String(val ?? '').replace(/"/g, '""')
+  return /[,"\n\r]/.test(s) ? `"${s}"` : s
+}
+
+function exportToCsv(
+  templateName: string,
+  slotsByDay: Record<string, SlotDraft[]>,
+  subjects: { id: string; name: string; emoji: string }[],
+  blockLabels: (type: string, label: string) => string,
+) {
+  const subjectMap = new Map(subjects.map(s => [s.id, s]))
+  const DAY_LABELS: Record<string, string> = {
+    monday: 'Понедельник', tuesday: 'Вторник', wednesday: 'Среда',
+    thursday: 'Четверг', friday: 'Пятница', saturday: 'Суббота', sunday: 'Воскресенье',
+  }
+  const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+
+  const header = ['День', '№', 'Начало', 'Конец', 'Тип', 'Предмет / Название'].map(csvCell).join(',')
+  const rows: string[] = [header]
+
+  for (const day of DAYS) {
+    for (const slot of (slotsByDay[day] ?? [])) {
+      const isLesson = !slot.blockType || slot.blockType === 'lesson'
+      const subj = isLesson ? subjectMap.get(slot.subjectId) : undefined
+      const nameCell = isLesson
+        ? (subj ? `${subj.emoji} ${subj.name}` : slot.subjectId)
+        : blockLabels(slot.blockType, slot.label)
+      rows.push([
+        DAY_LABELS[day] ?? day,
+        String(slot.lessonNumber),
+        slot.startTime,
+        slot.endTime,
+        slot.blockType || 'lesson',
+        nameCell,
+      ].map(csvCell).join(','))
+    }
+  }
+
+  const bom = '\uFEFF'   // UTF-8 BOM so Excel opens cyrillic correctly
+  const blob = new Blob([bom + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${templateName.replace(/[\\/:*?"<>|]/g, '_')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function SchedulePage() {
@@ -680,6 +731,23 @@ export default function SchedulePage() {
                 : <Copy className="h-3 w-3" />
               }
               Дублировать
+            </Button>
+          )}
+
+          {/* Export to CSV */}
+          {templateId && (
+            <Button
+              size="sm" variant="outline"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => exportToCsv(
+                templateName,
+                slotsByDay,
+                subjects,
+                (type, label) => getBlockLabel(type, label, customPresets),
+              )}
+            >
+              <Download className="h-3 w-3" />
+              CSV
             </Button>
           )}
 
