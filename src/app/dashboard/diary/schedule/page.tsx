@@ -806,6 +806,45 @@ export default function SchedulePage() {
               <Star className="h-2.5 w-2.5" /> Активный
             </span>
           )}
+          {/* CSV buttons — top-right corner */}
+          <div className="ml-auto flex items-center gap-1">
+            {templateId && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                title="Экспорт CSV"
+                onClick={() => exportToCsv(
+                  templateName,
+                  slotsByDay,
+                  subjects,
+                  (type, label) => getBlockLabel(type, label, customPresets),
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              title="Импорт CSV"
+              disabled={importingTemplate}
+              onClick={() => importFileRef.current?.click()}
+            >
+              {importingTemplate
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Upload className="h-3.5 w-3.5" />
+              }
+            </Button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportCsv}
+            />
+          </div>
         </div>
 
         {/* Template picker */}
@@ -870,44 +909,6 @@ export default function SchedulePage() {
               Дублировать
             </Button>
           )}
-
-          {/* Export to CSV */}
-          {templateId && (
-            <Button
-              size="sm" variant="outline"
-              className="h-7 text-xs gap-1.5"
-              onClick={() => exportToCsv(
-                templateName,
-                slotsByDay,
-                subjects,
-                (type, label) => getBlockLabel(type, label, customPresets),
-              )}
-            >
-              <Download className="h-3 w-3" />
-              CSV
-            </Button>
-          )}
-
-          {/* Import from CSV */}
-          <Button
-            size="sm" variant="outline"
-            className="h-7 text-xs gap-1.5"
-            disabled={importingTemplate}
-            onClick={() => importFileRef.current?.click()}
-          >
-            {importingTemplate
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <Upload className="h-3 w-3" />
-            }
-            Импорт CSV
-          </Button>
-          <input
-            ref={importFileRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={handleImportCsv}
-          />
 
           {/* Set as active (only shown when editing a non-active template) */}
           {templateId && !isActiveTemplate && (
