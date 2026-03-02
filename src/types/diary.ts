@@ -77,11 +77,12 @@ export const GRADE_TYPE_LABELS: Record<keyof LessonGrades, string> = {
  */
 export type BlockType = string
 
-export type PresetBlockType = 'lesson' | 'break' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'feynman' | 'error-review' | 'other'
+export type PresetBlockType = 'lesson' | 'break' | 'rest' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'feynman' | 'error-review' | 'other'
 
 export const BLOCK_TYPE_META: Record<PresetBlockType, { label: string; emoji: string; color: string }> = {
   lesson:            { label: 'Урок',            emoji: '📚', color: 'text-blue-400' },
   break:             { label: 'Перерыв',         emoji: '☕', color: 'text-slate-400' },
+  rest:              { label: 'Отдых',            emoji: '🌟', color: 'text-teal-400' },
   focus:             { label: 'Фокус',           emoji: '🎯', color: 'text-violet-400' },
   test:              { label: 'Тест',            emoji: '📝', color: 'text-orange-400' },
   'weakness-test':   { label: 'Weakness Test',   emoji: '🔴', color: 'text-red-400' },
@@ -92,7 +93,7 @@ export const BLOCK_TYPE_META: Record<PresetBlockType, { label: string; emoji: st
   other:             { label: 'Другое',          emoji: '🔖', color: 'text-green-400' },
 }
 
-export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'feynman', 'error-review', 'other']
+export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'rest', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'feynman', 'error-review', 'other']
 
 /** Block types that show a single test grade + subject picker */
 export const TEST_BLOCK_TYPES: string[] = ['test', 'weakness-test', 'cumulative-test', 'error-test', 'error-review']
