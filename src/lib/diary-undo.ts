@@ -78,6 +78,7 @@ export async function performUndo(
   if (action.type === 'grade') {
     await patchFn(action.weekId, action.dayId, action.lessonId, action.gradeField, action.before)
     redoStack = [...redoStack, action]
+    notifyListeners()
     return action.label
   }
 
@@ -86,6 +87,7 @@ export async function performUndo(
       await restoreWeekFn(action.weekId, action.weekSnapshot)
     }
     redoStack = [...redoStack, action]
+    notifyListeners()
     return action.label
   }
 
@@ -107,6 +109,7 @@ export async function performRedo(
   if (action.type === 'grade') {
     await patchFn(action.weekId, action.dayId, action.lessonId, action.gradeField, action.after)
     undoStack = [...undoStack, action]
+    notifyListeners()
     return action.label
   }
 
