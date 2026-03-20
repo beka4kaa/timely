@@ -84,22 +84,6 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
           </TabsContent>
         ))}
       </Tabs>
-
-      {/* Grade legend */}
-      <div className="flex flex-wrap items-center gap-3 px-1 pt-3 text-xs text-muted-foreground">
-        <span className="font-medium">Оценки:</span>
-        {[
-          { color: "bg-emerald-500", label: "5 — отлично" },
-          { color: "bg-blue-500", label: "4 — хорошо" },
-          { color: "bg-amber-400", label: "3 — удовл." },
-          { color: "bg-red-500", label: "1–2 — плохо" },
-        ].map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-1">
-            <span className={`inline-block w-2.5 h-2.5 rounded-sm ${color}`} />
-            {label}
-          </span>
-        ))}
-      </div>
     </div>
   )
 }

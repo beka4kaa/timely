@@ -8,6 +8,7 @@ import { WeekNav } from "@/components/diary/week-nav"
 import { DayTabs } from "@/components/diary/day-tabs"
 import type { DiaryWeek, DayOfWeek } from "@/types/diary"
 import { toast } from "sonner"
+import { useDiaryHeader } from "@/contexts/diary-header-ctx"
 import {
   performUndo, performRedo, canUndo, canRedo, clearUndoHistory,
   pushTemplateUndo,
@@ -97,6 +98,20 @@ export default function DiaryPage() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [applyingTemplate, setApplyingTemplate] = useState(false)
   const [confirmTemplateOpen, setConfirmTemplateOpen] = useState(false)
+  const { register, unregister } = useDiaryHeader()
+
+  // Register diary actions in the site header context
+  useEffect(() => {
+    register({
+      onTemplate: handleTemplateClick,
+      onShortcuts: () => setShortcutsOpen(true),
+      applyingTemplate,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyingTemplate])
+
+  // Unregister when leaving the diary page
+  useEffect(() => () => unregister(), [unregister])
   const weekStartRef = useRef(weekStart)
   weekStartRef.current = weekStart
   const weekRef = useRef(week)
@@ -246,49 +261,17 @@ export default function DiaryPage() {
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <NotebookPenIcon className="h-6 w-6 text-primary shrink-0" />
-          <div>
-            <h1 className="text-xl font-bold tracking-tight leading-none">Дневник</h1>
-            <p className="text-muted-foreground text-xs mt-0.5">Школьный дневник</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTemplateClick}
-            disabled={applyingTemplate || loading}
-            title="Применить шаблон к этой неделе (Ctrl+Shift+T)"
-            className="gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            {applyingTemplate
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : <RefreshCwIcon className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline text-xs">Шаблон</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShortcutsOpen(true)}
-            title="Горячие клавиши (?)"
-            className="h-8 w-8 text-muted-foreground"
-          >
-            <KeyboardIcon className="h-4 w-4" />
-          </Button>
-
-          <WeekNav
-            label={formatWeekRange(weekStart)}
-            isCurrentWeek={isThisWeek(weekStart)}
-            onPrev={() => changeWeek(-1)}
-            onNext={() => changeWeek(1)}
-            onToday={goToday}
-          />
-        </div>
+      {/* Week navigation */}
+      <div className="flex items-center">
+        <WeekNav
+          weekStart={weekStart}
+          label={formatWeekRange(weekStart)}
+          isCurrentWeek={isThisWeek(weekStart)}
+          onPrev={() => changeWeek(-1)}
+          onNext={() => changeWeek(1)}
+          onToday={goToday}
+          onWeekSelect={(ws) => { setWeekStart(ws); setActiveDow(isThisWeek(ws) ? todayDow() : "monday") }}
+        />
       </div>
 
       {/* Content */}
