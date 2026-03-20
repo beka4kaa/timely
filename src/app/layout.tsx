@@ -9,8 +9,8 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#3b82f6' },
-    { media: '(prefers-color-scheme: dark)', color: '#08101e' },
+    { media: '(prefers-color-scheme: light)', color: '#000000' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
   viewportFit: 'cover',
 }
@@ -53,7 +53,7 @@ export default function RootLayout({
           <NextAuthProvider>
             <div className="min-h-screen bg-background">
               {children}
-              <Toaster position="top-right" richColors closeButton />
+              <Toaster position="bottom-right" richColors closeButton />
             </div>
           </NextAuthProvider>
         </ThemeProvider>
