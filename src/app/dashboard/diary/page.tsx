@@ -150,11 +150,14 @@ export default function DiaryPage() {
     // Fetch the latest week state from the server before snapshotting —
     // DiaryPage.week is stale (grade changes update local state, not week state here)
     let snapshot: TemplateGradeEntry[] = []
+    // Use the real DiaryWeek UUID (not the date string!) for API calls in undo
+    let freshWeekId: string = weekRef.current?.id ?? weekStartRef.current
     try {
       const freshRes = await fetch(`/api/diary/week?weekStart=${weekStartRef.current}`)
       if (freshRes.ok) {
         const freshWeek = await freshRes.json()
         snapshot = buildGradeSnapshot(freshWeek)
+        freshWeekId = freshWeek.id  // real UUID
       }
     } catch {
       // snapshot stays empty if fetch fails — undo will just wipe grades (acceptable)
@@ -173,7 +176,7 @@ export default function DiaryPage() {
       // Push template undo (replaces clearUndoHistory — we keep the snapshot instead)
       clearUndoHistory()
       pushTemplateUndo({
-        weekId: weekStartRef.current,
+        weekId: freshWeekId,  // real DiaryWeek UUID, not date string
         snapshot,
         label: `Шаблон применён к неделе ${formatWeekRange(weekStartRef.current)}`,
       })
