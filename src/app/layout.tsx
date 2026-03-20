@@ -53,7 +53,7 @@ export default function RootLayout({
           <NextAuthProvider>
             <div className="min-h-screen bg-background">
               {children}
-              <Toaster position="bottom-right" richColors closeButton />
+              <Toaster position="top-right" richColors closeButton offset={72} />
             </div>
           </NextAuthProvider>
         </ThemeProvider>
