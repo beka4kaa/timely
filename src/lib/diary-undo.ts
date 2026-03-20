@@ -34,16 +34,32 @@ const MAX_STACK = 30
 let undoStack: DiaryUndoAction[] = []
 let redoStack: DiaryUndoAction[] = []
 
+// ── Listeners ────────────────────────────────────────────────
+type HistoryListener = () => void
+let listeners: HistoryListener[] = []
+
+function notifyListeners() {
+  listeners.forEach(fn => fn())
+}
+
+/** Subscribe to undo/redo stack changes. Returns unsubscribe fn. */
+export function subscribeHistory(fn: HistoryListener): () => void {
+  listeners = [...listeners, fn]
+  return () => { listeners = listeners.filter(l => l !== fn) }
+}
+
 /** Push a new undoable grade action. Clears redo stack. */
 export function pushGradeUndo(action: Omit<GradeUndoAction, 'type'>) {
   undoStack = [...undoStack.slice(-(MAX_STACK - 1)), { type: 'grade', ...action }]
   redoStack = []
+  notifyListeners()
 }
 
 /** Push a template undo action (full week snapshot). Clears redo stack. */
 export function pushTemplateUndo(action: Omit<TemplateUndoAction, 'type'>) {
   undoStack = [...undoStack.slice(-(MAX_STACK - 1)), { type: 'template', ...action }]
   redoStack = []
+  notifyListeners()
 }
 
 /**
@@ -111,4 +127,5 @@ export function redoDepth() { return redoStack.length }
 export function clearUndoHistory() {
   undoStack = []
   redoStack = []
+  notifyListeners()
 }

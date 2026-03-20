@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import { useDiaryHeader } from "@/contexts/diary-header-ctx"
 import {
   performUndo, performRedo, canUndo, canRedo, clearUndoHistory,
-  pushTemplateUndo,
+  pushTemplateUndo, subscribeHistory,
 } from "@/lib/diary-undo"
 import {
   Dialog,
@@ -98,17 +98,39 @@ export default function DiaryPage() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [applyingTemplate, setApplyingTemplate] = useState(false)
   const [confirmTemplateOpen, setConfirmTemplateOpen] = useState(false)
+  const [undoAvail, setUndoAvail] = useState(false)
+  const [redoAvail, setRedoAvail] = useState(false)
   const { register, unregister } = useDiaryHeader()
+
+  // Track undo/redo availability reactively
+  useEffect(() => {
+    return subscribeHistory(() => {
+      setUndoAvail(canUndo())
+      setRedoAvail(canRedo())
+    })
+  }, [])
 
   // Register diary actions in the site header context
   useEffect(() => {
     register({
       onTemplate: handleTemplateClick,
       onShortcuts: () => setShortcutsOpen(true),
+      onUndo: async () => {
+        if (!canUndo()) return
+        const label = await performUndo(patchGradeApi, restoreWeekApi)
+        if (label) { toast.success("Отменено", { description: label }); await loadWeek(weekStartRef.current) }
+      },
+      onRedo: async () => {
+        if (!canRedo()) return
+        const label = await performRedo(patchGradeApi, restoreWeekApi)
+        if (label) { toast.success("Возвращено", { description: label }); await loadWeek(weekStartRef.current) }
+      },
+      canUndo: undoAvail,
+      canRedo: redoAvail,
       applyingTemplate,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyingTemplate])
+  }, [applyingTemplate, undoAvail, redoAvail])
 
   // Unregister when leaving the diary page
   useEffect(() => () => unregister(), [unregister])

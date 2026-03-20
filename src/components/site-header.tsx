@@ -5,7 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Separator } from "@/components/ui/separator"
 import { useDiaryHeader } from "@/contexts/diary-header-ctx"
 import { Button } from "@/components/ui/button"
-import { RefreshCwIcon, Loader2, KeyboardIcon, Settings2Icon } from "lucide-react"
+import { RefreshCwIcon, Loader2, KeyboardIcon, Settings2Icon, Undo2Icon, Redo2Icon } from "lucide-react"
 import Link from "next/link"
 
 export function SiteHeader() {
@@ -28,6 +28,30 @@ export function SiteHeader() {
           {/* Diary-specific buttons — only shown on /dashboard/diary */}
           {isDiary && (
             <>
+              {/* Undo */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-8 w-8 transition-opacity ${actions.canUndo ? 'text-muted-foreground' : 'text-muted-foreground opacity-30 pointer-events-none'}`}
+                onClick={actions.onUndo ?? undefined}
+                title="Отменить (Ctrl+Z)"
+              >
+                <Undo2Icon className="h-4 w-4" />
+              </Button>
+
+              {/* Redo */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-8 w-8 transition-opacity ${actions.canRedo ? 'text-muted-foreground' : 'text-muted-foreground opacity-30 pointer-events-none'}`}
+                onClick={actions.onRedo ?? undefined}
+                title="Вернуть (Ctrl+Shift+Z)"
+              >
+                <Redo2Icon className="h-4 w-4" />
+              </Button>
+
+              <Separator orientation="vertical" className="h-4 mx-0.5" />
+
               {/* Schedule */}
               <Button
                 variant="ghost"
