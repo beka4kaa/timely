@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { getOrCreateWeek, forceRecreateWeek, getMondayOf } from '@/lib/diary-store'
+import { getOrCreateWeek, forceRecreateWeek, getMondayOf, restoreWeek } from '@/lib/diary-store'
 import { BACKEND_URL } from '@/lib/api-utils'
 
 /** GET /api/diary/week?weekStart=2026-02-23 */
@@ -75,4 +75,19 @@ export async function POST(req: NextRequest) {
 
   const week = await forceRecreateWeek(userId, weekStart, resolveSubject)
   return NextResponse.json(week)
+}
+
+/** PUT /api/diary/week — restore a full DiaryWeek snapshot (used for template undo) */
+export async function PUT(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const userId = session.user.email
+  const week = await req.json()
+  if (!week?.id) {
+    return NextResponse.json({ error: 'week.id required' }, { status: 400 })
+  }
+  const restored = await restoreWeek(userId, week)
+  return NextResponse.json(restored)
 }

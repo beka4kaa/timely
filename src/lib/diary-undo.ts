@@ -12,23 +12,19 @@ export interface GradeUndoAction {
   gradeField: string          // 'retelling' | 'exercises' | 'test'
   before: 1 | 2 | 3 | 4 | 5 | null
   after: 1 | 2 | 3 | 4 | 5 | null
-  label: string               // human-readable, e.g. "Оценка Упражнения: 4"
+  label: string
 }
 
-/** Single grade entry in a template snapshot */
-export interface TemplateGradeEntry {
-  dayId: string
-  lessonId: string
-  gradeField: string
-  value: 1 | 2 | 3 | 4 | 5 | null
-}
-
-/** Snapshot of all grades before a template was applied */
+/**
+ * Stores the FULL DiaryWeek JSON before a template was applied.
+ * On undo, restores the entire week via PUT /api/diary/week.
+ * This is necessary because forceRecreateWeek generates NEW UUIDs for
+ * every day and lesson, so individual dayId/lessonId patches would fail.
+ */
 export interface TemplateUndoAction {
   type: 'template'
   weekId: string
-  /** All grades that existed before the template wiped them */
-  snapshot: TemplateGradeEntry[]
+  weekSnapshot: any  // full DiaryWeek JSON before template was applied
   label: string
 }
 
@@ -44,15 +40,21 @@ export function pushGradeUndo(action: Omit<GradeUndoAction, 'type'>) {
   redoStack = []
 }
 
-/** Push a template undo action (snapshot of all grades). Clears redo stack. */
+/** Push a template undo action (full week snapshot). Clears redo stack. */
 export function pushTemplateUndo(action: Omit<TemplateUndoAction, 'type'>) {
   undoStack = [...undoStack.slice(-(MAX_STACK - 1)), { type: 'template', ...action }]
   redoStack = []
 }
 
-/** Perform undo. Returns the label of the reverted action, or null if nothing to undo. */
+/**
+ * Perform undo.
+ * @param patchFn - for grade undo: patches a single grade field
+ * @param restoreWeekFn - for template undo: restores the full week snapshot
+ * Returns the human-readable label, or null if nothing to undo.
+ */
 export async function performUndo(
   patchFn: (weekId: string, dayId: string, lessonId: string, field: string, value: any) => Promise<void>,
+  restoreWeekFn?: (weekId: string, snapshot: any) => Promise<void>,
 ): Promise<string | null> {
   const action = undoStack.pop()
   if (!action) return null
@@ -64,12 +66,9 @@ export async function performUndo(
   }
 
   if (action.type === 'template') {
-    // Restore all grades from snapshot in parallel
-    await Promise.all(
-      action.snapshot.map(entry =>
-        patchFn(action.weekId, entry.dayId, entry.lessonId, entry.gradeField, entry.value)
-      )
-    )
+    if (restoreWeekFn) {
+      await restoreWeekFn(action.weekId, action.weekSnapshot)
+    }
     redoStack = [...redoStack, action]
     return action.label
   }
@@ -77,9 +76,14 @@ export async function performUndo(
   return null
 }
 
-/** Perform redo. Returns the label of the reapplied action, or null if nothing to redo. */
+/**
+ * Perform redo.
+ * Note: redo of template apply is not supported (would require a second snapshot).
+ * Template redo actions are silently discarded.
+ */
 export async function performRedo(
   patchFn: (weekId: string, dayId: string, lessonId: string, field: string, value: any) => Promise<void>,
+  restoreWeekFn?: (weekId: string, snapshot: any) => Promise<void>,
 ): Promise<string | null> {
   const action = redoStack.pop()
   if (!action) return null
@@ -91,14 +95,8 @@ export async function performRedo(
   }
 
   if (action.type === 'template') {
-    // Re-apply template = wipe all grades (patch everything to null)
-    await Promise.all(
-      action.snapshot.map(entry =>
-        patchFn(action.weekId, entry.dayId, entry.lessonId, entry.gradeField, null)
-      )
-    )
-    undoStack = [...undoStack, action]
-    return action.label
+    // Redo of template not supported — silently discard action
+    return null
   }
 
   return null

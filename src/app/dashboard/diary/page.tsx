@@ -10,7 +10,7 @@ import type { DiaryWeek, DayOfWeek } from "@/types/diary"
 import { toast } from "sonner"
 import {
   performUndo, performRedo, canUndo, canRedo, clearUndoHistory,
-  pushTemplateUndo, type TemplateGradeEntry,
+  pushTemplateUndo,
 } from "@/lib/diary-undo"
 import {
   Dialog,
@@ -80,26 +80,12 @@ async function patchGradeApi(weekId: string, dayId: string, lessonId: string, fi
   })
 }
 
-/** Extract all non-null grades from a week as a flat snapshot array */
-function buildGradeSnapshot(week: DiaryWeek): TemplateGradeEntry[] {
-  const entries: TemplateGradeEntry[] = []
-  for (const day of week.days) {
-    for (const lesson of day.lessons) {
-      const fields = ["retelling", "exercises", "test"] as const
-      for (const field of fields) {
-        // Only store entries that have a value (null entries don't need restoring)
-        if (lesson.grades[field] !== undefined) {
-          entries.push({
-            dayId: day.id,
-            lessonId: lesson.id,
-            gradeField: field,
-            value: lesson.grades[field],
-          })
-        }
-      }
-    }
-  }
-  return entries
+async function restoreWeekApi(_weekId: string, snapshot: any) {
+  await fetch("/api/diary/week", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(snapshot),
+  })
 }
 
 export default function DiaryPage() {
@@ -149,18 +135,17 @@ export default function DiaryPage() {
 
     // Fetch the latest week state from the server before snapshotting —
     // DiaryPage.week is stale (grade changes update local state, not week state here)
-    let snapshot: TemplateGradeEntry[] = []
-    // Use the real DiaryWeek UUID (not the date string!) for API calls in undo
+    let weekSnapshot: any = null
     let freshWeekId: string = weekRef.current?.id ?? weekStartRef.current
     try {
       const freshRes = await fetch(`/api/diary/week?weekStart=${weekStartRef.current}`)
       if (freshRes.ok) {
         const freshWeek = await freshRes.json()
-        snapshot = buildGradeSnapshot(freshWeek)
-        freshWeekId = freshWeek.id  // real UUID
+        weekSnapshot = freshWeek           // store FULL week for reliable undo
+        freshWeekId = freshWeek.id         // real UUID
       }
     } catch {
-      // snapshot stays empty if fetch fails — undo will just wipe grades (acceptable)
+      // snapshot stays null — undo won't restore grades (acceptable fallback)
     }
 
     try {
@@ -173,13 +158,14 @@ export default function DiaryPage() {
       const newWeek = await res.json()
       setWeek(newWeek)
 
-      // Push template undo (replaces clearUndoHistory — we keep the snapshot instead)
       clearUndoHistory()
-      pushTemplateUndo({
-        weekId: freshWeekId,  // real DiaryWeek UUID, not date string
-        snapshot,
-        label: `Шаблон применён к неделе ${formatWeekRange(weekStartRef.current)}`,
-      })
+      if (weekSnapshot) {
+        pushTemplateUndo({
+          weekId: freshWeekId,
+          weekSnapshot,  // full DiaryWeek before template was applied
+          label: `Шаблон применён к неделе ${formatWeekRange(weekStartRef.current)}`,
+        })
+      }
 
       toast.success("Шаблон применён к текущей неделе", {
         description: "Оценки и заметки обнулены. Нажмите Ctrl+Z чтобы отменить.",
@@ -220,7 +206,7 @@ export default function DiaryPage() {
       if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault()
         if (!canUndo()) { toast.info("Нечего отменять"); return }
-        const label = await performUndo(patchGradeApi)
+        const label = await performUndo(patchGradeApi, restoreWeekApi)
         if (label) {
           toast.success("Отменено", { description: label })
           await loadWeek(weekStartRef.current)
@@ -234,7 +220,7 @@ export default function DiaryPage() {
       ) {
         e.preventDefault()
         if (!canRedo()) { toast.info("Нечего вернуть"); return }
-        const label = await performRedo(patchGradeApi)
+        const label = await performRedo(patchGradeApi, restoreWeekApi)
         if (label) {
           toast.success("Возвращено", { description: label })
           await loadWeek(weekStartRef.current)

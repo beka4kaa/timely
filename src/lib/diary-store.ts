@@ -245,9 +245,9 @@ export async function applyTemplateToWeek(
           for (const lesson of day.lessons) {
             const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
             preserved.set(key, {
-              grades:   lesson.grades,
+              grades: lesson.grades,
               homework: lesson.homework,
-              notes:    lesson.notes,
+              notes: lesson.notes,
             })
           }
         }
@@ -258,9 +258,9 @@ export async function applyTemplateToWeek(
             const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
             const saved = preserved.get(key)
             if (saved) {
-              lesson.grades   = saved.grades
+              lesson.grades = saved.grades
               lesson.homework = saved.homework
-              lesson.notes    = saved.notes
+              lesson.notes = saved.notes
             }
           }
         }
@@ -291,8 +291,8 @@ export function buildWeekSnapshot(
   const days: DiaryDay[] = DAYS_ORDER.map(dayOfWeek => {
     const slots = template
       ? template.slots
-          .filter(s => s.dayOfWeek === dayOfWeek)
-          .sort((a, b) => a.lessonNumber - b.lessonNumber)
+        .filter(s => s.dayOfWeek === dayOfWeek)
+        .sort((a, b) => a.lessonNumber - b.lessonNumber)
       : []
 
     const lessons: DiaryLesson[] = slots.map(slot => {
@@ -442,6 +442,15 @@ export async function forceRecreateWeek(
   const newWeek = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
   await persistWeek(userId, newWeek)
   return newWeek
+}
+
+/**
+ * Restore a full DiaryWeek exactly as stored (used for template undo).
+ * Replaces the week in the database with the provided snapshot.
+ */
+export async function restoreWeek(userId: string, week: DiaryWeek): Promise<DiaryWeek> {
+  await replaceWeek(userId, week.id, week)
+  return week
 }
 
 export async function getWeeksForUser(userId: string): Promise<DiaryWeek[]> {
