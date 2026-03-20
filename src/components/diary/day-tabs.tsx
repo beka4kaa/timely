@@ -55,7 +55,8 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
           <TabsContent
             key={day.dayOfWeek}
             value={day.dayOfWeek}
-            className="mt-0 border border-t-0 rounded-xl rounded-t-none"
+            forceMount
+            className="mt-0 border border-t-0 rounded-xl rounded-t-none data-[state=inactive]:hidden"
           >
             {/* Day sub-header */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/20">

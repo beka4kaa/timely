@@ -147,8 +147,18 @@ export default function DiaryPage() {
   async function applyTemplate() {
     setApplyingTemplate(true)
 
-    // Save a snapshot of current grades BEFORE wiping, for undo
-    const snapshot = weekRef.current ? buildGradeSnapshot(weekRef.current) : []
+    // Fetch the latest week state from the server before snapshotting —
+    // DiaryPage.week is stale (grade changes update local state, not week state here)
+    let snapshot: TemplateGradeEntry[] = []
+    try {
+      const freshRes = await fetch(`/api/diary/week?weekStart=${weekStartRef.current}`)
+      if (freshRes.ok) {
+        const freshWeek = await freshRes.json()
+        snapshot = buildGradeSnapshot(freshWeek)
+      }
+    } catch {
+      // snapshot stays empty if fetch fails — undo will just wipe grades (acceptable)
+    }
 
     try {
       const res = await fetch("/api/diary/week", {
