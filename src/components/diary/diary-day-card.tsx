@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { LessonRow } from "./lesson-row"
 import { DayYoutubeLinks } from "./day-youtube-links"
 import type { DiaryDay, DiaryLesson, YoutubeLink } from "@/types/diary"
@@ -16,6 +16,10 @@ interface DiaryDayCardProps {
 export function DiaryDayCard({ day, weekId, isToday }: DiaryDayCardProps) {
   const [lessons, setLessons] = useState<DiaryLesson[]>(day.lessons)
   const [youtubeLinks, setYoutubeLinks] = useState<YoutubeLink[]>(day.youtubeLinks ?? [])
+
+  // Sync local state when the parent updates the day prop (e.g. after applyTemplate or undo reload)
+  useEffect(() => { setLessons(day.lessons) }, [day.lessons])
+  useEffect(() => { setYoutubeLinks(day.youtubeLinks ?? []) }, [day.youtubeLinks])
 
   function handleLessonChange(updated: DiaryLesson) {
     setLessons(prev => prev.map(l => l.id === updated.id ? updated : l))

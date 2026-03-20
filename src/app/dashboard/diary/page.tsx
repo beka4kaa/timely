@@ -1,19 +1,24 @@
 ﻿"use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
-import { NotebookPenIcon, Loader2, Settings2Icon, BarChart2Icon, RefreshCwIcon, KeyboardIcon } from "lucide-react"
+import { NotebookPenIcon, Loader2, Settings2Icon, BarChart2Icon, RefreshCwIcon, KeyboardIcon, AlertTriangleIcon } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { WeekNav } from "@/components/diary/week-nav"
 import { DayTabs } from "@/components/diary/day-tabs"
 import type { DiaryWeek, DayOfWeek } from "@/types/diary"
 import { toast } from "sonner"
-import { performUndo, performRedo, canUndo, canRedo, clearUndoHistory } from "@/lib/diary-undo"
+import {
+  performUndo, performRedo, canUndo, canRedo, clearUndoHistory,
+  pushTemplateUndo, type TemplateGradeEntry,
+} from "@/lib/diary-undo"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog"
 
 function getMondayOfDate(d: Date): string {
@@ -75,6 +80,28 @@ async function patchGradeApi(weekId: string, dayId: string, lessonId: string, fi
   })
 }
 
+/** Extract all non-null grades from a week as a flat snapshot array */
+function buildGradeSnapshot(week: DiaryWeek): TemplateGradeEntry[] {
+  const entries: TemplateGradeEntry[] = []
+  for (const day of week.days) {
+    for (const lesson of day.lessons) {
+      const fields = ["retelling", "exercises", "test"] as const
+      for (const field of fields) {
+        // Only store entries that have a value (null entries don't need restoring)
+        if (lesson.grades[field] !== undefined) {
+          entries.push({
+            dayId: day.id,
+            lessonId: lesson.id,
+            gradeField: field,
+            value: lesson.grades[field],
+          })
+        }
+      }
+    }
+  }
+  return entries
+}
+
 export default function DiaryPage() {
   const [weekStart, setWeekStart] = useState(() => getMondayOfDate(new Date()))
   const [week, setWeek] = useState<DiaryWeek | null>(null)
@@ -83,8 +110,11 @@ export default function DiaryPage() {
   const [activeDow, setActiveDow] = useState<DayOfWeek>(() => todayDow())
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [applyingTemplate, setApplyingTemplate] = useState(false)
+  const [confirmTemplateOpen, setConfirmTemplateOpen] = useState(false)
   const weekStartRef = useRef(weekStart)
   weekStartRef.current = weekStart
+  const weekRef = useRef(week)
+  weekRef.current = week
 
   const loadWeek = useCallback(async (ws: string) => {
     setLoading(true)
@@ -116,7 +146,10 @@ export default function DiaryPage() {
 
   async function applyTemplate() {
     setApplyingTemplate(true)
-    clearUndoHistory()
+
+    // Save a snapshot of current grades BEFORE wiping, for undo
+    const snapshot = weekRef.current ? buildGradeSnapshot(weekRef.current) : []
+
     try {
       const res = await fetch("/api/diary/week", {
         method: "POST",
@@ -124,15 +157,34 @@ export default function DiaryPage() {
         body: JSON.stringify({ weekStart }),
       })
       if (!res.ok) throw new Error(await res.text())
-      setWeek(await res.json())
+      const newWeek = await res.json()
+      setWeek(newWeek)
+
+      // Push template undo (replaces clearUndoHistory — we keep the snapshot instead)
+      clearUndoHistory()
+      pushTemplateUndo({
+        weekId: weekStartRef.current,
+        snapshot,
+        label: `Шаблон применён к неделе ${formatWeekRange(weekStartRef.current)}`,
+      })
+
       toast.success("Шаблон применён к текущей неделе", {
-        description: "Оценки и заметки обнулены. История отмены очищена.",
+        description: "Оценки и заметки обнулены. Нажмите Ctrl+Z чтобы отменить.",
       })
     } catch {
       toast.error("Не удалось применить шаблон")
     } finally {
       setApplyingTemplate(false)
     }
+  }
+
+  function handleTemplateClick() {
+    setConfirmTemplateOpen(true)
+  }
+
+  async function handleTemplateConfirm() {
+    setConfirmTemplateOpen(false)
+    await applyTemplate()
   }
 
   // Global keyboard shortcuts
@@ -148,7 +200,7 @@ export default function DiaryPage() {
 
       if (e.key === "T" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
         e.preventDefault()
-        if (!applyingTemplate) applyTemplate()
+        if (!applyingTemplate) handleTemplateClick()
         return
       }
 
@@ -187,7 +239,7 @@ export default function DiaryPage() {
 
     window.addEventListener("keydown", handleKey)
     return () => window.removeEventListener("keydown", handleKey)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applyingTemplate])
 
   const today = getTodayIso()
@@ -209,7 +261,7 @@ export default function DiaryPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={applyTemplate}
+            onClick={handleTemplateClick}
             disabled={applyingTemplate || loading}
             title="Применить шаблон к этой неделе (Ctrl+Shift+T)"
             className="gap-1.5 text-muted-foreground hover:text-foreground"
@@ -282,6 +334,44 @@ export default function DiaryPage() {
         </Button>
       </div>
 
+      {/* Template confirmation dialog */}
+      <Dialog open={confirmTemplateOpen} onOpenChange={setConfirmTemplateOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangleIcon className="h-5 w-5 text-amber-500" />
+              Применить шаблон?
+            </DialogTitle>
+            <DialogDescription className="pt-1">
+              Это действие сбросит все оценки и домашние задания за текущую неделю
+              и заполнит её уроками из шаблона расписания.
+              <br />
+              <span className="text-foreground/80 font-medium mt-2 block">
+                Вы сможете отменить это через Ctrl+Z.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmTemplateOpen(false)}
+            >
+              Отмена
+            </Button>
+            <Button
+              onClick={handleTemplateConfirm}
+              disabled={applyingTemplate}
+              className="gap-1.5"
+            >
+              {applyingTemplate
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <RefreshCwIcon className="h-4 w-4" />}
+              Применить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Keyboard shortcuts dialog */}
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="max-w-md">
@@ -295,17 +385,16 @@ export default function DiaryPage() {
             Работают только когда фокус не в поле ввода.
           </p>
           <div className="flex flex-col">
-            <ShortcutRow keys={["Ctrl", "Z"]}           desc="Отменить последнее действие" />
-            <ShortcutRow keys={["Ctrl", "Shift", "Z"]}  desc="Повторить отменённое действие" />
-            <ShortcutRow keys={["Ctrl", "Shift", "T"]}  desc="Применить шаблон к текущей неделе" />
-            <ShortcutRow keys={["Ctrl", "←"]}           desc="Перейти на предыдущую неделю" />
-            <ShortcutRow keys={["Ctrl", "→"]}           desc="Перейти на следующую неделю" />
-            <ShortcutRow keys={["?"]}                    desc="Открыть это окно с подсказками" />
+            <ShortcutRow keys={["Ctrl", "Z"]} desc="Отменить последнее действие" />
+            <ShortcutRow keys={["Ctrl", "Shift", "Z"]} desc="Повторить отменённое действие" />
+            <ShortcutRow keys={["Ctrl", "Shift", "T"]} desc="Применить шаблон к текущей неделе" />
+            <ShortcutRow keys={["Ctrl", "←"]} desc="Перейти на предыдущую неделю" />
+            <ShortcutRow keys={["Ctrl", "→"]} desc="Перейти на следующую неделю" />
+            <ShortcutRow keys={["?"]} desc="Открыть это окно с подсказками" />
           </div>
           <p className="text-xs text-muted-foreground mt-3 leading-relaxed border-t border-border pt-3">
-            <strong>Ctrl+Z / Ctrl+Shift+Z</strong> отменяет/возвращает только оценки.
+            <strong>Ctrl+Z / Ctrl+Shift+Z</strong> отменяет/возвращает как оценки, так и применение шаблона.
             Текст (описание, заметки) сохраняется автоматически без истории.
-            При применении шаблона история отмены сбрасывается.
           </p>
         </DialogContent>
       </Dialog>
