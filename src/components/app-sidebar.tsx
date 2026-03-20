@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import {
   ArrowUpCircleIcon,
   BarChartIcon,
-  BookOpenIcon,
   BrainIcon,
   CalendarIcon,
   CheckSquareIcon,
@@ -114,7 +114,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               <a href="/dashboard">
-                <BookOpenIcon className="h-5 w-5" />
+                <Image src="/logo.svg" alt="Logo" width={22} height={22} className="shrink-0" />
                 <span className="text-base font-semibold">Study Planner</span>
               </a>
             </SidebarMenuButton>

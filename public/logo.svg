@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Dark navy rounded square background -->
+  <rect width="100" height="100" rx="22" ry="22" fill="#162032"/>
+
+  <!-- Row 1: Blue progress bar -->
+  <!-- Full track (light blue) -->
+  <rect x="17" y="28" width="66" height="13" rx="6.5" ry="6.5" fill="#b8d4f0"/>
+  <!-- Filled portion (vivid blue) -->
+  <rect x="17" y="28" width="42" height="13" rx="6.5" ry="6.5" fill="#2563eb"/>
+
+  <!-- Row 2: Green progress bar -->
+  <!-- Full track (light green) -->
+  <rect x="17" y="44" width="66" height="13" rx="6.5" ry="6.5" fill="#a7f3d0"/>
+  <!-- Filled portion (vivid green) -->
+  <rect x="17" y="44" width="34" height="13" rx="6.5" ry="6.5" fill="#16a34a"/>
+
+  <!-- Row 3: Orange/amber progress bar -->
+  <!-- Full track (light cream) -->
+  <rect x="17" y="60" width="66" height="13" rx="6.5" ry="6.5" fill="#fef3c7"/>
+  <!-- Filled portion (amber/orange) -->
+  <rect x="17" y="60" width="20" height="13" rx="6.5" ry="6.5" fill="#d97706"/>
+</svg>
