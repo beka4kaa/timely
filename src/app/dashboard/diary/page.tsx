@@ -262,7 +262,7 @@ export default function DiaryPage() {
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
       {/* Week navigation */}
-      <div className="flex items-center">
+      <div className="flex items-center justify-center">
         <WeekNav
           weekStart={weekStart}
           label={formatWeekRange(weekStart)}
