@@ -5,26 +5,16 @@ export default withAuth(
   function middleware(req) {
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
-    
-    console.log('🔒 MIDDLEWARE:', { 
-      pathname, 
-      hasToken: !!token, 
-      userEmail: token?.email,
-      nextAuthUrl: process.env.NEXTAUTH_URL,
-      nodeEnv: process.env.NODE_ENV
-    })
 
-    // Публичные маршруты только для неавторизованных пользователей
+    // Redirect authenticated users away from auth pages
     const publicPaths = ['/auth/signin', '/auth/register']
     const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
 
-    // Если пользователь авторизован и пытается попасть на страницу входа/регистрации
     if (isPublicPath && token) {
-      console.log('✅ MIDDLEWARE: Authenticated user redirecting from auth page to dashboard')
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
 
-    // Редирект с корневой страницы
+    // Redirect root to appropriate page
     if (pathname === '/') {
       if (token) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
@@ -40,21 +30,15 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const { pathname } = req.nextUrl
         
-        // Защищенные маршруты
         const protectedPaths = ['/dashboard']
         const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path))
         
-        // Публичные маршруты
         const publicPaths = ['/login', '/register']
         const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
         
-        // Разрешаем доступ к публичным маршрутам
         if (isPublicPath) return true
-        
-        // Разрешаем доступ к защищенным маршрутам только авторизованным пользователям
         if (isProtectedPath) return !!token
         
-        // Разрешаем доступ к остальным маршрутам
         return true
       },
     },
@@ -65,4 +49,4 @@ export const config = {
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
   ],
-}
+}

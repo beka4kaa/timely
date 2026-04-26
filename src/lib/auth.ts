@@ -3,16 +3,7 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
 
-console.log('🔍 ENVIRONMENT CHECK:', {
-  hasGoogleClientId: !!process.env.GOOGLE_CLIENT_ID,
-  hasGoogleClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
-  hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
-  hasNextAuthUrl: !!process.env.NEXTAUTH_URL,
-  nextAuthUrl: process.env.NEXTAUTH_URL,
-  nodeEnv: process.env.NODE_ENV,
-  googleClientIdLength: process.env.GOOGLE_CLIENT_ID?.length || 0,
-  googleClientIdStart: process.env.GOOGLE_CLIENT_ID?.substring(0, 10) || 'none'
-});
+
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
@@ -82,12 +73,8 @@ export const authOptions: NextAuthOptions = {
       return `${baseUrl}/dashboard/diary`;
     },
 
-    async signIn({ user, account, profile }) {
-      if (account?.provider === 'google') {
-        // TODO: Integrate with FastAPI backend for user creation/update
-        console.log('✅ User authenticated via Google:', user.email);
-        return true;
-      }
+    async signIn({ user, account }) {
+      // Google OAuth users are auto-accepted
       return true;
     }
   },

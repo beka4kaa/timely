@@ -1,89 +1,278 @@
-# Study Planner MVP
+<p align="center">
+  <img src="public/logo.svg" alt="TimelyPlan Logo" width="80" />
+</p>
 
-Личный планировщик занятий с блоками уроков, сегментами и таймером.
+<h1 align="center">TimelyPlan</h1>
 
-## Быстрый старт
+<p align="center">
+  <strong>A student-focused school diary, schedule planner, and academic toolkit</strong>
+</p>
+
+<p align="center">
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js 15" /></a>
+  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5-blue?logo=typescript" alt="TypeScript 5" /></a>
+  <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-3-38B2AC?logo=tailwind-css" alt="Tailwind CSS" /></a>
+  <a href="https://www.djangoproject.com"><img src="https://img.shields.io/badge/Django-6-092E20?logo=django" alt="Django 6" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" /></a>
+</p>
+
+---
+
+## Overview
+
+**TimelyPlan** is a full-stack web application designed for students to manage their school life. It provides an interactive weekly diary, class schedule builder, grade tracker, AI-powered study assistant, and more — all in a modern, mobile-friendly interface with dark/light theme support.
+
+**Live:** [timelyplan.me](https://timelyplan.me)
+
+---
+
+## Features
+
+| Module | Description |
+|--------|-------------|
+| **📓 Diary** | Weekly diary with lessons, homework, grades, and YouTube links per day |
+| **📅 Schedule** | Multi-template class schedule builder with CSV import/export and drag-and-drop |
+| **📊 Grades** | Grade tracker with subject-level statistics, yearly averages, and sticky columns on mobile |
+| **🤖 AI Assistant** | Gemini-powered chat for study help and learning program generation |
+| **📋 Study Planner** | Day-by-day planner with lesson blocks, segments (theory + practice), and a focus timer |
+| **🎯 Goals & Achievements** | SMART goal tracking with milestones, progress bars, and achievement collection |
+| **📅 Calendar** | Monthly event calendar with categories and color coding |
+| **✅ Tasks** | Task management with priorities, categories, and filtering |
+| **🧠 Mind (SRS)** | Spaced-repetition flashcard system for subjects and topics |
+| **🤔 Self-Work** | Reflection journal, insecurity tracker, and personal growth planner |
+
+Additional capabilities:
+- **Google OAuth & credential-based authentication** via NextAuth.js
+- **PWA support** — installable on mobile with custom icons and manifest
+- **Undo system** — Ctrl+Z support with toast-based undo for destructive actions
+- **Dark / light theme** with system preference detection
+
+---
+
+## Tech Stack
+
+### Frontend
+
+| Technology | Purpose |
+|-----------|---------|
+| [Next.js 15](https://nextjs.org) (App Router) | React framework with SSR/SSG |
+| [TypeScript](https://typescriptlang.org) | Type-safe development |
+| [Tailwind CSS](https://tailwindcss.com) | Utility-first styling |
+| [shadcn/ui](https://ui.shadcn.com) + [Radix UI](https://radix-ui.com) | Accessible component primitives |
+| [Framer Motion](https://www.framer.com/motion/) | Animations |
+| [dnd-kit](https://dndkit.com) | Drag-and-drop |
+| [Recharts](https://recharts.org) | Charts and data visualization |
+| [date-fns](https://date-fns.org) | Date manipulation |
+| [Zod](https://zod.dev) | Schema validation |
+| [Sonner](https://sonner.emilkowal.dev) | Toast notifications |
+
+### Backend
+
+| Technology | Purpose |
+|-----------|---------|
+| [Django 6](https://djangoproject.com) + [DRF](https://django-rest-framework.org) | REST API |
+| [PostgreSQL](https://postgresql.org) | Production database |
+| [Gunicorn](https://gunicorn.org) | WSGI HTTP server |
+| [Google Generative AI](https://ai.google.dev) | Gemini integration for AI features |
+
+### Infrastructure
+
+| Service | Purpose |
+|---------|---------|
+| [Vercel](https://vercel.com) | Frontend hosting |
+| [Railway](https://railway.app) | Backend hosting |
+| [Docker](https://docker.com) | Backend containerization |
+
+---
+
+## Project Structure
+
+```
+├── src/                          # Next.js frontend
+│   ├── app/                      # App Router pages & API routes
+│   │   ├── api/                  # Next.js API routes (auth, diary, AI, etc.)
+│   │   ├── auth/                 # Authentication pages (sign-in, register)
+│   │   └── dashboard/            # Protected app pages
+│   │       ├── diary/            # Diary, grades
+│   │       ├── schedule/         # Class schedule builder
+│   │       ├── study/            # Study planner with timer
+│   │       ├── calendar/         # Event calendar
+│   │       ├── tasks/            # Task management
+│   │       ├── goals/            # Goal tracking
+│   │       ├── achievements/     # Achievement collection
+│   │       ├── ai/               # AI assistant chat
+│   │       ├── review/           # SRS review sessions
+│   │       ├── self-work/        # Reflection & growth
+│   │       └── profile/          # User profile
+│   ├── components/               # React components
+│   │   ├── ui/                   # shadcn/ui primitives
+│   │   ├── diary/                # Diary-specific components
+│   │   ├── dashboard/            # Dashboard feature components
+│   │   ├── study-planner/        # Study planner components
+│   │   ├── mind/                 # SRS/flashcard components
+│   │   └── providers/            # Context providers
+│   ├── contexts/                 # React contexts (auth, diary header)
+│   ├── hooks/                    # Custom React hooks
+│   ├── lib/                      # Utilities, API clients, stores
+│   │   ├── auth.ts               # NextAuth.js configuration
+│   │   ├── diary-store.ts        # Diary state management
+│   │   ├── diary-grades.ts       # Grade calculation logic
+│   │   ├── diary-undo.ts         # Undo system
+│   │   ├── backend-api.ts        # Backend API client
+│   │   └── srs.ts                # Spaced repetition algorithm
+│   └── types/                    # TypeScript type definitions
+│
+├── backend/                      # Django REST API
+│   ├── config/                   # Django settings & URLs
+│   ├── accounts/                 # User management
+│   ├── diary/                    # Diary models, views, serializers
+│   ├── planner/                  # Day planner API
+│   ├── mind/                     # SRS/flashcard API
+│   └── ai_engine/                # Gemini AI integration
+│
+├── public/                       # Static assets (icons, logos)
+├── middleware.ts                  # NextAuth route protection
+├── next.config.js                # Next.js config with API rewrites
+├── tailwind.config.js            # Tailwind CSS configuration
+├── Dockerfile                    # Backend Docker image
+└── package.json                  # Frontend dependencies & scripts
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** ≥ 18
+- **Python** ≥ 3.11 (for backend)
+- **PostgreSQL** (for production; backend uses Django ORM)
+
+### 1. Clone the repository
 
 ```bash
-# Установка зависимостей
+git clone https://github.com/beka4kaa/timely.git
+cd timely
+```
+
+### 2. Set up the frontend
+
+```bash
+# Install dependencies
 npm install
 
-# Инициализация базы данных
-npx prisma migrate dev --name init
+# Create environment file
+cp .env.example .env.local
+# Edit .env.local with your credentials (see Environment Variables below)
 
-# Запуск в режиме разработки
+# Start the dev server
 npm run dev
 ```
 
-Откройте [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Функционал
+### 3. Set up the backend (optional for local dev)
 
-### Планирование дня
-- **Уроки** с сегментами (теория + практика) и подзадачами
-- **События** с заметками
-- **Перерывы** для отдыха
+```bash
+cd backend
 
-### Таймер
-- Таймер на каждый сегмент урока
-- Автоматическое отслеживание прогресса
-- Сохранение состояния между перезагрузками
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
 
-### История
-- Просмотр последних 14 дней
-- Статистика выполнения
-- Копирование плана с предыдущего дня
+# Install dependencies
+pip install -r requirements.txt
 
-## Технологии
+# Run migrations
+python manage.py migrate
 
-- Next.js 14+ (App Router)
-- TypeScript
-- TailwindCSS + shadcn/ui
-- Prisma + SQLite
-- dnd-kit для drag-and-drop
-
-## Структура проекта
-
-```
-src/
-├── app/
-│   ├── api/
-│   │   ├── dayplans/      # API для планов дня
-│   │   ├── blocks/        # API для блоков
-│   │   ├── segments/      # API для сегментов
-│   │   └── subtasks/      # API для подзадач
-│   └── dashboard/
-│       ├── study/         # Основной планировщик
-│       └── history/       # История дней
-├── components/
-│   └── study-planner/     # Компоненты планировщика
-│       ├── today-view.tsx
-│       ├── block-card.tsx
-│       ├── add-block-dialog.tsx
-│       └── days-list.tsx
-└── types/
-    └── study-planner.ts   # Типы данных
-prisma/
-├── schema.prisma          # Схема базы данных
-└── seed.ts               # Начальные данные
+# Start the server
+python manage.py runserver
 ```
 
-## Тестовые сценарии
+The backend runs at [http://localhost:8000](http://localhost:8000).
 
-1. **Создать урок**: Dashboard → Study Planner → Добавить блок → Урок
-2. **Запустить таймер**: Нажать Play на блоке → Таймер считает
-3. **Отметить подзадачи**: Раскрыть блок → Чек-лист → Отметить
-4. **Завершить блок**: Кнопка ✓ → Подтвердить
-5. **Скопировать план**: Перейти на завтра → "Скопировать со вчера"
+### Environment Variables
 
-## Seed данные
+Create a `.env.local` file in the project root:
 
-При первом запуске создаются примеры:
-- Математика (90 мин): 45 теория + 45 практика + 3 подзадачи
-- Перерыв (10 мин)
-- Английский язык (60 мин): 30 грамматика + 30 практика
-- Обед (45 мин)
+```env
+# NextAuth.js
+NEXTAUTH_SECRET=<random-32-char-secret>
+NEXTAUTH_URL=http://localhost:3000
 
-## Лицензия
+# Google OAuth (from Google Cloud Console)
+GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<your-client-secret>
 
-MIT
+# Backend API URL
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Gemini AI (optional)
+GEMINI_API_KEY=<your-gemini-api-key>
+```
+
+#### Google OAuth Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project and enable the Google+ API
+3. Create an **OAuth 2.0 Client ID** (Web application)
+4. Add authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+5. Copy Client ID and Client Secret to `.env.local`
+
+---
+
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start Next.js development server |
+| `npm run build` | Build for production |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run type-check` | Run TypeScript type checking |
+
+---
+
+## Deployment
+
+### Frontend (Vercel)
+
+1. Connect the repository to [Vercel](https://vercel.com)
+2. Add all environment variables from `.env.production.example`
+3. Deploy automatically on push to `main`
+
+### Backend (Railway / Docker)
+
+```bash
+# Build Docker image
+docker build -t timelyplan-backend .
+
+# Run container
+docker run -p 8000:8000 --env-file backend/.env timelyplan-backend
+```
+
+Or deploy directly to [Railway](https://railway.app) from the repository.
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit your changes: `git commit -m 'Add your feature'`
+4. Push to the branch: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Author
+
+**Bekzhan** — [@beka4kaa](https://github.com/beka4kaa)
