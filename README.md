@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://timelyplan.me"><img src="https://img.shields.io/badge/Live_Site-timelyplan.me-brightgreen?style=for-the-badge" alt="Live Site" /></a>
+</p>
+
+<p align="center">
   <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js 15" /></a>
   <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5-blue?logo=typescript" alt="TypeScript 5" /></a>
   <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-3-38B2AC?logo=tailwind-css" alt="Tailwind CSS" /></a>
