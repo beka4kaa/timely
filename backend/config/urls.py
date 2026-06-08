@@ -9,8 +9,12 @@ from ai_engine.views import (
     AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView,
     DailyTasksView, ScheduleView
 )
-from accounts.views import RegisterView, LoginView
+from accounts.views import RegisterView, LoginView, LeaderboardViewSet
 from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
+from ai_engine.ocr_views import OCRView
+from ai_engine.solve_views import SolveTaskView
+from ai_engine.draw_views import WhiteboardDrawView
+
 
 
 def health_check(request):
@@ -31,6 +35,7 @@ router.register(r'ai_engine/learning-program', LearningProgramViewSet)
 router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
 router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-template')
 router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
+router.register(r'leaderboard', LeaderboardViewSet, basename='leaderboard')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -51,4 +56,10 @@ urlpatterns = [
     path('api/ai/generate-subtopics/', GenerateSubtopicsView.as_view(), name='generate-subtopics'),
     path('api/ai/daily-tasks/', DailyTasksView.as_view(), name='daily-tasks'),
     path('api/ai/schedule/', ScheduleView.as_view(), name='ai-schedule'),
+    path('api/ai/ocr/', OCRView.as_view(), name='ai-ocr'),
+    path('api/ai/ocr', OCRView.as_view(), name='ai-ocr-no-slash'),
+    path('api/ai/solve/', SolveTaskView.as_view(), name='ai-solve'),
+    path('api/ai/solve', SolveTaskView.as_view(), name='ai-solve-no-slash'),
+    path('api/ai/draw/', WhiteboardDrawView.as_view(), name='ai-draw'),
+    path('api/ai/draw', WhiteboardDrawView.as_view(), name='ai-draw-no-slash'),
 ]

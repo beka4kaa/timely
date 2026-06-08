@@ -1,7 +1,6 @@
 from rest_framework import serializers
-from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
-
+from .models import CustomUser, UserRating, Task, TaskSubmission
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
@@ -11,7 +10,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
-        model = User
+        model = CustomUser
         fields = ('email', 'password', 'password2', 'name')
 
     def validate(self, attrs):
@@ -22,7 +21,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        if CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return value
 
@@ -35,7 +34,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         first_name = name_parts[0]
         last_name = name_parts[1] if len(name_parts) > 1 else ''
         
-        user = User.objects.create_user(
+        user = CustomUser.objects.create_user(
             username=validated_data['email'],  # Use email as username
             email=validated_data['email'],
             password=validated_data['password'],
@@ -54,8 +53,43 @@ class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
 
     class Meta:
-        model = User
+        model = CustomUser
         fields = ('id', 'email', 'name')
 
     def get_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+
+class UserRatingSerializer(serializers.ModelSerializer):
+    discipline_name = serializers.CharField(source='discipline.name', read_only=True)
+
+    class Meta:
+        model = UserRating
+        fields = ('discipline_name', 'elo_score', 'tier_level')
+
+
+class LeaderboardSerializer(serializers.ModelSerializer):
+    ratings = UserRatingSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CustomUser
+        fields = ('id', 'username', 'country_code', 'city', 'overall_elo', 'ratings')
+
+class TaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Task
+        fields = '__all__'
+        read_only_fields = ('author', 'status')
+
+class TaskSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskSubmission
+        fields = '__all__'
+        read_only_fields = ('student', 'status', 'created_at')
+
+    def validate(self, attrs):
+        task = attrs.get('task')
+        student = self.context['request'].user
+        if task and task.author == student:
+            raise serializers.ValidationError("Пользователь не может отправить решение на свою же задачу.")
+        return attrs

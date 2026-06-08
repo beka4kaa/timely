@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL, toCamelCase, toSnakeCase } from '@/lib/api-utils'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 
 async function getHeaders(request?: NextRequest) {

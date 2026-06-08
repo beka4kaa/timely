@@ -6,7 +6,7 @@
  * POST /api/diary/templates/create_empty/
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { createEmptyTemplate } from '@/lib/diary-store'
 

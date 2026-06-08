@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="public/logo.svg" alt="TimelyPlan Logo" width="80" />
+  <img src="public/logo.svg" alt="Stockermans Education Advisors Logo" width="80" />
 </p>
 
-<h1 align="center">TimelyPlan</h1>
+<h1 align="center">Stockermans Education Advisors</h1>
 
 <p align="center">
   <strong>A student-focused school diary, schedule planner, and academic toolkit</strong>
 </p>
 
 <p align="center">
-  <a href="https://timelyplan.me"><img src="https://img.shields.io/badge/Live_Site-timelyplan.me-brightgreen?style=for-the-badge" alt="Live Site" /></a>
+  <a href="https://stockermans.com"><img src="https://img.shields.io/badge/Live_Site-stockermans.com-brightgreen?style=for-the-badge" alt="Live Site" /></a>
 </p>
 
 <p align="center">
@@ -24,9 +24,9 @@
 
 ## Overview
 
-**TimelyPlan** is a full-stack web application designed for students to manage their school life. It provides an interactive weekly diary, class schedule builder, grade tracker, AI-powered study assistant, and more — all in a modern, mobile-friendly interface with dark/light theme support.
+**Stockermans Education Advisors** is a full-stack web application designed for students to manage their school life. It provides an interactive weekly diary, class schedule builder, grade tracker, AI-powered study assistant, and more — all in a modern, mobile-friendly interface with dark/light theme support.
 
-**Live:** [timelyplan.me](https://timelyplan.me)
+**Live:** [stockermans.com](https://stockermans.com)
 
 ---
 
@@ -38,7 +38,7 @@
 | **📅 Schedule** | Multi-template class schedule builder with CSV import/export and drag-and-drop |
 | **📊 Grades** | Grade tracker with subject-level statistics, yearly averages, and sticky columns on mobile |
 | **🤖 AI Assistant** | Gemini-powered chat for study help and learning program generation |
-| **📋 Study Planner** | Day-by-day planner with lesson blocks, segments (theory + practice), and a focus timer |
+| **📋 Stockermans Education Advisors** | Day-by-day planner with lesson blocks, segments (theory + practice), and a focus timer |
 | **🎯 Goals & Achievements** | SMART goal tracking with milestones, progress bars, and achievement collection |
 | **📅 Calendar** | Monthly event calendar with categories and color coding |
 | **✅ Tasks** | Task management with priorities, categories, and filtering |

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { updateGrade, updateLessonField, updateLinkedSubjects } from '@/lib/diary-store'
 import type { Grade } from '@/types/diary'
