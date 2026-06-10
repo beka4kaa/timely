@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://timely-production-4f5a.up.railway.app'
+import { BACKEND_URL } from '@/lib/api-utils'
 
 /**
  * Creates headers for backend API requests with user email from session
