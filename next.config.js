@@ -17,6 +17,21 @@ const nextConfig = {
     ],
   },
   serverExternalPackages: ['bcryptjs'],
+  // Next.js's dev-mode rewrite proxy kills upstream requests after 30s by
+  // default — that's hardcoded in its own source with the comment "we limit
+  // proxy requests to 30s by default, in development"
+  // (next/dist/server/lib/router-utils/proxy-request.js). The AI whiteboard
+  // pipeline behind `/api/ai/draw` (Llama board generation, then the
+  // Banana → SAM2 → Qwen → SVG illustration pipeline) legitimately takes
+  // 30-90s end-to-end — well past that default — so the proxy was aborting
+  // the connection and handing the browser a bare 500 "Internal Server
+  // Error" (visible as `Failed to proxy http://localhost:8000/api/ai/draw
+  // [Error: socket hang up] { code: 'ECONNRESET' }` in the dev server log)
+  // *before* Django could even respond. Raise the ceiling generously so a
+  // slow-but-successful AI response is never mistaken for a server failure.
+  experimental: {
+    proxyTimeout: parseInt(process.env.NEXT_PROXY_TIMEOUT_MS || '180000', 10),
+  },
   typescript: {
     ignoreBuildErrors: false,
   },

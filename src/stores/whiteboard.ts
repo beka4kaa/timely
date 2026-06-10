@@ -27,6 +27,42 @@ export type ImageElement = {
   rotation: number; // in degrees
 };
 
+/** A label overlaid on an illustration, positioned in IMAGE percentages (0–100). */
+export type IllustrationLabel = {
+  content: string;
+  x: number;
+  y: number;
+  color?: string;
+  arrow_to?: { x: number; y: number };
+};
+
+/** An optional SAM2 segmentation mask, as a polygon in IMAGE percentages (0–100). */
+export type IllustrationMask = {
+  label?: string;
+  polygon: [number, number][];
+  bbox_pct?: [number, number, number, number];
+  color?: string;
+};
+
+/**
+ * Composite illustration element: a single base image (from Banana) with
+ * text labels overlaid at percentage positions, plus optional SAM2 masks
+ * revealed on hover. Rendered as ONE layered DOM block (IllustrationRenderer)
+ * instead of being shattered into separate IMAGE / TEXT / SHAPE elements.
+ */
+export type IllustrationElement = {
+  id: string;
+  type: 'ILLUSTRATION';
+  position: Position;
+  src: string;            // base_image_url
+  width: number;
+  height: number;
+  rotation: number;
+  labels: IllustrationLabel[];
+  masks?: IllustrationMask[] | null;
+  alt?: string;
+};
+
 /** Supported hand-drawn shape kinds (rendered sketchy via rough.js). */
 export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'arrow' | 'path' | 'polygon';
 
@@ -53,7 +89,8 @@ export type WhiteboardElement =
   | TextElement
   | GraphElement
   | ImageElement
-  | ShapeElement;
+  | ShapeElement
+  | IllustrationElement;
 
 export type Camera = {
   x: number;
@@ -121,6 +158,21 @@ export type CreateImageAction = {
   };
 };
 
+export type CreateIllustrationAction = {
+  type: 'CREATE_ILLUSTRATION';
+  payload: {
+    id: string;
+    position: Position;
+    src: string;
+    width: number;
+    height: number;
+    rotation?: number;
+    labels: IllustrationLabel[];
+    masks?: IllustrationMask[] | null;
+    alt?: string;
+  };
+};
+
 export type UpdateElementAction = {
   type: 'UPDATE_ELEMENT';
   payload: {
@@ -139,6 +191,7 @@ export type WhiteboardAction =
   | DeleteElementAction
   | ClearBoardAction
   | CreateImageAction
+  | CreateIllustrationAction
   | UpdateElementAction;
 
 // ----- State Definition -----
@@ -262,15 +315,33 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
             });
             break;
           }
+          case 'CREATE_ILLUSTRATION': {
+            const p = action.payload;
+            nextElements.push({
+              id: p.id,
+              type: 'ILLUSTRATION',
+              position: p.position,
+              src: p.src,
+              width: p.width,
+              height: p.height,
+              rotation: p.rotation ?? 0,
+              labels: p.labels ?? [],
+              masks: p.masks ?? null,
+              alt: p.alt,
+            });
+            break;
+          }
           case 'UPDATE_ELEMENT': {
             const elIndex = nextElements.findIndex(el => el.id === action.payload.id);
             if (elIndex !== -1) {
               const el = nextElements[elIndex];
               const newEl = { ...el } as any;
+              // IMAGE and ILLUSTRATION share the same box-transform semantics.
+              const sizable = newEl.type === 'IMAGE' || newEl.type === 'ILLUSTRATION';
               if (action.payload.position !== undefined) newEl.position = action.payload.position;
-              if (action.payload.width !== undefined && newEl.type === 'IMAGE') newEl.width = action.payload.width;
-              if (action.payload.height !== undefined && newEl.type === 'IMAGE') newEl.height = action.payload.height;
-              if (action.payload.rotation !== undefined && newEl.type === 'IMAGE') newEl.rotation = action.payload.rotation;
+              if (action.payload.width !== undefined && sizable) newEl.width = action.payload.width;
+              if (action.payload.height !== undefined && sizable) newEl.height = action.payload.height;
+              if (action.payload.rotation !== undefined && sizable) newEl.rotation = action.payload.rotation;
               nextElements[elIndex] = newEl;
             }
             break;

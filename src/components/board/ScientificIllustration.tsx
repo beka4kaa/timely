@@ -45,7 +45,7 @@
  * ──────────────────────────────────────────────────────────────────
  */
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { InlineMath, BlockMath } from "react-katex";
 import { motion, AnimatePresence } from "framer-motion";
 import "katex/dist/katex.min.css";
@@ -335,7 +335,20 @@ function IllustrationError({ message, imageUrl }: { message: string; imageUrl: s
 }
 
 /* ============================================================
- * SVG-слой стрелок (Слой 2, z-index: 20)
+ * SVG-слой связей label → объект (Слой 2, z-index: 20)
+ * ------------------------------------------------------------
+ * Тонкая тёмно-серая линия-указатель от КООРДИНАТЫ лейбла (x, y — это
+ * ЦЕНТР текста: см. Label, translate(-50%,-50%)) к точке `arrow_to`,
+ * плюс маленькая точка-маркер (r=3) у самого объекта. Строгий «научный»
+ * вид: currentColor = text-gray-800/60 (тёмно-серый, слегка прозрачный),
+ * без свечения и стрелочных маркеров.
+ *
+ * Координаты — В ПРОЦЕНТАХ (x1="50%" и т.п.), поэтому слой идеально
+ * выравнивается с картинкой и центрированными лейблами при любом масштабе.
+ *
+ * z-index: оставлен 20 (НЕ 10) — слой картинки уже занимает z-10, так что
+ * z-10 для SVG столкнулся бы с ним. Сэндвич image(10) < arrows(20) <
+ * text(30) сохраняет требуемый порядок «SVG над картинкой, под текстом».
  * ========================================================== */
 
 interface ArrowsLayerProps {
@@ -344,65 +357,34 @@ interface ArrowsLayerProps {
 }
 
 function ArrowsLayer({ labels, animate }: ArrowsLayerProps) {
-  const markerId = useId();
-  // Уникальный id через useId: react гарантирует отсутствие коллизий
-  const safeId = markerId.replace(/:/g, "");
   const arrowLabels = labels.filter((l) => l.arrow_to != null);
   if (arrowLabels.length === 0) return null;
 
   return (
     <svg
       aria-hidden="true"
-      style={{
-        position: "absolute",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        zIndex: 20,
-        overflow: "visible",
-        pointerEvents: "none",
-      }}
+      className="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible text-gray-800/60"
     >
-      <defs>
-        <marker
-          id={`arrow-${safeId}`}
-          markerWidth="7"
-          markerHeight="7"
-          refX="5"
-          refY="3.5"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <polyline
-            points="0,0 7,3.5 0,7"
-            fill="none"
-            stroke="rgba(255,255,255,0.9)"
-            strokeWidth="1"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        </marker>
-      </defs>
-
       {arrowLabels.map((label, i) => {
-        const { x, y, arrow_to, color = "rgba(255,255,255,0.85)" } = label;
-        // Стартуем из правого-нижнего угла лейбла (≈ +2% X, +1.5% Y)
-        const x1 = x + 2;
-        const y1 = y + 1.5;
-        const x2 = arrow_to!.x;
-        const y2 = arrow_to!.y;
-
-        const line = (
-          <line
-            x1={`${x1}%`}
-            y1={`${y1}%`}
-            x2={`${x2}%`}
-            y2={`${y2}%`}
-            stroke={color}
-            strokeWidth="1.5"
-            markerEnd={`url(#arrow-${safeId})`}
-            style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.7))" }}
-          />
+        const connector = (
+          <>
+            {/* Линия: из точных координат лейбла → к объекту (arrow_to) */}
+            <line
+              x1={`${label.x}%`}
+              y1={`${label.y}%`}
+              x2={`${label.arrow_to!.x}%`}
+              y2={`${label.arrow_to!.y}%`}
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            {/* Точка-маркер на конце линии, у самого объекта */}
+            <circle
+              cx={`${label.arrow_to!.x}%`}
+              cy={`${label.arrow_to!.y}%`}
+              r="3"
+              className="fill-current"
+            />
+          </>
         );
 
         if (animate) {
@@ -413,11 +395,11 @@ function ArrowsLayer({ labels, animate }: ArrowsLayerProps) {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.25 }}
             >
-              {line}
+              {connector}
             </motion.g>
           );
         }
-        return <g key={i}>{line}</g>;
+        return <g key={i}>{connector}</g>;
       })}
     </svg>
   );
@@ -442,7 +424,7 @@ interface LabelProps {
 }
 
 function Label({ label, animate }: LabelProps) {
-  const { content, x, y, color = "#ffffff", fontSize = 0.85 } = label;
+  const { content, x, y } = label;
 
   const inner = hasLatex(content)
     ? isBlockLatex(content)
@@ -450,16 +432,20 @@ function Label({ label, animate }: LabelProps) {
       : <InlineMath>{extractLatex(content)}</InlineMath>
     : <span>{content}</span>;
 
-  const style: React.CSSProperties = {
-    position: "absolute",
+  // Строгая академическая типографика (как в Figure Labs): тёмно-серый текст,
+  // БЕЗ фона, теней и рамок. Цвет/размер задаются Tailwind-классами — поэтому
+  // никаких inline color/fontSize (они бы перебили классы).
+  const className =
+    "absolute font-sans text-gray-900 font-medium tracking-tight text-sm md:text-base";
+
+  // Позиционирование по ЦЕНТРУ координат (x%, y%) через translate(-50%, -50%).
+  // Вынесено на внешний wrapper, чтобы entrance-анимация framer-motion (которая
+  // управляет transform через `y`) не затирала центрирующий translate.
+  const positionStyle: React.CSSProperties = {
     left: `${x}%`,
     top: `${y}%`,
-    color,
-    fontSize: `${fontSize}rem`,
-    lineHeight: 1.35,
+    transform: "translate(-50%, -50%)",
     zIndex: 30,
-    maxWidth: `${Math.max(10, 100 - x)}%`,
-    textShadow: "0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)",
     pointerEvents: "none",
     userSelect: "none",
     whiteSpace: "nowrap",
@@ -467,18 +453,20 @@ function Label({ label, animate }: LabelProps) {
 
   if (animate) {
     return (
-      <motion.div
-        style={style}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-      >
-        {inner}
-      </motion.div>
+      <div className="absolute" style={positionStyle}>
+        <motion.div
+          className="font-sans text-gray-900 font-medium tracking-tight text-sm md:text-base"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+        >
+          {inner}
+        </motion.div>
+      </div>
     );
   }
 
-  return <div style={style}>{inner}</div>;
+  return <div className={className} style={positionStyle}>{inner}</div>;
 }
 
 /* ============================================================

@@ -14,6 +14,7 @@ from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 from ai_engine.ocr_views import OCRView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
+from habits.views import HabitViewSet
 
 
 
@@ -36,6 +37,7 @@ router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
 router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-template')
 router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
 router.register(r'leaderboard', LeaderboardViewSet, basename='leaderboard')
+router.register(r'habits', HabitViewSet, basename='habits')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

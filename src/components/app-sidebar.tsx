@@ -16,6 +16,7 @@ import {
   MedalIcon,
   SwordsIcon,
   EyeIcon,
+  FlameIcon,
 } from "lucide-react"
 import { useSession } from "next-auth/react"
 
@@ -45,6 +46,7 @@ const data = {
     { title: "Leaderboard", url: "/dashboard/leaderboard", icon: MedalIcon },
     { title: "Achievements", url: "/dashboard/achievements", icon: TrophyIcon },
     { title: "Self Work", url: "/dashboard/self-work", icon: HeartIcon },
+    { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
   ],
   navSecondary: [
     { title: "Settings", url: "/dashboard/settings", icon: SettingsIcon },

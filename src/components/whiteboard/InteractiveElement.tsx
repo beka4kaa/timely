@@ -19,7 +19,8 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
   const initialPointer = useRef({ x: 0, y: 0 });
   const initialTransform = useRef({ x: 0, y: 0, width: 0, height: 0, rotation: 0 });
 
-  // Only IMAGE elements support resize/rotate for now, but position is universal
+  // Only IMAGE elements support resize/rotate here; position is universal.
+  // (ILLUSTRATION nodes use DraggableBoardNode instead — see Whiteboard.tsx.)
   const isImage = element.type === 'IMAGE';
   const width = isImage ? element.width : 'auto';
   const height = isImage ? element.height : 'auto';

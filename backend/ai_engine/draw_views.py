@@ -63,6 +63,7 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
   {
     "type": "image_with_labels",
     "image_prompt": "Описание ТОЛЬКО содержимого/композиции на АНГЛИЙСКОМ — какие объекты, их форма, цвет, взаимное расположение и ракурс. БЕЗ художественного стиля и БЕЗ текста на изображении. Например: 'a cube and a sphere resting side by side on a flat surface, cube on the left in a muted blue tone, sphere on the right in a soft coral tone, viewed from a three-quarter angle'",
+    "requires_segmentation": false,
     "alt": "Схема нейрона",
     "labels": [
       {
@@ -82,6 +83,10 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
   • x/y в labels — проценты от размера изображения (0–100), НЕ пиксели.
   • arrow_to — координаты цели стрелки в тех же процентах.
   • content может содержать LaTeX: "$F = ma$".
+  • "requires_segmentation" (boolean) — нужно ли ВЫРЕЗАТЬ отдельные объекты на картинке для интерактивной подсветки:
+    – Ставь FALSE по умолчанию — для пейзажей, сцен, процессов, диаграмм-схем, где подписи просто указывают на области целостной картинки. Примеры FALSE: «круговорот воды», «строение атмосферы», «экосистема леса», «солнечная система», карта, любой пейзаж или непрерывная сцена.
+    – Ставь TRUE ТОЛЬКО когда на картинке есть НЕСКОЛЬКО ЧЁТКО ОТДЕЛЬНЫХ физических объектов, каждый из которых нужно выделить по контуру. Примеры TRUE: «органеллы внутри клетки» (ядро, митохондрия, рибосома — отдельные тела), «детали механизма», «геометрические тела рядом» (куб и сфера), «органы человека на схеме».
+    – Если сомневаешься — ставь FALSE.
 
 ВЕРНИ ТОЛЬКО ВАЛИДНЫЙ JSON ПО ЭТОЙ СХЕМЕ. Никакого текста до или после.
 """
@@ -224,6 +229,12 @@ def _sanitize_command(cmd):
         if has_url:
             out["image_url"] = cmd["image_url"].strip()
 
+        # requires_segmentation: решение Llama, нужно ли резать картинку SAM2.
+        # Прокидываем его в команду ДО обогащения (enrich_board_steps читает
+        # этот флаг). По умолчанию False — для сцен/пейзажей сегментация не
+        # нужна, достаточно картинки + подписей.
+        out["requires_segmentation"] = bool(cmd.get("requires_segmentation", False))
+
         # alt text (optional)
         if isinstance(cmd.get("alt"), str) and cmd["alt"].strip():
             out["alt"] = cmd["alt"].strip()
@@ -320,6 +331,16 @@ class WhiteboardDrawView(APIView):
         data = request.data
         user_message = (data.get("message") or "").strip()
         history = data.get("history", [])
+        # Стиль/палитра выбираются в UI (StyleSelector) и шлются фронтендом —
+        # применяются ко всем иллюстрациям этого ответа (см. enrich_board_steps).
+        gen_style = data.get("style")
+        gen_palette = data.get("palette")
+        # reference_image_url — URL/Data URL существующей картинки на доске.
+        # Передаётся фронтендом, когда пользователь меняет стиль УЖЕ нарисованного
+        # изображения. Включает нативный image-to-image (edit) у Gemini/Nano Banana:
+        # картинка идёт как настоящий image-input, модель сохраняет композицию
+        # своим edit-механизмом и перерисовывает только стиль (см. _call_image_api).
+        gen_reference_image_url: str | None = data.get("reference_image_url") or None
 
         if not user_message:
             return Response(
@@ -369,19 +390,21 @@ class WhiteboardDrawView(APIView):
             board = _sanitize_board_data(parsed)
 
             # ── Обогащение иллюстраций ─────────────────────────────────────────
-            # Если Llama вернула команды `image_with_labels` с полем `image_prompt`,
-            # здесь они перехватываются и прогоняются через полный пайплайн
-            # Banana → SAM2 → Qwen → SVG (см. image_enrichment._enrich_command /
+            # Команды `image_with_labels` с `image_prompt` прогоняются через
+            # пайплайн (image_enrichment._enrich_command →
             # illustration_pipeline.build_vector_illustration). На выходе —
-            # рабочий `image_url` (ровно как раньше отдавал простой вызов
-            # провайдера, доска отображает его без каких-либо изменений) плюс
-            # опционально `svg`/`objects`. При сбое — `image_error` (фоллбэк,
-            # как и раньше). `topic` от Llama прокидывается как контекст для
-            # более осмысленных подписей объектов на иллюстрациях.
+            # строгий контракт {base_image_url, labels, masks}:
+            #   • base_image_url — ВСЕГДА оригинальная картинка от Banana;
+            #   • masks — опц. полигоны SAM2, ТОЛЬКО если Llama выставила
+            #     requires_segmentation=true (для сцен/пейзажей — null);
+            # При сбое генерации — image_error (фронтенд покажет текст-ошибку).
             if board and isinstance(board.get("board_steps"), list):
                 board["board_steps"] = enrich_board_steps(
                     board["board_steps"],
                     topic_hint=board.get("topic") or "",
+                    style=gen_style,
+                    palette=gen_palette,
+                    reference_image_url=gen_reference_image_url,
                 )
             # ──────────────────────────────────────────────────────────────────
 

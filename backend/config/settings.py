@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "ai_engine",
     "accounts",
     "diary",
+    "habits",
     "django_filters",
 ]
 

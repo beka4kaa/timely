@@ -1,74 +1,74 @@
 """
 illustration_pipeline.py
 ────────────────────────────────────────────────────────────────────
-Полный пайплайн построения ВЕКТОРНОЙ (SVG) иллюстрации из текстового
-описания: Banana → SAM 2 → Qwen → SVG.
+Пайплайн генерации иллюстрации с НАПРАВЛЯЕМОЙ (prompted) сегментацией —
+архитектура в духе Figure Labs. Главный принцип: оригинальная картинка
+от Banana НИКОГДА не теряется. Сегментация — опциональное дополнение.
 
-    image_prompt (текст, англ.)
+    image_prompt (текст, англ.) + labels от Llama + requires_segmentation
         │
         ▼
     [1] Nano Banana 2  (image_enrichment.generate_raster_image, OpenRouter)
-        │   растровое PNG-изображение, единый визуальный стиль
-        │   (см. image_enrichment.IMAGE_STYLE_GUIDE)
-        ▼
-    [2] SAM 2  (Mac Studio :8002, отдельный FastAPI-сервис)
-        │   точечная сегментация: бросаем СЕТКУ стартовых точек по
-        │   изображению, для каждой просим маску объекта, затем
-        │   дедуплицируем по IoU и отбрасываем фон/шум — получаем
-        │   набор различимых объектов с масками и bbox
-        ▼
-    [3] Qwen3.6-27B-4bit  (Mac Studio :8080, vision, OpenAI-совместимый)
-        │   для каждого найденного объекта вырезаем его область и
-        │   просим короткую подпись на русском — модель смотрит на
-        │   маленький сфокусированный фрагмент, а не гадает координаты
-        │   (координаты уже точно знает SAM2 — Qwen только называет)
-        ▼
-    [4] Сборка SVG: исходный растр как фон + контуры масок как
-        │   полупрозрачные <path>, плюс структурированные данные
-        │   объектов (label, bbox, центр в процентах) для подписей
-        ▼
-    {"image_url", "svg", "objects": [...]}
+        │   растровое изображение, единый визуальный стиль
+        │   → base_image_url (ВСЕГДА возвращается, это основа ответа)
+        │
+        ├─ requires_segmentation == False (сцена/пейзаж/процесс) ─────────┐
+        │     SAM2 пропускаем, masks=None. Фронтенд показывает чистую     │
+        │     картинку + подписи Llama. Основной, быстрый путь.            │
+        ▼                                                                  │
+    [2] SAM 2  (Mac Studio :8002, FastAPI) — НАПРАВЛЯЕМАЯ сегментация     │
+        │   координаты подписей Llama (arrow_to/x,y, в процентах) →        │
+        │   seed points для SAM2 → точные маски РОВНО тех объектов,        │
+        │   на которые указывает учитель (фон/стиль не мешают)             │
+        ▼                                                                  │
+    [3] Маски → полигоны в процентах (_mask_to_polygon_pct)               │
+        │                                                                  │
+        ▼                                                                  ▼
+    {"base_image_url", "masks": [{label, polygon, bbox_pct, color}] | None}
 
-ПОЧЕМУ ИМЕННО ТАК (а не «Qwen называет точки → SAM2 сегментирует»)
+ПОЧЕМУ НАПРАВЛЯЕМАЯ СЕГМЕНТАЦИЯ (а не слепой перебор сетки)
 ──────────────────────────────────────────────────────────────────
-  Казалось бы логичнее сначала спросить Qwen «где объекты», получить
-  координаты-точки и скормить их SAM2. На практике автономные оценки
-  пиксельных координат у VLM (в т.ч. Qwen-VL) ОЧЕНЬ неточные — модель
-  путает масштаб картинки (типичная проблема: координаты в духе
-  "0-1000" вместо реальных пикселей), и точка может оказаться мимо
-  объекта или вовсе за пределами изображения (проверено эмпирически
-  в этой сессии — на тестовом изображении 400×400 Qwen вернул точки
-  (582, 582) и (668, 625), то есть за пределами кадра).
+  Llama уже знает, ГДЕ объекты (она сама расставила подписи с
+  координатами arrow_to). Передаём эти точки прямо в SAM2 — он
+  математически вырезает границы объекта под точкой, независимо от
+  стиля отрисовки. Это и точнее, и быстрее слепого перебора сетки,
+  и не требует Qwen (подпись уже есть от Llama).
 
-  Поэтому порядок обратный: сначала ГЕОМЕТРИЯ (SAM2 находит объекты
-  через грубый перебор точек — это его прямая специализация и она
-  не требует угадывания), а Qwen уже только КЛАССИФИЦИРУЕТ то, что
-  ему показали крупным планом — а вот с этим VLM справляются хорошо.
+  Для сцен/пейзажей (круговорот воды, экосистема) сегментация вообще
+  не нужна — там подписи указывают на ОБЛАСТИ цельной картинки, а не
+  на отдельные физические объекты. Поэтому Llama выставляет
+  requires_segmentation=false, и мы отдаём чистый растр + подписи.
 
 Точка вызова
 ────────────
     from ai_engine.illustration_pipeline import build_vector_illustration
     result = build_vector_illustration(
-        image_prompt="a cube and a sphere on a flat surface, ...",
-        topic_hint="Геометрия: объём фигур",
+        image_prompt="cell with nucleus and mitochondria, ...",
+        topic_hint="Биология: клетка",
+        seed_labels=[{"content": "Ядро", "x": 30, "y": 40,
+                      "arrow_to": {"x": 30, "y": 45}}],
+        requires_segmentation=True,
     )
-    # result = {"image_url": "data:...", "svg": "<svg...>", "objects": [...]}
+    # result = {"base_image_url": "data:...",
+    #           "masks": [{"label", "polygon", "bbox_pct", "color"}, ...] | None}
 
 Обработка ошибок
 ─────────────────
-  Любой шаг может не сработать (сервисы на Mac Studio недоступны,
-  таймаут, пустой ответ). Пайплайн собирает максимум из того, что
-  получилось: при сбое SAM2/Qwen вернётся хотя бы исходный растр
-  (`image_url`, `svg: None`) — фронтенд должен уметь показать просто
-  картинку, если `svg` отсутствует. При сбое самой генерации растра
-  возвращается `pipeline_error` и `image_url: None`.
+  Пайплайн НИКОГДА не бросает исключения и собирает максимум из того,
+  что получилось. При сбое SAM2 всё равно вернётся base_image_url
+  (masks=None) — фронтенд показывает картинку без подсветки. Полный
+  сбой (base_image_url=None + pipeline_error) возможен только на этапе
+  [1] — генерации растра.
 """
 
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
+import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -100,6 +100,29 @@ _QWEN_API_BASE_URL: str = getattr(settings, "QWEN_API_BASE_URL", f"http://{_MAC_
 _QWEN_API_KEY: str = getattr(settings, "QWEN_API_KEY", "sk-local")
 _QWEN_MODEL_NAME: str = getattr(settings, "QWEN_MODEL_NAME", "mlx-community/Qwen3.6-27B-4bit")
 _QWEN_TIMEOUT: int = int(getattr(settings, "QWEN_TIMEOUT", 60))
+
+# Vision-грунтинг подписей: после генерации спрашиваем у Qwen, ГДЕ объекты реально
+# оказались на картинке, и переносим туда подписи. Координаты от Llama — лишь
+# догадка, сделанная ДО генерации растра, поэтому подписи «летают». Можно
+# отключить (ILLUSTRATION_VISION_GROUNDING=false), если Qwen-сервис недоступен.
+_VISION_GROUNDING: bool = str(
+    getattr(settings, "ILLUSTRATION_VISION_GROUNDING", os.getenv("ILLUSTRATION_VISION_GROUNDING", "1"))
+).strip().lower() not in ("0", "false", "no", "")
+# На сколько процентов поднять текст подписи над центром объекта (чтобы текст
+# стоял НАД объектом, как подпись, а не закрывал его). arrow_to при этом —
+# точно центр объекта (туда указывают точка и линия в ScientificIllustration).
+_GROUNDING_LABEL_RISE_PCT: float = float(getattr(settings, "ILLUSTRATION_GROUNDING_RISE_PCT", 7.0))
+
+# Точность vision-грунтинга (эмпирически замерено на живом Qwen):
+#   • разрешение картинки для Qwen: 384px давал 0 попаданий, ~800-1024px → норм.
+#     НЕ переиспользуем SAM2-даунскейл (384) — для координат он слишком мелкий;
+#   • координатная СЕТКА поверх картинки (Set-of-Mark): ошибка 9% → 0.5%. Модель
+#     СЧИТЫВАЕТ координаты по сетке, а не «гадает» (VLM тянет координаты к
+#     диагонали/углам). Сетка наносится ТОЛЬКО на копию для Qwen, не на ответ.
+_GROUNDING_MAX_DIM: int = int(getattr(settings, "ILLUSTRATION_GROUNDING_MAX_DIM", 1024))
+_GROUNDING_USE_GRID: bool = str(
+    getattr(settings, "ILLUSTRATION_GROUNDING_USE_GRID", os.getenv("ILLUSTRATION_GROUNDING_USE_GRID", "1"))
+).strip().lower() not in ("0", "false", "no", "")
 
 _GRID_N: int = int(getattr(settings, "ILLUSTRATION_GRID_N", 3))
 _MAX_OBJECTS: int = int(getattr(settings, "ILLUSTRATION_MAX_OBJECTS", 6))
@@ -527,6 +550,102 @@ def _collect_distinct_objects(img_bgr: np.ndarray) -> list[dict]:
     return kept
 
 
+def _collect_objects_from_labels(
+    img_bgr: np.ndarray,
+    seed_labels: list[dict],
+) -> list[dict]:
+    """
+    Направляемая (prompted) сегментация — архитектура Figure Labs:
+    передаём в SAM2 КОНКРЕТНЫЕ координаты из JSON-ответа Llama вместо
+    слепого перебора сетки.
+
+    Каждый label содержит {content, x, y, arrow_to: {x, y}} — все координаты
+    в ПРОЦЕНТАХ (0-100) от размера изображения. Используем `arrow_to`
+    (указывает на сам объект) если есть, иначе `x`/`y` (позиция текста).
+
+    SAM2 видит точку и математически вырезает границы объекта, на который
+    она указывает — независимо от стиля изображения (3D, flat, sketch...).
+
+    Лейблы уже известны из Llama (`content`) — Qwen для этого пути не нужен.
+    Возвращает тот же формат, что _collect_distinct_objects, с дополнительным
+    полем `label` (текст из Llama).
+    """
+    height, width = img_bgr.shape[:2]
+
+    sam_img = _downscale_for_sam2(img_bgr)
+    sam_h, sam_w = sam_img.shape[:2]
+    image_b64 = _bgr_to_png_b64(sam_img)
+    total_area = float(width * height)
+
+    # Преобразуем проценты → пиксели в системе координат уменьшенного изображения
+    points_with_content: list[tuple[int, int, str]] = []
+    for lbl in seed_labels:
+        arrow = lbl.get("arrow_to") or lbl
+        x_pct = float(arrow.get("x", lbl.get("x", 50)))
+        y_pct = float(arrow.get("y", lbl.get("y", 50)))
+        px = int(max(1, min(sam_w - 2, x_pct * sam_w / 100.0)))
+        py = int(max(1, min(sam_h - 2, y_pct * sam_h / 100.0)))
+        content = str(lbl.get("content") or lbl.get("text") or "Объект").strip()
+        points_with_content.append((px, py, content))
+
+    logger.info(
+        "[Illustration] Prompted SAM2: %d точек из Llama labels → %s",
+        len(points_with_content),
+        [(x, y, c) for x, y, c in points_with_content],
+    )
+
+    with ThreadPoolExecutor(max_workers=_SAM2_MAX_WORKERS) as pool:
+        future_to_content = {
+            pool.submit(_sam2_segment_point, image_b64, (px, py)): content
+            for px, py, content in points_with_content
+        }
+        candidates: list[dict] = []
+        for future, content in future_to_content.items():
+            res = future.result()
+            if res is not None:
+                res["mask"] = _upscale_mask(res["mask"], width, height)
+                res["label"] = content  # уже знаем из Llama — Qwen не нужен
+                candidates.append(res)
+
+    logger.info(
+        "[Illustration] Prompted SAM2: %d/%d точек дали маску",
+        len(candidates), len(points_with_content),
+    )
+
+    # Те же фильтры, что в _collect_distinct_objects (шум, фон, слипшиеся)
+    valid: list[dict] = []
+    for cand in candidates:
+        mask = cand["mask"]
+        area_ratio = float((mask > 127).sum()) / total_area
+        if area_ratio < _MIN_AREA_RATIO or area_ratio > _MAX_AREA_RATIO:
+            continue
+        bbox = _mask_bbox(mask)
+        if bbox is None:
+            continue
+        if _looks_like_background_mask(bbox, width, height):
+            continue
+        cand["bbox"] = bbox
+        cand["area_ratio"] = area_ratio
+        valid.append(cand)
+
+    if not valid:
+        logger.info("[Illustration] Prompted SAM2: все маски отфильтрованы (фон/шум)")
+        return []
+
+    # Дедупликация: от меньших масок к большим (как в _collect_distinct_objects)
+    valid.sort(key=lambda c: (c["mask"] > 127).sum())
+    kept: list[dict] = []
+    for cand in valid:
+        if all(_overlap_ratio(cand["mask"], k["mask"]) < 0.5 for k in kept):
+            kept.append(cand)
+
+    kept.sort(key=lambda c: -c["score"])
+    kept = kept[:_MAX_OBJECTS]
+
+    logger.info("[Illustration] Prompted SAM2 итого: %d объектов", len(kept))
+    return kept
+
+
 # ──────────────────────────────────────────────────────────────────
 # [3] Qwen — короткая подпись для вырезанного фрагмента-объекта
 # ──────────────────────────────────────────────────────────────────
@@ -598,15 +717,221 @@ def _label_objects(img_bgr: np.ndarray, objects: list[dict], topic_hint: str) ->
 
 
 # ──────────────────────────────────────────────────────────────────
-# [4] Контур маски → SVG <path>, сборка финального SVG
+# [1.5] Vision-грунтинг координат подписей
+# ──────────────────────────────────────────────────────────────────
+# Почему это нужно: координаты подписей (x/y, arrow_to) придумывает Llama ДО
+# того, как Banana нарисует картинку, — это её догадка «где примерно объект»,
+# а не реальное положение на сгенерированном растре. Поэтому подписи «летают».
+# Решение: показываем Qwen (vision) ГОТОВУЮ картинку + список объектов и просим
+# вернуть их РЕАЛЬНЫЕ центры в процентах. Туда и переносим указатель подписи.
+
+def _resize_long_side(img_bgr: np.ndarray, max_dim: int) -> np.ndarray:
+    """Ресайз так, чтобы длинная сторона = max_dim (если картинка больше)."""
+    h, w = img_bgr.shape[:2]
+    s = min(1.0, max_dim / float(max(h, w)))
+    if s >= 0.999:
+        return img_bgr
+    return cv2.resize(img_bgr, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA)
+
+
+def _overlay_coord_grid(img_bgr: np.ndarray) -> np.ndarray:
+    """
+    Наносит светлую координатную сетку (линии каждые 10%, подписи 0..100 по
+    верхней и левой осям) — «измерительные леса» ТОЛЬКО для vision-запроса.
+    На итоговую картинку пользователю НЕ попадает.
+
+    Эмпирически (замер на живом Qwen): сетка роняет ошибку координат с ~9% до
+    ~0.5% — модель СЧИТЫВАЕТ позицию по сетке вместо «гадания» (без сетки VLM
+    систематически тянет координаты к диагонали/углам).
+    """
+    h, w = img_bgr.shape[:2]
+    g = img_bgr.copy()
+    for p in range(10, 100, 10):
+        x, y = int(p / 100 * w), int(p / 100 * h)
+        cv2.line(g, (x, 0), (x, h), (180, 180, 180), 1, cv2.LINE_AA)
+        cv2.line(g, (0, y), (w, y), (180, 180, 180), 1, cv2.LINE_AA)
+        cv2.putText(g, str(p), (x + 2, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (110, 110, 110), 1, cv2.LINE_AA)
+        cv2.putText(g, str(p), (2, max(12, y - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (110, 110, 110), 1, cv2.LINE_AA)
+    return g
+
+
+def _norm_name(s: Any) -> str:
+    """Нормализация имени для матчинга: NFC + lower + strip (устойчиво к й/ё и регистру)."""
+    return unicodedata.normalize("NFC", str(s)).strip().lower()
+
+
+def _parse_grounding_json(raw: str) -> list[tuple[str, float, float]]:
+    """
+    Парсит ответ Qwen в УПОРЯДОЧЕННЫЙ список [(имя_norm, x%, y%), ...] —
+    порядок сохраняем, чтобы можно было сматчить позиционно, если имена не
+    совпали буквально. Терпим к мусору: пробует чистый JSON, затем вырезает
+    первый [...]-массив. Координаты вне 0-100 отбрасываются.
+    """
+    if not raw:
+        return []
+    txt = raw.replace("```json", "").replace("```", "").strip()
+    data: Any = None
+    try:
+        data = json.loads(txt)
+    except Exception:
+        m = re.search(r"\[.*\]", txt, re.S)
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except Exception:
+                return []
+    if not isinstance(data, list):
+        return []
+
+    out: list[tuple[str, float, float]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = _norm_name(item.get("name") or item.get("content") or item.get("label") or "")
+        try:
+            x = float(item.get("x"))
+            y = float(item.get("y"))
+        except (TypeError, ValueError):
+            continue
+        if 0.0 <= x <= 100.0 and 0.0 <= y <= 100.0:
+            out.append((name, x, y))
+    return out
+
+
+def _ground_labels_with_vision(
+    img_bgr: np.ndarray,
+    labels: list[dict],
+    topic_hint: str = "",
+) -> list[dict]:
+    """
+    Спрашивает у Qwen (vision) РЕАЛЬНЫЕ позиции объектов на сгенерированной
+    картинке и возвращает НОВЫЙ список подписей с уточнёнными координатами:
+      • arrow_to        → точный центр объекта (туда смотрят точка и линия);
+      • x / y (текст)   → чуть ВЫШЕ центра (_GROUNDING_LABEL_RISE_PCT), чтобы
+                          подпись стояла над объектом, а не закрывала его.
+
+    Деградация: подпись, которую Qwen не локализовал, остаётся с координатами
+    Llama. При недоступности Qwen / нераспарсенном ответе — список возвращается
+    как есть (пайплайн никогда не падает из-за грунтинга).
+    """
+    if not labels:
+        return labels
+
+    names = [str(l.get("content") or l.get("text") or "").strip() for l in labels]
+    names = [n for n in names if n]
+    if not names:
+        return labels
+
+    # Подготовка копии для Qwen. ВАЖНО (замер на живом Qwen): для координат нужна
+    # НЕ мелкая (384 SAM2-копия давала 0 попаданий), а ~1024px + координатная
+    # сетка — она роняет ошибку с ~9% до ~0.5% (см. _overlay_coord_grid).
+    try:
+        vis = _resize_long_side(img_bgr, _GROUNDING_MAX_DIM)
+        if _GROUNDING_USE_GRID:
+            vis = _overlay_coord_grid(vis)
+        img_b64 = _bgr_to_png_b64(vis)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Illustration] grounding: не удалось подготовить картинку: %s", exc)
+        return labels
+
+    topic_line = f" Тема: «{topic_hint}»." if topic_hint else ""
+    grid_line = (
+        " На изображение нанесена координатная СЕТКА: тонкие серые линии каждые "
+        "10%, по верхней и левой осям подписаны числа 0..100 (x: лево=0, право=100; "
+        "y: верх=0, низ=100). СЧИТЫВАЙ координаты центра объекта ПО СЕТКЕ, не на глаз."
+    ) if _GROUNDING_USE_GRID else (
+        " Координаты в ПРОЦЕНТАХ: x — от ширины (0=левый край, 100=правый), "
+        "y — от высоты (0=верх, 100=низ)."
+    )
+    # NB: НЕ просим «пропустить отсутствующие» — на сцене подписи часто
+    # ПРОЦЕССЫ (испарение/осадки), а не предметы, и с «пропусти» Qwen выкидывал
+    # их все. Просим центр ОБЛАСТИ процесса и ВСЕ объекты в ТОМ ЖЕ порядке/именах
+    # — это даёт и матч по имени, и позиционный фолбэк.
+    prompt = (
+        "На изображении — научная иллюстрация." + topic_line + grid_line +
+        " Для КАЖДОГО объекта/процесса из списка укажи координаты центра ОБЛАСТИ, "
+        "где он показан (если это процесс — испарение, осадки и т.п. — укажи центр "
+        "зоны, где он происходит: соответствующие стрелки/поток/элемент). "
+        "Верни ВСЕ перечисленные пункты, СТРОГО в том же порядке и с теми же "
+        "названиями. Список: " + "; ".join(names) + ". "
+        'Ответь СТРОГО JSON-массивом [{"name":"<пункт>","x":<0-100>,"y":<0-100>}], '
+        "без markdown и пояснений."
+    )
+
+    try:
+        resp = requests.post(
+            f"{_QWEN_API_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {_QWEN_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": _QWEN_MODEL_NAME,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+                    ],
+                }],
+                "max_tokens": 600,
+                "temperature": 0.0,
+            },
+            timeout=_QWEN_TIMEOUT,
+        )
+        resp.raise_for_status()
+        raw = resp.json()["choices"][0]["message"]["content"] or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[Illustration] grounding: Qwen недоступен, координаты Llama как есть: %s", exc)
+        return labels
+
+    located_list = _parse_grounding_json(raw)
+    if not located_list:
+        logger.info("[Illustration] grounding: Qwen ничего не локализовал, координаты Llama как есть")
+        return labels
+    by_name = {name: (x, y) for name, x, y in located_list}
+
+    rise = _GROUNDING_LABEL_RISE_PCT
+    grounded: list[dict] = []
+    n_fixed = 0
+    for i, lbl in enumerate(labels):
+        new = dict(lbl)
+        name = _norm_name(lbl.get("content") or lbl.get("text") or "")
+        pos = by_name.get(name)
+        # Фолбэк: если по имени не нашли, но Qwen вернул столько же пунктов в том
+        # же порядке — берём позиционно (модель иногда чуть переформулирует имя).
+        if pos is None and len(located_list) == len(labels):
+            pos = (located_list[i][1], located_list[i][2])
+        if pos is not None:
+            ox, oy = pos
+            new["arrow_to"] = {"x": round(ox, 1), "y": round(oy, 1)}
+            new["x"] = round(ox, 1)
+            new["y"] = round(min(96.0, max(4.0, oy - rise)), 1)
+            n_fixed += 1
+        grounded.append(new)
+
+    logger.info(
+        "[Illustration] grounding: уточнено %d/%d подписей по реальной картинке",
+        n_fixed, len(labels),
+    )
+    return grounded
+
+
+# ──────────────────────────────────────────────────────────────────
+# [4] Контур маски → полигон в процентах (для наложения на доске)
 # ──────────────────────────────────────────────────────────────────
 
-def _mask_to_svg_path_d(mask: np.ndarray, simplify_eps: float = 1.5) -> str | None:
+def _mask_to_polygon_pct(
+    mask: "np.ndarray", width: int, height: int, simplify_eps: float = 2.0
+) -> list[list[float]] | None:
     """
-    Находит внешний контур маски, упрощает его (Дуглас-Пекер через
-    cv2.approxPolyDP) и возвращает строку для атрибута "d" SVG <path>.
-    Упрощение важно: сырой контур может содержать тысячи точек и
-    раздувать SVG — после approxPolyDP остаются только "углы" фигуры.
+    Внешний контур маски → упрощённый полигон в ПРОЦЕНТАХ от размеров
+    изображения (0-100).
+
+    Проценты, а не пиксели — чтобы фронтенд мог наложить контур поверх
+    картинки ЛЮБОГО размера на доске (картинка масштабируется, полигон
+    масштабируется вместе с ней без пересчёта на бэкенде).
+
+    Упрощение (Дуглас-Пекер через cv2.approxPolyDP) обязательно: сырой
+    контур SAM2 может содержать тысячи точек — после упрощения остаются
+    только «углы» фигуры, JSON остаётся компактным.
     """
     binary = (mask > 127).astype(np.uint8)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -618,129 +943,177 @@ def _mask_to_svg_path_d(mask: np.ndarray, simplify_eps: float = 1.5) -> str | No
     if len(approx) < 3:
         return None
 
-    head_x, head_y = approx[0]
-    d_parts = [f"M {head_x} {head_y}"]
-    d_parts += [f"L {x} {y}" for x, y in approx[1:]]
-    d_parts.append("Z")
-    return " ".join(d_parts)
-
-
-def _build_svg(image_url: str, width: int, height: int, objects: list[dict]) -> str:
-    """
-    Собирает итоговый SVG: исходный растр как фоновый слой (через <image>,
-    с дублированием href/xlink:href для совместимости) + полупрозрачные
-    контуры найденных объектов поверх (помогает ученику соотнести подпись
-    с конкретной областью картинки).
-    """
-    parts = [
-        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
-        f'viewBox="0 0 {width} {height}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">',
-        f'<image href="{image_url}" xlink:href="{image_url}" x="0" y="0" '
-        f'width="{width}" height="{height}" />',
+    return [
+        [round(float(x) / width * 100, 2), round(float(y) / height * 100, 2)]
+        for x, y in approx
     ]
-
-    for i, obj in enumerate(objects):
-        path_d = _mask_to_svg_path_d(obj["mask"])
-        if not path_d:
-            continue
-        color = _OUTLINE_COLORS[i % len(_OUTLINE_COLORS)]
-        parts.append(
-            f'<path d="{path_d}" fill="{color}" fill-opacity="0.14" '
-            f'stroke="{color}" stroke-width="2.5" stroke-linejoin="round" stroke-opacity="0.85" />'
-        )
-
-    parts.append("</svg>")
-    return "".join(parts)
-
-
 # ──────────────────────────────────────────────────────────────────
 # Публичный пайплайн
 # ──────────────────────────────────────────────────────────────────
 
-def build_vector_illustration(image_prompt: str, topic_hint: str = "") -> dict[str, Any]:
+def build_vector_illustration(
+    image_prompt: str,
+    topic_hint: str = "",
+    seed_labels: list[dict] | None = None,
+    requires_segmentation: bool = False,
+    style: str | None = None,
+    palette: str | None = None,
+    reference_image_url: str | None = None,
+) -> dict[str, Any]:
     """
-    Полный пайплайн: image_prompt → растр (Banana) → объекты (SAM2) →
-    подписи (Qwen) → SVG.
+    Пайплайн генерации иллюстрации с НАПРАВЛЯЕМОЙ (prompted) сегментацией —
+    архитектура в духе Figure Labs.
+
+    Главный принцип: ОРИГИНАЛЬНАЯ картинка от Banana НИКОГДА не теряется.
+    Она всегда возвращается как `base_image_url`, а сегментация — лишь
+    опциональное дополнение поверх неё.
+
+      [1] ВСЕГДА генерируем растр через Banana → base_image_url.
+      [2] Сегментация управляется флагом `requires_segmentation`:
+          • False (пейзажи, сцены, процессы — «круговорот воды»):
+            SAM2 НЕ вызываем, masks=None. Фронтенд показывает чистую
+            картинку + подписи Llama. Это основной, быстрый путь.
+          • True (нужно выделить ОТДЕЛЬНЫЕ объекты — органеллы клетки,
+            детали механизма, геом. тела): берём координаты подписей Llama
+            (arrow_to/x,y — в процентах) как seed points для SAM2, получаем
+            точные маски ровно тех объектов, на которые указывает учитель,
+            и отдаём их как полигоны в процентах (фронтенд рисует подсветку
+            поверх картинки).
 
     Args:
-        image_prompt: описание содержимого иллюстрации на английском
-                      (то же, что Llama кладёт в `image_prompt`).
-        topic_hint:   тема урока/задачи на русском — даётся Qwen как
-                      контекст для более осмысленных подписей
-                      (например: "Геометрия: объём фигур").
+        image_prompt:          описание содержимого (англ.) — что нарисовать.
+        topic_hint:            тема урока (зарезервировано под уточнение
+                               подписей; для prompted-пути не используется —
+                               подписи уже есть от Llama).
+        seed_labels:           подписи Llama [{content, x, y, arrow_to:{x,y}}],
+                               координаты в процентах. Seed points для SAM2.
+        requires_segmentation: запускать ли SAM2 (решение принимает Llama).
+        style:                 id стиля с фронтенда (flat/2_5d/3d/sketch) —
+                               прокидывается в generate_raster_image.
+        palette:               id палитры с фронтенда (he_inspired/…).
+        reference_image_url:   URL/Data URL существующей картинки на доске — при
+                               смене стиля. Когда задан, этап [1] идёт в режиме
+                               нативного image-to-image (edit) у Gemini/Nano Banana
+                               и сохраняет композицию (см. generate_raster_image).
 
     Returns:
         {
-          "image_url": "data:image/png;base64,..." | None,
-          "svg":       "<svg ...>...</svg>" | None,
-          "objects": [
-            {"label": str, "bbox": [x0,y0,x1,y1],
-             "centroid_pct": [x,y], "score": float}, ...
-          ],
-          "pipeline_error": str,   # присутствует только при частичном/полном сбое
+          "base_image_url": "data:image/...;base64,..." | None,  # ВСЕГДА при успехе
+          "labels": [ {content, x, y, arrow_to:{x,y}}, ... ],    # присутствует, если
+                                                                 # были seed_labels: координаты
+                                                                 # УТОЧНЕНЫ vision-грунтингом
+                                                                 # по реальной картинке (Qwen),
+                                                                 # либо как у Llama при сбое/выкл.
+          "masks": [                                              # None если сегментация
+            {"label": str, "polygon": [[x%,y%],...],              # не запрашивалась/не дала
+             "bbox_pct": [x0%,y0%,x1%,y1%], "color": str,         # результата
+             "score": float}, ...
+          ] | None,
+          "pipeline_error": str,   # присутствует только при сбое
         }
 
     Никогда не бросает исключения наружу — деградирует постепенно:
-    при сбое SAM2/Qwen возвращается хотя бы растровое изображение
-    (svg=None, objects=[]); при сбое генерации растра — image_url=None
-    и pipeline_error с описанием. Вызывающий код (enrich_board_steps)
-    решает, что показать фронтенду в каждом случае.
+    если SAM2 не сработал, всё равно возвращается base_image_url (masks=None).
+    Полный сбой возможен только на этапе [1] (генерация растра).
     """
-    result: dict[str, Any] = {"image_url": None, "svg": None, "objects": []}
+    result: dict[str, Any] = {"base_image_url": None, "masks": None}
 
-    # ── [1] Растровое изображение через Banana ──
+    # ── [1] Растр через Banana — ВСЕГДА, это основа ответа ──
     try:
-        image_url = generate_raster_image(image_prompt)
-        result["image_url"] = image_url
+        image_url = generate_raster_image(
+            image_prompt,
+            style=style,
+            palette=palette,
+            reference_image_url=reference_image_url,
+        )
+        result["base_image_url"] = image_url
     except Exception as exc:  # noqa: BLE001
         logger.error("[Illustration] Генерация растра не удалась: %s", exc, exc_info=True)
         result["pipeline_error"] = f"Генерация изображения не удалась: {exc}"
         return result
 
-    try:
-        img_bgr = _image_url_to_bgr(image_url)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[Illustration] Декодирование растра не удалось: %s", exc, exc_info=True)
-        result["pipeline_error"] = f"Не удалось декодировать сгенерированное изображение: {exc}"
+    # ── [1.5] Vision-грунтинг координат подписей (для ЛЮБЫХ иллюстраций) ──
+    # Координаты Llama — догадка, сделанная ДО генерации; уточняем их по РЕАЛЬНОЙ
+    # картинке через Qwen. Работает и для сцен без сегментации («круговорот воды»).
+    # img_bgr декодируем здесь ОДИН раз и переиспользуем ниже для SAM2.
+    img_bgr = None
+    if seed_labels:
+        if _VISION_GROUNDING:
+            try:
+                img_bgr = _image_url_to_bgr(image_url)
+                # Грунтим: arrow_to → реальный центр объекта, текст — над ним.
+                # Уточнённые координаты идут и в ответ, и (как seed) в SAM2 ниже.
+                seed_labels = _ground_labels_with_vision(img_bgr, seed_labels, topic_hint)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[Illustration] vision-грунтинг не удался, координаты Llama как есть: %s", exc
+                )
+        result["labels"] = seed_labels
+
+    # Сегментация не нужна (сцена/пейзаж/процесс) — отдаём картинку + (грунт.) подписи.
+    if not requires_segmentation:
+        logger.info(
+            "[Illustration] requires_segmentation=False → base_image_url + подписи (SAM2 пропущен)"
+        )
         return result
+
+    if not seed_labels:
+        logger.info(
+            "[Illustration] requires_segmentation=True, но seed_labels пусты → SAM2 пропущен"
+        )
+        return result
+
+    # ── [2] Декодируем растр для SAM2 (если ещё не декодировали в [1.5]) ──
+    if img_bgr is None:
+        try:
+            img_bgr = _image_url_to_bgr(image_url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[Illustration] Декодирование растра не удалось, отдаём без масок: %s", exc)
+            result["pipeline_error"] = f"Не удалось декодировать изображение для сегментации: {exc}"
+            return result
 
     height, width = img_bgr.shape[:2]
 
-    # ── [2] SAM2: находим объекты (content-aware точки + сетка-подстраховка) ──
+    # ── [3] Направляемая сегментация: координаты Llama → seed points SAM2 ──
     try:
-        objects = _collect_distinct_objects(img_bgr)
+        logger.info(
+            "[Illustration] Направляемая сегментация: %d seed_labels от Llama",
+            len(seed_labels),
+        )
+        objects = _collect_objects_from_labels(img_bgr, seed_labels)
     except Exception as exc:  # noqa: BLE001
-        logger.error("[Illustration] SAM2-этап не удался: %s", exc, exc_info=True)
-        result["pipeline_error"] = f"Сегментация не удалась, показываем растр без векторизации: {exc}"
+        logger.warning("[Illustration] SAM2 сегментация не удалась, отдаём без масок: %s", exc)
+        result["pipeline_error"] = f"Сегментация не удалась: {exc}"
         return result
 
     if not objects:
-        result["pipeline_error"] = "SAM2 не нашёл различимых объектов — показываем растр без векторизации"
+        logger.info("[Illustration] SAM2 не вернул масок по координатам подписей")
+        result["pipeline_error"] = "SAM2 не нашёл объектов по координатам подписей"
         return result
 
-    # ── [3] Qwen: подписи для каждого найденного объекта ──
-    try:
-        _label_objects(img_bgr, objects, topic_hint)
-    except Exception as exc:  # noqa: BLE001
-        # Не критично — подписи останутся плейсхолдерами "Объект"
-        logger.warning("[Illustration] Этап подписей (Qwen) частично не удался: %s", exc)
-
-    # ── [4] Сборка SVG ──
-    try:
-        result["svg"] = _build_svg(image_url, width, height, objects)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[Illustration] Сборка SVG не удалась, остаётся растр: %s", exc)
-
-    result["objects"] = [
-        {
+    # ── [4] Маски SAM2 → полигоны в процентах (для наложения на доске) ──
+    masks: list[dict] = []
+    for i, obj in enumerate(objects):
+        polygon = _mask_to_polygon_pct(obj["mask"], width, height)
+        if not polygon:
+            continue
+        x0, y0, x1, y1 = obj["bbox"]
+        masks.append({
             "label": obj.get("label", "Объект"),
-            "bbox": list(obj["bbox"]),
-            "centroid_pct": [
-                round((obj["bbox"][0] + obj["bbox"][2]) / 2.0 / width * 100, 1),
-                round((obj["bbox"][1] + obj["bbox"][3]) / 2.0 / height * 100, 1),
+            "polygon": polygon,
+            "bbox_pct": [
+                round(x0 / width * 100, 2),
+                round(y0 / height * 100, 2),
+                round(x1 / width * 100, 2),
+                round(y1 / height * 100, 2),
             ],
+            "color": _OUTLINE_COLORS[i % len(_OUTLINE_COLORS)],
             "score": round(obj["score"], 3),
-        }
-        for obj in objects
-    ]
+        })
+
+    result["masks"] = masks or None
+    logger.info(
+        "[Illustration] Готово: base_image_url + %d масок (полигоны в %%)",
+        len(masks),
+    )
     return result

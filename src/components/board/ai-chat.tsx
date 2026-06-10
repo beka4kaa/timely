@@ -49,10 +49,15 @@ export function AIChat({ className }: AIChatProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [generationStyle, setGenerationStyle] = useState("flat");
-  const [generationPalette, setGenerationPalette] = useState("he_inspired");
+  // Дефолтная палитра — natural-earth: естественные/географические тона.
+  // Раньше дефолт был he_inspired (медицинский H&E), из-за чего гео-схемы
+  // генерились в красно-«мясных» оттенках.
+  const [generationPalette, setGenerationPalette] = useState("natural-earth");
 
   const executeActions = useWhiteboardStore((s) => s.executeActions);
   const camera = useWhiteboardStore((s) => s.camera);
+  const selectedElementId = useWhiteboardStore((s) => s.selectedElementId);
+  const elements = useWhiteboardStore((s) => s.elements);
 
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
@@ -91,14 +96,23 @@ export function AIChat({ className }: AIChatProps) {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
+      // Если на доске выбрана иллюстрация — передаём её как референс,
+      // чтобы при смене стиля генератор сохранил 35% исходной геометрии.
+      const selectedEl = elements.find((e) => e.id === selectedElementId);
+      const referenceImageUrl =
+        selectedEl && (selectedEl.type === "ILLUSTRATION" || selectedEl.type === "IMAGE")
+          ? (selectedEl as { src: string }).src
+          : undefined;
+
       const res = await fetch("/api/ai/draw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message: text, 
+        body: JSON.stringify({
+          message: text,
           history,
           style: generationStyle,
-          palette: generationPalette
+          palette: generationPalette,
+          ...(referenceImageUrl && { reference_image_url: referenceImageUrl }),
         }),
       });
 
@@ -143,32 +157,30 @@ export function AIChat({ className }: AIChatProps) {
             const cy = baseY + (parseFloat(cmd.y) || 0);
 
             if (cmd.type === "image_with_labels") {
-              if (cmd.image_url) {
+              // Backend contract:
+              //   base_image_url — ОРИГИНАЛЬНАЯ картинка от Banana (всегда есть)
+              //   labels         — подписи {content, x%, y%, arrow_to?}
+              //   masks          — опц. полигоны SAM2 {label, polygon:[[x%,y%]], color}
+              const baseImageUrl = cmd.base_image_url || cmd.image_url; // image_url — legacy
+              if (baseImageUrl) {
+                // ОДИН композитный элемент ILLUSTRATION — слоистый блок
+                // (картинка + подписи + маски рендерятся вместе, в правильном
+                // выравнивании). Раньше команда разбивалась на отдельные
+                // IMAGE/TEXT/SHAPE-элементы — отсюда «разъехавшаяся» вёрстка.
                 actionsToExecute.push({
-                  type: "CREATE_IMAGE",
+                  type: "CREATE_ILLUSTRATION",
                   payload: {
                     id: idBase,
                     position: { x: cx, y: cy },
-                    src: cmd.image_url,
-                    width: 400,
-                    height: 400,
-                    rotation: 0
+                    src: baseImageUrl,
+                    width: 460,
+                    height: 300,
+                    rotation: 0,
+                    labels: Array.isArray(cmd.labels) ? cmd.labels : [],
+                    masks: Array.isArray(cmd.masks) ? cmd.masks : null,
+                    alt: typeof cmd.alt === "string" ? cmd.alt : undefined,
                   }
                 });
-                
-                // Add labels if any
-                if (cmd.labels && Array.isArray(cmd.labels)) {
-                  cmd.labels.forEach((label: any, idx: number) => {
-                    actionsToExecute.push({
-                      type: "CREATE_TEXT",
-                      payload: {
-                        id: `${idBase}-lbl-${idx}`,
-                        position: { x: cx + (label.x_percent || 50) * 4, y: cy + (label.y_percent || 50) * 4 },
-                        content: label.text || label.content || ""
-                      }
-                    });
-                  });
-                }
               } else if (cmd.image_error) {
                 // If there's an error, convert it to a text command so it shows in the chat
                 cmd.type = "text";

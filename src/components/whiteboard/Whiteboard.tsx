@@ -5,6 +5,8 @@ import type { CropResult } from "./types";
 import { useWhiteboardStore } from "@/stores/whiteboard";
 import { canvasToScreen, screenToCanvas } from "./utils";
 import { TextRenderer, GraphRenderer, ImageRenderer, ShapeRenderer } from "./renderers";
+import { IllustrationRenderer } from "./IllustrationRenderer";
+import { DraggableBoardNode } from "./DraggableBoardNode";
 import { InteractiveElement } from "./InteractiveElement";
 
 interface WhiteboardProps {
@@ -275,10 +277,27 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
         />
       </div>
 
-      {/* Element rendering layer (Text & Graphs) */}
+      {/* Element rendering layer */}
       {elements.map((el) => {
-        const screenPos = canvasToScreen(el.position.x, el.position.y, camera);
+        // ILLUSTRATION uses the generalized DraggableBoardNode wrapper:
+        // it owns its own positioning/zoom/drag/select so the whole layered
+        // card (image + labels + hover-masks) moves as ONE node.
+        if (el.type === "ILLUSTRATION") {
+          return (
+            <DraggableBoardNode key={el.id} id={el.id} position={el.position} width={el.width}>
+              <IllustrationRenderer
+                id={el.id}
+                src={el.src}
+                labels={el.labels}
+                masks={el.masks}
+                alt={el.alt}
+              />
+            </DraggableBoardNode>
+          );
+        }
 
+        // All other primitives keep the existing InteractiveElement path.
+        const screenPos = canvasToScreen(el.position.x, el.position.y, camera);
         return (
           <div
             key={el.id}
