@@ -39,9 +39,14 @@ const nextConfig = {
     ignoreDuringBuilds: false,
   },
   async rewrites() {
-    // Use Railway backend on production, localhost on dev
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-      (process.env.VERCEL ? 'https://timely-production-4f5a.up.railway.app' : 'http://localhost:8000');
+    const raw = process.env.NEXT_PUBLIC_API_URL || '';
+    // Ensure the URL always has a valid protocol prefix for Next.js rewrites.
+    // Falls back to Northflank in Vercel builds, localhost in dev.
+    const apiUrl = raw.startsWith('http')
+      ? raw
+      : (process.env.VERCEL
+          ? 'https://p01--timely--qvfcgglmy6nx.code.run'
+          : 'http://localhost:8000');
     return [
       // Auth - handled by Next.js
       {
