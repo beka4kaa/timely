@@ -70,9 +70,9 @@ const MY_CONTESTS: ContestEntry[] = [
 ];
 
 const TOP_3: RankedUser[] = [
-  { rank: 2, username: "Bekadka KG", country: "KG", rating: 6767, avatarUrl: "" },
-  { rank: 1, username: "Bekadka KG", country: "KG", rating: 6767, avatarUrl: "" },
-  { rank: 3, username: "Bekadka KG", country: "KG", rating: 6767, avatarUrl: "" },
+  { rank: 2, username: "Bekadka KG", country: "KG", rating: 6767, attended: 107, avatarUrl: "" },
+  { rank: 1, username: "Bekadka KG", country: "KG", rating: 6767, attended: 107, avatarUrl: "" },
+  { rank: 3, username: "Bekadka KG", country: "KG", rating: 6767, attended: 107, avatarUrl: "" },
 ];
 
 const RANKED_USERS: RankedUser[] = Array.from({ length: 7 }, (_, i) => ({

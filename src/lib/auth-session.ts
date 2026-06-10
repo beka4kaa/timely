@@ -1,9 +1,14 @@
 import { getServerSession as nextAuthGetServerSession } from "next-auth"
+import type { Session } from "next-auth"
 import { authOptions } from "@/lib/auth"
 
-export async function getServerSession(options?: any) {
+export type AppSession = Session & { accessToken?: string }
+
+export async function getServerSession(
+  options: typeof authOptions = authOptions
+): Promise<AppSession | null> {
   const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
-  
+
   if (DEV_BYPASS_AUTH) {
     return {
       user: {
@@ -12,9 +17,10 @@ export async function getServerSession(options?: any) {
         name: "Developer Bypass",
         role: "admin"
       },
-      accessToken: "mock-token-for-dev"
+      accessToken: "mock-token-for-dev",
+      expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     }
   }
 
-  return await nextAuthGetServerSession(options || authOptions)
+  return (await nextAuthGetServerSession(options)) as AppSession | null
 }
