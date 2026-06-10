@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { getOrCreateWeek, forceRecreateWeek, getMondayOf, restoreWeek } from '@/lib/diary-store'
 import { BACKEND_URL } from '@/lib/api-utils'
@@ -21,7 +21,10 @@ export async function GET(req: NextRequest) {
   let subjectsMap: Record<string, { name: string; emoji: string; color: string }> = {}
   try {
     const token = (session as any).accessToken
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'x-user-email': userId 
+    }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
     const res = await fetch(`${BACKEND_URL}/api/mind/subjects/`, { headers, cache: 'no-store' })
@@ -57,7 +60,10 @@ export async function POST(req: NextRequest) {
   let subjectsMap: Record<string, { name: string; emoji: string; color: string }> = {}
   try {
     const token = (session as any).accessToken
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'x-user-email': userId
+    }
     if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${BACKEND_URL}/api/mind/subjects/`, { headers, cache: 'no-store' })
     if (res.ok) {

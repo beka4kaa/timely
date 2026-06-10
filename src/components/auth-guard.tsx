@@ -16,6 +16,9 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   useEffect(() => {
     if (status === "loading") return // Еще загружается
 
+    const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+    if (DEV_BYPASS_AUTH) return // Skip checks if bypassing auth
+
     if (requireAuth && !session) {
       router.push("/auth/signin")
       return
@@ -34,6 +37,13 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
       </div>
     )
+  }
+
+  // Bypass logic for dev mode
+  const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+
+  if (DEV_BYPASS_AUTH) {
+    return <>{children}</>
   }
 
   // Если требуется авторизация, но пользователь не авторизован

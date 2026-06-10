@@ -14,7 +14,7 @@
  * Returns the updated (or newly created) DiaryWeek.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { applyTemplateToWeek } from '@/lib/diary-store'
 import { BACKEND_URL } from '@/lib/api-utils'

@@ -8,6 +8,13 @@ module.exports = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			inter: ['var(--font-inter)', 'sans-serif'],
+  			onest: ['var(--font-onest)', 'sans-serif'],
+  			'plus-jakarta': ['var(--font-plus-jakarta)', 'sans-serif'],
+  			handwriting: ['var(--font-handwriting)', 'cursive'],
+  			virgil: ['var(--font-handwriting)', 'cursive'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',

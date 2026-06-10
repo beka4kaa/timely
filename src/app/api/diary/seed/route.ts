@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { createTemplate, getActiveTemplate, getOrCreateWeek, getMondayOf } from '@/lib/diary-store'
 

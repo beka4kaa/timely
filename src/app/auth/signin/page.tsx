@@ -130,6 +130,18 @@ export default function SignInPage() {
                   </svg>
                   {isLoading ? 'Connecting...' : 'Continue with Google'}
                 </Button>
+
+                {process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === 'true' && (
+                  <Button 
+                    variant="secondary" 
+                    type="button" 
+                    className="w-full mt-2 bg-yellow-500/20 text-yellow-600 hover:bg-yellow-500/30"
+                    onClick={() => router.push('/dashboard/diary')}
+                    disabled={isLoading}
+                  >
+                    Вход без аккаунта (Dev Bypass)
+                  </Button>
+                )}
                 
                 <div className="text-center text-sm">
                   Don&apos;t have an account?{" "}

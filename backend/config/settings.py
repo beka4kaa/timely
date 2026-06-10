@@ -15,10 +15,10 @@ import os
 import dj_database_url
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR.parent / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     "ai_engine",
     "accounts",
     "diary",
+    "habits",
+    "django_filters",
 ]
 
 MIDDLEWARE = [
@@ -158,3 +160,105 @@ CACHES = {
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+AUTH_USER_MODEL = 'accounts.CustomUser'
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Image Generation (ai_engine.image_enrichment)
+# Используется для обогащения команд `image_with_labels` от Llama.
+# Провайдер: OpenRouter → BananaPro (google/gemini-pro-image, standard tier)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# POST endpoint провайдера генерации изображений
+IMAGE_GEN_API_URL = os.getenv(
+    "IMAGE_GEN_API_URL",
+    "https://openrouter.ai/api/v1/chat/completions",
+)
+
+# API-ключ. Для OpenRouter — тот же ключ, что OPENROUTER_API_KEY.
+# В production задайте через переменную окружения IMAGE_GEN_API_KEY.
+IMAGE_GEN_API_KEY = os.getenv(
+    "IMAGE_GEN_API_KEY",
+    os.getenv("OPENROUTER_API_KEY", ""),
+)
+
+# Идентификатор модели на OpenRouter
+# "Nano Banana 2" / google/gemini-3.1-flash-image-preview — быстрее и дешевле
+# чем BananaPro (gemini-3-pro-image-preview), используем для тестов/прода.
+IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3.1-flash-image-preview")
+
+# Таймаут одного запроса к провайдеру (секунды)
+IMAGE_GEN_TIMEOUT = int(os.getenv("IMAGE_GEN_TIMEOUT", "60"))
+
+# Tier OpenRouter для маршрутизации запросов (standard / nitro)
+IMAGE_GEN_TIER = os.getenv("IMAGE_GEN_TIER", "standard")
+
+# Максимальное количество одновременных запросов к API генерации
+# (актуально когда один ответ Llama содержит несколько image_with_labels команд)
+IMAGE_GEN_MAX_WORKERS = int(os.getenv("IMAGE_GEN_MAX_WORKERS", "3"))
+
+# Публичный URL сервиса (используется в HTTP-Referer при запросах к OpenRouter)
+SITE_URL = os.getenv("SITE_URL", "https://timely.app")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Локальные модели на удалённой Mac Studio (через Tailscale, mlx_vlm.server +
+# отдельный SAM2-сервис). Используются в ai_engine.illustration_pipeline для
+# цепочки "banana → SAM2 → Qwen → SVG" и в ai_engine.ocr_views для OCR.
+#
+# Текущая раскладка портов на хосте MAC_STUDIO_HOST:
+#   :8080 → mlx-community/Qwen3.6-27B-4bit   (общая VLM: vision + текст)
+#   :8081 → mlx-community/GLM-OCR-bf16       (используется в ocr_views для OCR)
+#   :8002 → SAM 2 (facebook/sam2-hiera-large), отдельный FastAPI-сервис,
+#           контракт: POST /api/segment/ {image_base64, points, labels}
+#                     → {mask_base64, score}
+# ──────────────────────────────────────────────────────────────────────────────
+
+MAC_STUDIO_HOST = os.getenv("MAC_STUDIO_HOST", "100.74.104.27")
+
+# Qwen3.6-27B-4bit — универсальная локальная VLM (используется для семантической
+# разметки/подписей объектов в illustration_pipeline; OpenAI-совместимый API).
+QWEN_API_BASE_URL = os.getenv("QWEN_API_BASE_URL", f"http://{MAC_STUDIO_HOST}:8080/v1")
+QWEN_API_KEY = os.getenv("QWEN_API_KEY", "sk-local")
+QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "mlx-community/Qwen3.6-27B-4bit")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "60"))
+
+# SAM 2 — точечная сегментация изображений (свой контракт, НЕ OpenAI-совместимый).
+SAM2_API_URL = os.getenv("SAM2_API_URL", f"http://{MAC_STUDIO_HOST}:8002/api/segment/")
+# Таймаут на запрос немалый: даже на уменьшенной копии изображения (см.
+# ILLUSTRATION_SAM2_MAX_DIM) одна сегментация занимает несколько секунд,
+# а сервис (см. ниже) почти не выигрывает от распараллеливания.
+SAM2_TIMEOUT = int(os.getenv("SAM2_TIMEOUT", "120"))
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Параметры построения векторных иллюстраций (illustration_pipeline)
+#
+# ВАЖНО про производительность SAM2-сервиса (измерено эмпирически на реальной
+# сгенерированной иллюстрации 1408×768): время одного запроса критически
+# зависит от РАЗРЕШЕНИЯ изображения — full-res ≈ 28 секунд на точку, а при
+# нескольких ПАРАЛЛЕЛЬНЫХ запросах сервис уходит в массовые таймауты (он не
+# распараллеливает инференс — судя по всему, единственное GPU-устройство).
+# Поэтому: (1) перед отправкой в SAM2 уменьшаем длинную сторону картинки до
+# ILLUSTRATION_SAM2_MAX_DIM (это ускоряет запрос ~в 10 раз: 28с → ~3с, при
+# этом качество маски не страдает — контур всё равно упрощается на этапе
+# построения SVG); маски затем растягиваются обратно к исходному разрешению.
+# (2) держим ILLUSTRATION_SAM2_MAX_WORKERS низким (вплоть до 1 — без
+# параллелизма), чтобы не перегружать сервис и не словить контеншн-замедление.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Сетка N×N стартовых точек — ПОДСТРАХОВКА к content-aware поиску объектов
+# (см. illustration_pipeline._content_seed_points). Держим небольшим: основную
+# работу выполняет content-aware детектор, сетка лишь подстраховывает на случай
+# нетипичных изображений (текстурный фон и т.п.).
+ILLUSTRATION_GRID_N = int(os.getenv("ILLUSTRATION_GRID_N", "3"))
+ILLUSTRATION_MAX_OBJECTS = int(os.getenv("ILLUSTRATION_MAX_OBJECTS", "6"))
+
+# Воркеры для Qwen-подписей — лёгкие vision-запросы на маленьких вырезанных
+# фрагментах, параллелятся гораздо лучше, чем тяжёлая SAM2-сегментация.
+ILLUSTRATION_MAX_WORKERS = int(os.getenv("ILLUSTRATION_MAX_WORKERS", "4"))
+
+# Длинная сторона копии изображения, отправляемой в SAM2 (px). См. обоснование выше.
+ILLUSTRATION_SAM2_MAX_DIM = int(os.getenv("ILLUSTRATION_SAM2_MAX_DIM", "384"))
+# Параллелизм запросов к SAM2 — низкий специально (см. обоснование выше).
+ILLUSTRATION_SAM2_MAX_WORKERS = int(os.getenv("ILLUSTRATION_SAM2_MAX_WORKERS", "2"))

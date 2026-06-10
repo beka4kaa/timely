@@ -1,10 +1,24 @@
 import { withAuth } from "next-auth/middleware"
 import { NextResponse } from "next/server"
 
+// ===== TEMPORARY DEV BYPASS — REMOVE BEFORE PRODUCTION =====
+const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+// ============================================================
+
 export default withAuth(
   function middleware(req) {
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
+
+    // ===== TEMPORARY: skip all auth redirects in dev mode =====
+    if (DEV_BYPASS_AUTH) {
+      // Still redirect root to dashboard for convenience
+      if (pathname === '/') {
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+      return NextResponse.next()
+    }
+    // ===========================================================
 
     // Redirect authenticated users away from auth pages
     const publicPaths = ['/auth/signin', '/auth/register']
@@ -28,6 +42,10 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
+        // ===== TEMPORARY: allow all requests in dev mode =====
+        if (DEV_BYPASS_AUTH) return true
+        // =====================================================
+
         const { pathname } = req.nextUrl
         
         const protectedPaths = ['/dashboard']
@@ -49,4 +67,4 @@ export const config = {
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
   ],
-}
+}
