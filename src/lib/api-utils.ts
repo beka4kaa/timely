@@ -29,7 +29,7 @@ export function toCamelCase(obj: any): any {
 }
 
 // Backend URL - use BACKEND_URL or NEXT_PUBLIC_API_URL
-// On production, use Render backend. On localhost, use local backend.
+// On production (Vercel), fall back to the Northflank backend. On localhost, use local backend.
 export const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || (
-  process.env.VERCEL ? 'https://timely-7b9j.onrender.com' : 'http://localhost:8000'
+  process.env.VERCEL ? 'https://p01--timely--qvfcgglmy6nx.code.run' : 'http://localhost:8000'
 )
