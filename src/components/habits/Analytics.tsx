@@ -1,23 +1,25 @@
 "use client"
 
 import React, { useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { Flame, CalendarCheck, Trophy, Sparkles } from 'lucide-react'
-import { Habit, daysWord } from './lib'
+import { cn } from '@/lib/utils'
+import { Habit, daysWord, GLASS } from './lib'
 
 const WEEKDAYS = ['', 'Пн', '', 'Ср', '', 'Пт', '']
 const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 
 function StatCard({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: string }) {
   return (
-    <div className="rounded-2xl border bg-card p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: accent + '20', color: accent }}>
+    <motion.div whileHover={{ y: -3 }} className={cn(GLASS, 'rounded-[20px] p-4 flex items-center gap-3')}>
+      <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ backgroundColor: accent + '22', color: accent }}>
         {icon}
       </div>
       <div>
-        <div className="text-xl font-bold leading-none">{value}</div>
+        <div className="text-xl font-bold leading-none tabular-nums">{value}</div>
         <div className="text-xs text-muted-foreground mt-1">{label}</div>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -78,8 +80,8 @@ export function Analytics({ habits }: { habits: Habit[] }) {
       </div>
 
       {/* Heatmap */}
-      <div className="rounded-2xl border bg-card p-5 overflow-x-auto">
-        <h3 className="text-sm font-semibold mb-4">Карта активности · 17 недель</h3>
+      <div className={cn(GLASS, 'rounded-[24px] p-5 overflow-x-auto')}>
+        <h3 className="font-plus-jakarta text-sm font-bold mb-4">Карта активности · 17 недель</h3>
         <div className="inline-flex flex-col gap-1 min-w-max">
           {/* month row */}
           <div className="flex gap-1 ml-7">
@@ -120,8 +122,8 @@ export function Analytics({ habits }: { habits: Habit[] }) {
       </div>
 
       {/* Per-habit breakdown */}
-      <div className="rounded-2xl border bg-card p-5">
-        <h3 className="text-sm font-semibold mb-3">По привычкам</h3>
+      <div className={cn(GLASS, 'rounded-[24px] p-5')}>
+        <h3 className="font-plus-jakarta text-sm font-bold mb-3">По привычкам</h3>
         <div className="flex flex-col divide-y">
           {habits.map((h) => (
             <div key={h.id} className="flex items-center gap-3 py-2.5">

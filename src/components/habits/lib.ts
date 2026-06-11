@@ -144,3 +144,26 @@ export async function resizeImage(file: File, max = 640, quality = 0.78): Promis
 export function softHaptic() {
   try { navigator.vibrate?.(12) } catch { /* no-op */ }
 }
+
+/** Glassmorphism 2.0 surface — translucent, blurred, soft layered shadow. */
+export const GLASS =
+  'bg-white/70 dark:bg-white/[0.06] backdrop-blur-xl border border-white/60 ' +
+  'dark:border-white/10 shadow-[0_8px_30px_rgba(15,23,42,0.08)]'
+
+/** Signature peach → lavender accent gradient used across the chrome. */
+export const ACCENT_GRADIENT = 'linear-gradient(135deg, #fdba74 0%, #f0abfc 50%, #c4b5fd 100%)'
+
+const POSITIVE_MESSAGES = [
+  'Ты — космос! 🚀',
+  'Отличный прогресс!',
+  'Так держать! 🔥',
+  'Маленький шаг — большая победа',
+  'Ты сегодня молодец 💛',
+  'Чистый поток ✨',
+  'Дисциплина побеждает',
+  'Ещё один кирпичик в привычку 🧱',
+]
+
+export function randomPraise(): string {
+  return POSITIVE_MESSAGES[Math.floor(Math.random() * POSITIVE_MESSAGES.length)]
+}

@@ -1,8 +1,10 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
 import { ImageIcon } from 'lucide-react'
-import { api, GalleryItem } from './lib'
+import { cn } from '@/lib/utils'
+import { api, GalleryItem, GLASS } from './lib'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -30,7 +32,7 @@ export function Gallery({ email }: { email: string }) {
   if (items === null) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => <div key={i} className="rounded-2xl border bg-card aspect-square animate-pulse" />)}
+        {[1, 2, 3].map((i) => <div key={i} className={cn(GLASS, 'rounded-[24px] aspect-square animate-pulse')} />)}
       </div>
     )
   }
@@ -50,7 +52,8 @@ export function Gallery({ email }: { email: string }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
       {items.map((item) => (
-        <div key={item.id} className="rounded-2xl overflow-hidden border bg-card group">
+        <motion.div key={item.id} whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 400, damping: 28 }} className={cn(GLASS, 'rounded-[24px] overflow-hidden group')}>
+
           <div className="relative aspect-square overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={item.photo} alt={item.habitName} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
@@ -64,7 +67,7 @@ export function Gallery({ email }: { email: string }) {
               {item.minutes > 0 && <p className="text-xs text-muted-foreground mt-1">⏱ {item.minutes} мин в потоке</p>}
             </div>
           )}
-        </div>
+        </motion.div>
       ))}
     </div>
   )

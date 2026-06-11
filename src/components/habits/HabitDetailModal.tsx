@@ -97,7 +97,7 @@ export function HabitDetailModal({
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
+      <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0 bg-white/85 dark:bg-[#13131a]/85 backdrop-blur-2xl border-white/60 dark:border-white/10">
         {/* Gradient header */}
         <div className="p-5 text-white" style={{ background: cardGradient(habit.color) }}>
           <DialogHeader>

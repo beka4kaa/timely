@@ -9,11 +9,11 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Home, BarChart3, Image as ImageIcon, Plus, Check, Flame } from 'lucide-react'
+import { Home, BarChart3, Image as ImageIcon, Plus, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Habit, api, mapHabit, COLORS, EMOJIS, greeting, getMilestone,
-  cardGradient, softHaptic,
+  cardGradient, softHaptic, GLASS, ACCENT_GRADIENT, randomPraise,
 } from './lib'
 import { HabitCard } from './HabitCard'
 import { HabitDetailModal } from './HabitDetailModal'
@@ -35,21 +35,23 @@ function EnergyBar({ done, total }: { done: number; total: number }) {
       : 'Начни с маленького шага'
 
   return (
-    <div className="rounded-2xl border bg-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium">Баланс дня</span>
-        <span className="text-sm text-muted-foreground">{done} / {total}</span>
+    <div className={cn(GLASS, 'rounded-[24px] p-5')}>
+      <div className="flex items-center justify-between mb-2.5">
+        <span className="text-sm font-medium flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-amber-400" /> Баланс дня
+        </span>
+        <span className="text-sm font-semibold tabular-nums">{done} / {total}</span>
       </div>
-      <div className="h-3 rounded-full bg-muted overflow-hidden">
+      <div className="h-3.5 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden">
         <motion.div
           className="h-full rounded-full"
-          style={{ background: 'linear-gradient(90deg, #6366f1, #22c55e)' }}
+          style={{ background: ACCENT_GRADIENT, boxShadow: '0 0 18px rgba(240,171,252,0.6)' }}
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ type: 'spring', stiffness: 120, damping: 20 }}
         />
       </div>
-      <p className="text-xs text-muted-foreground mt-2">{label}</p>
+      <p className="text-xs text-muted-foreground mt-2.5">{label}</p>
     </div>
   )
 }
@@ -158,22 +160,28 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
   ]
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-      <div className="flex items-center gap-1 p-1.5 rounded-full border bg-card/90 backdrop-blur-md shadow-lg">
+      <div className="flex items-center gap-1 p-1.5 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-2xl border border-white/60 dark:border-white/10 shadow-[0_12px_40px_rgba(15,23,42,0.18)]">
         {tabs.map((t) => (
-          <button
+          <motion.button
             key={t.id}
+            whileTap={{ scale: 0.88 }}
             onClick={() => { softHaptic(); setView(t.id) }}
             className={cn(
               'relative w-12 h-12 rounded-full flex items-center justify-center transition-colors',
-              view === t.id ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              view === t.id ? 'text-white' : 'text-muted-foreground hover:text-foreground'
             )}
             aria-label={t.id}
           >
             {view === t.id && (
-              <motion.span layoutId="tabactive" className="absolute inset-0 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 300, damping: 30 }} />
+              <motion.span
+                layoutId="tabactive"
+                className="absolute inset-0 rounded-full"
+                style={{ background: ACCENT_GRADIENT, boxShadow: '0 6px 18px rgba(240,171,252,0.5)' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              />
             )}
             <span className="relative z-10">{t.icon}</span>
-          </button>
+          </motion.button>
         ))}
       </div>
     </div>
@@ -229,7 +237,7 @@ export function HabitsTracker() {
       replaceHabit(updated)
       if (!wasDone) {
         const ms = getMilestone(updated.streak)
-        if (ms && updated.streak >= 3) toast.success(ms)
+        toast.success(ms && updated.streak >= 3 ? ms : randomPraise())
       }
     } else fetchHabits()
   }
@@ -245,16 +253,27 @@ export function HabitsTracker() {
 
   return (
     <div className="flex flex-col gap-6 pb-28">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          {greeting()}{firstName ? `, ${firstName}` : ''} 👋
-        </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          {view === 'today' && 'Маленькие шаги каждый день — большие перемены'}
-          {view === 'stats' && 'Твой прогресс в цифрах и на карте'}
-          {view === 'gallery' && 'Визуальная история твоих достижений'}
-        </p>
+      {/* Header bento */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-plus-jakarta text-3xl font-extrabold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+            {greeting()}{firstName ? `, ${firstName}` : ''} 👋
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {view === 'today' && 'Маленькие шаги каждый день — большие перемены'}
+            {view === 'stats' && 'Твой прогресс в цифрах и на карте'}
+            {view === 'gallery' && 'Визуальная история твоих достижений'}
+          </p>
+        </div>
+        {!loading && habits.length > 0 && view === 'today' && (
+          <div className={cn(GLASS, 'rounded-2xl px-4 py-2.5 flex items-center gap-2 shrink-0')}>
+            <span className="text-2xl">🔥</span>
+            <div className="leading-none">
+              <div className="text-xl font-bold tabular-nums">{bestStreak}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">лучший стрик</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {!loading && habits.length > 0 && view === 'today' && (
@@ -272,7 +291,7 @@ export function HabitsTracker() {
         >
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => <div key={i} className="rounded-3xl border bg-card h-40 animate-pulse" />)}
+              {[1, 2, 3].map((i) => <div key={i} className={cn(GLASS, 'rounded-[28px] h-40 animate-pulse')} />)}
             </div>
           ) : view === 'today' ? (
             habits.length === 0 ? (
@@ -289,13 +308,18 @@ export function HabitsTracker() {
                 {habits.map((h) => (
                   <HabitCard key={h.id} habit={h} onToggle={handleToggle} onOpen={setDetail} />
                 ))}
-                <button
+                <motion.button
+                  whileHover={{ y: -4, scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                   onClick={() => { setEditing(null); setDialogOpen(true) }}
-                  className="rounded-3xl border-2 border-dashed border-muted-foreground/25 p-5 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground transition-all min-h-[150px]"
+                  className="rounded-[28px] border-2 border-dashed border-foreground/15 bg-white/30 dark:bg-white/[0.03] backdrop-blur-sm p-5 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors min-h-[150px]"
                 >
-                  <Plus className="w-6 h-6" />
+                  <span className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: ACCENT_GRADIENT }}>
+                    <Plus className="w-5 h-5" />
+                  </span>
                   <span className="text-sm font-medium">Новая привычка</span>
-                </button>
+                </motion.button>
               </div>
             )
           ) : view === 'stats' ? (
@@ -313,9 +337,9 @@ export function HabitsTracker() {
 
       {/* Add / edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null) }}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto bg-white/80 dark:bg-[#13131a]/80 backdrop-blur-2xl border-white/60 dark:border-white/10">
           <DialogHeader>
-            <DialogTitle>{editing ? 'Редактировать привычку' : 'Новая привычка'}</DialogTitle>
+            <DialogTitle className="font-plus-jakarta text-xl">{editing ? 'Редактировать привычку' : 'Новая привычка'}</DialogTitle>
           </DialogHeader>
           <HabitForm
             initial={editing ?? undefined}

@@ -4,7 +4,7 @@ import React, { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Check, Flame, Shield, MoreHorizontal, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Habit, cardGradient, daysWord, softHaptic } from './lib'
+import { Habit, cardGradient, daysWord, softHaptic, GLASS } from './lib'
 
 function Sparkline({ calendar, light }: { calendar: Habit['calendar']; light: boolean }) {
   const last = calendar.slice(-14)
@@ -70,20 +70,26 @@ export function HabitCard({
   return (
     <motion.div
       layout
+      whileHover={{ y: -4, scale: 1.02 }}
       whileTap={{ scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={clearPress}
       onPointerCancel={clearPress}
       onContextMenu={(e) => e.preventDefault()}
       className={cn(
-        'relative overflow-hidden rounded-3xl p-5 cursor-pointer select-none touch-none min-h-[150px]',
-        'flex flex-col justify-between transition-shadow',
+        'relative overflow-hidden rounded-[28px] p-5 cursor-pointer select-none touch-none min-h-[150px]',
+        'flex flex-col justify-between',
         featured && 'sm:col-span-2',
-        done ? 'text-white shadow-lg' : 'border bg-card text-card-foreground hover:shadow-md'
+        done ? 'text-white' : cn(GLASS, 'text-card-foreground')
       )}
-      style={done ? { background: cardGradient(habit.color), boxShadow: `0 12px 30px -10px ${habit.color}80` } : undefined}
+      style={done
+        ? { background: cardGradient(habit.color), boxShadow: `0 18px 40px -12px ${habit.color}99` }
+        : undefined}
     >
+      {/* glossy highlight on completed cards */}
+      {done && <span className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />}
       {/* completion burst */}
       <AnimatePresence>
         {burst && (
@@ -116,7 +122,7 @@ export function HabitCard({
         <div
           className={cn(
             'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl transition-colors',
-            done ? 'bg-white/20' : 'bg-muted'
+            done ? 'bg-white/25 backdrop-blur-sm' : 'bg-white/60 dark:bg-white/10 ring-1 ring-black/5 dark:ring-white/10'
           )}
         >
           {done ? <Check className="w-6 h-6" strokeWidth={3} /> : habit.emoji}
