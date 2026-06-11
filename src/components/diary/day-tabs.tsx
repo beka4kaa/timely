@@ -46,7 +46,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
                 {isActive && (
                   <motion.span
                     layoutId="diaryDayActive"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
                     className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-300 to-violet-400"
                   />
                 )}

@@ -177,7 +177,7 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
                 layoutId="tabactive"
                 className="absolute inset-0 rounded-full"
                 style={{ background: ACCENT_GRADIENT }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                transition={{ type: 'tween', duration: 0.18, ease: 'easeOut' }}
               />
             )}
             <span className="relative z-10">{t.icon}</span>

@@ -35,7 +35,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
         <motion.div whileTap={{ scale: 0.97 }} className="px-1 pb-2">
           <Link
             href="/dashboard/tasks"
-            className="flex items-center justify-center gap-2 h-9 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-500 transition-colors group-data-[collapsible=icon]:px-0"
+            className="flex items-center justify-center gap-2 h-9 rounded-lg border border-border text-foreground text-[13px] font-medium hover:bg-foreground/5 transition-colors duration-150 group-data-[collapsible=icon]:px-0"
           >
             <PlusIcon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
             <span className="group-data-[collapsible=icon]:hidden">Создать</span>
@@ -56,20 +56,20 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                       href={item.url}
                       title={item.title}
                       className={cn(
-                        "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors",
+                        "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors duration-150",
                         active
-                          ? "text-indigo-600 dark:text-indigo-300 font-medium"
-                          : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-black/[0.035] dark:hover:bg-white/[0.05]",
+                          ? "text-foreground font-medium"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                     >
                       {active && (
                         <motion.span
                           layoutId="sidebarActive"
-                          transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                          className="absolute inset-0 rounded-lg bg-indigo-50 dark:bg-indigo-400/10"
+                          transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+                          className="absolute inset-0 rounded-lg bg-foreground/10"
                         />
                       )}
-                      {item.icon && <item.icon className="relative z-10 h-[17px] w-[17px] shrink-0" strokeWidth={active ? 2.4 : 2} />}
+                      {item.icon && <item.icon className="relative z-10 h-[17px] w-[17px] shrink-0" strokeWidth={2} />}
                       <span className="relative z-10 group-data-[collapsible=icon]:hidden">{item.title}</span>
                     </Link>
                   </SidebarMenuItem>

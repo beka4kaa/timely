@@ -14,7 +14,7 @@ function Sparkline({ calendar, light }: { calendar: Habit['calendar']; light: bo
         <div
           key={d.date}
           className={cn(
-            'w-1.5 rounded-full transition-all',
+            'w-1.5 rounded-full transition-colors duration-150',
             d.done
               ? (light ? 'bg-white/90' : 'bg-foreground/70')
               : (light ? 'bg-white/35' : 'bg-foreground/25')
@@ -86,9 +86,15 @@ export function HabitCard({
         featured && 'sm:col-span-2',
         done ? 'text-white' : cn(GLASS, 'text-card-foreground')
       )}
-      style={done
-        ? { background: cardGradient(habit.color), boxShadow: `0 18px 40px -12px ${habit.color}99` }
-        : undefined}
+      style={{
+        // Concrete boxShadow in BOTH states: framer-motion leaves the last value
+        // when style becomes undefined, which made the colored glow stick on the
+        // inactive card. A concrete neutral value forces it to reset cleanly.
+        background: done ? cardGradient(habit.color) : undefined,
+        boxShadow: done
+          ? `0 16px 36px -14px ${habit.color}99`
+          : '0 4px 16px rgba(15,23,42,0.05)',
+      }}
     >
       {/* glossy highlight on completed cards */}
       {done && <span className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent pointer-events-none" />}
