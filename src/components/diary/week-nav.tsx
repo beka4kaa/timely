@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react"
 import { ChevronLeftIcon, ChevronRightIcon, CalendarIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
@@ -72,8 +71,14 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
             <span className="font-medium">{label}</span>
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-1" align="center">
-          <div className="max-h-72 overflow-y-auto">
+        <PopoverContent
+          className="w-64 p-1.5 rounded-2xl border-white/60 dark:border-white/10 bg-white/80 dark:bg-[#13131a]/85 backdrop-blur-2xl shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)]"
+          align="center"
+        >
+          <div className="px-2.5 pt-1.5 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Выбор недели
+          </div>
+          <div className="max-h-72 overflow-y-auto flex flex-col gap-0.5 pr-0.5">
             {weeks.map(ws => {
               const isSelected = ws === weekStart
               const isCurrent = ws === todayMonday
@@ -81,15 +86,21 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
                 <button
                   key={ws}
                   className={cn(
-                    "w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors",
-                    "hover:bg-muted",
-                    isSelected && "bg-muted font-semibold",
+                    "group w-full flex items-center justify-between gap-2 text-left px-3 py-2 text-sm rounded-xl transition-all",
+                    isSelected
+                      ? "bg-gradient-to-r from-orange-300/90 to-violet-400/90 text-white font-semibold shadow-sm"
+                      : "hover:bg-black/5 dark:hover:bg-white/10 hover:translate-x-0.5",
                   )}
                   onClick={() => { onWeekSelect(ws); setOpen(false) }}
                 >
                   <span>{formatRange(ws)}</span>
                   {isCurrent && (
-                    <span className="ml-2 text-[10px] text-muted-foreground">Тек.</span>
+                    <span className={cn(
+                      "text-[9px] font-medium px-1.5 py-0.5 rounded-full",
+                      isSelected ? "bg-white/25 text-white" : "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300",
+                    )}>
+                      сейчас
+                    </span>
                   )}
                 </button>
               )
@@ -107,9 +118,14 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
       </button>
 
       {!isCurrentWeek && (
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onToday}>
+        <button
+          onClick={onToday}
+          className="ml-1 flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs font-semibold text-white bg-gradient-to-br from-orange-300 to-violet-400 shadow-[0_8px_20px_-6px_rgba(167,139,250,0.6)] hover:scale-105 active:scale-95 transition-transform"
+          title="Вернуться к текущей неделе"
+        >
+          <CalendarIcon className="h-3.5 w-3.5" />
           Сегодня
-        </Button>
+        </button>
       )}
     </div>
   )

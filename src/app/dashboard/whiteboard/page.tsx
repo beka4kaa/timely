@@ -36,7 +36,7 @@ export default function WhiteboardPage() {
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-zinc-950">
+    <div className="relative w-full h-full overflow-hidden bg-slate-50 dark:bg-[#0A0A0A] transition-colors">
       {/* ── Whiteboard area ── */}
       <div
         className="absolute inset-0 transition-[right] duration-300 ease-in-out"
@@ -60,7 +60,7 @@ export default function WhiteboardPage() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleChat}
-                className="h-10 w-10 rounded-xl bg-zinc-900/90 backdrop-blur-md border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-600 shadow-xl transition-all"
+                className="h-10 w-10 rounded-xl bg-white/70 dark:bg-black/70 backdrop-blur-md border border-black/10 dark:border-white/20 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white shadow-xl transition-all"
               >
                 {isChatOpen ? (
                   <PanelRightClose className="w-[18px] h-[18px]" />
@@ -76,14 +76,15 @@ export default function WhiteboardPage() {
         </TooltipProvider>
       </div>
 
-      {/* ── Chat sidebar ── */}
+      {/* ── Chat sidebar (floating card) ── */}
       <div
         className={`
-          absolute top-0 bottom-0 right-0 z-[55]
-          w-full md:w-[25%] min-w-[280px]
+          absolute z-[55]
+          inset-y-0 right-0 w-full
+          md:inset-y-3 md:right-3 md:w-[calc(25%-12px)] md:min-w-[300px]
           transition-transform duration-300 ease-in-out
-          ${isChatOpen ? "translate-x-0" : "translate-x-full"}
-          border-l border-zinc-800
+          ${isChatOpen ? "translate-x-0" : "translate-x-[110%]"}
+          overflow-hidden md:rounded-2xl md:shadow-2xl md:border border-black/10 dark:border-white/10
         `}
       >
         {isMobile && isChatOpen && (

@@ -35,18 +35,33 @@ import {
 import { Button } from "@/components/ui/button"
 
 const data = {
-  navMain: [
-    { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
-    { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
-    { title: "Subjects", url: "/dashboard/subjects", icon: GraduationCapIcon },
-    { title: "Topics", url: "/dashboard/weaknesses", icon: ZapIcon },
-    { title: "Program", url: "/dashboard/program", icon: TargetIcon },
-    { title: "Contests", url: "/dashboard/arena/solve", icon: SwordsIcon },
-    { title: "Arena (Review)", url: "/dashboard/arena/review", icon: EyeIcon },
-    { title: "Leaderboard", url: "/dashboard/leaderboard", icon: MedalIcon },
-    { title: "Achievements", url: "/dashboard/achievements", icon: TrophyIcon },
-    { title: "Self Work", url: "/dashboard/self-work", icon: HeartIcon },
-    { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
+  navGroups: [
+    {
+      label: "Главное",
+      items: [
+        { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
+        { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
+        { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
+      ],
+    },
+    {
+      label: "Учёба",
+      items: [
+        { title: "Subjects", url: "/dashboard/subjects", icon: GraduationCapIcon },
+        { title: "Topics", url: "/dashboard/weaknesses", icon: ZapIcon },
+        { title: "Program", url: "/dashboard/program", icon: TargetIcon },
+        { title: "Self Work", url: "/dashboard/self-work", icon: HeartIcon },
+      ],
+    },
+    {
+      label: "Сообщество",
+      items: [
+        { title: "Contests", url: "/dashboard/arena/solve", icon: SwordsIcon },
+        { title: "Arena (Review)", url: "/dashboard/arena/review", icon: EyeIcon },
+        { title: "Leaderboard", url: "/dashboard/leaderboard", icon: MedalIcon },
+        { title: "Achievements", url: "/dashboard/achievements", icon: TrophyIcon },
+      ],
+    },
   ],
   navSecondary: [
     { title: "Settings", url: "/dashboard/settings", icon: SettingsIcon },
@@ -89,7 +104,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain groups={data.navGroups} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       

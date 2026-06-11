@@ -245,7 +245,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 z-0 overflow-hidden bg-zinc-950 text-zinc-100 select-none"
+      className="absolute inset-0 z-0 overflow-hidden bg-slate-50 dark:bg-[#0A0A0A] text-slate-900 dark:text-zinc-100 select-none transition-colors"
       onPointerDown={(e) => {
         // Deselect if clicking on empty background
         useWhiteboardStore.getState().setSelectedElement(null);
@@ -257,9 +257,9 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
     >
       {/* Infinite dot-grid background synced with camera */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-10"
+        className="pointer-events-none absolute inset-0 opacity-[0.18] dark:opacity-10"
         style={{
-          backgroundImage: "radial-gradient(circle, #ffffff 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)",
           backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
           backgroundPosition: `${-camera.x}px ${-camera.y}px`,
         }}
@@ -339,37 +339,37 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
       })}
 
       {/* Floating Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-full bg-zinc-900/90 backdrop-blur-md border border-zinc-800 shadow-xl">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-full bg-white/70 dark:bg-black/70 backdrop-blur-md border border-black/10 dark:border-white/20 shadow-xl shadow-black/10 dark:shadow-black/40">
         <div className="flex items-center gap-1">
           {COLORS.map((c) => (
             <button
               key={c}
               onClick={() => setStrokeColor(c)}
               className={`w-5 h-5 rounded-full transition-transform hover:scale-110 ${
-                strokeColor === c ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-900 scale-110" : ""
+                strokeColor === c ? "ring-2 ring-indigo-500 ring-offset-2 ring-offset-white dark:ring-offset-black scale-110" : ""
               }`}
               style={{ backgroundColor: c }}
             />
           ))}
         </div>
 
-        <div className="w-px h-5 bg-zinc-800 mx-1.5" />
+        <div className="w-px h-5 bg-black/10 dark:bg-white/15 mx-1.5" />
 
         <div className="flex items-center gap-1">
           {WIDTHS.map((w) => (
             <button
               key={w}
               onClick={() => setLineWidth(w)}
-              className={`flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-zinc-800 ${
-                lineWidth === w ? "bg-zinc-800" : ""
+              className={`flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 ${
+                lineWidth === w ? "bg-black/10 dark:bg-white/15" : ""
               }`}
             >
-              <span className="rounded-full bg-white" style={{ width: w + 1, height: w + 1 }} />
+              <span className="rounded-full bg-slate-900 dark:bg-white" style={{ width: w + 1, height: w + 1 }} />
             </button>
           ))}
         </div>
 
-        <div className="w-px h-5 bg-zinc-800 mx-1.5" />
+        <div className="w-px h-5 bg-black/10 dark:bg-white/15 mx-1.5" />
 
         {/* Element spawn buttons */}
         <button
@@ -407,12 +407,12 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           +Graph
         </button>
 
-        <div className="w-px h-6 bg-zinc-700/50 mx-1" />
+        <div className="w-px h-6 bg-black/10 dark:bg-white/15 mx-1" />
 
         <button
           onClick={undo}
           disabled={strokes.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-slate-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
         >
           <Undo2 className="w-4 h-4" />
           <span className="hidden sm:inline">Undo</span>
@@ -436,17 +436,17 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           <span className="hidden sm:inline">{isOCRProcessing ? "Scanning..." : "Scan"}</span>
         </button>
 
-        <div className="w-px h-6 bg-zinc-700/50 mx-1" />
+        <div className="w-px h-6 bg-black/10 dark:bg-white/15 mx-1" />
 
         {/* Zoom indicator */}
-        <span className="text-xs font-mono text-zinc-400 min-w-[3rem] text-center">
+        <span className="text-xs font-mono text-slate-500 dark:text-zinc-400 min-w-[3rem] text-center">
           {zoomPercent}%
         </span>
       </div>
 
       {/* Bottom left logo / button */}
       <div className="absolute bottom-6 left-6 z-20">
-        <button className="flex items-center justify-center w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shadow-lg">
+        <button className="flex items-center justify-center w-10 h-10 rounded-full bg-white/70 dark:bg-black/70 backdrop-blur-md border border-black/10 dark:border-white/20 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors shadow-lg">
           <svg viewBox="0 0 180 180" width="16" height="16" fill="currentColor">
             <path fillRule="evenodd" clipRule="evenodd" d="M89.3094 0C39.9806 0 0 39.9806 0 89.3094C0 138.638 39.9806 178.619 89.3094 178.619C138.638 178.619 178.619 138.638 178.619 89.3094C178.619 39.9806 138.638 0 89.3094 0ZM133.565 142.062L133.456 141.916L60.0336 43.1256H41.834V135.493H57.8863V62.4288L121.325 147.781C111.968 155.666 99.8787 160.36 86.6667 160.36C45.9818 160.36 12.9999 127.378 12.9999 86.6934C12.9999 46.0084 45.9818 13.0265 86.6667 13.0265C127.352 13.0265 160.334 46.0084 160.334 86.6934C160.334 108.971 150.457 128.948 133.565 142.062ZM138.406 135.493V43.1256H122.353V114.184L138.406 135.493Z" />
           </svg>

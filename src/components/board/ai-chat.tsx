@@ -310,14 +310,14 @@ export function AIChat({ className }: AIChatProps) {
 
   return (
     <div
-      className={`flex flex-col h-full min-h-0 bg-[#0a0a0a] ${className ?? ""}`}
+      className={`flex flex-col h-full min-h-0 bg-white/80 dark:bg-[#0a0a0a]/90 backdrop-blur-xl ${className ?? ""}`}
     >
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-zinc-800/50 shrink-0">
-        <h2 className="text-[13px] font-medium text-zinc-200">
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-black/10 dark:border-zinc-800/50 shrink-0">
+        <h2 className="text-[13px] font-medium text-slate-700 dark:text-zinc-200">
           AI Tutor
         </h2>
-        <div className="flex items-center gap-3 text-zinc-500">
+        <div className="flex items-center gap-3 text-slate-400 dark:text-zinc-500">
           <button
             onClick={clearChat}
             className="hover:text-zinc-300 transition-colors"
@@ -356,8 +356,8 @@ export function AIChat({ className }: AIChatProps) {
             <div
               className={`flex flex-col gap-3 max-w-[92%] px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap ${
                 msg.role === "assistant"
-                  ? "bg-zinc-900/80 text-zinc-200 rounded-2xl rounded-tl-sm border border-zinc-800/50"
-                  : "bg-white text-black rounded-2xl rounded-tr-sm"
+                  ? "bg-black/[0.04] dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-200 rounded-2xl rounded-tl-sm border border-black/5 dark:border-zinc-800/50"
+                  : "bg-indigo-600 text-white rounded-2xl rounded-tr-sm"
               }`}
             >
               {msg.content}
@@ -381,10 +381,10 @@ export function AIChat({ className }: AIChatProps) {
         {/* Loading indicator */}
         {isLoading && (
           <div className="flex gap-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs bg-zinc-800 text-zinc-400 border border-zinc-700/50 mt-0.5">
+            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs bg-black/5 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-black/5 dark:border-zinc-700/50 mt-0.5">
               <Bot className="w-3.5 h-3.5" />
             </div>
-            <div className="max-w-[85%] px-4 py-3 text-[13px] leading-relaxed bg-zinc-900/80 text-zinc-400 rounded-2xl rounded-tl-sm border border-zinc-800/50 flex items-center gap-2">
+            <div className="max-w-[85%] px-4 py-3 text-[13px] leading-relaxed bg-black/[0.04] dark:bg-zinc-900/80 text-slate-500 dark:text-zinc-400 rounded-2xl rounded-tl-sm border border-black/5 dark:border-zinc-800/50 flex items-center gap-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
               Думаю...
             </div>
@@ -396,7 +396,7 @@ export function AIChat({ className }: AIChatProps) {
 
       {/* ── Input area ── */}
       <div className="px-3 pb-3 pt-2 shrink-0">
-        <div className="flex flex-col rounded-3xl border border-zinc-800 bg-[#121212] px-3 pt-3 pb-2 transition-colors focus-within:border-zinc-700">
+        <div className="flex flex-col rounded-3xl border border-black/10 dark:border-zinc-800 bg-black/[0.03] dark:bg-[#121212] px-3 pt-3 pb-2 transition-colors focus-within:border-indigo-400 dark:focus-within:border-zinc-700">
           <textarea
             ref={textareaRef}
             placeholder="Describe the scientific figure you want to create..."
@@ -405,7 +405,7 @@ export function AIChat({ className }: AIChatProps) {
             onChange={(e) => setInputValue(e.target.value)}
             onInput={handleInput}
             onKeyDown={handleKeyDown}
-            className="w-full resize-none bg-transparent px-2 text-[14px] text-zinc-200 placeholder:text-zinc-500 outline-none min-h-[30px] max-h-[160px] leading-relaxed mb-2"
+            className="w-full resize-none bg-transparent px-2 text-[14px] text-slate-800 dark:text-zinc-200 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none min-h-[30px] max-h-[160px] leading-relaxed mb-2"
           />
 
           <div className="flex items-center justify-between">
