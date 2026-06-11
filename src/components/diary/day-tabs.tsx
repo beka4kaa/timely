@@ -47,7 +47,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
                   <motion.span
                     layoutId="diaryDayActive"
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                    className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-300 to-violet-400 shadow-[0_8px_20px_-4px_rgba(167,139,250,0.55)]"
+                    className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-300 to-violet-400"
                   />
                 )}
                 {isToday && (
@@ -76,9 +76,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
             <div className="flex items-center justify-between px-1 pb-2.5">
               <div className="flex items-center gap-2">
                 {day.date === today && (
-                  <span className="inline-flex items-center rounded-full bg-gradient-to-br from-orange-300 to-violet-400 px-2.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-                    Сегодня
-                  </span>
+                  <span className="h-2 w-2 rounded-full bg-orange-400" title="Сегодня" />
                 )}
                 <span className="font-semibold text-sm">{DAY_OF_WEEK_LABELS[day.dayOfWeek]}</span>
                 <span className="text-xs text-muted-foreground">

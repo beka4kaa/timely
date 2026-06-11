@@ -15,9 +15,11 @@ function Sparkline({ calendar, light }: { calendar: Habit['calendar']; light: bo
           key={d.date}
           className={cn(
             'w-1.5 rounded-full transition-all',
-            d.done ? (light ? 'bg-white/90' : 'bg-current') : (light ? 'bg-white/25' : 'bg-current/15')
+            d.done
+              ? (light ? 'bg-white/90' : 'bg-foreground/70')
+              : (light ? 'bg-white/35' : 'bg-foreground/25')
           )}
-          style={{ height: d.done ? '100%' : '35%' }}
+          style={{ height: d.done ? '100%' : '38%' }}
           title={d.date}
         />
       ))}
@@ -107,6 +109,8 @@ export function HabitCard({
       {/* options button */}
       <button
         onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onPointerCancel={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onOpen(habit) }}
         className={cn(
           'absolute top-3.5 right-3.5 z-20 p-1.5 rounded-lg transition-colors',

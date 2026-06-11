@@ -86,22 +86,20 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
                 <button
                   key={ws}
                   className={cn(
-                    "group w-full flex items-center justify-between gap-2 text-left px-3 py-2 text-sm rounded-xl transition-all",
+                    "group w-full flex items-center gap-2.5 text-left px-3 py-2 text-sm rounded-xl transition-colors",
                     isSelected
-                      ? "bg-gradient-to-r from-orange-300/90 to-violet-400/90 text-white font-semibold shadow-sm"
-                      : "hover:bg-black/5 dark:hover:bg-white/10 hover:translate-x-0.5",
+                      ? "bg-black/[0.06] dark:bg-white/10 font-semibold"
+                      : "hover:bg-black/[0.04] dark:hover:bg-white/[0.06]",
                   )}
                   onClick={() => { onWeekSelect(ws); setOpen(false) }}
                 >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full shrink-0 transition-colors",
+                      isCurrent ? "bg-violet-500" : "bg-transparent",
+                    )}
+                  />
                   <span>{formatRange(ws)}</span>
-                  {isCurrent && (
-                    <span className={cn(
-                      "text-[9px] font-medium px-1.5 py-0.5 rounded-full",
-                      isSelected ? "bg-white/25 text-white" : "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300",
-                    )}>
-                      сейчас
-                    </span>
-                  )}
                 </button>
               )
             })}

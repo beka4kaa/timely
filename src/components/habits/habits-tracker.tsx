@@ -160,7 +160,7 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
   ]
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-      <div className="flex items-center gap-1 p-1.5 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-2xl border border-white/60 dark:border-white/10 shadow-[0_12px_40px_rgba(15,23,42,0.18)]">
+      <div className="flex items-center gap-1 p-1.5 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-2xl border border-white/60 dark:border-white/10 shadow-[0_6px_20px_rgba(15,23,42,0.1)]">
         {tabs.map((t) => (
           <motion.button
             key={t.id}
@@ -176,7 +176,7 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
               <motion.span
                 layoutId="tabactive"
                 className="absolute inset-0 rounded-full"
-                style={{ background: ACCENT_GRADIENT, boxShadow: '0 6px 18px rgba(240,171,252,0.5)' }}
+                style={{ background: ACCENT_GRADIENT }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               />
             )}
