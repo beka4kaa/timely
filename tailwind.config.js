@@ -9,6 +9,7 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
+  			sans: ['var(--font-plus-jakarta)', 'var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
   			inter: ['var(--font-inter)', 'sans-serif'],
   			onest: ['var(--font-onest)', 'sans-serif'],
   			'plus-jakarta': ['var(--font-plus-jakarta)', 'sans-serif'],

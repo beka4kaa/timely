@@ -3,6 +3,7 @@ import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 import { SidebarProvider } from "@/components/ui/sidebar"
+import { SidebarScrim } from "@/components/sidebar-scrim"
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,9 @@ export default function DashboardLayout({
           <div className="absolute inset-y-0 left-0 z-50 h-full">
             <AppSidebar />
           </div>
+
+          {/* Затемнение контента, когда сайдбар открыт (drawer-эффект) */}
+          <SidebarScrim />
 
           {/* Контент занимает всю ширину окна (100vw) всегда */}
           <main className="absolute inset-0 z-0 flex flex-col h-full w-full overflow-hidden">

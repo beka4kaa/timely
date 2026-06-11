@@ -42,36 +42,42 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
           </Link>
         </motion.div>
 
-        {groups.map((group) => (
+        {groups.map((group, gi) => (
           <div key={group.label} className="flex flex-col">
             <div className="px-2.5 pt-3 pb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/45 group-data-[collapsible=icon]:hidden">
               {group.label}
             </div>
             <SidebarMenu className="gap-0.5">
-              {group.items.map((item) => {
+              {group.items.map((item, ii) => {
                 const active = isActive(item.url)
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <Link
-                      href={item.url}
-                      title={item.title}
-                      className={cn(
-                        "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-colors duration-150",
-                        active
-                          ? "text-foreground font-medium"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
+                    <motion.div
+                      initial={{ opacity: 0, x: -6 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.22, delay: gi * 0.05 + ii * 0.025, ease: "easeOut" }}
                     >
-                      {active && (
-                        <motion.span
-                          layoutId="sidebarActive"
-                          transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                          className="absolute inset-0 rounded-lg bg-foreground/10"
-                        />
-                      )}
-                      {item.icon && <item.icon className="relative z-10 h-[17px] w-[17px] shrink-0" strokeWidth={2} />}
-                      <span className="relative z-10 group-data-[collapsible=icon]:hidden">{item.title}</span>
-                    </Link>
+                      <Link
+                        href={item.url}
+                        title={item.title}
+                        className={cn(
+                          "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-[color,transform] duration-150 hover:translate-x-0.5",
+                          active
+                            ? "text-foreground font-medium"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="sidebarActive"
+                            transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
+                            className="absolute inset-0 rounded-lg bg-foreground/10"
+                          />
+                        )}
+                        {item.icon && <item.icon className="relative z-10 h-[17px] w-[17px] shrink-0" strokeWidth={2} />}
+                        <span className="relative z-10 group-data-[collapsible=icon]:hidden">{item.title}</span>
+                      </Link>
+                    </motion.div>
                   </SidebarMenuItem>
                 )
               })}
