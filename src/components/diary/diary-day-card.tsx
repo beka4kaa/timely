@@ -27,12 +27,13 @@ export function DiaryDayCard({ day, weekId, isToday }: DiaryDayCardProps) {
 
   return (
     <div className={cn(
-      "rounded-xl border bg-card overflow-hidden",
-      isToday && "border-primary/50 shadow-sm shadow-primary/10"
+      "rounded-[24px] overflow-hidden backdrop-blur-xl border shadow-[0_8px_30px_rgba(15,23,42,0.08)]",
+      "bg-white/70 dark:bg-white/[0.06] border-white/60 dark:border-white/10",
+      isToday && "ring-2 ring-violet-400/40 shadow-[0_12px_36px_rgba(167,139,250,0.25)]"
     )}>
       {/* Column headers */}
       {lessons.length > 0 && (
-        <div className="flex items-center gap-3 px-3 py-1.5 border-b bg-muted/10">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-black/5 dark:border-white/10 bg-white/30 dark:bg-white/[0.03]">
           <div className="min-w-[36px]" />
           <div className="flex-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
             Предмет / Д/З

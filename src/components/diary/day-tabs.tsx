@@ -27,24 +27,29 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
   return (
     <div className="flex flex-col gap-0">
       <Tabs value={activeDow} onValueChange={v => onDayChange(v as DayOfWeek)}>
-        <TabsList className="flex w-full rounded-xl rounded-b-none border border-b-0 bg-muted/40 p-1 h-auto gap-0.5">
+        <TabsList className="flex w-full rounded-[20px] bg-white/50 dark:bg-white/[0.05] backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-1.5 h-auto gap-1">
           {days.map(day => {
             const isToday = day.date === today
             return (
               <TabsTrigger
                 key={day.dayOfWeek}
                 value={day.dayOfWeek}
-                className="flex-1 flex flex-col items-center gap-0.5 py-1.5 text-xs rounded-lg relative data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                className={
+                  "flex-1 flex flex-col items-center gap-0.5 py-2 text-xs rounded-2xl relative transition-all duration-200 " +
+                  "hover:scale-[1.04] active:scale-95 hover:bg-white/60 dark:hover:bg-white/10 " +
+                  "data-[state=active]:bg-gradient-to-br data-[state=active]:from-orange-300 data-[state=active]:to-violet-400 " +
+                  "data-[state=active]:text-white data-[state=active]:shadow-[0_8px_20px_-4px_rgba(167,139,250,0.55)]"
+                }
               >
                 {isToday && (
-                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-orange-400 data-[state=active]:bg-white ring-2 ring-white/60" />
                 )}
                 <span className="font-semibold">{DAY_SHORT_LABELS[day.dayOfWeek]}</span>
-                <span className="text-[9px] text-muted-foreground">
+                <span className="text-[9px] opacity-70">
                   {new Date(day.date).toLocaleDateString("ru-RU", { day: "numeric", month: "numeric" })}
                 </span>
                 {day.lessons.length > 0 && (
-                  <span className="text-[8px] text-muted-foreground/70">{day.lessons.length} ур.</span>
+                  <span className="text-[8px] opacity-60">{day.lessons.length} ур.</span>
                 )}
               </TabsTrigger>
             )
@@ -56,13 +61,13 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
             key={day.dayOfWeek}
             value={day.dayOfWeek}
             forceMount
-            className="mt-0 border border-t-0 rounded-xl rounded-t-none data-[state=inactive]:hidden"
+            className="mt-3 data-[state=inactive]:hidden data-[state=active]:animate-in data-[state=active]:fade-in-50 data-[state=active]:slide-in-from-bottom-1"
           >
             {/* Day sub-header */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/20">
+            <div className="flex items-center justify-between px-1 pb-2.5">
               <div className="flex items-center gap-2">
                 {day.date === today && (
-                  <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  <span className="inline-flex items-center rounded-full bg-gradient-to-br from-orange-300 to-violet-400 px-2.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
                     Сегодня
                   </span>
                 )}

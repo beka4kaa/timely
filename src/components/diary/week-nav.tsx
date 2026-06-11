@@ -56,7 +56,7 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
     <div className="flex items-center gap-1">
       <button
         onClick={onPrev}
-        className="p-1.5 rounded-md hover:bg-muted transition-colors"
+        className="p-2 rounded-full bg-white/60 dark:bg-white/[0.06] backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-sm hover:scale-105 active:scale-95 transition-transform"
         title="Предыдущая неделя"
       >
         <ChevronLeftIcon className="h-4 w-4" />
@@ -65,7 +65,7 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-card text-sm min-w-[190px] justify-center hover:bg-muted transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 dark:bg-white/[0.06] backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-sm text-sm min-w-[200px] justify-center hover:scale-[1.02] active:scale-95 transition-transform cursor-pointer"
             title="Выбрать неделю"
           >
             <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -100,7 +100,7 @@ export function WeekNav({ weekStart, label, isCurrentWeek, onPrev, onNext, onTod
 
       <button
         onClick={onNext}
-        className="p-1.5 rounded-md hover:bg-muted transition-colors"
+        className="p-2 rounded-full bg-white/60 dark:bg-white/[0.06] backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-sm hover:scale-105 active:scale-95 transition-transform"
         title="Следующая неделя"
       >
         <ChevronRightIcon className="h-4 w-4" />

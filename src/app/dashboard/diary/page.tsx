@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { WeekNav } from "@/components/diary/week-nav"
 import { DayTabs } from "@/components/diary/day-tabs"
+import { AmbientBackground } from "@/components/ambient-bg"
 import type { DiaryWeek, DayOfWeek } from "@/types/diary"
 import { toast } from "sonner"
 import { useDiaryHeader } from "@/contexts/diary-header-ctx"
@@ -282,7 +283,9 @@ export default function DiaryPage() {
   const hasAnyLessons = week?.days.some(d => d.lessons.length > 0) ?? false
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
+    <div className="relative min-h-full">
+      <AmbientBackground />
+      <div className="relative z-10 flex flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
       {/* Week navigation */}
       <div className="flex items-center justify-center">
         <WeekNav
@@ -309,7 +312,7 @@ export default function DiaryPage() {
           </Button>
         </div>
       ) : !hasAnyLessons ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 min-h-[350px] gap-4 text-center px-8">
+        <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-foreground/15 bg-white/40 dark:bg-white/[0.04] backdrop-blur-xl min-h-[350px] gap-4 text-center px-8 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
           <NotebookPenIcon className="h-12 w-12 text-muted-foreground/30" />
           <div>
             <p className="font-semibold text-muted-foreground">Расписание не настроено</p>
@@ -402,6 +405,7 @@ export default function DiaryPage() {
           </p>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   )
 }
