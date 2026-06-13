@@ -7,6 +7,11 @@ export type TextElement = {
   type: 'TEXT';
   position: Position;
   content: string;
+  width?: number;
+  fontSize?: number;
+  lineHeight?: number;
+  color?: string;
+  variant?: 'heading' | 'body' | 'formula' | 'table';
 };
 
 export type GraphElement = {
@@ -61,6 +66,8 @@ export type IllustrationElement = {
   labels: IllustrationLabel[];
   masks?: IllustrationMask[] | null;
   alt?: string;
+  /** Стиль генерации (flat/2_5d/3d/sketch) — выбирает типографику подписей. */
+  genStyle?: string;
 };
 
 /** Supported hand-drawn shape kinds (rendered sketchy via rough.js). */
@@ -106,6 +113,11 @@ export type CreateTextAction = {
     id: string;
     content: string;
     position: Position;
+    width?: number;
+    fontSize?: number;
+    lineHeight?: number;
+    color?: string;
+    variant?: TextElement['variant'];
   };
 };
 
@@ -170,6 +182,7 @@ export type CreateIllustrationAction = {
     labels: IllustrationLabel[];
     masks?: IllustrationMask[] | null;
     alt?: string;
+    genStyle?: string;
   };
 };
 
@@ -265,6 +278,11 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               type: 'TEXT',
               position: action.payload.position,
               content: action.payload.content,
+              width: action.payload.width,
+              fontSize: action.payload.fontSize,
+              lineHeight: action.payload.lineHeight,
+              color: action.payload.color,
+              variant: action.payload.variant,
             });
             break;
           }
@@ -328,6 +346,7 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               labels: p.labels ?? [],
               masks: p.masks ?? null,
               alt: p.alt,
+              genStyle: p.genStyle,
             });
             break;
           }

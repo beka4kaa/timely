@@ -101,6 +101,31 @@ _QWEN_API_KEY: str = getattr(settings, "QWEN_API_KEY", "sk-local")
 _QWEN_MODEL_NAME: str = getattr(settings, "QWEN_MODEL_NAME", "mlx-community/Qwen3.6-27B-4bit")
 _QWEN_TIMEOUT: int = int(getattr(settings, "QWEN_TIMEOUT", 60))
 
+# Фолбэк vision-грунтинга через OpenRouter: локальный Qwen (Mac Studio) в dev
+# часто оффлайн — тогда КАЖДАЯ генерация шла с координатами-догадками Llama,
+# сделанными ДО рендера картинки, и подписи вставали мимо объектов («Осадки»
+# в нерелевантном месте — ровно этот случай). Тот же Set-of-Mark запрос
+# уходит в OpenRouter (ключ уже есть — им же генерятся картинки).
+_OPENROUTER_API_URL: str = getattr(
+    settings, "IMAGE_GEN_API_URL", "https://openrouter.ai/api/v1/chat/completions"
+)
+_OPENROUTER_API_KEY: str = getattr(
+    settings, "IMAGE_GEN_API_KEY", os.getenv("OPENROUTER_API_KEY", "")
+)
+_GROUNDING_FALLBACK_MODEL: str = getattr(
+    settings,
+    "GROUNDING_FALLBACK_MODEL",
+    # Gemini 3.1 Flash Image Preview («Nano Banana 2») — та же модель, которой
+    # проект генерит сами картинки (IMAGE_GEN_MODEL): принимает image-input и
+    # отвечает текстом, так что Set-of-Mark grounding-запрос ей по силам.
+    # Одна модель на генерацию и грунтинг = один биллинг и никаких сюрпризов
+    # с доступностью в каталоге OpenRouter.
+    os.getenv(
+        "GROUNDING_FALLBACK_MODEL",
+        getattr(settings, "IMAGE_GEN_MODEL", "google/gemini-3.1-flash-image-preview"),
+    ),
+)
+
 # Vision-грунтинг подписей: после генерации спрашиваем у Qwen, ГДЕ объекты реально
 # оказались на картинке, и переносим туда подписи. Координаты от Llama — лишь
 # догадка, сделанная ДО генерации растра, поэтому подписи «летают». Можно
@@ -760,6 +785,35 @@ def _norm_name(s: Any) -> str:
     return unicodedata.normalize("NFC", str(s)).strip().lower()
 
 
+def _vision_chat(
+    url: str, api_key: str, model: str, prompt: str, image_b64: str, timeout: int
+) -> str:
+    """
+    Один OpenAI-совместимый vision-запрос (текст + картинка) → content-строка.
+    Общий транспорт для локального Qwen и OpenRouter-фолбэка грунтинга —
+    оба говорят на одном и том же chat/completions-протоколе.
+    """
+    resp = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": model,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                ],
+            }],
+            "max_tokens": 600,
+            "temperature": 0.0,
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"] or ""
+
+
 def _parse_grounding_json(raw: str) -> list[tuple[str, float, float]]:
     """
     Парсит ответ Qwen в УПОРЯДОЧЕННЫЙ список [(имя_norm, x%, y%), ...] —
@@ -858,29 +912,29 @@ def _ground_labels_with_vision(
         "без markdown и пояснений."
     )
 
+    # Транспорт: локальный Qwen → при недоступности тот же запрос в OpenRouter.
+    # Без обоих грунтинг невозможен — тогда честно остаёмся на догадках Llama.
     try:
-        resp = requests.post(
+        raw = _vision_chat(
             f"{_QWEN_API_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {_QWEN_API_KEY}", "Content-Type": "application/json"},
-            json={
-                "model": _QWEN_MODEL_NAME,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
-                    ],
-                }],
-                "max_tokens": 600,
-                "temperature": 0.0,
-            },
-            timeout=_QWEN_TIMEOUT,
+            _QWEN_API_KEY, _QWEN_MODEL_NAME, prompt, img_b64, _QWEN_TIMEOUT,
         )
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"] or ""
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[Illustration] grounding: Qwen недоступен, координаты Llama как есть: %s", exc)
-        return labels
+        logger.warning(
+            "[Illustration] grounding: локальный Qwen недоступен (%s) — фолбэк на OpenRouter (%s)",
+            exc, _GROUNDING_FALLBACK_MODEL,
+        )
+        try:
+            raw = _vision_chat(
+                _OPENROUTER_API_URL,
+                _OPENROUTER_API_KEY, _GROUNDING_FALLBACK_MODEL, prompt, img_b64, _QWEN_TIMEOUT,
+            )
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning(
+                "[Illustration] grounding: OpenRouter-фолбэк тоже не удался, координаты Llama как есть: %s",
+                exc2,
+            )
+            return labels
 
     located_list = _parse_grounding_json(raw)
     if not located_list:
@@ -959,6 +1013,10 @@ def build_vector_illustration(
     style: str | None = None,
     palette: str | None = None,
     reference_image_url: str | None = None,
+    skip_grounding: bool = False,
+    task_diagram: bool = False,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
 ) -> dict[str, Any]:
     """
     Пайплайн генерации иллюстрации с НАПРАВЛЯЕМОЙ (prompted) сегментацией —
@@ -995,6 +1053,13 @@ def build_vector_illustration(
                                смене стиля. Когда задан, этап [1] идёт в режиме
                                нативного image-to-image (edit) у Gemini/Nano Banana
                                и сохраняет композицию (см. generate_raster_image).
+        task_diagram:          школьная/задачная схема: просим генератор держать
+                               плоский тетрадно-досочный вид без лишней 3D-сцены.
+        scientific_diagram:    physics/math/science-схема: дефолтный стиль
+                               переводится в clean flat textbook prompt.
+        explicit_style_override:
+                               пользователь/фронт явно выбрал другой стиль —
+                               textbook-автомаппинг не применяется.
 
     Returns:
         {
@@ -1019,12 +1084,22 @@ def build_vector_illustration(
     result: dict[str, Any] = {"base_image_url": None, "masks": None}
 
     # ── [1] Растр через Banana — ВСЕГДА, это основа ответа ──
+    # scene = not requires_segmentation: СЦЕНЫ/процессы (круговорот воды,
+    # экосистема — requires_segmentation=False) рисуем центрированной cutaway-
+    # диорамой на светлом фоне (эталон Figure Labs/BioRender); ОТДЕЛЬНЫЕ объекты
+    # под сегментацию (куб+сфера, органеллы — requires_segmentation=True) —
+    # изолированно на белом фоне, чтобы SAM2 чисто вырезал контуры
+    # (см. _build_final_prompt в image_enrichment).
     try:
         image_url = generate_raster_image(
             image_prompt,
             style=style,
             palette=palette,
             reference_image_url=reference_image_url,
+            scene=not requires_segmentation,
+            task_diagram=task_diagram,
+            scientific_diagram=scientific_diagram,
+            explicit_style_override=explicit_style_override,
         )
         result["base_image_url"] = image_url
     except Exception as exc:  # noqa: BLE001
@@ -1038,7 +1113,10 @@ def build_vector_illustration(
     # img_bgr декодируем здесь ОДИН раз и переиспользуем ниже для SAM2.
     img_bgr = None
     if seed_labels:
-        if _VISION_GROUNDING:
+        # skip_grounding=True — режим restyle (см. draw_views): подписи пришли
+        # от ИСХОДНОЙ иллюстрации с уже финальными координатами, а композиция
+        # сохранена i2i-режимом. Грунтинг не нужен и только внёс бы дрожание.
+        if _VISION_GROUNDING and not skip_grounding:
             try:
                 img_bgr = _image_url_to_bgr(image_url)
                 # Грунтим: arrow_to → реальный центр объекта, текст — над ним.

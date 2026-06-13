@@ -17,6 +17,7 @@ import {
   SwordsIcon,
   EyeIcon,
   FlameIcon,
+  AppleIcon,
 } from "lucide-react"
 import { useSession } from "next-auth/react"
 
@@ -42,6 +43,7 @@ const data = {
         { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
         { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
         { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
+        { title: "Калории и БЖУ", url: "/dashboard/nutrition", icon: AppleIcon },
       ],
     },
     {

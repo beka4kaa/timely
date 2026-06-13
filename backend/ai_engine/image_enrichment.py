@@ -153,63 +153,100 @@ _TIER: str = getattr(settings, "IMAGE_GEN_TIER", "standard")
 # «wide-angle / full frame composition» — именно он давал full-bleed, из-за
 # которого подписи сливались с фоном. Все 4 стиля теперь = изолированные объекты
 # на белом фоне; различается только художественный «почерк».
+# ЭТАЛОН КАЧЕСТВА — Figure Labs (см. их «Круговорот воды»): мягкий пастельный
+# 3D в духе Cinema 4D / BioRender, cutaway-диорама на светлом фоне. Наши прежние
+# пресеты целились мимо:
+#   • flat «coloring book / pure solid colors / black outlines» → детская
+#     раскраска вместо профессиональной BioRender-инфографики (у эталона —
+#     мягкие градиенты и аккуратная подсветка даже во «флэте»);
+#   • 3d-negative запрещал «isometric, cutaway box, diorama block» — то есть
+#     ИМЕННО фирменную композицию эталона. Запреты сняты, «почерк» переписан
+#     на soft clay/plastic + пастель + мягкий студийный свет.
 STYLE_PRESETS: dict[str, dict[str, str]] = {
     "flat": {
         "positive": (
-            "Strictly 2D flat vector graphic, SVG style, pure solid colors ONLY, "
-            "black outlines, coloring book style, absolute minimalism. "
-            "Strictly rectangular layout, horizontal cross-section, landscape format."
+            "Modern premium flat vector scientific illustration in a professional "
+            "science-visual style: clean smooth vector shapes, harmonious soft "
+            "palette, subtle flat-design shading and gentle gradients that give "
+            "light depth, crisp thin outlines only where they aid clarity, elegant "
+            "rounded forms, polished professional educational look."
         ),
         "negative": (
-            "gradients, 3D, shadows, shading, realism, depth, bevel, lighting, "
-            "texture, background scenery, "
-            "circular shape, badge, icon, emblem, rounded edges, sphere."
+            "childish coloring-book style, thick black outlines around everything, "
+            "garish oversaturated colors, photorealistic 3D render, heavy textures, "
+            "harsh shadows."
         ),
     },
     "2_5d": {
         "positive": (
-            "Detailed isometric 2.5D diagram, orthographic projection, rich soft "
-            "shading, smooth glossy plastic materials, clear depth and volume, "
-            "intricate well-modeled detail, polished educational 3D-vector render, "
-            "pure white background."
+            "Detailed isometric 2.5D educational illustration: precise orthographic "
+            "projection, rich soft shading, smooth glossy plastic and matte clay "
+            "materials, gentle pastel palette, clear depth and volume, meticulous "
+            "miniature detail, polished premium explanatory render."
         ),
-        # NB: «complex textures» УБРАН из negative — он обеднял картинку. Оставляем
-        # только то, что отличает 2.5D от flat/фото и держит изометрию.
-        "negative": "2D flat, black outlines, realistic photo.",
+        "negative": (
+            "2D flat, hard black outlines, realistic photo, harsh oversaturated "
+            "colors."
+        ),
     },
     "3d": {
-        # Перспектива/глубина, чтобы СЛОМАТЬ изометрию (главная жалоба: 3D был
-        # неотличим от изометрического 2.5D). NB: намеренно ОПУЩЕНЫ «horizon line»
-        # и «cinematic immersive landscape» — они конфликтуют с белым фоном из
-        # GLOBAL_PROMPT_PREFIX и вернули бы слияние подписей с фоном (см. решение).
         "positive": (
-            "Highly detailed, polished 3D educational render, rich realistic "
-            "materials and textures, soft studio lighting, gentle soft shadows, "
-            "fine surface detail, isolated central objects on a pure white "
-            "background, strictly educational style. "
-            "Perspective camera, three-quarter perspective view, deep depth of "
-            "field, non-isometric."
+            "Soft, premium 3D educational render style: "
+            "smooth rounded geometry, matte clay and glossy plastic materials, "
+            "gentle pastel colors, soft studio lighting with delicate shadows and "
+            "subtle ambient occlusion, light airy atmosphere, charming miniature-"
+            "scene feel, gentle perspective with a clear sense of depth and "
+            "volume, meticulous detail."
         ),
-        # «white borders» НЕ добавляем — он бьёт по «ample white space margins»
-        # из префикса. Остальной анти-изометрический список — как заказано.
         "negative": (
-            "flat 2D, hard black outlines, full-frame background scenery, busy "
-            "environment, photographic clutter, "
-            "isometric, orthographic, cutaway box, diorama block, floating island."
+            "flat 2D, hard black outlines, harsh oversaturated colors, "
+            "photorealism, gritty textures, dark moody lighting, cluttered messy "
+            "composition."
         ),
     },
+    "scientific_flat_textbook": {
+        "positive": (
+            "Clean flat vector educational textbook diagram, precise 2D technical "
+            "illustration, white background, soft light gray and muted blue palette, "
+            "crisp dark blue-gray outlines, smooth flat fills, subtle depth only, "
+            "consistent line weights, clean labeled arrows, centered balanced "
+            "composition, readable scientific labels reserved for the deterministic "
+            "overlay layer, professional physics textbook style, minimal clutter, "
+            "high clarity, high contrast, polished infographic quality."
+        ),
+        "negative": (
+            "photorealistic, 3D render, cinematic lighting, dark background, black "
+            "canvas, UI frame, card border, neon glow, heavy shadow, rough pencil "
+            "sketch, messy hand drawing, watercolor, oil painting, cartoon mascot, "
+            "distorted text, misspelled labels, random extra labels, cluttered "
+            "diagram, perspective distortion, warped geometry, blurry lines, low "
+            "resolution, noisy background, decorative elements, unnecessary texture."
+        ),
+    },
+    # Эталон — чернильный скетч из конспекта физика (как классические learning-
+    # иллюстрации «Support Beam / Uniform Cylinder»): уверенное перо, жирные
+    # контуры переменной толщины, диагональная штриховка, чуть «живые»
+    # неидеальные линии. СТРОГО монохром: даже стрелки и вода — чернила, без
+    # единого цветного пятна (палитра для sketch не применяется вообще, см.
+    # _build_final_prompt — раньше «clear water blue» из палитры красил воду).
     "sketch": {
         "positive": (
-            "Detailed hand-drawn technical illustration, intricate fine pencil-"
-            "and-ink line work, careful cross-hatching and stippling for shading "
-            "and depth, rich linework detail, precise strokes, isolated central "
-            "diagram on a pure white background, strictly educational style."
+            "STRICTLY MONOCHROME hand-drawn black ink pen illustration, like a "
+            "careful scientific sketch: bold confident pen outlines with varying "
+            "line weight, diagonal hatching and cross-hatching for shading and "
+            "volume, charming slightly imperfect hand-drawn linework, black ink "
+            "on clean white paper only — no color anywhere, not even on water "
+            "or arrows. Every arrow is "
+            "hand-drawn in the same ink pen: a slightly wobbly confident "
+            "stroke with a simple hand-drawn arrowhead, as if sketched by "
+            "hand in one motion."
         ),
-        # NB: «soft shading» УБРАН — он мешал штриховке/hatching, которая и даёт
-        # детализацию в скетче. Оставляем запрет цвета/градиентов/фото.
         "negative": (
-            "color fills, gradients, full background scenery, watercolor, "
-            "photorealism."
+            "ANY color, colored fills, blue water, gradients, watercolor, "
+            "photorealism, thin scratchy chaotic lines, sterile digital vector "
+            "smoothness, perfectly geometric CAD-style arrows, grey washes, "
+            "circular composition, circle outline, badge, emblem, medallion, "
+            "vignette, framed sketch, picture frame, card layout."
         ),
     },
 }
@@ -242,6 +279,34 @@ IMAGE_STYLE_GUIDE: str = STYLE_PRESETS.get(DEFAULT_STYLE, STYLE_PRESETS["3d"])["
 # иллюстрации должны быть альбомными плакатами, а не квадратными «игрушками».
 IMAGE_ASPECT_RATIO: str = getattr(settings, "IMAGE_GEN_ASPECT_RATIO", "16:9")
 
+TEXT_FREE_OUTPUT_CONTRACT: str = (
+    "TEXT-FREE OUTPUT CONTRACT: generate a pure raster illustration with ZERO "
+    "visible typography or glyphs. Do not draw readable text, pseudo-text, "
+    "letters, numbers, labels, captions, title blocks, legends, callout text, "
+    "watermarks, signatures, UI text, map labels, or process-name words in any "
+    "language. If the subject normally has labels, leave those areas blank; the "
+    "application will add all labels later as a separate overlay layer. Named "
+    "concepts in the prompt are private instructions only: represent them with "
+    "objects, motion, arrows, layout, color, and shapes, never as written words. "
+)
+
+TEXT_FREE_FINAL_GUARD: str = (
+    "FINAL CHECK BEFORE RETURNING THE IMAGE: there must be no typography at all "
+    "inside the pixels. Do not write any process names, object names, category "
+    "names, formulas, captions, legends, labels, title text, or pseudo-text; "
+    "show meaning only with unlabeled visual regions, objects, arrows, shapes, "
+    "colors, and spatial relationships."
+)
+
+FULL_RECTANGLE_COMPOSITION_CONTRACT: str = (
+    "COMPOSITION CONTRACT: use the full rectangular 16:9 canvas as a normal "
+    "complete image. Do not enclose the scene inside a circle, oval, badge, "
+    "medallion, icon, vignette, framed card, picture frame, border, or rounded "
+    "container. Do not add a white mat or empty card around the illustration. "
+    "The image should feel open and full-size, with the subject naturally "
+    "occupying the available rectangular frame. "
+)
+
 # ──────────────────────────────────────────────────────────────────
 # ГЛОБАЛЬНЫЙ префикс — применяется к ЛЮБОМУ запросу (t2i и i2i-edit)
 # ──────────────────────────────────────────────────────────────────
@@ -263,14 +328,36 @@ GLOBAL_PROMPT_PREFIX: str = (
     # подписи на «диаграммах/educational», и слабый negative в хвосте его не
     # перебивает. Ведём с жёсткого «text-free», иначе модель впечатывает (к тому
     # же английские) подписи, и они сталкиваются с нашим overlay-слоем.
-    "A COMPLETELY TEXT-FREE, UNLABELED illustration. There must be absolutely NO "
-    "writing of any kind anywhere in the image: no words, no letters, no numbers, "
-    "no captions, no titles, no annotations, no callouts, no legends, no UI. Show "
-    "ONLY the visual objects themselves, never their names. "
+    TEXT_FREE_OUTPUT_CONTRACT +
+    FULL_RECTANGLE_COMPOSITION_CONTRACT +
     # Композиция/качество — после запрета текста.
     "It is a richly detailed, high-quality, polished scientific illustration, "
-    "centered as an isolated figure on a clean solid white background, with "
-    "comfortable white margins (it must NOT run edge-to-edge). "
+    "drawn directly in the rectangular image area on a clean light background. "
+)
+
+# Префикс для СЦЕН/процессов (requires_segmentation=False): экосистемы,
+# географические/биологические процессы, строение атмосферы и т.п.
+#
+# ЭВОЛЮЦИЯ (важно, чтобы не ходить по кругу):
+#   v1 «isolated on white» → плоские пустые «игрушки» (жалоба №1);
+#   v2 «FILLS THE ENTIRE FRAME edge-to-edge» → мультяшный плакат во весь кадр,
+#      по качеству всё ещё далеко от эталона (жалоба №2, сравнение с Figure Labs).
+# Эталон (Figure Labs, см. их «Круговорот воды»): это НЕ full-bleed — это
+# ЦЕНТРИРОВАННАЯ CUTAWAY-ДИОРАМА (блок-разрез воды/рельефа со слоистыми боками)
+# на мягком, очень светлом фоне с полями, в духе BioRender / премиальных учебных
+# инфографик. Процессы показаны чистыми жирными векторными стрелками. Именно эту
+# композицию и просим. Запрет текста сохраняем (типографику кладёт overlay-слой).
+SCENE_PROMPT_PREFIX: str = (
+    TEXT_FREE_OUTPUT_CONTRACT +
+    FULL_RECTANGLE_COMPOSITION_CONTRACT +
+    "A premium educational science illustration with polished textbook quality: "
+    "ONE cohesive, complete scene with real "
+    "depth. When the subject involves terrain, water bodies or internal structure, "
+    "present it as a clean cutaway cross-section scene with visible layered sides "
+    "when useful, but keep it open in the full rectangular canvas. All processes "
+    "and motion are shown with clean, bold, smoothly "
+    "curved directional arrows. Carefully composed, harmonious and generously "
+    "detailed — never cluttered, never childish. "
 )
 
 # ──────────────────────────────────────────────────────────────────
@@ -282,11 +369,123 @@ GLOBAL_PROMPT_PREFIX: str = (
 # в обеих ветках _call_image_api (text-to-image и image-to-image edit), независимо
 # от style/palette. У Gemini нет отдельного параметра negative_prompt, поэтому
 # запреты выражаются текстом «DO NOT INCLUDE …» прямо в промпте.
+# NB: формулировка про стрелки стиле-нейтральна («clean and deliberate», а не
+# «strict geometric vector») — sketch рисует стрелки ОТ РУКИ (см. его positive),
+# и прежний жёсткий «vector arrows» конфликтовал с рукописным пером.
 NEGATIVE_PROMPT: str = (
-    "DO NOT INCLUDE: anatomical textures, veins, flesh, blood, organic tentacles, "
-    "messy lines, gore, medical anomalies. Arrows must be strict geometric vector "
-    "arrows, not organic shapes."
+    "DO NOT INCLUDE: readable text, pseudo-text, words, letters, numbers, labels, "
+    "captions, legends, callout text, map labels, title blocks, watermarks, "
+    "signatures, typographic marks, circular crops, circle outlines, badges, "
+    "emblems, medallions, framed cards, picture frames, decorative borders, "
+    "vignettes, white mats, anatomical textures, veins, flesh, blood, "
+    "organic tentacles, messy lines, gore, medical anomalies. Arrows must be "
+    "clean, deliberate and easy to understand visually, never organic or "
+    "tentacle-like shapes."
 )
+
+SCIENTIFIC_FLAT_STYLE_KEY = "scientific_flat_textbook"
+
+SCIENTIFIC_DIAGRAM_PROMPT_CONTRACT: str = (
+    "SCIENTIFIC DIAGRAM MODE. Diagram intent: generate a clean educational "
+    "scientific diagram that preserves the physical or mathematical meaning, "
+    "using only the necessary objects, arrows and relationships. Visual style: "
+    "clean flat vector textbook illustration on a white or very light background, "
+    "with soft light gray fills, muted blue accents, crisp dark blue-gray outlines, "
+    "consistent line weights and no artistic sketch look. Geometry and layout: "
+    "use a precise 2D orthographic side-view or front-view layout whenever the "
+    "subject allows it; keep the composition centered, balanced and readable, "
+    "with clear separation between objects. Arrows must point exactly in the "
+    "intended direction and use consistent arrowhead sizes. Avoid label overlaps "
+    "by leaving clean whitespace around objects and arrows. Scientific correctness: "
+    "do not add extra forces, bodies, axes, mechanisms, labels, arrows or decorative "
+    "objects that were not requested. Label behavior: use only labels provided by "
+    "the deterministic overlay layer; keep text areas clean and simple for readable "
+    "labels, preferably outside crowded regions. Do not invent, rewrite, misspell, "
+    "render, distort or bake any label, formula, symbol or caption into the pixels. "
+    "Avoid: photorealistic rendering, 3D perspective, dark background, black card "
+    "UI, neon glow, glow behind text, heavy shadows, rough pencil sketch, messy "
+    "hand drawing, clutter, distorted text, extra labels, incorrect arrows and "
+    "random decorations. "
+)
+
+SCIENTIFIC_DIAGRAM_CONTEXT_RE = re.compile(
+    r"("
+    r"scientific|science|educational|textbook|учебн|научн|"
+    r"physics|физик|mechanics|механик|free[-\s]*body|force|сила|normal\s+force|"
+    r"gravity|гравитац|friction|трени|inclined|наклон|descent|спуск|"
+    r"math|математ|function|функци|graph|график|parabola|парабол|axis|axes|ось|"
+    r"geometry|геометр|triangle|треуг|angle|угол|theta|тета|"
+    r"chemistry|хими|molecule|молекул|reaction|реакци|"
+    r"biology|биолог|cell|клетк|photosynthesis|фотосинтез|water\s*cycle|круговорот|"
+    r"engineering|инженер|schematic|схем|circuit|цеп[ьи]|электр|"
+    r"optics|оптик|ray\s*diagram|lens|линз|mirror|зеркал|"
+    r"cylinder|цилиндр|thread|нить|rope|support|опор|beam|балк|spring|пружин"
+    r")",
+    re.I,
+)
+
+EXPLICIT_NON_TEXTBOOK_STYLE_RE = re.compile(
+    r"("
+    r"chalkboard|blackboard|hand[-\s]*drawn|pencil|sketch|rough\s+sketch|"
+    r"realistic|photorealistic|photo[-\s]*real|3d|three[-\s]*dimensional|"
+    r"isometric|watercolor|oil\s+painting|карандаш|скетч|эскиз|от\s+руки|"
+    r"мелом|реалист|фотореал|объ[её]мн|изометр"
+    r")",
+    re.I,
+)
+
+TASK_DIAGRAM_STYLE_CONTRACT: str = (
+    "TASK / PROBLEM DIAGRAM MODE: because this is a school problem or explanatory "
+    "task diagram, keep the image almost flat and teacher-drawn, like a clean "
+    "notebook sketch or a simple diagram drawn on a classroom whiteboard. Use "
+    "plain 2D side/front views, simple geometric bodies, simple supports, strings, "
+    "beams, cylinders, blocks and arrows. Keep the palette monochrome black, "
+    "charcoal, soft gray and white; if color is necessary, use at most one muted "
+    "accent color only. Avoid decorative scenery, landscapes, glossy 3D volume, "
+    "isometric depth, complex mechanical textures, realistic rendering, gradients, "
+    "large shadows, and overly detailed parts. Use only the essential arrows "
+    "needed to explain the given motion or forces; do not invent extra arrows, "
+    "extra labels, extra mechanisms, or additional background objects. "
+)
+
+TASK_DIAGRAM_CONTEXT_RE = re.compile(
+    r"("
+    r"задач|problem|word\s*problem|physics|физик|mechanics|механик|"
+    r"математ|math|geometry|геометр|force|сила|mass|масса|тело|block|блок|"
+    r"cylinder|цилиндр|rod|стерж|beam|балк|support|опор|thread|нить|rope|вер[её]в|"
+    r"spring|пружин|friction|трени|incline|наклон|acceleration|ускор|velocity|скорост|"
+    r"rotation|вращ|unwind|размат|vector|вектор|diagram|схем|graph|график|парабол"
+    r")",
+    re.I,
+)
+
+_TEXT_REQUEST_CLEANUPS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(with|including|include|showing)\s+(text|labels?|captions?|annotations?|titles?|legends?|callouts?)\b", re.I), ""),
+    (re.compile(r"\b(labelled|labeled|annotated|captioned|titled)\b", re.I), ""),
+    (re.compile(r"\b(text|label|labels|caption|captions|annotation|annotations|legend|legends|callout|callouts)\s+(inside|on|within)\s+the\s+image\b", re.I), ""),
+    (re.compile(r"\b(?:a|an|the)?\s*(?:circular|round|rounded|oval)\s+(?:illustration|diagram|image|scene|composition|badge|emblem|medallion)\b", re.I), "a full rectangular illustration"),
+    (re.compile(r"\b(?:circle|circular|round|oval)\s+(?:outline|frame|border|crop|vignette|badge|emblem|medallion|composition)\b", re.I), ""),
+    (re.compile(r"\b(?:inside|within|in)\s+(?:a|an|the)\s+(?:circle|oval|badge|emblem|medallion|frame|card|vignette)\b", re.I), ""),
+    (re.compile(r"\b(?:framed|bordered|vignette|badge|emblem|medallion|icon)\s+(?:illustration|diagram|image|scene|composition)\b", re.I), "full rectangular illustration"),
+    (re.compile(r"\bdiagram\b", re.I), "illustration"),
+    (re.compile(r"\binfographic\b", re.I), "illustration"),
+    (re.compile(r"\bposter\b", re.I), "visual"),
+)
+
+
+def _sanitize_image_prompt(prompt: str) -> str:
+    """
+    Llama иногда всё равно возвращает `image_prompt` с "labeled diagram" /
+    "annotated infographic". Это не содержание, а инструкция к генератору
+    впечатывать текст. Чистим такие триггеры до сборки финального промпта.
+    """
+    cleaned = prompt.strip()
+    for pattern, replacement in _TEXT_REQUEST_CLEANUPS:
+        cleaned = pattern.sub(replacement, cleaned)
+    cleaned = re.sub(r"\b(?:inside|within|in)\s+(?:a|an|the)?\s*$", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    return cleaned.strip(" ,.;:") or prompt.strip()
 
 
 def _normalize_style_key(style: str | None) -> str:
@@ -295,14 +494,50 @@ def _normalize_style_key(style: str | None) -> str:
     return key if key in STYLE_PRESETS else DEFAULT_STYLE
 
 
-def _resolve_style_suffix(style: str | None) -> str:
+def _effective_style_key(
+    style: str | None,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
+) -> str:
+    """
+    Backend-only style router.
+
+    Scientific diagrams default to the clean textbook preset when the frontend
+    sends no style or the generic "flat" style. Explicit non-flat UI styles
+    (sketch / 2.5D / 3D) stay intact, and prompt-level overrides can also opt
+    out of the automatic textbook mapping.
+    """
+    raw = (style or "").strip().lower().replace(".", "_").replace("-", "_")
+    key = raw if raw in STYLE_PRESETS else _normalize_style_key(style)
+    if (
+        scientific_diagram
+        and not explicit_style_override
+        and (not raw or key in {"flat", SCIENTIFIC_FLAT_STYLE_KEY})
+    ):
+        return SCIENTIFIC_FLAT_STYLE_KEY
+    return key
+
+
+def _resolve_style_suffix(
+    style: str | None,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
+) -> str:
     """id стиля с фронтенда → POSITIVE-суффикс из STYLE_PRESETS."""
-    return STYLE_PRESETS[_normalize_style_key(style)]["positive"]
+    return STYLE_PRESETS[
+        _effective_style_key(style, scientific_diagram, explicit_style_override)
+    ]["positive"]
 
 
-def _resolve_style_negative(style: str | None) -> str:
+def _resolve_style_negative(
+    style: str | None,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
+) -> str:
     """id стиля → NEGATIVE-суффикс из STYLE_PRESETS (пусто, если у стиля его нет)."""
-    return STYLE_PRESETS[_normalize_style_key(style)].get("negative", "")
+    return STYLE_PRESETS[
+        _effective_style_key(style, scientific_diagram, explicit_style_override)
+    ].get("negative", "")
 
 
 def _resolve_palette_suffix(palette: str | None) -> str:
@@ -312,35 +547,116 @@ def _resolve_palette_suffix(palette: str | None) -> str:
     return COLOR_PALETTES.get(palette.strip().lower(), "")
 
 
-def _build_final_prompt(core: str, style: str | None, palette: str | None) -> str:
+def _is_task_diagram_context(*parts: str | None) -> bool:
+    """Heuristic gate for word-problem / school-task diagrams."""
+    context = " ".join(p for p in parts if isinstance(p, str))
+    return bool(context and TASK_DIAGRAM_CONTEXT_RE.search(context))
+
+
+def _is_scientific_diagram_context(*parts: str | None) -> bool:
+    """Heuristic gate for textbook-style science, math and engineering diagrams."""
+    context = " ".join(p for p in parts if isinstance(p, str))
+    return bool(context and SCIENTIFIC_DIAGRAM_CONTEXT_RE.search(context))
+
+
+def _has_explicit_non_textbook_style(*parts: str | None) -> bool:
+    """Detect user text asking for a different visual style than flat textbook."""
+    context = " ".join(p for p in parts if isinstance(p, str))
+    return bool(context and EXPLICIT_NON_TEXTBOOK_STYLE_RE.search(context))
+
+
+def _task_diagram_palette(palette: str | None, task_diagram: bool) -> str | None:
+    """
+    For task diagrams, the default natural palette is too colorful. If the user
+    did not explicitly choose a specialized palette, switch to monochrome ink.
+    """
+    if not task_diagram:
+        return palette
+    normalized = (palette or "").strip().lower()
+    if not normalized or normalized == "natural-earth":
+        return "monochrome-ink"
+    return palette
+
+
+def _build_final_prompt(
+    core: str,
+    style: str | None,
+    palette: str | None,
+    scene: bool = False,
+    task_diagram: bool = False,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
+) -> str:
     """
     Единая точка сборки ИТОГОВОЙ текстовой строки запроса к генератору
     (то, что в задачах называют buildFinalPrompt; фактически сборка всегда была
     здесь, на бэкенде, — фронт шлёт лишь id стиля/палитры).
 
     Порядок склейки фиксирован:
-      [GLOBAL_PROMPT_PREFIX]  — центрированная схема на белом фоне, ВСЕГДА;
+      [PREFIX]                — композиция: белый фон (объекты) ИЛИ диорама (сцены);
       [core]                  — единственная часть, различная для t2i/i2i-edit;
       [aspect ratio]
       [positive стиля]        — _resolve_style_suffix;
+      [scientific mode]       — опц. строгий textbook prompt для science/math;
+      [task diagram mode]     — опц. школьная плоская схема для задач;
       [палитра]               — опц., _resolve_palette_suffix;
       [NEGATIVE_PROMPT]       — глобальные запреты, ВСЕГДА;
-      [negative стиля]        — опц., _resolve_style_negative (Flat/2.5D и т.д.).
+      [negative стиля]        — _resolve_style_negative, ВСЕГДА (новые негативы
+                                сцено-совместимы: запрещают только «почерк» —
+                                раскраску/фото/грязь, а не окружение).
+
+    scene:
+      • False (объекты, requires_segmentation=true) — изолированная фигура на белом
+        фоне (GLOBAL_PROMPT_PREFIX): белый фон нужен SAM2 для чистой сегментации.
+      • True  (сцены/процессы, requires_segmentation=false) —
+        центрированная cutaway-диорама на светлом фоне (SCENE_PROMPT_PREFIX),
+        эталон — Figure Labs / BioRender.
     """
-    style_pos = _resolve_style_suffix(style)
-    palette_suffix = _resolve_palette_suffix(palette)
-    style_neg = _resolve_style_negative(style)
+    style_key = _effective_style_key(
+        style,
+        scientific_diagram=scientific_diagram,
+        explicit_style_override=explicit_style_override,
+    )
+    style_pos = _resolve_style_suffix(
+        style,
+        scientific_diagram=scientific_diagram,
+        explicit_style_override=explicit_style_override,
+    )
+    # Sketch — строго монохромный: цветовая палитра к нему НЕ применяется
+    # (именно палитра «clear water blue…» красила воду в скетчах в голубой).
+    is_monochrome = style_key == "sketch"
+    effective_palette = _task_diagram_palette(palette, task_diagram)
+    palette_suffix = "" if is_monochrome else _resolve_palette_suffix(effective_palette)
+    style_neg = _resolve_style_negative(
+        style,
+        scientific_diagram=scientific_diagram,
+        explicit_style_override=explicit_style_override,
+    )
+
+    # Science/math task diagrams should not inherit the scene prompt's 3D/cutaway
+    # bias. Keep them on the neutral light-background prefix, then add the
+    # explicit textbook contract below.
+    prefix = (
+        GLOBAL_PROMPT_PREFIX
+        if scientific_diagram
+        else (SCENE_PROMPT_PREFIX if scene else GLOBAL_PROMPT_PREFIX)
+    )
 
     text = (
-        f"{GLOBAL_PROMPT_PREFIX}{core} "
+        f"{prefix}{core} "
         f"Image aspect ratio: {IMAGE_ASPECT_RATIO} (landscape orientation). "
         f"{style_pos}"
     )
+    if scientific_diagram:
+        text += f" {SCIENTIFIC_DIAGRAM_PROMPT_CONTRACT}"
+    if task_diagram:
+        text += f" {TASK_DIAGRAM_STYLE_CONTRACT}"
     if palette_suffix:
         text += f" {palette_suffix}"
     text += f" {NEGATIVE_PROMPT}"
     if style_neg:
         text += f" Avoid for this style: {style_neg}"
+    text += f" {TEXT_FREE_FINAL_GUARD}"
     return text
 
 
@@ -357,9 +673,14 @@ def _call_image_api(
     style: str | None = None,
     palette: str | None = None,
     reference_image_url: str | None = None,
+    scene: bool = False,
+    task_diagram: bool = False,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
 ) -> str:
     """
-    Отправляет запрос к OpenRouter (google/gemini-pro-image, standard tier).
+    Отправляет запрос к OpenRouter (Nano Banana 2 /
+    google/gemini-3.1-flash-image-preview, standard tier).
 
     Args:
         prompt:              СОДЕРЖАНИЕ картинки (что изобразить).
@@ -388,6 +709,8 @@ def _call_image_api(
         requests.HTTPError — при ответе 4xx/5xx.
         requests.Timeout — при превышении таймаута.
     """
+    prompt = _sanitize_image_prompt(prompt)
+
     if not _API_KEY:
         raise ValueError(
             "IMAGE_GEN_API_KEY не задан. "
@@ -405,38 +728,84 @@ def _call_image_api(
     # Итоговую строку в ОБЕИХ ветках собирает _build_final_prompt: глобальный
     # белофоновый префикс + core + аспект + positive стиля + палитра + negative.
     if reference_image_url:
-        # Режим смены стиля = НАТИВНОЕ редактирование. Референс передаётся как
-        # настоящий image-input (первый элемент мультимодального content) — Gemini
-        # видит реальные пиксели и сохраняет композицию своим edit-механизмом.
-        core = (
-            "Re-render the provided image in a new artistic style while keeping "
-            f"the SAME composition. Subject / content: {prompt}. "
-            "Keep every object in the same position, with the same relative size "
-            "and the same overall layout as the provided image — change ONLY the "
-            "rendering style, do NOT move, add or remove any OBJECT structurally. "
-            # Текст — исключение из «ничего не убирай»: его, наоборот, ВЫЧИЩАЕМ,
-            # иначе restyle тащит впечатанные подписи референса (они столкнутся
-            # с нашим overlay-слоем). Подписи добавляются отдельным слоем.
-            "EXCEPTION: remove every piece of text, lettering, label or caption "
-            "that appears in the provided image — the output must be completely "
-            "text-free."
+        if scientific_diagram:
+            core = (
+                "Restyle the provided structure image into a clean flat vector "
+                "educational textbook diagram. Preserve exact geometry, object "
+                "positions, arrows, label anchor areas and scientific meaning. "
+                f"Subject / content: {prompt}. Use a white background, soft gray "
+                "fills, muted blue accents, crisp dark blue-gray outlines and "
+                "consistent line weight. Do not add new objects. Do not remove "
+                "arrows. Do not distort text areas, formulas, arrows, object "
+                "positions or geometry. Keep text areas clean and simple for the "
+                "deterministic overlay. Do not invent or rewrite labels. Do not "
+                "convert it into a sketch, 3D render, dark UI card or photorealistic "
+                "image. EXCEPTION: remove every visible piece of text, lettering, "
+                "label, caption, pseudo-text or glyph-like mark from the pixels, "
+                "because the application renders labels in a separate overlay layer."
+            )
+        else:
+            # Режим смены стиля = НАТИВНОЕ редактирование. Референс передаётся как
+            # настоящий image-input (первый элемент мультимодального content) — Gemini
+            # видит реальные пиксели и сохраняет композицию своим edit-механизмом.
+            core = (
+                "Re-render the provided image in a new artistic style while keeping "
+                f"the SAME composition. Subject / content: {prompt}. "
+                "Keep every object in the same position, with the same relative size "
+                "and the same overall layout as the provided image — change ONLY the "
+                "rendering style, do NOT move, add or remove any OBJECT structurally. "
+                "Keep the full rectangular canvas composition; never crop the scene "
+                "into a circle, badge, medallion, vignette, framed card, or border. "
+                # Текст — исключение из «ничего не убирай»: его, наоборот, ВЫЧИЩАЕМ,
+                # иначе restyle тащит впечатанные подписи референса (они столкнутся
+                # с нашим overlay-слоем). Подписи добавляются отдельным слоем.
+                "EXCEPTION: remove every piece of text, lettering, label, caption, "
+                "pseudo-text, or glyph-like mark that appears in the provided image — "
+                "the output must be completely text-free."
+            )
+        text_part = _build_final_prompt(
+            core,
+            style,
+            palette,
+            scene=scene,
+            task_diagram=task_diagram,
+            scientific_diagram=scientific_diagram,
+            explicit_style_override=explicit_style_override,
         )
-        text_part = _build_final_prompt(core, style, palette)
         message_content: Any = [
             {"type": "image_url", "image_url": {"url": reference_image_url}},
             {"type": "text", "text": text_part},
         ]
         logger.info(
-            "[ImageGen] POST %s | model=%s | style=%s | palette=%s | mode=edit(i2i) | prompt=%.70s…",
-            _API_URL, _MODEL, (style or DEFAULT_STYLE), (palette or "—"), prompt,
+            "[ImageGen] POST %s | model=%s | style=%s→%s | palette=%s | task_diagram=%s | scientific=%s | mode=edit(i2i) | prompt=%.70s…",
+            _API_URL, _MODEL, (style or DEFAULT_STYLE),
+            _effective_style_key(style, scientific_diagram, explicit_style_override),
+            (_task_diagram_palette(palette, task_diagram) or "—"), task_diagram,
+            scientific_diagram, prompt,
         )
     else:
         # Режим чистой генерации: только текстовый промпт.
-        core = f"Subject / content to depict: {prompt}."
-        message_content = _build_final_prompt(core, style, palette)
+        core = (
+            "Subject / visual content to depict. These words are instructions for "
+            f"the generator only and must never appear as writing in the image: {prompt}. "
+            "Depict every named concept or process with unlabeled visual objects, "
+            "arrows, motion, and spatial relationships only."
+        )
+        message_content = _build_final_prompt(
+            core,
+            style,
+            palette,
+            scene=scene,
+            task_diagram=task_diagram,
+            scientific_diagram=scientific_diagram,
+            explicit_style_override=explicit_style_override,
+        )
         logger.info(
-            "[ImageGen] POST %s | model=%s | style=%s | palette=%s | mode=t2i | prompt=%.70s…",
-            _API_URL, _MODEL, (style or DEFAULT_STYLE), (palette or "—"), prompt,
+            "[ImageGen] POST %s | model=%s | style=%s→%s | palette=%s | task_diagram=%s | scientific=%s | mode=t2i | prompt=%.70s…",
+            _API_URL, _MODEL, (style or DEFAULT_STYLE),
+            _effective_style_key(style, scientific_diagram, explicit_style_override),
+            (_task_diagram_palette(palette, task_diagram) or "—"), task_diagram,
+            scientific_diagram, prompt,
         )
 
     payload: dict[str, Any] = {
@@ -465,6 +834,10 @@ def generate_raster_image(
     style: str | None = None,
     palette: str | None = None,
     reference_image_url: str | None = None,
+    scene: bool = False,
+    task_diagram: bool = False,
+    scientific_diagram: bool = False,
+    explicit_style_override: bool = False,
 ) -> str:
     """
     Публичная обёртка над _call_image_api — генерирует растровое изображение
@@ -494,6 +867,10 @@ def generate_raster_image(
         style=style,
         palette=palette,
         reference_image_url=reference_image_url,
+        scene=scene,
+        task_diagram=task_diagram,
+        scientific_diagram=scientific_diagram,
+        explicit_style_override=explicit_style_override,
     )
 
 
@@ -636,6 +1013,7 @@ def _enrich_command(
     style: str | None = None,
     palette: str | None = None,
     reference_image_url: str | None = None,
+    skip_grounding: bool = False,
 ) -> dict:
     """
     Принимает команду `image_with_labels` с полем `image_prompt`, прогоняет
@@ -673,15 +1051,60 @@ def _enrich_command(
     seed_labels: list[dict] = cmd.get("labels") or []
 
     # Решение о сегментации принимает Llama (`requires_segmentation`).
-    # Для сцен/пейзажей/процессов («круговорот воды») — false: SAM2 не нужен,
+    # Для сцен/пейзажей/процессов — false: SAM2 не нужен,
     # достаточно чистой картинки + подписей. Для выделения отдельных объектов
     # (органеллы, детали) — true.
     requires_segmentation: bool = bool(cmd.get("requires_segmentation", False))
+    label_context = " ".join(
+        str(label.get("content", ""))
+        for label in seed_labels
+        if isinstance(label, dict)
+    )
+    context_parts = (
+        topic_hint,
+        prompt,
+        cmd.get("alt") if isinstance(cmd.get("alt"), str) else None,
+        label_context,
+    )
+    style_raw = (style or "").strip().lower().replace(".", "_").replace("-", "_")
+    explicit_non_textbook_style = (
+        style_raw in {"sketch", "2_5d", "3d"}
+        or _has_explicit_non_textbook_style(*context_parts)
+    )
+    task_diagram_detected = _is_task_diagram_context(*context_parts)
+    scientific_diagram_detected = task_diagram_detected or _is_scientific_diagram_context(*context_parts)
+    task_diagram = task_diagram_detected and not explicit_non_textbook_style
+    scientific_diagram = scientific_diagram_detected and not explicit_non_textbook_style
+    if task_diagram:
+        logger.info(
+            "[ImageGen] Task diagram mode enabled (palette=%s → %s)",
+            palette or "—",
+            _task_diagram_palette(palette, True) or "—",
+        )
+    if scientific_diagram:
+        logger.info(
+            "[ImageGen] Scientific flat textbook mode enabled (style=%s → %s)",
+            style or DEFAULT_STYLE,
+            _effective_style_key(style, scientific_diagram=True),
+        )
+    elif scientific_diagram_detected and explicit_non_textbook_style:
+        logger.info(
+            "[ImageGen] Scientific diagram detected, but explicit style override kept style=%s",
+            style or DEFAULT_STYLE,
+        )
 
     # Базовая команда для фронтенда (строгий контракт):
     #   {type, base_image_url, labels, masks}
     # `image_prompt` убираем (он отработал), служебные поля не тащим.
     enriched: dict = {"type": "image_with_labels", "labels": seed_labels}
+    # Штамп стиля генерации (flat/2_5d/3d/sketch) — фронтенд по нему выбирает
+    # типографику подписей: рукописный Caveat ТОЛЬКО для sketch, остальным —
+    # строгий современный sans (см. IllustrationRenderer/ScientificIllustration).
+    enriched["gen_style"] = _effective_style_key(
+        style,
+        scientific_diagram=scientific_diagram,
+        explicit_style_override=explicit_non_textbook_style,
+    )
     if isinstance(cmd.get("alt"), str) and cmd["alt"].strip():
         enriched["alt"] = cmd["alt"].strip()
 
@@ -702,6 +1125,10 @@ def _enrich_command(
             style=style,
             palette=palette,
             reference_image_url=reference_image_url,
+            skip_grounding=skip_grounding,
+            task_diagram=task_diagram,
+            scientific_diagram=scientific_diagram,
+            explicit_style_override=explicit_non_textbook_style,
         )
         base_image_url = result.get("base_image_url")
 
@@ -766,6 +1193,7 @@ def enrich_board_steps(
     style: str | None = None,
     palette: str | None = None,
     reference_image_url: str | None = None,
+    skip_grounding: bool = False,
 ) -> list[dict]:
     """
     Перехватывает `board_steps` от Llama и обогащает все команды типа
@@ -829,7 +1257,7 @@ def enrich_board_steps(
         for si, ci, cmd in tasks:
             future = pool.submit(
                 _enrich_command, cmd, topic_hint, style, palette,
-                reference_image_url,
+                reference_image_url, skip_grounding,
             )
             future_to_position[future] = (si, ci)
 

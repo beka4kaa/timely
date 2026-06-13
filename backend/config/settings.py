@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "accounts",
     "diary",
     "habits",
+    "nutrition",
     "django_filters",
 ]
 
@@ -167,7 +168,8 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 # ──────────────────────────────────────────────────────────────────────────────
 # Image Generation (ai_engine.image_enrichment)
 # Используется для обогащения команд `image_with_labels` от Llama.
-# Провайдер: OpenRouter → BananaPro (google/gemini-pro-image, standard tier)
+# Провайдер: OpenRouter → Nano Banana 2
+# (google/gemini-3.1-flash-image-preview, standard tier)
 # ──────────────────────────────────────────────────────────────────────────────
 
 # POST endpoint провайдера генерации изображений
@@ -187,6 +189,11 @@ IMAGE_GEN_API_KEY = os.getenv(
 # "Nano Banana 2" / google/gemini-3.1-flash-image-preview — быстрее и дешевле
 # чем BananaPro (gemini-3-pro-image-preview), используем для тестов/прода.
 IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3.1-flash-image-preview")
+
+# Vision-фолбэк для grounding в illustration_pipeline. По умолчанию используем
+# ту же модель, что и для генерации картинки, чтобы не разъезжались режимы и
+# доступность в OpenRouter.
+GROUNDING_FALLBACK_MODEL = os.getenv("GROUNDING_FALLBACK_MODEL", IMAGE_GEN_MODEL)
 
 # Таймаут одного запроса к провайдеру (секунды)
 IMAGE_GEN_TIMEOUT = int(os.getenv("IMAGE_GEN_TIMEOUT", "60"))
@@ -223,6 +230,14 @@ QWEN_API_BASE_URL = os.getenv("QWEN_API_BASE_URL", f"http://{MAC_STUDIO_HOST}:80
 QWEN_API_KEY = os.getenv("QWEN_API_KEY", "sk-local")
 QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "mlx-community/Qwen3.6-27B-4bit")
 QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "60"))
+
+# GLM-OCR / Smart Canvas Analyzer — существующая OpenAI-совместимая GLM
+# интеграция. OCR и analyzer используют общий ai_engine.glm_client.
+VISION_API_BASE_URL = os.getenv("VISION_API_BASE_URL", f"http://{MAC_STUDIO_HOST}:8081/v1")
+VISION_API_KEY = os.getenv("VISION_API_KEY", "sk-local")
+VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "mlx-community/GLM-OCR-bf16")
+GLM_ANALYZER_MODEL_NAME = os.getenv("GLM_ANALYZER_MODEL_NAME", VISION_MODEL_NAME)
+GLM_ANALYZER_TIMEOUT = int(os.getenv("GLM_ANALYZER_TIMEOUT", "60"))
 
 # SAM 2 — точечная сегментация изображений (свой контракт, НЕ OpenAI-совместимый).
 SAM2_API_URL = os.getenv("SAM2_API_URL", f"http://{MAC_STUDIO_HOST}:8002/api/segment/")
@@ -262,3 +277,17 @@ ILLUSTRATION_MAX_WORKERS = int(os.getenv("ILLUSTRATION_MAX_WORKERS", "4"))
 ILLUSTRATION_SAM2_MAX_DIM = int(os.getenv("ILLUSTRATION_SAM2_MAX_DIM", "384"))
 # Параллелизм запросов к SAM2 — низкий специально (см. обоснование выше).
 ILLUSTRATION_SAM2_MAX_WORKERS = int(os.getenv("ILLUSTRATION_SAM2_MAX_WORKERS", "2"))
+
+# ── Логирование ──────────────────────────────────────────────────────
+# По умолчанию Django показывает только WARNING+ от сторонних логгеров —
+# из-за этого diagnostic-INFO ai_engine (классификация intent, режимы
+# t2i/i2i, ход illustration-пайплайна) не попадал в консоль runserver,
+# и отлаживать поток генерации приходилось вслепую.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "ai_engine": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}

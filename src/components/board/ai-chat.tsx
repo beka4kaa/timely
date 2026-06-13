@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/tooltip";
 import { StyleSelectorDropdown, PaletteSelectorDropdown } from "./style-controls/StyleSelectors";
 import { useWhiteboardStore } from "@/stores/whiteboard";
+import { buildLectureWhiteboardActions } from "@/lib/whiteboard-lecture-layout";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,12 +97,21 @@ export function AIChat({ className }: AIChatProps) {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, content: m.content }));
 
-      // Если на доске выбрана иллюстрация — передаём её как референс,
-      // чтобы при смене стиля генератор сохранил 35% исходной геометрии.
+      // Референс для смены стиля: выделенная иллюстрация, иначе — ПОСЛЕДНЯЯ
+      // на доске. Шлём ВСЕГДА (вместе с её подписями) как кандидата;
+      // использовать его или нет, решает бэкенд классификацией intent от Llama:
+      //   restyle («do sketch», «теперь в 3d») → i2i с сохранением композиции
+      //     + ТЕ ЖЕ подписи с теми же координатами (текст не переезжает);
+      //   new (новая тема) → референс игнорируется, чистая генерация.
       const selectedEl = elements.find((e) => e.id === selectedElementId);
-      const referenceImageUrl =
+      const refEl =
         selectedEl && (selectedEl.type === "ILLUSTRATION" || selectedEl.type === "IMAGE")
-          ? (selectedEl as { src: string }).src
+          ? selectedEl
+          : [...elements].reverse().find((e) => e.type === "ILLUSTRATION");
+      const referenceImageUrl = refEl ? (refEl as { src: string }).src : undefined;
+      const referenceLabels =
+        refEl && refEl.type === "ILLUSTRATION" && Array.isArray(refEl.labels) && refEl.labels.length > 0
+          ? refEl.labels
           : undefined;
 
       const res = await fetch("/api/ai/draw", {
@@ -113,6 +123,7 @@ export function AIChat({ className }: AIChatProps) {
           style: generationStyle,
           palette: generationPalette,
           ...(referenceImageUrl && { reference_image_url: referenceImageUrl }),
+          ...(referenceLabels && { reference_labels: referenceLabels }),
         }),
       });
 
@@ -146,111 +157,18 @@ export function AIChat({ className }: AIChatProps) {
       // Extract visual commands and place them directly on the whiteboard
       if (board) {
         const state = useWhiteboardStore.getState();
-        const baseX = state.camera.x + 200; // Place near current view
-        const baseY = state.camera.y + 100;
-        const actionsToExecute: any[] = [];
+        const zoom = Math.max(0.25, state.camera.zoom || 1);
+        const baseX = (120 + state.camera.x) / zoom;
+        const baseY = (115 + state.camera.y) / zoom;
+        const maxColumnHeight =
+          typeof window !== "undefined" ? (window.innerHeight - 190) / zoom : 640;
 
-        board.board_steps.forEach((step, stepIndex) => {
-          step.commands.forEach((cmd: any, cmdIndex) => {
-            const idBase = `ai-${Date.now()}-${stepIndex}-${cmdIndex}`;
-            const cx = baseX + (parseFloat(cmd.x) || 0);
-            const cy = baseY + (parseFloat(cmd.y) || 0);
-
-            if (cmd.type === "image_with_labels") {
-              // Backend contract:
-              //   base_image_url — ОРИГИНАЛЬНАЯ картинка от Banana (всегда есть)
-              //   labels         — подписи {content, x%, y%, arrow_to?}
-              //   masks          — опц. полигоны SAM2 {label, polygon:[[x%,y%]], color}
-              const baseImageUrl = cmd.base_image_url || cmd.image_url; // image_url — legacy
-              if (baseImageUrl) {
-                // ОДИН композитный элемент ILLUSTRATION — слоистый блок
-                // (картинка + подписи + маски рендерятся вместе, в правильном
-                // выравнивании). Раньше команда разбивалась на отдельные
-                // IMAGE/TEXT/SHAPE-элементы — отсюда «разъехавшаяся» вёрстка.
-                actionsToExecute.push({
-                  type: "CREATE_ILLUSTRATION",
-                  payload: {
-                    id: idBase,
-                    position: { x: cx, y: cy },
-                    src: baseImageUrl,
-                    width: 460,
-                    height: 300,
-                    rotation: 0,
-                    labels: Array.isArray(cmd.labels) ? cmd.labels : [],
-                    masks: Array.isArray(cmd.masks) ? cmd.masks : null,
-                    alt: typeof cmd.alt === "string" ? cmd.alt : undefined,
-                  }
-                });
-              } else if (cmd.image_error) {
-                // If there's an error, convert it to a text command so it shows in the chat
-                cmd.type = "text";
-                cmd.content = `❌ **Ошибка генерации изображения:** ${
-                  typeof cmd.image_error === "object" ? cmd.image_error.message : cmd.image_error
-                }\n\n*Убедитесь, что OPENROUTER_API_KEY задан в .env файле.*`;
-                // We leave this as "text" so it WILL BE moved to the whiteboard below!
-              }
-            }
-
-            // Map geometric and text commands to native Whiteboard actions
-            if (cmd.type === "circle") {
-              const r = parseFloat(cmd.r) || 50;
-              actionsToExecute.push({
-                type: "DRAW_SHAPE",
-                payload: {
-                  id: idBase,
-                  shape: "ellipse",
-                  position: { x: cx - r, y: cy - r },
-                  width: r * 2,
-                  height: r * 2,
-                  color: cmd.color || "#ffffff"
-                }
-              });
-            } else if (cmd.type === "rect") {
-              actionsToExecute.push({
-                type: "DRAW_SHAPE",
-                payload: {
-                  id: idBase,
-                  shape: "rect",
-                  position: { x: cx, y: cy },
-                  width: parseFloat(cmd.w) || 100,
-                  height: parseFloat(cmd.h) || 100,
-                  color: cmd.color || "#ffffff"
-                }
-              });
-            } else if (cmd.type === "line") {
-              const x1 = parseFloat(cmd.x1) || 0;
-              const y1 = parseFloat(cmd.y1) || 0;
-              const x2 = parseFloat(cmd.x2) || 0;
-              const y2 = parseFloat(cmd.y2) || 0;
-              const minX = Math.min(x1, x2);
-              const maxX = Math.max(x1, x2);
-              const minY = Math.min(y1, y2);
-              const maxY = Math.max(y1, y2);
-              const flip = (x1 < x2 && y1 > y2) || (x1 > x2 && y1 < y2);
-              
-              actionsToExecute.push({
-                type: "DRAW_SHAPE",
-                payload: {
-                  id: idBase,
-                  shape: "line",
-                  position: { x: baseX + minX, y: baseY + minY },
-                  width: Math.max(1, maxX - minX),
-                  height: Math.max(1, maxY - minY),
-                  flip,
-                  color: cmd.color || "#ffffff"
-                }
-              });
-            } else if (cmd.type === "text" || cmd.type === "formula") {
-              actionsToExecute.push({
-                type: "CREATE_TEXT",
-                payload: {
-                  id: idBase,
-                  position: { x: cx, y: cy },
-                  content: cmd.type === "formula" ? `$${cmd.content}$` : (cmd.content || "")
-                }
-              });
-            }
-          });
+        const actionsToExecute = buildLectureWhiteboardActions({
+          boardSteps: board.board_steps,
+          baseX,
+          baseY,
+          maxColumnHeight,
+          generationStyle,
         });
 
         if (actionsToExecute.length > 0) {
@@ -259,7 +177,16 @@ export function AIChat({ className }: AIChatProps) {
 
         // Filter out ALL visual commands from board_steps so they don't show in the chat at all!
         // We only leave semantic data like tables or barcharts (if any).
-        const typesToMove = ["image_with_labels", "circle", "rect", "line", "text", "formula"];
+        const typesToMove = [
+          "image_with_labels",
+          "circle",
+          "rect",
+          "line",
+          "text",
+          "formula",
+          "table",
+          "barchart",
+        ];
         board.board_steps = board.board_steps.map((step) => ({
           ...step,
           commands: step.commands.filter((cmd: any) => !typesToMove.includes(cmd.type))

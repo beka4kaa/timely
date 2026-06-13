@@ -36,20 +36,28 @@
  *     хук автоматически переходит на проксирование через Canvas (drawImage
  *     на canvas с crossOrigin='Anonymous' + toDataURL) — см. useVectorizeImage.
  *
- * ── Z-INDEX SANDWICH ──────────────────────────────────────────────
+ * ── Z-INDEX SANDWICH (строгий порядок) ────────────────────────────
  *
- *   Слой 1 (z-index: 10) — <div dangerouslySetInnerHTML> с SVG-строкой
+ *   Слой 1 (z-index: 0)  — база: <div dangerouslySetInnerHTML> с SVG-строкой
  *                           от imagetracerjs; mix-blend-mode: multiply
- *   Слой 2 (z-index: 20) — <svg> со стрелками-указателями (arrow_to)
- *   Слой 3 (z-index: 30) — абсолютные <div> с KaTeX-лейблами
+ *   Слой 2 (z-index: 10) — <svg> со стрелками-указателями (arrow_to)
+ *   Слой 3 (z-index: 20) — абсолютные <div> с KaTeX-лейблами
+ *
+ * ── ДИНАМИЧЕСКИЙ КОНТРАСТ ПОДПИСЕЙ (Figure Labs compositing) ──────
+ *
+ * Цвет каждой подписи выбирается по РЕАЛЬНОЙ яркости пикселей картинки
+ * под ней (offscreen-canvas сэмплирование, один раз на загрузку картинки),
+ * а плотный ореол text-shadow тоном фона «прорезает» стрелки и линии,
+ * проходящие под текстом. См. src/lib/illustration-contrast.ts.
  * ──────────────────────────────────────────────────────────────────
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import { InlineMath, BlockMath } from "react-katex";
+import Latex from "react-latex-next";
 import { motion, AnimatePresence } from "framer-motion";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
+import { useSmartLabels, contrastStylesFor, type BackdropSample } from "@/lib/illustration-contrast";
 
 /* ============================================================
  * Типы JSON-схемы
@@ -74,6 +82,8 @@ export interface ImageWithLabelsCommand {
   image_url: string;
   labels?: IllustrationLabel[];
   alt?: string;
+  /** Стиль генерации (flat/2_5d/3d/sketch): sketch → рукописный шрифт подписей. */
+  gen_style?: string;
 }
 
 export interface IllustrationStep {
@@ -346,9 +356,9 @@ function IllustrationError({ message, imageUrl }: { message: string; imageUrl: s
  * Координаты — В ПРОЦЕНТАХ (x1="50%" и т.п.), поэтому слой идеально
  * выравнивается с картинкой и центрированными лейблами при любом масштабе.
  *
- * z-index: оставлен 20 (НЕ 10) — слой картинки уже занимает z-10, так что
- * z-10 для SVG столкнулся бы с ним. Сэндвич image(10) < arrows(20) <
- * text(30) сохраняет требуемый порядок «SVG над картинкой, под текстом».
+ * Сэндвич СТРОГО image(0) < arrows(10) < text(20): стрелки лежат над
+ * картинкой, но под подписями — ореол подписи (см. contrastStylesFor)
+ * визуально «прорезает» линию там, где она проходит под текстом.
  * ========================================================== */
 
 interface ArrowsLayerProps {
@@ -363,7 +373,7 @@ function ArrowsLayer({ labels, animate }: ArrowsLayerProps) {
   return (
     <svg
       aria-hidden="true"
-      className="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible text-gray-800/60"
+      className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible text-gray-800/60"
     >
       {arrowLabels.map((label, i) => {
         const connector = (
@@ -406,37 +416,36 @@ function ArrowsLayer({ labels, animate }: ArrowsLayerProps) {
 }
 
 /* ============================================================
- * Один лейбл (Слой 3, z-index: 30)
+ * Один лейбл (Слой 3, z-index: 20)
  * ========================================================== */
-
-function hasLatex(text: string) { return /\$/.test(text); }
-function isBlockLatex(text: string) { return /^\$\$[\s\S]+\$\$$/.test(text.trim()); }
-function extractLatex(text: string): string {
-  const t = text.trim();
-  if (/^\$\$[\s\S]+\$\$$/.test(t)) return t.slice(2, -2).trim();
-  if (/^\$[\s\S]+\$$/.test(t))     return t.slice(1, -1).trim();
-  return t;
-}
 
 interface LabelProps {
   label: IllustrationLabel;
   animate: boolean;
+  /** Финальная позиция текста (проценты) из useSmartLabels. */
+  x: number;
+  y: number;
+  /** Фон под подписью (яркость + неоднородность) или null, пока не считан. */
+  sample: BackdropSample | null;
+  /** true → рукописный Caveat (стиль sketch), false → строгий sans. */
+  handwritten: boolean;
 }
 
-function Label({ label, animate }: LabelProps) {
-  const { content, x, y } = label;
+function Label({ label, animate, x, y, sample, handwritten }: LabelProps) {
+  const { content } = label;
+  const inner = <Latex>{content}</Latex>;
 
-  const inner = hasLatex(content)
-    ? isBlockLatex(content)
-      ? <BlockMath errorColor="#f87171">{extractLatex(content)}</BlockMath>
-      : <InlineMath>{extractLatex(content)}</InlineMath>
-    : <span>{content}</span>;
-
-  // Строгая академическая типографика (как в Figure Labs): тёмно-серый текст,
-  // БЕЗ фона, теней и рамок. Цвет/размер задаются Tailwind-классами — поэтому
-  // никаких inline color/fontSize (они бы перебили классы).
-  const className =
-    "absolute font-sans text-gray-900 font-medium tracking-tight text-sm md:text-base";
+  // Типографика по стилю генерации: рукописный Caveat ТОЛЬКО для sketch,
+  // прочим стилям — строгий современный sans. Подписи намеренно компактные:
+  // картинка остаётся главным слоем, текст — аккуратным overlay. Динамический
+  // контраст: цвет текста по реальной яркости пикселей под подписью,
+  // адаптивный ореол «прорезает» стрелки только там, где фон пёстрый
+  // (см. illustration-contrast.ts). KaTeX-формулы рендерятся собственным
+  // математическим шрифтом KaTeX, но наследуют currentColor и text-shadow.
+  const typography = handwritten
+    ? "font-handwriting font-semibold tracking-normal text-sm md:text-base"
+    : "font-sans font-medium tracking-normal text-[11px] md:text-xs";
+  const contrast = contrastStylesFor(sample);
 
   // Позиционирование по ЦЕНТРУ координат (x%, y%) через translate(-50%, -50%).
   // Вынесено на внешний wrapper, чтобы entrance-анимация framer-motion (которая
@@ -445,17 +454,20 @@ function Label({ label, animate }: LabelProps) {
     left: `${x}%`,
     top: `${y}%`,
     transform: "translate(-50%, -50%)",
-    zIndex: 30,
+    zIndex: 20,
     pointerEvents: "none",
     userSelect: "none",
-    whiteSpace: "nowrap",
+    maxWidth: "30%",
+    textAlign: "center",
+    whiteSpace: "normal",
   };
 
   if (animate) {
     return (
       <div className="absolute" style={positionStyle}>
         <motion.div
-          className="font-sans text-gray-900 font-medium tracking-tight text-sm md:text-base"
+          className={typography}
+          style={contrast}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
@@ -466,11 +478,15 @@ function Label({ label, animate }: LabelProps) {
     );
   }
 
-  return <div className={className} style={positionStyle}>{inner}</div>;
+  return (
+    <div className={cn("absolute", typography)} style={{ ...positionStyle, ...contrast }}>
+      {inner}
+    </div>
+  );
 }
 
 /* ============================================================
- * Слой 1: Векторизованное SVG (z-index: 10)
+ * Слой 1: Векторизованное SVG (z-index: 0 — база сэндвича)
  * ========================================================== */
 
 /**
@@ -517,7 +533,7 @@ function VectorLayer({ imageUrl, tracerOptions, animate }: VectorLayerProps) {
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          style={{ position: "relative", zIndex: 10, width: "100%" }}
+          style={{ position: "relative", zIndex: 0, width: "100%" }}
         >
           <IllustrationSkeleton />
         </motion.div>
@@ -526,7 +542,7 @@ function VectorLayer({ imageUrl, tracerOptions, animate }: VectorLayerProps) {
           key="error"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          style={{ position: "relative", zIndex: 10, width: "100%" }}
+          style={{ position: "relative", zIndex: 0, width: "100%" }}
         >
           <IllustrationError message={state.message} imageUrl={imageUrl} />
         </motion.div>
@@ -538,7 +554,7 @@ function VectorLayer({ imageUrl, tracerOptions, animate }: VectorLayerProps) {
           transition={{ duration: 0.5, ease: "easeOut" }}
           style={{
             position: "relative",
-            zIndex: 10,
+            zIndex: 0,
             width: "100%",
             // mix-blend-mode применяется и к контейнеру на случай если
             // SVG патч не отработал (напр. нестандартный формат вывода)
@@ -575,6 +591,21 @@ function Illustration({
 }: IllustrationProps) {
   const { image_url, labels = [] } = command;
 
+  // Детерминированная раскладка: позиции текста от модели игнорируем, правила
+  // выбирают чистое стабильное место вокруг якоря-объекта (один проход
+  // offscreen-сэмплирования на загрузку картинки, см. useSmartLabels).
+  const placements = useSmartLabels(image_url, labels);
+
+  // Стрелки-указатели должны идти от ФИНАЛЬНОЙ позиции текста к объекту —
+  // подменяем x/y в копии подписей для ArrowsLayer.
+  const laidOutLabels = labels.map((l, i) => ({
+    ...l,
+    x: placements[i]?.x ?? l.x,
+    y: placements[i]?.y ?? l.y,
+  }));
+
+  const handwritten = command.gen_style === "sketch";
+
   return (
     <div style={{ maxWidth, width: "100%" }}>
       {showTitle && (
@@ -596,19 +627,27 @@ function Illustration({
           background: "transparent",
         }}
       >
-        {/* ── Слой 1: Векторизованное SVG (z-index: 10) ── */}
+        {/* ── Слой 1: Векторизованное SVG (z-index: 0) ── */}
         <VectorLayer
           imageUrl={image_url}
           tracerOptions={tracerOptions}
           animate={animate}
         />
 
-        {/* ── Слой 2: SVG стрелки (z-index: 20) ── */}
-        <ArrowsLayer labels={labels} animate={animate} />
+        {/* ── Слой 2: SVG стрелки (z-index: 10) — от финальных позиций текста ── */}
+        <ArrowsLayer labels={laidOutLabels} animate={animate} />
 
-        {/* ── Слой 3: KaTeX лейблы (z-index: 30) ── */}
+        {/* ── Слой 3: KaTeX лейблы с динамическим контрастом (z-index: 20) ── */}
         {labels.map((label, i) => (
-          <Label key={i} label={label} animate={animate} />
+          <Label
+            key={i}
+            label={label}
+            animate={animate}
+            x={placements[i]?.x ?? label.x}
+            y={placements[i]?.y ?? label.y}
+            sample={placements[i]?.sample ?? null}
+            handwritten={handwritten}
+          />
         ))}
       </div>
     </div>

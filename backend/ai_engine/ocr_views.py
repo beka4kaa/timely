@@ -1,29 +1,14 @@
 import base64
-import os
 import cv2
 import numpy as np
 import logging
-from openai import OpenAI
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from .glm_client import VISION_API_BASE_URL, VISION_MODEL_NAME, glm_chat_image
+
 logger = logging.getLogger(__name__)
-
-# Адрес удалённого Mac Studio (несколько mlx_vlm.server-инстансов на разных портах):
-#   :8080 → mlx-community/Qwen3.6-27B-4bit   (общая VLM, см. illustration_pipeline)
-#   :8081 → mlx-community/GLM-OCR-bf16       (используется здесь, для OCR)
-#   :8002 → SAM 2 (отдельный FastAPI-сервис, см. illustration_pipeline)
-VISION_API_BASE_URL = os.getenv("VISION_API_BASE_URL", "http://100.74.104.27:8081/v1")
-VISION_API_KEY = os.getenv("VISION_API_KEY", "sk-local")
-VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "mlx-community/GLM-OCR-bf16")
-
-# Инициализация клиента OpenAI (один раз при загрузке модуля)
-client = OpenAI(
-    api_key=VISION_API_KEY,
-    base_url=VISION_API_BASE_URL,
-)
-
 
 def preprocess_and_encode(base64_str: str) -> str:
     """Очищает изображение с доски и возвращает base64 PNG для отправки в Vision API."""
@@ -83,29 +68,16 @@ class OCRView(APIView):
             # Запрос к VLM (GLM-OCR на Mac Studio, :8081) через OpenAI-совместимый API
             try:
                 logger.info(f"Sending Vision OCR request to {VISION_API_BASE_URL} (model: {VISION_MODEL_NAME})")
-                response = client.chat.completions.create(
+                extracted_text = glm_chat_image(
+                    image_base64=processed_b64,
+                    user_prompt=(
+                        "Extract all text and math formulas from this whiteboard image. "
+                        "Return only the extracted text, nothing else."
+                    ),
                     model=VISION_MODEL_NAME,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": "Extract all text and math formulas from this whiteboard image. Return only the extracted text, nothing else."
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{processed_b64}"
-                                    }
-                                }
-                            ],
-                        }
-                    ],
                     max_tokens=500,
                     timeout=30,
                 )
-                extracted_text = response.choices[0].message.content.strip()
 
             except Exception as e:
                 error_msg = str(e)
@@ -135,4 +107,3 @@ class OCRView(APIView):
             logger.error(f"Unexpected OCR Error: {str(e)}", exc_info=True)
             import traceback
             return Response({'error': str(e), 'traceback': traceback.format_exc()}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-

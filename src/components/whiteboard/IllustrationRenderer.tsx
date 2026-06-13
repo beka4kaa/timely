@@ -7,20 +7,27 @@
  * (а не как разрозненные элементы доски). Строгая Z-index архитектура:
  *
  *   Контейнер  — position: relative, inline-block, width: 100%
- *   Слой 1 (10) — <img base_image_url>     : фундамент, всегда 100% ширины
- *   Слой 2 (20) — <svg> с полигонами SAM2  : opacity 0 → проявляются на :hover
- *   Слой 3 (30) — <div> подписи            : sans-serif, абсолютно по процентам
+ *   Слой 1 (0)  — <img base_image_url>     : фундамент, всегда 100% ширины
+ *   Слой 2 (10) — <svg> с полигонами SAM2  : opacity 0 → проявляются на :hover
+ *   Слой 3 (20) — <div> подписи            : динамический контраст + ореол
  *
  * Координаты подписей (x/y) и полигонов масок приходят в ПРОЦЕНТАХ от
  * размеров картинки (0–100), поэтому позиционируются напрямую через
  * left/top: N% и SVG viewBox="0 0 100 100" — выравнивание идеальное при
  * любом масштабе доски.
+ *
+ * Контраст подписей (композитинг «как у Figure Labs»): цвет текста
+ * выбирается по реальной яркости пикселей картинки под подписью
+ * (offscreen-canvas сэмплирование, один раз на загрузку картинки), а
+ * плотный ореол text-shadow тоном фона «прорезает» стрелки/линии,
+ * запечённые в картинку под текстом. См. src/lib/illustration-contrast.ts.
  */
 
 import React from "react";
-import { InlineMath } from "react-katex";
+import Latex from "react-latex-next";
 import "katex/dist/katex.min.css";
 import type { IllustrationLabel, IllustrationMask } from "@/stores/whiteboard";
+import { useSmartLabels, contrastStylesFor } from "@/lib/illustration-contrast";
 
 export interface IllustrationRendererProps {
   id: string;
@@ -28,17 +35,8 @@ export interface IllustrationRendererProps {
   labels?: IllustrationLabel[];
   masks?: IllustrationMask[] | null;
   alt?: string;
-}
-
-/** Лейбл может нести LaTeX («$F = ma$») — рендерим его через KaTeX. */
-function hasLatex(text: string): boolean {
-  return /\$/.test(text);
-}
-function stripLatex(text: string): string {
-  const s = text.trim();
-  if (/^\$\$[\s\S]+\$\$$/.test(s)) return s.slice(2, -2).trim();
-  if (/^\$[\s\S]+\$$/.test(s)) return s.slice(1, -1).trim();
-  return s;
+  /** Стиль генерации (flat/2_5d/3d/sketch): sketch → рукописный шрифт подписей. */
+  genStyle?: string;
 }
 
 export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
@@ -46,8 +44,24 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
   labels = [],
   masks,
   alt = "Иллюстрация",
+  genStyle,
 }) => {
   const hasMasks = Array.isArray(masks) && masks.length > 0;
+
+  // Детерминированная раскладка подписей: позиции текста от модели игнорируем,
+  // якорь — заземлённый центр объекта (arrow_to), вокруг него правила выбирают
+  // чистое стабильное место (см. useSmartLabels). Один проход на загрузку src.
+  const placements = useSmartLabels(src, labels);
+
+  // Типографика: рукописный Caveat ТОЛЬКО для sketch (hand-lettering, как на
+  // чернильных конспектах), остальным стилям — строгий современный sans
+  // (Plus Jakarta). Подписи держим компактными: основную картинку должен вести
+  // растр, а текст — быть тихим overlay-слоем.
+  const handwritten = genStyle === "sketch";
+  const labelFontClass = handwritten
+    ? "absolute font-handwriting font-semibold"
+    : "absolute font-sans font-medium";
+  const labelFontSize = handwritten ? 14 : 10;
 
   return (
     <div
@@ -59,13 +73,15 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
         userSelect: "none",
       }}
     >
-      {/* ── Слой 1 (база): оригинальная картинка от Banana. Всегда видна. ── */}
+      {/* ── Слой 1 (z-0, база): оригинальная картинка от Banana. Всегда видна. ── */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt={alt}
         draggable={false}
         style={{
+          position: "relative",
+          zIndex: 0,
           display: "block",
           width: "100%",
           height: "auto",
@@ -73,7 +89,7 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
         }}
       />
 
-      {/* ── Слой 2 (маски, опционально): подсветка объектов на :hover ── */}
+      {/* ── Слой 2 (z-10, маски/графика): подсветка объектов на :hover ── */}
       {hasMasks && (
         <svg
           viewBox="0 0 100 100"
@@ -84,7 +100,7 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
             inset: 0,
             width: "100%",
             height: "100%",
-            zIndex: 20,
+            zIndex: 10,
             pointerEvents: "none", // контейнер «прозрачен»; полигоны включают события сами
           }}
         >
@@ -110,30 +126,36 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
         </svg>
       )}
 
-      {/* ── Слой 3 (текст): подписи с эффектом «Text Halo» (как на картах) ──
-          Никаких фоновых «стикеров»: тёмный текст + плотный белый ореол через
-          многократный textShadow — читается и на тёмных, и на пёстрых участках. */}
+      {/* ── Слой 3 (z-20, текст): подписи на детерминированных позициях ──
+          Позиция — из useSmartLabels (правила вокруг якоря-объекта, а не
+          «куда показалось модели»), шрифт — по стилю генерации (sketch →
+          рукописный Caveat, прочие → sans), цвет — по реальной яркости
+          пикселей под подписью, ореол АДАПТИВНЫЙ: включается только на
+          пёстром / среднесером фоне и исчезает на чистом. KaTeX-формулы
+          рендерятся математическим шрифтом KaTeX, но наследуют currentColor
+          и text-shadow — композитинг тот же. */}
       {labels.map((label, i) => {
-        const { content, x, y } = label;
+        const { content } = label;
+        const place = placements[i] ?? { x: label.x, y: label.y, sample: null };
         return (
           <div
             key={i}
-            className="absolute font-sans font-semibold text-gray-900"
+            className={labelFontClass}
             style={{
-              left: `${x}%`,
-              top: `${y}%`,
+              left: `${place.x}%`,
+              top: `${place.y}%`,
               transform: "translate(-50%, -50%)",
-              zIndex: 30,
+              zIndex: 20,
               pointerEvents: "none",
-              fontSize: 13,
-              lineHeight: 1.2,
-              whiteSpace: "nowrap",
-              // Многократное повторение → плотный непрозрачный контур (имитация stroke)
-              textShadow:
-                "0 0 6px white, 0 0 6px white, 0 0 6px white, 0 0 6px white",
+              fontSize: labelFontSize,
+              lineHeight: 1.1,
+              maxWidth: "30%",
+              textAlign: "center",
+              whiteSpace: "normal",
+              ...contrastStylesFor(place.sample),
             }}
           >
-            {hasLatex(content) ? <InlineMath>{stripLatex(content)}</InlineMath> : content}
+            <Latex>{content}</Latex>
           </div>
         );
       })}

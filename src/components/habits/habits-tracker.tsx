@@ -226,11 +226,20 @@ export function HabitsTracker() {
   const handleToggle = async (id: number) => {
     const target = habits.find((h) => h.id === id)
     const wasDone = target?.doneToday
-    // optimistic
-    setHabits((prev) => prev.map((h) => h.id === id ? {
-      ...h, doneToday: !h.doneToday,
-      streak: !h.doneToday ? h.streak + 1 : Math.max(0, h.streak - 1),
-    } : h))
+    const todayIso = new Date().toISOString().slice(0, 10)
+    // optimistic — флипаем и СЕГОДНЯШНИЙ день в calendar, чтобы спарклайн
+    // (прогресс-бар на карточке) обновлялся мгновенно, не дожидаясь ответа
+    // сервера (раньше calendar менялся только после round-trip — отсюда задержка).
+    setHabits((prev) => prev.map((h) => {
+      if (h.id !== id) return h
+      const nowDone = !h.doneToday
+      return {
+        ...h,
+        doneToday: nowDone,
+        streak: nowDone ? h.streak + 1 : Math.max(0, h.streak - 1),
+        calendar: h.calendar.map((c) => (c.date === todayIso ? { ...c, done: nowDone } : c)),
+      }
+    }))
     const res = await api(`/${id}/toggle/`, email, { method: 'POST' })
     if (res.ok) {
       const updated = mapHabit(await res.json())

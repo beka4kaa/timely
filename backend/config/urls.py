@@ -12,9 +12,12 @@ from ai_engine.views import (
 from accounts.views import RegisterView, LoginView, LeaderboardViewSet
 from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 from ai_engine.ocr_views import OCRView
+from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from habits.views import HabitViewSet
+from nutrition.views import FoodSearchView, BarcodeLookupView, OffSearchView
+from nutrition.photo_views import AnalyzePhotoView
 
 
 
@@ -60,8 +63,20 @@ urlpatterns = [
     path('api/ai/schedule/', ScheduleView.as_view(), name='ai-schedule'),
     path('api/ai/ocr/', OCRView.as_view(), name='ai-ocr'),
     path('api/ai/ocr', OCRView.as_view(), name='ai-ocr-no-slash'),
+    path('api/ai/analyze-canvas/', CanvasAnalyzerView.as_view(), name='ai-analyze-canvas'),
+    path('api/ai/analyze-canvas', CanvasAnalyzerView.as_view(), name='ai-analyze-canvas-no-slash'),
     path('api/ai/solve/', SolveTaskView.as_view(), name='ai-solve'),
     path('api/ai/solve', SolveTaskView.as_view(), name='ai-solve-no-slash'),
     path('api/ai/draw/', WhiteboardDrawView.as_view(), name='ai-draw'),
     path('api/ai/draw', WhiteboardDrawView.as_view(), name='ai-draw-no-slash'),
+
+    # Nutrition: food library search + barcode lookup (Open Food Facts proxy)
+    path('api/nutrition/foods/', FoodSearchView.as_view(), name='nutrition-foods'),
+    path('api/nutrition/foods', FoodSearchView.as_view(), name='nutrition-foods-no-slash'),
+    path('api/nutrition/search-off/', OffSearchView.as_view(), name='nutrition-search-off'),
+    path('api/nutrition/search-off', OffSearchView.as_view(), name='nutrition-search-off-no-slash'),
+    path('api/nutrition/barcode/<str:code>/', BarcodeLookupView.as_view(), name='nutrition-barcode'),
+    path('api/nutrition/barcode/<str:code>', BarcodeLookupView.as_view(), name='nutrition-barcode-no-slash'),
+    path('api/nutrition/analyze-photo/', AnalyzePhotoView.as_view(), name='nutrition-analyze-photo'),
+    path('api/nutrition/analyze-photo', AnalyzePhotoView.as_view(), name='nutrition-analyze-photo-no-slash'),
 ]

@@ -40,6 +40,15 @@ export function HabitCard({
   const [burst, setBurst] = useState(false)
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressed = useRef(false)
+  // Один toggle на ЖЕСТ: без этого pointerup иногда срабатывал дважды (наш
+  // обработчик + tap-жест framer-motion / compat-события), карточка вспыхивала
+  // «done» и тут же откатывалась обратно — это и был баг «сработало на секунду».
+  const handled = useRef(false)
+  // Старт касания + флаг «палец поехал»: если пользователь скроллит ВЕРТИКАЛЬНО
+  // поверх карточки, это не тап — гасим long-press и не переключаем привычку
+  // (вместе с touch-action: pan-y это и чинит «экран не скроллится» на телефоне).
+  const startPos = useRef<{ x: number; y: number } | null>(null)
+  const moved = useRef(false)
   const featured = habit.streak >= 14
 
   const clearPress = () => {
@@ -49,18 +58,35 @@ export function HabitCard({
     }
   }
 
-  const handlePointerDown = () => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     longPressed.current = false
+    handled.current = false
+    moved.current = false
+    startPos.current = { x: e.clientX, y: e.clientY }
     pressTimer.current = setTimeout(() => {
+      if (moved.current) return
       longPressed.current = true
       softHaptic()
       onOpen(habit)
     }, 420)
   }
 
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!startPos.current) return
+    const dx = Math.abs(e.clientX - startPos.current.x)
+    const dy = Math.abs(e.clientY - startPos.current.y)
+    if (dx > 10 || dy > 10) {
+      moved.current = true   // это скролл/перетаскивание, а не тап
+      clearPress()
+    }
+  }
+
   const handlePointerUp = () => {
     clearPress()
-    if (longPressed.current) return
+    if (handled.current) return   // защита от повторного срабатывания на жест
+    handled.current = true
+    if (longPressed.current) return   // долгое нажатие уже открыло детали
+    if (moved.current) return         // это был скролл, не тап
     if (!done) {
       setBurst(true)
       setTimeout(() => setBurst(false), 650)
@@ -76,12 +102,15 @@ export function HabitCard({
       whileTap={{ scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 400, damping: 28 }}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={clearPress}
-      onPointerCancel={clearPress}
+      onPointerCancel={() => { clearPress(); moved.current = true }}
       onContextMenu={(e) => e.preventDefault()}
       className={cn(
-        'relative overflow-hidden rounded-[28px] p-5 cursor-pointer select-none touch-none min-h-[150px]',
+        // touch-pan-y (а не touch-none): вертикальный скролл проходит сквозь
+        // карточку на телефоне; тап/long-press по-прежнему ловим через pointer.
+        'relative overflow-hidden rounded-[28px] p-5 cursor-pointer select-none touch-pan-y min-h-[150px]',
         'flex flex-col justify-between',
         featured && 'sm:col-span-2',
         done ? 'text-white' : cn(GLASS, 'text-card-foreground')

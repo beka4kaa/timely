@@ -24,17 +24,28 @@ export function SiteHeader() {
     )
   }
 
-  // 2. Стандартный блочный Header для остальных страниц
+  // 2. Стандартный блочный Header для остальных страниц (glassmorphism)
+  // Полупрозрачное стекло: blur + saturate (цвета за стеклом «оживают», как у
+  // Apple) + тонкий световой блик по верхней кромке (glass sheen) и аккуратная
+  // нижняя hairline. Без кричащих градиентов — «переливается» светом, не цветом.
   return (
-    <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
+    <header className="relative flex h-16 shrink-0 items-center gap-2 px-4 bg-white/55 dark:bg-[#0c0c12]/55 backdrop-blur-2xl backdrop-saturate-150">
+      {/* верхний световой блик стекла */}
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent dark:via-white/15" />
+      {/* нижняя hairline */}
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-black/[0.06] dark:bg-white/[0.07]" />
       <div className="flex w-full items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Универсальный триггер сайдбара, физически сдвигающий заголовок вправо */}
+          {/* Универсальный триггер сайдбара (только иконка — без «Панель управления»). */}
           <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6 mx-1" />
-          <h1 className="text-lg font-semibold">
-            {isDiary ? "Дневник" : "Панель управления"}
-          </h1>
+          {/* Заголовок оставляем ТОЛЬКО для Дневника; на остальных страницах —
+              чистые иконки, без надписи «Панель управления». */}
+          {isDiary && (
+            <>
+              <Separator orientation="vertical" className="h-6 mx-1" />
+              <h1 className="text-lg font-semibold">Дневник</h1>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-1">

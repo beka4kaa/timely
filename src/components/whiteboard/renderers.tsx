@@ -24,6 +24,11 @@ export interface TextRendererProps {
   id: string;
   content: string;
   typewriterDelay?: number;
+  width?: number;
+  fontSize?: number;
+  lineHeight?: number;
+  color?: string;
+  variant?: 'heading' | 'body' | 'formula' | 'table';
 }
 
 /**
@@ -70,13 +75,36 @@ function useTypewriter(content: string, speed: number) {
 
 export const TextRenderer: React.FC<TextRendererProps> = ({ 
   content, 
-  typewriterDelay = 30 
+  typewriterDelay = 30,
+  width,
+  fontSize,
+  lineHeight,
+  color,
+  variant = 'body',
 }) => {
   const displayedContent = useTypewriter(content, typewriterDelay);
+  const isTable = variant === 'table';
+  const isHeading = variant === 'heading';
+  const effectiveFontSize = fontSize ?? (isHeading ? 24 : isTable ? 16 : 20);
+  const effectiveLineHeight = lineHeight ?? (isHeading ? 1.18 : isTable ? 1.35 : 1.28);
 
   return (
-    // font-virgil класс должен быть подключен в глобальных стилях для кастомного шрифта
-    <div className="font-virgil text-lg whitespace-pre-wrap text-zinc-100">
+    <div
+      className={[
+        isTable ? 'font-mono' : 'font-virgil',
+        'whitespace-pre-wrap break-words text-zinc-100',
+        isHeading ? 'font-semibold' : '',
+      ].join(' ')}
+      style={{
+        width,
+        maxWidth: width,
+        fontSize: effectiveFontSize,
+        lineHeight: effectiveLineHeight,
+        color: color ?? '#f8fafc',
+        letterSpacing: 0,
+        textShadow: '0 1px 2px rgba(0,0,0,0.45)',
+      }}
+    >
       <Latex>{displayedContent}</Latex>
     </div>
   );

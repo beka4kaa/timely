@@ -291,6 +291,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
                 labels={el.labels}
                 masks={el.masks}
                 alt={el.alt}
+                genStyle={el.genStyle}
               />
             </DraggableBoardNode>
           );
@@ -311,7 +312,16 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           >
             <InteractiveElement element={el} cameraZoom={camera.zoom}>
               {el.type === "TEXT" && (
-                <TextRenderer id={el.id} content={el.content} typewriterDelay={30} />
+                <TextRenderer
+                  id={el.id}
+                  content={el.content}
+                  typewriterDelay={el.content.length > 240 ? 4 : 12}
+                  width={el.width}
+                  fontSize={el.fontSize}
+                  lineHeight={el.lineHeight}
+                  color={el.color}
+                  variant={el.variant}
+                />
               )}
               {el.type === "GRAPH" && (
                 <GraphRenderer id={el.id} func={el.function} domain={el.domain} width={300} height={300} />
@@ -338,9 +348,11 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
         );
       })}
 
-      {/* Floating Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-2 rounded-full bg-white/70 dark:bg-black/70 backdrop-blur-md border border-black/10 dark:border-white/20 shadow-xl shadow-black/10 dark:shadow-black/40">
-        <div className="flex items-center gap-1">
+      {/* Floating Toolbar — vertical left side */}
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-1.5 px-2 py-3 rounded-2xl bg-white/60 dark:bg-white/[0.05] backdrop-blur-xl border border-white/50 dark:border-white/[0.10] shadow-[0_8px_32px_rgba(15,23,42,0.12)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)] ring-1 ring-white/80 dark:ring-white/[0.06]">
+
+        {/* Colors */}
+        <div className="flex flex-col items-center gap-1">
           {COLORS.map((c) => (
             <button
               key={c}
@@ -353,9 +365,10 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           ))}
         </div>
 
-        <div className="w-px h-5 bg-black/10 dark:bg-white/15 mx-1.5" />
+        <div className="h-px w-5 bg-black/10 dark:bg-white/15 my-0.5" />
 
-        <div className="flex items-center gap-1">
+        {/* Stroke widths */}
+        <div className="flex flex-col items-center gap-1">
           {WIDTHS.map((w) => (
             <button
               key={w}
@@ -369,9 +382,9 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           ))}
         </div>
 
-        <div className="w-px h-5 bg-black/10 dark:bg-white/15 mx-1.5" />
+        <div className="h-px w-5 bg-black/10 dark:bg-white/15 my-0.5" />
 
-        {/* Element spawn buttons */}
+        {/* +Text */}
         <button
           onClick={() => {
             const center = screenToCanvas(window.innerWidth / 2 - 100, window.innerHeight / 2 - 50, camera);
@@ -384,11 +397,13 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
               }
             }]);
           }}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-medium text-blue-400 hover:bg-blue-500/20 transition-colors"
+          className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl text-xs font-semibold text-blue-400 hover:bg-blue-500/20 transition-colors leading-none"
         >
-          +Text
+          <span className="text-base leading-none">T</span>
+          <span className="text-[9px] opacity-70">text</span>
         </button>
 
+        {/* +Graph */}
         <button
           onClick={() => {
             const center = screenToCanvas(window.innerWidth / 2 - 150, window.innerHeight / 2 - 150, camera);
@@ -402,44 +417,48 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
               }
             }]);
           }}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+          className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-colors leading-none"
         >
-          +Graph
+          <span className="text-base leading-none">∫</span>
+          <span className="text-[9px] opacity-70">graph</span>
         </button>
 
-        <div className="w-px h-6 bg-black/10 dark:bg-white/15 mx-1" />
+        <div className="h-px w-5 bg-black/10 dark:bg-white/15 my-0.5" />
 
+        {/* Undo */}
         <button
           onClick={undo}
           disabled={strokes.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-slate-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          title="Undo"
+          className="flex items-center justify-center w-7 h-7 rounded-xl text-slate-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
         >
           <Undo2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Undo</span>
         </button>
 
+        {/* Clear */}
         <button
           onClick={clearCanvas}
           disabled={strokes.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          title="Clear"
+          className="flex items-center justify-center w-7 h-7 rounded-xl text-red-400 hover:bg-red-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
         >
           <Trash2 className="w-4 h-4" />
-          <span className="hidden sm:inline">Clear</span>
         </button>
 
+        {/* Scan / OCR */}
         <button
           onClick={handleOCR}
           disabled={isOCRProcessing || strokes.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-purple-400 hover:bg-purple-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          title={isOCRProcessing ? "Scanning..." : "Scan"}
+          className="flex items-center justify-center w-7 h-7 rounded-xl text-purple-400 hover:bg-purple-500/20 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
         >
           <Scan className={`w-4 h-4 ${isOCRProcessing ? "animate-pulse" : ""}`} />
-          <span className="hidden sm:inline">{isOCRProcessing ? "Scanning..." : "Scan"}</span>
         </button>
 
-        <div className="w-px h-6 bg-black/10 dark:bg-white/15 mx-1" />
+        <div className="h-px w-5 bg-black/10 dark:bg-white/15 my-0.5" />
 
         {/* Zoom indicator */}
-        <span className="text-xs font-mono text-slate-500 dark:text-zinc-400 min-w-[3rem] text-center">
+        <span className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 text-center tabular-nums">
           {zoomPercent}%
         </span>
       </div>

@@ -6,7 +6,7 @@ import { Flame, CalendarCheck, Trophy, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Habit, daysWord, GLASS } from './lib'
 
-const WEEKDAYS = ['', 'Пн', '', 'Ср', '', 'Пт', '']
+const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
 
 function StatCard({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: string }) {
@@ -59,7 +59,6 @@ export function Analytics({ habits }: { habits: Habit[] }) {
     if (intensity <= 0) return undefined
     return `rgba(16, 185, 129, ${0.25 + 0.75 * Math.min(1, intensity)})`
   }
-
   // month labels: detect first column of each month
   const monthLabels = weeks.map((w, i) => {
     const first = w[0]
@@ -80,43 +79,62 @@ export function Analytics({ habits }: { habits: Habit[] }) {
       </div>
 
       {/* Heatmap */}
-      <div className={cn(GLASS, 'rounded-[24px] p-5 overflow-x-auto')}>
-        <h3 className="font-plus-jakarta text-sm font-bold mb-4">Карта активности · 17 недель</h3>
-        <div className="inline-flex flex-col gap-1 min-w-max">
-          {/* month row */}
-          <div className="flex gap-1 ml-7">
-            {monthLabels.map((m, i) => (
-              <div key={i} className="w-3.5 text-[9px] text-muted-foreground">{m}</div>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            {/* weekday labels */}
-            <div className="flex flex-col gap-1 mr-1.5">
-              {WEEKDAYS.map((d, i) => (
-                <div key={i} className="h-3.5 text-[9px] text-muted-foreground leading-[14px] w-5">{d}</div>
+      <div className={cn(GLASS, 'rounded-[24px] p-5 sm:p-6 overflow-hidden')}>
+        <div className="mb-5">
+          <h3 className="font-plus-jakarta text-sm font-bold">Карта активности</h3>
+        </div>
+
+        <div className="w-full overflow-x-auto pb-1">
+          <div className="mx-auto flex w-max min-w-[650px] flex-col gap-1.5">
+            {/* month row */}
+            <div className="flex gap-1.5 pl-[104px]">
+              {monthLabels.map((m, i) => (
+                <div key={i} className="w-5 text-[10px] font-medium text-muted-foreground">
+                  {m}
+                </div>
               ))}
             </div>
-            {/* columns */}
-            {weeks.map((week, wi) => (
-              <div key={wi} className="flex flex-col gap-1">
-                {week.map((cell) => (
+
+            <div className="flex gap-1.5">
+              {/* weekday labels */}
+              <div className="mr-2 flex w-24 shrink-0 flex-col gap-1.5">
+                {WEEKDAYS.map((d) => (
                   <div
-                    key={cell.date}
-                    className="w-3.5 h-3.5 rounded-[3px] border border-black/5 dark:border-white/5"
-                    style={{ backgroundColor: cellColor(cell.intensity) ?? 'var(--muted, hsl(210 40% 96%))' }}
-                    title={`${cell.date}: ${cell.count} из ${habits.length}`}
-                  />
+                    key={d}
+                    className="h-5 text-right text-[11px] font-medium leading-5 text-muted-foreground"
+                  >
+                    {d}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
-          {/* legend */}
-          <div className="flex items-center gap-1.5 mt-3 ml-7 text-[10px] text-muted-foreground">
-            меньше
-            {[0, 0.25, 0.5, 0.75, 1].map((i) => (
-              <div key={i} className="w-3 h-3 rounded-[3px]" style={{ backgroundColor: cellColor(i) ?? 'var(--muted, hsl(210 40% 96%))' }} />
-            ))}
-            больше
+
+              {/* columns */}
+              {weeks.map((week, wi) => (
+                <div key={wi} className="flex flex-col gap-1.5">
+                  {week.map((cell) => (
+                    <div
+                      key={cell.date}
+                      className="h-5 w-5 rounded-[5px] border border-black/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-transform hover:scale-125 dark:border-white/10"
+                      style={{ backgroundColor: cellColor(cell.intensity) ?? 'rgba(148, 163, 184, 0.10)' }}
+                      title={`${cell.date}: ${cell.count} из ${habits.length}`}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* legend */}
+            <div className="mt-4 flex items-center gap-2 pl-[104px] text-[11px] text-muted-foreground">
+              меньше
+              {[0, 0.25, 0.5, 0.75, 1].map((i) => (
+                <div
+                  key={i}
+                  className="h-4 w-4 rounded-[4px] border border-black/10 dark:border-white/10"
+                  style={{ backgroundColor: cellColor(i) ?? 'rgba(148, 163, 184, 0.10)' }}
+                />
+              ))}
+              больше
+            </div>
           </div>
         </div>
       </div>

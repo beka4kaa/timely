@@ -11,7 +11,7 @@ from rest_framework import status
 # Reuse the already-configured OpenRouter client + model from solve_views
 from .solve_views import openrouter_client, OPENROUTER_MODEL
 
-# Image enrichment: resolves image_prompt → image_url via BananaPro / gemini-pro-image
+# Image enrichment: resolves image_prompt → image_url via Nano Banana 2
 from .image_enrichment import enrich_board_steps
 
 logger = logging.getLogger(__name__)
@@ -27,14 +27,22 @@ DRAW_SYSTEM_PROMPT = r"""Ты — интерактивный AI-учитель �
 ПРАВИЛА:
 1. Запрещён любой текст вне JSON — ни до, ни после, ни в markdown-обёртке (```).
 2. Для любых рисунков, схем, геометрии (кубы, круги, графики и т.д.) ВСЕГДА используй команду "image_with_labels". Эта команда триггерит мощный генератор изображений. НЕ пытайся рисовать примитивами.
-3. Доска имеет координаты X и Y в виртуальном пространстве ~960×680 (0,0 — левый верхний угол). Располагай элементы ПОСЛЕДОВАТЕЛЬНО сверху вниз, с отступом минимум 80–120px по Y между ними — не накладывай их друг на друга.
+3. Для лекций/теории/пошаговых объяснений НЕ пытайся верстать текст пиксельными координатами. Верни команды в порядке чтения: короткий текстовый блок → формула/таблица/иллюстрация при необходимости → следующий текстовый блок. Фронтенд сам детерминированно разложит это на доске колонками сверху вниз, затем в новый столбец. Для text/formula/table/barchart можно ставить x=0,y=0.
 4. Не более 10 команд суммарно по всем шагам (это важно для скорости генерации).
+4a. КРИТИЧНО: используй МАКСИМУМ ОДНУ команду "image_with_labels" на весь ответ. Одна задача = одна иллюстрация. НЕ создавай несколько картинок (по одной на этап) — собери всё в ОДНУ иллюстрацию с несколькими подписями (labels). Это жёсткое правило.
 5. Если рисовать ничего не нужно (чистая теория/объяснение) — верни "board_steps": [] или шаги с пустыми "commands": [].
+5a. Если пользователь просит «полную лекцию», «объясни тему», «как учитель на доске» — обязательно дели материал на 3–7 коротких text/formula/table блоков, не одним огромным текстом. Длинный абзац хуже: его сложнее читать и он чаще пересекается с рисунками.
 6. "reply" — короткий ответ ученику в чат (1-3 предложения, на языке вопроса).
+7. "intent" — ОБЯЗАТЕЛЬНАЯ классификация запроса:
+   • "restyle" — пользователь просит перерисовать УЖЕ СОЗДАННУЮ иллюстрацию в другом стиле/виде, НЕ меняя тему и состав сцены: «сделай скетч», «do 3d», «теперь в другом стиле», «перерисуй красивее», «сделай 2.5d» и т.п. Смотри на историю диалога: если до этого была нарисована иллюстрация и запрос — короткая команда про стиль/вид, это restyle. При restyle поле image_prompt должно описывать ТО ЖЕ СОДЕРЖАНИЕ, что у предыдущей иллюстрации; labels можешь не придумывать заново — система переиспользует подписи предыдущей картинки.
+   • "new" — новая тема, другой вопрос, либо содержательное изменение сцены («добавь горы», «убери реку», «нарисуй клетку»).
+   Если сомневаешься — ставь "new".
+8. История диалога — слабый контекст. ТЕКУЩЕЕ сообщение пользователя всегда главный источник содержания. Не переноси объекты, стрелки, подписи, цвета или тему из прошлых картинок, если пользователь явно не просит «то же самое», «эту картинку», «продолжи», «добавь/убери» или сменить стиль текущей иллюстрации.
 
 СТРУКТУРА ОТВЕТА (строго такие ключи верхнего уровня):
 {
   "reply": "короткий ответ ученику в чат",
+  "intent": "restyle | new",
   "subject": "предмет, например 'Физика'",
   "topic": "тема задачи одной строкой",
   "board_steps": [
@@ -70,7 +78,6 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
         "content": "Верхняя грань",
         "x": 50,
         "y": 20,
-        "color": "#ffffff",
         "arrow_to": {"x": 50, "y": 30}
       }
     ]
@@ -80,11 +87,14 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
   • Это твой ЕДИНСТВЕННЫЙ способ рисовать. Используй его для всего, что требует рисунка.
   • image_prompt — ТОЛЬКО английский, и описывает ТОЛЬКО СОДЕРЖАНИЕ: какие объекты на картинке, их форма, цвет, взаимное расположение, пропорции, ракурс/перспектива. НЕ пиши слова о художественном стиле ('3d render', 'minimalist', 'realistic', 'cartoon', 'sketch', 'photo' и т.п.) — единый визуальный стиль для ВСЕХ иллюстраций уже жёстко задан системой централизованно (это сделано специально, чтобы все картинки в уроке выглядели так, будто их нарисовал один художник в одной манере). Твоя задача — только описать ЧТО изображено, а не КАК это нарисовано.
   • Никогда не упоминай текст, подписи, цифры или надписи внутри image_prompt — для подписей есть отдельное поле "labels".
+  • ВАЖНО: названия процессов/объектов тоже НЕ должны быть просьбой написать слова на картинке. В image_prompt описывай визуальные признаки, объекты, движение, стрелки и взаимное расположение; любые слова для пользователя клади только в labels.content.
+  • Для задач по физике/математике/механике делай image_prompt как простую школьную схему: только нужные тела, опоры, нити/пружины и 1–3 необходимые стрелки движения/сил. Не добавляй фон, пейзаж, декоративные элементы, лишние механизмы и лишние стрелки “для красоты”.
   • x/y в labels — проценты от размера изображения (0–100), НЕ пиксели.
   • arrow_to — координаты цели стрелки в тех же процентах.
   • content может содержать LaTeX: "$F = ma$".
+  • Не задавай цвет подписи. Цвет overlay-текста выбирает приложение автоматически: только чёрный или белый по яркости фона.
   • "requires_segmentation" (boolean) — нужно ли ВЫРЕЗАТЬ отдельные объекты на картинке для интерактивной подсветки:
-    – Ставь FALSE по умолчанию — для пейзажей, сцен, процессов, диаграмм-схем, где подписи просто указывают на области целостной картинки. Примеры FALSE: «круговорот воды», «строение атмосферы», «экосистема леса», «солнечная система», карта, любой пейзаж или непрерывная сцена.
+    – Ставь FALSE по умолчанию — для пейзажей, сцен, процессов, карт, непрерывных систем и диаграмм-схем, где подписи просто указывают на области целостной картинки.
     – Ставь TRUE ТОЛЬКО когда на картинке есть НЕСКОЛЬКО ЧЁТКО ОТДЕЛЬНЫХ физических объектов, каждый из которых нужно выделить по контуру. Примеры TRUE: «органеллы внутри клетки» (ядро, митохондрия, рибосома — отдельные тела), «детали механизма», «геометрические тела рядом» (куб и сфера), «органы человека на схеме».
     – Если сомневаешься — ставь FALSE.
 
@@ -112,6 +122,57 @@ def _extract_json(text: str):
         except Exception:
             return None
     return None
+
+
+_STYLE_RESTYLE_RE = re.compile(
+    r"^\s*(?:"
+    r"(?:do|make|turn|convert|redraw|rerender|re-render|перерисуй|сделай|сделать|преобразуй|измени)\s+"
+    r"(?:it|this|это|её|его|картинку|иллюстрацию|изображение)?\s*"
+    r"(?:as|to|into|in|в)?\s*"
+    r"(?:sketch|скетч|скетчем|3d|2\.?5d|2_5d|flat|флэт|плоском|монохром|monochrome)"
+    r"|"
+    r"(?:sketch|скетч|3d|2\.?5d|2_5d|flat|флэт|monochrome|монохром)\s*(?:style|стиль|режим)?"
+    r")\s*[.!?]*\s*$",
+    re.I,
+)
+
+
+_CONTEXTUAL_FOLLOWUP_RE = re.compile(
+    r"("
+    r"\b(?:same|previous|again|continue|add|remove|change|edit|that|this|it)\b|"
+    r"\b(?:ещ[её]|снова|продолж|добав|убер|измени|поменяй|перерисуй|сделай|"
+    r"та\s*же|то\s*же|эт[ауо]|эту|это|картинк|иллюстрац|предыдущ)\b"
+    r")",
+    re.I,
+)
+
+
+def _looks_like_style_restyle(text: str) -> bool:
+    """Короткие команды вида "do sketch" должны менять стиль текущей картинки."""
+    if not isinstance(text, str):
+        return False
+    return bool(_STYLE_RESTYLE_RE.match(text))
+
+
+def _needs_chat_history(text: str) -> bool:
+    """Use old chat only for explicit follow-ups; new tasks stay clean."""
+    if not isinstance(text, str):
+        return False
+    return _looks_like_style_restyle(text) or bool(_CONTEXTUAL_FOLLOWUP_RE.search(text))
+
+
+def _history_for_model(history: list, user_message: str) -> list:
+    if not _needs_chat_history(user_message):
+        return []
+    clean = []
+    for msg in history[-6:]:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            clean.append({"role": role, "content": content.strip()[:900]})
+    return clean
 
 
 # Command types the frontend AITutorBoard component understands
@@ -239,7 +300,7 @@ def _sanitize_command(cmd):
         if isinstance(cmd.get("alt"), str) and cmd["alt"].strip():
             out["alt"] = cmd["alt"].strip()
 
-        # labels: [{content, x, y, color?, fontSize?, arrow_to?}]
+        # labels: [{content, x, y, fontSize?, arrow_to?}]
         raw_labels = cmd.get("labels")
         if isinstance(raw_labels, list):
             clean_labels = []
@@ -254,8 +315,6 @@ def _sanitize_command(cmd):
                     "x": _num(lbl.get("x"), 0),
                     "y": _num(lbl.get("y"), 0),
                 }
-                if isinstance(lbl.get("color"), str):
-                    clean_lbl["color"] = lbl["color"]
                 if "fontSize" in lbl:
                     clean_lbl["fontSize"] = _num(lbl["fontSize"], 0.85)
                 # arrow_to: {x, y}
@@ -289,7 +348,14 @@ def _sanitize_board_data(parsed):
     if not isinstance(steps_in, list) or not steps_in:
         return None
 
+    # Жёсткий лимит: МАКСИМУМ ОДНА сгенерированная иллюстрация (image_with_labels)
+    # на весь ответ. Системный промпт просит модель об этом, но LLM не всегда
+    # слушается и иногда возвращает несколько image_with_labels (по одной на под-
+    # этап темы) — на доску тогда валится сразу 3-4 картинки с одного запроса.
+    # Считаем их сквозным счётчиком по всем шагам и отбрасываем всё сверх первой
+    # (заодно экономим вызовы генератора — обогащается только одна).
     steps = []
+    image_count = 0
     for i, step in enumerate(steps_in):
         if not isinstance(step, dict):
             continue
@@ -298,8 +364,13 @@ def _sanitize_board_data(parsed):
         if isinstance(commands_in, list):
             for c in commands_in:
                 clean = _sanitize_command(c)
-                if clean is not None:
-                    commands.append(clean)
+                if clean is None:
+                    continue
+                if clean.get("type") == "image_with_labels":
+                    if image_count >= 1:
+                        continue  # уже есть одна иллюстрация — лишние режем
+                    image_count += 1
+                commands.append(clean)
         if not commands:
             continue
         steps.append(
@@ -335,12 +406,19 @@ class WhiteboardDrawView(APIView):
         # применяются ко всем иллюстрациям этого ответа (см. enrich_board_steps).
         gen_style = data.get("style")
         gen_palette = data.get("palette")
-        # reference_image_url — URL/Data URL существующей картинки на доске.
-        # Передаётся фронтендом, когда пользователь меняет стиль УЖЕ нарисованного
-        # изображения. Включает нативный image-to-image (edit) у Gemini/Nano Banana:
-        # картинка идёт как настоящий image-input, модель сохраняет композицию
-        # своим edit-механизмом и перерисовывает только стиль (см. _call_image_api).
+        # reference_image_url / reference_labels — последняя (или выделенная)
+        # иллюстрация на доске и её подписи. Фронтенд шлёт их ВСЕГДА как
+        # кандидата; ИСПОЛЬЗОВАТЬ ли референс, решает Llama классификацией
+        # intent (см. правило 7 в DRAW_SYSTEM_PROMPT):
+        #   • intent="restyle" → нативный image-to-image (композиция сохраняется
+        #     edit-механизмом Gemini/Nano Banana) + переиспользуем ТЕ ЖЕ подписи
+        #     с теми же координатами (грунтинг пропускается — позиции уже
+        #     финальные). Текст остаётся на прежних местах.
+        #   • intent="new" → референс игнорируется, обычный text-to-image.
         gen_reference_image_url: str | None = data.get("reference_image_url") or None
+        reference_labels = data.get("reference_labels")
+        if not (isinstance(reference_labels, list) and reference_labels):
+            reference_labels = None
 
         if not user_message:
             return Response(
@@ -349,11 +427,12 @@ class WhiteboardDrawView(APIView):
             )
 
         messages = [{"role": "system", "content": DRAW_SYSTEM_PROMPT}]
-        for msg in history[-8:]:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role in ("user", "assistant") and content:
-                messages.append({"role": role, "content": content})
+        contextual_history = _history_for_model(history, user_message)
+        if contextual_history:
+            logger.info("Whiteboard draw context: using %d recent history messages", len(contextual_history))
+        else:
+            logger.info("Whiteboard draw context: clean new request, history omitted")
+        messages.extend(contextual_history)
         messages.append({"role": "user", "content": user_message})
 
         try:
@@ -387,6 +466,27 @@ class WhiteboardDrawView(APIView):
                 return Response({"reply": raw.strip() or "Не удалось сформировать ответ.", "board": None})
 
             reply = parsed.get("reply") or ""
+
+            # ── Классификация intent (решение Llama, правило 7 промпта) ──
+            intent_raw = parsed.get("intent")
+            intent = intent_raw.strip().lower() if isinstance(intent_raw, str) else "new"
+            forced_restyle = bool(gen_reference_image_url) and _looks_like_style_restyle(user_message)
+            is_restyle = bool(gen_reference_image_url) and (intent == "restyle" or forced_restyle)
+            if forced_restyle and intent != "restyle":
+                logger.info("Whiteboard draw intent forced to restyle by short style command")
+            logger.info(f"Whiteboard draw intent={intent} (restyle={is_restyle})")
+
+            # При restyle переиспользуем подписи предыдущей иллюстрации КАК ЕСТЬ
+            # (та же композиция через i2i → те же координаты валидны). Подменяем
+            # ДО санитайзера — он провалидирует их той же логикой, что и labels
+            # от модели.
+            if is_restyle and reference_labels:
+                for step in parsed.get("board_steps") or []:
+                    if isinstance(step, dict):
+                        for cmd in step.get("commands") or []:
+                            if isinstance(cmd, dict) and cmd.get("type") == "image_with_labels":
+                                cmd["labels"] = reference_labels
+
             board = _sanitize_board_data(parsed)
 
             # ── Обогащение иллюстраций ─────────────────────────────────────────
@@ -399,12 +499,21 @@ class WhiteboardDrawView(APIView):
             #     requires_segmentation=true (для сцен/пейзажей — null);
             # При сбое генерации — image_error (фронтенд покажет текст-ошибку).
             if board and isinstance(board.get("board_steps"), list):
+                topic_hint = " ".join(
+                    part for part in (board.get("subject") or "", board.get("topic") or "") if part
+                )
                 board["board_steps"] = enrich_board_steps(
                     board["board_steps"],
-                    topic_hint=board.get("topic") or "",
+                    topic_hint=topic_hint,
                     style=gen_style,
                     palette=gen_palette,
-                    reference_image_url=gen_reference_image_url,
+                    # Референс включает i2i ТОЛЬКО при restyle — для новой темы
+                    # генерим с нуля, даже если фронтенд прислал кандидата.
+                    reference_image_url=gen_reference_image_url if is_restyle else None,
+                    # При restyle координаты подписей уже финальные (от исходной
+                    # картинки, композиция сохранена) — vision-грунтинг не нужен
+                    # и только внёс бы дрожание позиций.
+                    skip_grounding=is_restyle,
                 )
             # ──────────────────────────────────────────────────────────────────
 
