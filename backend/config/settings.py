@@ -206,7 +206,7 @@ IMAGE_GEN_TIER = os.getenv("IMAGE_GEN_TIER", "standard")
 IMAGE_GEN_MAX_WORKERS = int(os.getenv("IMAGE_GEN_MAX_WORKERS", "3"))
 
 # Публичный URL сервиса (используется в HTTP-Referer при запросах к OpenRouter)
-SITE_URL = os.getenv("SITE_URL", "https://timely.app")
+SITE_URL = os.getenv("SITE_URL", "https://timelyplan.me")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

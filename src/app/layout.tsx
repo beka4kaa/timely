@@ -23,6 +23,10 @@ const onest = Onest({
 // Handwriting font (Caveat) is self-hosted via @font-face in globals.css —
 // next/font/google can't reach Google Fonts in some environments.
 
+const siteName = 'TimelyPlan'
+const siteUrl = new URL('https://timelyplan.me')
+const siteDescription = 'TimelyPlan — школьный дневник, планировщик, AI-доска и учебные инструменты в одном месте.'
+
 export const viewport: Viewport = {
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#000000' },
@@ -32,13 +36,33 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'TimelyPlan',
-  description: 'Школьный дневник, планировщик и не только',
-  applicationName: 'TimelyPlan',
+  metadataBase: siteUrl,
+  title: {
+    default: siteName,
+    template: `%s | ${siteName}`,
+  },
+  description: siteDescription,
+  applicationName: siteName,
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    url: siteUrl,
+    siteName,
+    title: siteName,
+    description: siteDescription,
+    locale: 'ru_RU',
+  },
+  twitter: {
+    card: 'summary',
+    title: siteName,
+    description: siteDescription,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'TimelyPlan',
+    title: siteName,
   },
   formatDetection: {
     telephone: false,
@@ -58,7 +82,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning>
       <body className={`${inter.variable} ${plusJakartaSans.variable} ${onest.variable} font-sans`} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"

@@ -4,7 +4,9 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'TimelyPlan',
     short_name: 'TimelyPlan',
-    description: 'Школьный дневник, планировщик и много другого',
+    description: 'Школьный дневник, планировщик, AI-доска и учебные инструменты.',
+    id: 'https://timelyplan.me/',
+    scope: '/',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#ffffff',

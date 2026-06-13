@@ -192,7 +192,7 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
 
 export function HabitsTracker() {
   const { data: session } = useSession()
-  const email = session?.user?.email ?? 'dev@timely.app'
+  const email = session?.user?.email ?? 'dev@timelyplan.me'
   const firstName = (session?.user?.name ?? '').split(' ')[0]
 
   const [habits, setHabits] = useState<Habit[]>([])
