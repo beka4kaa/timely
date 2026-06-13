@@ -25,14 +25,16 @@ function TabButton({
       aria-current={active}
       className={cn(
         'relative flex h-12 w-12 items-center justify-center rounded-full transition-colors',
-        active ? 'text-white' : 'text-zinc-500 hover:text-zinc-300',
+        active
+          ? 'text-zinc-950 dark:text-white'
+          : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300',
       )}
     >
       <span
         className={cn(
           'transition-[filter,opacity,transform] duration-200 ease-out',
           active
-            ? 'scale-105 opacity-100 drop-shadow-[0_0_10px_rgba(255,255,255,0.55)]'
+            ? 'scale-105 opacity-100 drop-shadow-[0_0_9px_rgba(24,24,27,0.18)] dark:drop-shadow-[0_0_10px_rgba(255,255,255,0.55)]'
             : 'opacity-70',
         )}
       >
