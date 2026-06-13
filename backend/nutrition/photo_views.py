@@ -3,13 +3,12 @@ nutrition/photo_views.py
 ────────────────────────────────────────────────────────────────────
 POST /api/nutrition/analyze-photo/
   Body: { "image": "data:image/jpeg;base64,<...>" }
-  Оценка еды по фото через Gemini vision (gemini-2.5-flash) — та же
-  библиотека google-generativeai и ключ GEMINI_API_KEY, что у остального
-  AI в проекте (см. ai_engine/services.py).
+  Оценка еды по фото через vision-модель. По умолчанию auto выбирает
+  Groq vision → OpenRouter vision router → Gemini. Можно зафиксировать через
+  NUTRITION_PHOTO_PROVIDER=groq|openrouter|gemini.
 
-  Gemini распознаёт класс/БЖУ, затем локальный OpenCV-шаг оценивает видимую
-  полноту продукта и пересчитывает вес:
-      grams = default_catalog_weight * completeness_ratio
+  Модель распознаёт класс/БЖУ и оценивает видимый вес/полноту. Локальный
+  OpenCV estimator остаётся только fallback, если модель не вернула grams.
 
   Ответ: { "items": [ {name, identified_class, grams, default_catalog_weight,
     completeness_ratio, kcal, protein, fat, carbs}, ... ] }
@@ -21,8 +20,11 @@ import json
 import logging
 import os
 import re
+import time
 
 import google.generativeai as genai
+import requests
+from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -30,6 +32,40 @@ from rest_framework.views import APIView
 from .portion_estimator import estimate_food_portion
 
 logger = logging.getLogger(__name__)
+
+PHOTO_PROVIDER = os.getenv("NUTRITION_PHOTO_PROVIDER", "auto").strip().lower()
+GROQ_API_URL = os.getenv(
+    "NUTRITION_GROQ_API_URL",
+    "https://api.groq.com/openai/v1/chat/completions",
+)
+GROQ_API_KEY = os.getenv(
+    "NUTRITION_GROQ_API_KEY",
+    os.getenv("GROQ_API_KEY", ""),
+)
+GROQ_MODEL = os.getenv("NUTRITION_GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+GROQ_FALLBACK_MODELS = os.getenv(
+    "NUTRITION_GROQ_FALLBACK_MODELS",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+)
+OPENROUTER_API_URL = os.getenv(
+    "NUTRITION_OPENROUTER_API_URL",
+    getattr(settings, "IMAGE_GEN_API_URL", "https://openrouter.ai/api/v1/chat/completions"),
+)
+OPENROUTER_API_KEY = os.getenv(
+    "NUTRITION_OPENROUTER_API_KEY",
+    os.getenv("OPENROUTER_API_KEY", ""),
+)
+OPENROUTER_MODEL = os.getenv("NUTRITION_OPENROUTER_MODEL", "openrouter/free")
+OPENROUTER_FALLBACK_MODELS = os.getenv(
+    "NUTRITION_OPENROUTER_FALLBACK_MODELS",
+    "google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free,nex-agi/nex-n2-pro:free",
+)
+TEXT_ONLY_OPENROUTER_MODELS = {
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-120b",
+    "z-ai/glm-5.1",
+}
+PORTION_STRATEGY = os.getenv("NUTRITION_PORTION_STRATEGY", "model").strip().lower()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
@@ -39,6 +75,7 @@ if GEMINI_API_KEY:
 # квота на неё (проверено), тогда как у gemini-2.0-flash free-лимит = 0.
 # Переопределяется через GEMINI_VISION_MODEL.
 VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
+VISION_TIMEOUT = float(os.getenv("NUTRITION_VISION_TIMEOUT", os.getenv("GEMINI_VISION_TIMEOUT", "28")))
 
 _PROMPT = (
     "Ты — нутрициолог. Определи еду на фото и оцени её пищевую ценность.\n"
@@ -46,11 +83,14 @@ _PROMPT = (
     '{"items":[{"name":"<краткое название на русском>","emoji":"<1 эмодзи еды>",'
     '"identified_class":"<canonical english food class, e.g. bagel/apple/pizza_slice>",'
     '"default_grams":<типичный вес ЦЕЛОГО стандартного экземпляра или порции, г>,'
+    '"visible_grams":<оценка веса ВИДИМОЙ части на фото, г>,'
+    '"completeness_ratio":<видимая доля от целого, 0.0..1.0>,'
     '"kcal":<на 100 г>,"protein":<на 100 г>,"fat":<на 100 г>,"carbs":<на 100 г>}]}\n'
     "Правила:\n"
     "- kcal/protein/fat/carbs — строго НА 100 ГРАММ продукта.\n"
-    "- default_grams — вес целого стандартного экземпляра/порции из каталога, НЕ видимой части на фото.\n"
-    "- Не пытайся оценивать, сколько продукта откушено или обрезано: это сделает backend по пикселям.\n"
+    "- default_grams — вес целого стандартного экземпляра/порции из каталога.\n"
+    "- visible_grams — твоя лучшая оценка веса именно видимой части на фото, учитывая размер, обрезку, надкусы и неполную порцию.\n"
+    "- completeness_ratio = visible_grams / default_grams, округли до 2 знаков.\n"
     "- Если на фото несколько разных блюд — перечисли каждое (максимум 5).\n"
     "- Если еду распознать нельзя — верни {\"items\":[]}.\n"
     "- Названия краткие, на русском. Только JSON, ничего больше."
@@ -81,13 +121,243 @@ def _num(v, default=0.0):
         return default
 
 
+def _ratio(v, default=0.0) -> float:
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return default
+    if n <= 0:
+        return default
+    return round(max(0.05, min(1.0, n)), 2)
+
+
+def _round_grams(value: float) -> int:
+    if value <= 0:
+        return 0
+    if value < 20:
+        return max(1, int(round(value)))
+    return max(5, int(round(value / 5) * 5))
+
+
+def _content_to_text(content) -> str:
+    """Extract text from OpenRouter/OpenAI-style message.content."""
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(parts)
+    return ""
+
+
+def _openrouter_models() -> list[str]:
+    models: list[str] = []
+    for value in [OPENROUTER_MODEL, *OPENROUTER_FALLBACK_MODELS.split(",")]:
+        model = value.strip()
+        if model and model not in models:
+            models.append(model)
+    return models
+
+
+def _groq_models() -> list[str]:
+    models: list[str] = []
+    for value in [GROQ_MODEL, *GROQ_FALLBACK_MODELS.split(",")]:
+        model = value.strip()
+        if model and model not in models:
+            models.append(model)
+    return models
+
+
+def _is_model_unavailable(exc: requests.HTTPError, *markers: str) -> bool:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    body = getattr(response, "text", "") or ""
+    lowered = body.lower()
+    return status_code in {400, 404, 429} and any(marker in lowered for marker in markers)
+
+
+def _call_openai_compatible_vision(
+    *,
+    api_url: str,
+    api_key: str,
+    provider: str,
+    model_name: str,
+    image_data_url: str,
+    raw_size: int,
+    extra_headers: dict[str, str] | None = None,
+    token_limit_field: str = "max_tokens",
+    response_format: dict[str, str] | None = None,
+) -> dict | None:
+    if not api_key:
+        raise ValueError(f"{provider} API key не задан.")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        **(extra_headers or {}),
+    }
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _PROMPT},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            }
+        ],
+        "temperature": 0,
+        token_limit_field: 900,
+    }
+    if response_format:
+        payload["response_format"] = response_format
+
+    logger.info(
+        "[PhotoAnalyze] start provider=%s model=%s bytes=%d timeout=%.1fs",
+        provider,
+        model_name,
+        raw_size,
+        VISION_TIMEOUT,
+    )
+    resp = requests.post(api_url, headers=headers, json=payload, timeout=VISION_TIMEOUT)
+    if resp.status_code >= 400:
+        logger.warning(
+            "[PhotoAnalyze] %s model=%s failed (%s): %.500s",
+            provider,
+            model_name,
+            resp.status_code,
+            resp.text,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    message = ((data.get("choices") or [{}])[0].get("message") or {})
+    return _parse_json(_content_to_text(message.get("content")))
+
+
+def _call_groq(image_data_url: str, raw_size: int) -> tuple[dict | None, str]:
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY не задан.")
+
+    last_exc: Exception | None = None
+    for model_name in _groq_models():
+        try:
+            parsed = _call_openai_compatible_vision(
+                api_url=GROQ_API_URL,
+                api_key=GROQ_API_KEY,
+                provider="groq",
+                model_name=model_name,
+                image_data_url=image_data_url,
+                raw_size=raw_size,
+                token_limit_field="max_completion_tokens",
+                response_format={"type": "json_object"},
+            )
+            return parsed, model_name
+        except requests.HTTPError as exc:
+            last_exc = exc
+            if _is_model_unavailable(exc, "model_decommissioned", "does not exist", "rate limit"):
+                continue
+            raise
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("No Groq models configured")
+
+
+def _call_openrouter(image_data_url: str, raw_size: int) -> tuple[dict | None, str]:
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY не задан.")
+
+    headers = {
+        "HTTP-Referer": getattr(settings, "SITE_URL", "https://timelyplan.me"),
+        "X-Title": "TimelyPlan Nutrition",
+    }
+    last_exc: Exception | None = None
+    for model_name in _openrouter_models():
+        if model_name in TEXT_ONLY_OPENROUTER_MODELS:
+            logger.warning(
+                "[PhotoAnalyze] skipping OpenRouter model=%s because it is text-only and cannot analyze images",
+                model_name,
+            )
+            continue
+
+        try:
+            parsed = _call_openai_compatible_vision(
+                api_url=OPENROUTER_API_URL,
+                api_key=OPENROUTER_API_KEY,
+                provider="openrouter",
+                model_name=model_name,
+                image_data_url=image_data_url,
+                raw_size=raw_size,
+                extra_headers=headers,
+            )
+            return parsed, model_name
+        except requests.HTTPError as exc:
+            last_exc = exc
+            if _is_model_unavailable(exc, "not a valid model", "not found", "unavailable", "rate limit"):
+                continue
+            raise
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("No OpenRouter models configured")
+
+
+def _call_gemini(raw: bytes, mime_type: str) -> dict | None:
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY не задан.")
+
+    logger.info(
+        "[PhotoAnalyze] start provider=gemini model=%s bytes=%d timeout=%.1fs",
+        VISION_MODEL,
+        len(raw),
+        VISION_TIMEOUT,
+    )
+    model = genai.GenerativeModel(VISION_MODEL)
+    result = model.generate_content([
+        _PROMPT,
+        {"mime_type": mime_type, "data": raw},
+    ], request_options={"timeout": VISION_TIMEOUT})
+    return _parse_json(result.text)
+
+
 class AnalyzePhotoView(APIView):
-    """Оценка БЖУ еды по фотографии (Gemini vision)."""
+    """Оценка БЖУ еды по фотографии."""
 
     def post(self, request):
-        if not GEMINI_API_KEY:
+        provider = PHOTO_PROVIDER
+        if provider == "auto":
+            if GROQ_API_KEY:
+                provider = "groq"
+            elif OPENROUTER_API_KEY:
+                provider = "openrouter"
+            else:
+                provider = "gemini"
+        if provider not in {"groq", "openrouter", "gemini"}:
             return Response(
-                {"error": "Фото-анализ не настроен: задайте GEMINI_API_KEY в окружении бэкенда."},
+                {"error": f"Неизвестный провайдер фото-анализа: {PHOTO_PROVIDER}."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if provider == "groq" and not GROQ_API_KEY:
+            return Response(
+                {"error": "Фото-анализ Groq не настроен: задайте GROQ_API_KEY."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if provider == "openrouter" and not OPENROUTER_API_KEY:
+            return Response(
+                {"error": "Фото-анализ OpenRouter не настроен: задайте OPENROUTER_API_KEY."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if provider == "gemini" and not GEMINI_API_KEY:
+            return Response(
+                {"error": "Фото-анализ Gemini не настроен: задайте GEMINI_API_KEY."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -105,19 +375,41 @@ class AnalyzePhotoView(APIView):
             return Response({"error": "Не удалось декодировать изображение."},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        started_at = time.monotonic()
         try:
-            model = genai.GenerativeModel(VISION_MODEL)
-            result = model.generate_content([
-                _PROMPT,
-                {"mime_type": m.group("mime"), "data": raw},
-            ])
-            parsed = _parse_json(result.text)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[PhotoAnalyze] Gemini failed: %s", exc, exc_info=True)
+            if provider == "groq":
+                parsed, provider_model = _call_groq(image, len(raw))
+            elif provider == "openrouter":
+                parsed, provider_model = _call_openrouter(image, len(raw))
+            else:
+                parsed = _call_gemini(raw, m.group("mime"))
+                provider_model = VISION_MODEL
+        except (requests.Timeout, requests.HTTPError, requests.RequestException) as exc:
+            logger.error("[PhotoAnalyze] %s failed: %s", provider, exc, exc_info=True)
+            message = str(exc).lower()
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+            if isinstance(exc, requests.Timeout) or status_code in {408, 504} or "timeout" in message or "deadline" in message:
+                return Response(
+                    {"error": "Фото-анализ слишком долго обрабатывает кадр. Попробуйте ещё раз или выберите более простой/светлый кадр."},
+                    status=status.HTTP_504_GATEWAY_TIMEOUT,
+                )
             return Response(
-                {"error": "ИИ не смог обработать фото. Попробуйте ещё раз."},
+                {"error": f"ИИ-провайдер не смог обработать фото ({provider}). Попробуйте ещё раз."},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("[PhotoAnalyze] %s failed: %s", provider, exc, exc_info=True)
+            return Response(
+                {"error": f"Фото-анализ не настроен или недоступен ({provider})."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        logger.info(
+            "[PhotoAnalyze] %s model=%s finished in %.2fs",
+            provider,
+            provider_model,
+            time.monotonic() - started_at,
+        )
 
         if not isinstance(parsed, dict) or not isinstance(parsed.get("items"), list):
             return Response({"items": []})
@@ -130,25 +422,72 @@ class AnalyzePhotoView(APIView):
             kcal = _num(it.get("kcal"))
             if not name or kcal <= 0:
                 continue
+            portion_started_at = time.monotonic()
             identified_class = str(it.get("identified_class") or it.get("class") or "").strip()[:80]
             model_default_grams = _num(it.get("default_grams"), _num(it.get("grams"), 100)) or 100
-            portion = estimate_food_portion(
-                raw,
-                name=name,
-                identified_class=identified_class,
-                model_default_grams=model_default_grams,
+            model_visible_grams = _num(it.get("visible_grams"), _num(it.get("grams"), 0))
+            model_ratio = _ratio(it.get("completeness_ratio"))
+
+            portion = None
+            if PORTION_STRATEGY in {"cv", "hybrid"} or not model_visible_grams:
+                portion = estimate_food_portion(
+                    raw,
+                    name=name,
+                    identified_class=identified_class,
+                    model_default_grams=model_default_grams,
+                )
+            if PORTION_STRATEGY == "cv" and portion is not None:
+                final_weight = portion.final_weight
+                default_weight = portion.default_catalog_weight
+                completeness_ratio = portion.completeness_ratio
+                confidence = portion.confidence
+                source = portion.source
+            elif model_visible_grams:
+                default_weight = int(round(model_default_grams))
+                final_weight = _round_grams(model_visible_grams)
+                completeness_ratio = model_ratio or _ratio(final_weight / max(1, default_weight), 1.0)
+                confidence = 0.72
+                source = "model_visible_grams"
+            elif model_ratio:
+                default_weight = int(round(model_default_grams))
+                completeness_ratio = model_ratio
+                final_weight = _round_grams(default_weight * completeness_ratio)
+                confidence = 0.68
+                source = "model_completeness_ratio"
+            else:
+                if portion is None:
+                    portion = estimate_food_portion(
+                        raw,
+                        name=name,
+                        identified_class=identified_class,
+                        model_default_grams=model_default_grams,
+                    )
+                default_weight = portion.default_catalog_weight
+                final_weight = portion.final_weight
+                completeness_ratio = portion.completeness_ratio
+                confidence = portion.confidence
+                source = portion.source
+            logger.info(
+                "[PhotoAnalyze] portion name=%r class=%r default=%sg ratio=%.2f final=%sg source=%s time=%.3fs",
+                name,
+                identified_class or (portion.identified_class if portion else ""),
+                default_weight,
+                completeness_ratio,
+                final_weight,
+                source,
+                time.monotonic() - portion_started_at,
             )
             items.append({
                 "name": name,
-                "identified_class": identified_class or portion.identified_class,
+                "identified_class": identified_class or (portion.identified_class if portion else ""),
                 "emoji": str(it.get("emoji") or "🍽")[:8],
-                "grams": portion.final_weight,
-                "default_catalog_weight": portion.default_catalog_weight,
-                "completeness_ratio": portion.completeness_ratio,
-                "pixel_area": portion.pixel_area,
-                "baseline_area": portion.baseline_area,
-                "portion_confidence": portion.confidence,
-                "portion_source": portion.source,
+                "grams": final_weight,
+                "default_catalog_weight": default_weight,
+                "completeness_ratio": completeness_ratio,
+                "pixel_area": portion.pixel_area if portion else 0,
+                "baseline_area": portion.baseline_area if portion else 0,
+                "portion_confidence": confidence,
+                "portion_source": source,
                 "kcal": kcal,
                 "protein": _num(it.get("protein")),
                 "fat": _num(it.get("fat")),

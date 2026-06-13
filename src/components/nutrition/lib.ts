@@ -213,9 +213,9 @@ export interface PhotoFoodItem extends FoodLibraryItem {
 
 /**
  * Сжимает картинку (File или dataURL) до JPEG с ограничением длинной стороны —
- * чтобы payload в Gemini был лёгким и быстрым. Возвращает data URL.
+ * чтобы payload в vision provider был лёгким и быстрым. Возвращает data URL.
  */
-export async function imageToDataURL(file: File, max = 1024, quality = 0.82): Promise<string> {
+export async function imageToDataURL(file: File, max = 768, quality = 0.74): Promise<string> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
   const w = Math.round(bitmap.width * scale)
@@ -233,13 +233,17 @@ export type PhotoAnalysisResult =
   | { ok: true; items: PhotoFoodItem[] }
   | { ok: false; error: string }
 
-/** Шлёт фото (data URL) на бэкенд → Gemini vision → список распознанных продуктов. */
-export async function analyzePhoto(dataUrl: string): Promise<PhotoAnalysisResult> {
+/** Шлёт фото (data URL) на бэкенд → vision provider → список распознанных продуктов. */
+export async function analyzePhoto(dataUrl: string, timeoutMs = 36_000): Promise<PhotoAnalysisResult> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
   try {
     const res = await fetch(`${BACKEND_URL}/api/nutrition/analyze-photo/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: dataUrl }),
+      signal: controller.signal,
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) return { ok: false, error: body?.error || `Ошибка ${res.status}` }
@@ -263,8 +267,16 @@ export async function analyzePhoto(dataUrl: string): Promise<PhotoAnalysisResult
       source: 'ai',
     }))
     return { ok: true, items }
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      return {
+        ok: false,
+        error: 'Фото-анализ слишком долго отвечает. Попробуйте более светлое фото или кадр поближе.',
+      }
+    }
     return { ok: false, error: 'Сеть недоступна' }
+  } finally {
+    window.clearTimeout(timeout)
   }
 }
 
