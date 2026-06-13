@@ -9,6 +9,7 @@
  */
 
 import { BACKEND_URL } from '@/lib/api-utils'
+import { authFetch } from '@/lib/auth-fetch'
 
 /** Один приём пищи / продукт в истории дня. */
 export interface FoodEntry {
@@ -326,11 +327,71 @@ export function scalePortion(
   }
 }
 
-/* ── Локальное хранилище (день) ──────────────────────────────────────
- * Ключ привязан к дате, поэтому «История за день» естественно обнуляется
- * на следующий день. Это заглушка под будущий бэкенд. */
+/* ── История питания ─────────────────────────────────────────────────
+ * Основной источник — Django backend. localStorage остаётся только как
+ * offline/fallback cache, чтобы запись не исчезала при временном сбое сети. */
 
-const todayKey = () => `timely.nutrition.${new Date().toISOString().slice(0, 10)}`
+export function todayEntryDate(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const todayKey = () => `timely.nutrition.${todayEntryDate()}`
+
+function mapBackendEntry(raw: Record<string, unknown>): FoodEntry {
+  return {
+    id: String(raw.id ?? ''),
+    name: String(raw.name ?? 'Продукт'),
+    kcal: Number(raw.kcal) || 0,
+    protein: Number(raw.protein) || 0,
+    fat: Number(raw.fat) || 0,
+    carbs: Number(raw.carbs) || 0,
+    addedAt: String(raw.added_at ?? raw.addedAt ?? new Date().toISOString()),
+  }
+}
+
+export async function loadEntriesFromBackend(date = todayEntryDate()): Promise<FoodEntry[]> {
+  const res = await authFetch(
+    `${BACKEND_URL}/api/nutrition/entries/?date=${encodeURIComponent(date)}`,
+    { method: 'GET', cache: 'no-store' },
+  )
+  if (!res.ok) throw new Error(`Nutrition entries load failed: ${res.status}`)
+  const data = await res.json()
+  return Array.isArray(data) ? data.map((it) => mapBackendEntry(it as Record<string, unknown>)) : []
+}
+
+export async function addEntryToBackend(
+  entry: Omit<FoodEntry, 'id' | 'addedAt'>,
+  date = todayEntryDate(),
+): Promise<FoodEntry> {
+  const res = await authFetch(`${BACKEND_URL}/api/nutrition/entries/`, {
+    method: 'POST',
+    body: JSON.stringify({
+      entry_date: date,
+      name: entry.name,
+      kcal: entry.kcal,
+      protein: entry.protein,
+      fat: entry.fat,
+      carbs: entry.carbs,
+    }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Nutrition entry save failed: ${res.status}`)
+  return mapBackendEntry(body as Record<string, unknown>)
+}
+
+export async function deleteEntryFromBackend(id: string): Promise<void> {
+  if (!id || id.startsWith('local-')) return
+  const res = await authFetch(`${BACKEND_URL}/api/nutrition/entries/${encodeURIComponent(id)}/`, {
+    method: 'DELETE',
+  })
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Nutrition entry delete failed: ${res.status}`)
+  }
+}
 
 export function loadEntries(): FoodEntry[] {
   if (typeof window === 'undefined') return []

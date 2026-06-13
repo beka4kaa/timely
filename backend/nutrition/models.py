@@ -44,3 +44,28 @@ class FoodItem(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.kcal} ккал/100г)"
+
+
+class NutritionEntry(models.Model):
+    """
+    User food diary entry. Values are already scaled to the consumed portion,
+    not per 100 g, so daily totals can be summed directly.
+    """
+
+    user_email = models.EmailField(db_index=True)
+    entry_date = models.DateField(db_index=True)
+    name = models.CharField(max_length=200)
+    kcal = models.FloatField(default=0)
+    protein = models.FloatField(default=0)
+    fat = models.FloatField(default=0)
+    carbs = models.FloatField(default=0)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-added_at"]
+        indexes = [
+            models.Index(fields=["user_email", "entry_date", "-added_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_email} — {self.name} ({self.entry_date})"

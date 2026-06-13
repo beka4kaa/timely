@@ -16,7 +16,7 @@ from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from habits.views import HabitViewSet
-from nutrition.views import FoodSearchView, BarcodeLookupView, OffSearchView
+from nutrition.views import FoodSearchView, BarcodeLookupView, OffSearchView, NutritionEntryViewSet
 from nutrition.photo_views import AnalyzePhotoView
 
 
@@ -41,6 +41,7 @@ router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-templ
 router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
 router.register(r'leaderboard', LeaderboardViewSet, basename='leaderboard')
 router.register(r'habits', HabitViewSet, basename='habits')
+router.register(r'nutrition/entries', NutritionEntryViewSet, basename='nutrition-entries')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

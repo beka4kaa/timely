@@ -7,8 +7,8 @@
  *   • analytics — дашборд прогресса + список съеденного за сегодня;
  *   • diary     — поиск продуктов в Open Food Facts + ручной ввод.
  * Навигация — нижний стеклянный BottomNav с центральным FAB, который
- * открывает bottom-sheet (штрихкод / фото-ИИ). День хранится локально
- * (localStorage), поиск/штрихкод/фото — через Django-бэкенд.
+ * открывает bottom-sheet (штрихкод / фото-ИИ). Дневник питания, поиск,
+ * штрихкод и фото-анализ работают через Django-бэкенд.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -21,7 +21,14 @@ import { AddSheet } from './AddSheet'
 import { BarcodeScanner } from './BarcodeScanner'
 import { PhotoAnalyzer } from './PhotoAnalyzer'
 import {
-  DEFAULT_GOALS, loadEntries, saveEntries, sumTotals, type FoodEntry,
+  DEFAULT_GOALS,
+  addEntryToBackend,
+  deleteEntryFromBackend,
+  loadEntries,
+  loadEntriesFromBackend,
+  saveEntries,
+  sumTotals,
+  type FoodEntry,
 } from './lib'
 
 export function NutritionTracker() {
@@ -35,8 +42,29 @@ export function NutritionTracker() {
   const [photoOpen, setPhotoOpen] = useState(false)
 
   useEffect(() => {
-    setEntries(loadEntries())
-    setHydrated(true)
+    let cancelled = false
+
+    async function hydrateEntries() {
+      const localFallback = loadEntries()
+      try {
+        const remoteEntries = await loadEntriesFromBackend()
+        if (cancelled) return
+        setEntries(remoteEntries)
+      } catch {
+        if (cancelled) return
+        setEntries(localFallback)
+        if (localFallback.length > 0) {
+          toast.warning('Дневник открыт из локальной копии', {
+            description: 'Backend временно недоступен, новые записи попробуем сохранить на сервер.',
+          })
+        }
+      } finally {
+        if (!cancelled) setHydrated(true)
+      }
+    }
+
+    hydrateEntries()
+    return () => { cancelled = true }
   }, [])
   useEffect(() => {
     if (hydrated) saveEntries(entries)
@@ -44,19 +72,44 @@ export function NutritionTracker() {
 
   const totals = useMemo(() => sumTotals(entries), [entries])
 
-  const addEntry = (data: Omit<FoodEntry, 'id' | 'addedAt'>) => {
-    const entry: FoodEntry = {
+  const addEntry = async (data: Omit<FoodEntry, 'id' | 'addedAt'>) => {
+    const localId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const optimistic: FoodEntry = {
       ...data,
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: `local-${localId}`,
       addedAt: new Date().toISOString(),
     }
-    setEntries((prev) => [entry, ...prev])
-    toast.success(`«${entry.name}» добавлен`, { description: `+${Math.round(entry.kcal)} ккал` })
+    setEntries((prev) => [optimistic, ...prev])
+    toast.success(`«${optimistic.name}» добавлен`, { description: `+${Math.round(optimistic.kcal)} ккал` })
+
+    try {
+      const saved = await addEntryToBackend(data)
+      setEntries((prev) => prev.map((entry) => (entry.id === optimistic.id ? saved : entry)))
+    } catch {
+      toast.error('Не удалось сохранить на сервер', {
+        description: 'Запись временно осталась в локальной копии.',
+      })
+    }
   }
 
-  const removeEntry = (id: string) => setEntries((prev) => prev.filter((e) => e.id !== id))
+  const removeEntry = async (id: string) => {
+    let removed: FoodEntry | undefined
+    setEntries((prev) => {
+      removed = prev.find((entry) => entry.id === id)
+      return prev.filter((entry) => entry.id !== id)
+    })
+    try {
+      await deleteEntryFromBackend(id)
+    } catch {
+      if (removed) {
+        const restored = removed
+        setEntries((prev) => [restored, ...prev])
+      }
+      toast.error('Не удалось удалить запись на сервере')
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-col">

@@ -21,12 +21,15 @@ import csv
 from pathlib import Path
 
 import requests
+from datetime import date
+from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import viewsets
 
-from .models import FoodItem
-from .serializers import FoodItemSerializer
+from .models import FoodItem, NutritionEntry
+from .serializers import FoodItemSerializer, NutritionEntrySerializer
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,36 @@ EMOJI_BY_CATEGORY = {
     "Крупы, бобовые и орехи": "🥣",
     "Готовые блюда": "🍽",
 }
+
+
+class NutritionEntryViewSet(viewsets.ModelViewSet):
+    """Persistent per-user nutrition diary entries."""
+
+    serializer_class = NutritionEntrySerializer
+
+    def get_queryset(self):
+        user_email = getattr(self.request, "user_email", None)
+        if not user_email:
+            return NutritionEntry.objects.none()
+
+        entry_date = parse_date(self.request.query_params.get("date") or "") or date.today()
+        return NutritionEntry.objects.filter(user_email=user_email, entry_date=entry_date)
+
+    def list(self, request, *args, **kwargs):
+        user_email = getattr(request, "user_email", None)
+        if not user_email:
+            return Response({"error": "Не удалось определить пользователя."}, status=status.HTTP_401_UNAUTHORIZED)
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        user_email = getattr(request, "user_email", None)
+        if not user_email:
+            return Response({"error": "Не удалось определить пользователя."}, status=status.HTTP_401_UNAUTHORIZED)
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        entry_date = serializer.validated_data.get("entry_date") or date.today()
+        serializer.save(user_email=getattr(self.request, "user_email", None), entry_date=entry_date)
 
 # Open Food Facts — открытая бесплатная база продуктов (без API-ключа).
 # v2 product endpoint; просим только нужные поля, чтобы ответ был лёгким.
