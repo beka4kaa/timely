@@ -211,6 +211,36 @@ export interface PhotoFoodItem extends FoodLibraryItem {
   portionConfidence?: number
 }
 
+/** Собирает распознанные с фото продукты в одну запись "готового блюда". */
+export function buildPhotoDishEntry(items: PhotoFoodItem[]): Omit<FoodEntry, 'id' | 'addedAt'> | null {
+  const valid = items.filter((item) => item.grams > 0 && item.kcal > 0)
+  if (valid.length === 0) return null
+
+  const totals = valid.reduce(
+    (acc, item) => {
+      const scaled = scalePortion(item, item.grams)
+      return {
+        kcal: acc.kcal + scaled.kcal,
+        protein: acc.protein + scaled.protein,
+        fat: acc.fat + scaled.fat,
+        carbs: acc.carbs + scaled.carbs,
+      }
+    },
+    { kcal: 0, protein: 0, fat: 0, carbs: 0 },
+  )
+  const names = Array.from(new Set(valid.map((item) => item.name.trim()).filter(Boolean)))
+  const namePreview = names.slice(0, 3).join(', ')
+  const extra = names.length > 3 ? ` +${names.length - 3}` : ''
+
+  return {
+    name: valid.length === 1 ? names[0] || 'Блюдо с фото' : `Блюдо с фото: ${namePreview}${extra}`,
+    kcal: Math.round(totals.kcal),
+    protein: Math.round(totals.protein * 10) / 10,
+    fat: Math.round(totals.fat * 10) / 10,
+    carbs: Math.round(totals.carbs * 10) / 10,
+  }
+}
+
 /**
  * Сжимает картинку (File или dataURL) до JPEG с ограничением длинной стороны —
  * чтобы payload в vision provider был лёгким и быстрым. Возвращает data URL.

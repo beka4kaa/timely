@@ -14,7 +14,11 @@ nutrition/views.py
 """
 
 import logging
+import os
 import re
+import time
+import csv
+from pathlib import Path
 
 import requests
 from rest_framework import status
@@ -25,6 +29,19 @@ from .models import FoodItem
 from .serializers import FoodItemSerializer
 
 logger = logging.getLogger(__name__)
+
+FOOD_CACHE_SECONDS = int(os.getenv("NUTRITION_FOOD_CACHE_SECONDS", "600"))
+_FOOD_CACHE: dict[str, object] = {"loaded_at": 0.0, "items": []}
+FOOD_DATA_FILE = Path(__file__).resolve().parent / "data" / "bzhu_food_database.csv"
+EMOJI_BY_CATEGORY = {
+    "Овощи и зелень": "🥦",
+    "Фрукты и ягоды": "🍎",
+    "Мясо и птица": "🍗",
+    "Рыба и морепродукты": "🐟",
+    "Молочные продукты и яйца": "🥛",
+    "Крупы, бобовые и орехи": "🥣",
+    "Готовые блюда": "🍽",
+}
 
 # Open Food Facts — открытая бесплатная база продуктов (без API-ключа).
 # v2 product endpoint; просим только нужные поля, чтобы ответ был лёгким.
@@ -45,11 +62,82 @@ class FoodSearchView(APIView):
         except (TypeError, ValueError):
             limit = 30
 
-        qs = FoodItem.objects.all()
+        items = _food_library_items()
         if q:
-            qs = qs.filter(name__icontains=q)
-        items = list(qs[:limit])
-        return Response(FoodItemSerializer(items, many=True).data)
+            q_norm = q.casefold()
+            items = [
+                item for item in items
+                if q_norm in item["name"].casefold() or q_norm in item["category"].casefold()
+            ]
+            items.sort(key=lambda item: (_food_rank(item, q_norm), item["name"].casefold()))
+        return Response(items[:limit])
+
+
+def _food_library_items() -> list[dict]:
+    now = time.monotonic()
+    loaded_at = float(_FOOD_CACHE.get("loaded_at") or 0)
+    items = _FOOD_CACHE.get("items")
+    if isinstance(items, list) and items and now - loaded_at < FOOD_CACHE_SECONDS:
+        return items
+
+    try:
+        serialized = _read_static_food_database()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[FoodSearch] static CSV failed, falling back to DB: %s", exc)
+        rows = FoodItem.objects.all().order_by("name")
+        serialized = list(FoodItemSerializer(rows, many=True).data)
+    _FOOD_CACHE["items"] = serialized
+    _FOOD_CACHE["loaded_at"] = now
+    logger.info("[FoodSearch] warmed local food cache: %d items", len(serialized))
+    return serialized
+
+
+def _read_static_food_database() -> list[dict]:
+    items = []
+    with FOOD_DATA_FILE.open(encoding="utf-8-sig", newline="") as f:
+        for index, row in enumerate(csv.DictReader(f, delimiter=";"), start=1):
+            category = (row.get("Категория") or "").strip()
+            name = (row.get("Продукт / Блюдо") or "").strip()
+            if not name:
+                continue
+            items.append({
+                "id": f"bzhu-{index}",
+                "name": name,
+                "emoji": EMOJI_BY_CATEGORY.get(category, "🍽"),
+                "category": category,
+                "kcal": _csv_num(row.get("Калории (ккал)", "0")),
+                "protein": _csv_num(row.get("Белки (г)", "0")),
+                "fat": _csv_num(row.get("Жиры (г)", "0")),
+                "carbs": _csv_num(row.get("Углеводы (г)", "0")),
+                "barcode": "",
+                "source": "seed",
+            })
+    return sorted(items, key=lambda item: item["name"].casefold())
+
+
+def _csv_num(value: str) -> float:
+    try:
+        return round(float((value or "0").replace(",", ".")), 1)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _invalidate_food_cache() -> None:
+    _FOOD_CACHE["loaded_at"] = 0.0
+
+
+def _food_rank(item: dict, q_norm: str) -> int:
+    name = str(item.get("name") or "").casefold()
+    category = str(item.get("category") or "").casefold()
+    if name == q_norm:
+        return 0
+    if name.startswith(q_norm):
+        return 1
+    if category == q_norm:
+        return 2
+    if category and q_norm in category:
+        return 3
+    return 4
 
 
 # Open Food Facts текстовый поиск. Проксируем через бэкенд, а НЕ зовём из
@@ -57,28 +145,54 @@ class FoodSearchView(APIView):
 # заголовок запрещён fetch), плюс так обходим CORS и нормализуем ответ.
 # Debounce остаётся на фронтенде (критичное требование).
 #
-# Надёжность: legacy search.pl (как в ТЗ) под нагрузкой часто отдаёт 503,
-# поэтому при сбое падаем на современный и более стабильный /api/v2/search.
+# Надёжность/скорость: сначала современный /api/v2/search, legacy search.pl —
+# только fallback. Результаты кэшируем по запросу, чтобы повторный ввод не
+# блокировался внешним API.
 OFF_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
 OFF_SEARCH_V2_URL = "https://world.openfoodfacts.org/api/v2/search"
 _OFF_FIELDS = "code,product_name,product_name_ru,brands,nutriments,image_small_url"
+OFF_SEARCH_TIMEOUT = 4
+OFF_SEARCH_CACHE_SECONDS = 60 * 15
+_OFF_SEARCH_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _cache_get(key: str):
+    cached = _OFF_SEARCH_CACHE.get(key)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if expires_at <= time.monotonic():
+        _OFF_SEARCH_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: str, value: dict, timeout: int) -> None:
+    _OFF_SEARCH_CACHE[key] = (time.monotonic() + timeout, value)
 
 
 def _fetch_off_search(q: str) -> dict:
-    """search.pl → при сбое v2/search. Бросает RequestException, если оба недоступны."""
+    """v2/search → при сбое legacy search.pl. Бросает RequestException, если оба недоступны."""
+    cache_key = f"nutrition:off-search:{q.casefold()}"
+    cached = _cache_get(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     attempts = [
+        (OFF_SEARCH_V2_URL, {"search_terms": q, "page_size": 12, "fields": _OFF_FIELDS}),
         (OFF_SEARCH_URL, {
             "search_terms": q, "search_simple": 1, "action": "process",
-            "json": 1, "page_size": 20, "fields": _OFF_FIELDS,
+            "json": 1, "page_size": 12, "fields": _OFF_FIELDS,
         }),
-        (OFF_SEARCH_V2_URL, {"search_terms": q, "page_size": 20, "fields": _OFF_FIELDS}),
     ]
     last_exc: Exception | None = None
     for url, params in attempts:
         try:
-            resp = requests.get(url, params=params, headers=OFF_HEADERS, timeout=14)
+            resp = requests.get(url, params=params, headers=OFF_HEADERS, timeout=OFF_SEARCH_TIMEOUT)
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            _cache_set(cache_key, data, OFF_SEARCH_CACHE_SECONDS)
+            return data
         except requests.RequestException as exc:
             last_exc = exc
             logger.info("[OFF search] %s failed (%s), trying next", url, exc)
@@ -108,6 +222,8 @@ class OffSearchView(APIView):
             norm = _off_to_per100(product, code)
             if norm is None:
                 continue
+            if not _off_product_matches_query(product, norm, q):
+                continue
             items.append({
                 "id": code or norm["name"],
                 "name": norm["name"],
@@ -124,6 +240,17 @@ class OffSearchView(APIView):
                 break
 
         return Response({"items": items})
+
+
+def _off_product_matches_query(product: dict, norm: dict, q: str) -> bool:
+    tokens = [token for token in re.split(r"\s+", q.casefold()) if len(token) >= 2]
+    if not tokens:
+        return True
+    haystack = " ".join([
+        str(norm.get("name") or ""),
+        str(product.get("brands") or ""),
+    ]).casefold()
+    return all(token in haystack for token in tokens)
 
 
 def _off_to_per100(product: dict, code: str) -> dict | None:
@@ -219,4 +346,5 @@ class BarcodeLookupView(APIView):
                 "source": "off",
             },
         )
+        _invalidate_food_cache()
         return Response({"found": True, "item": FoodItemSerializer(item).data})

@@ -1,8 +1,8 @@
 "use client"
 
 /**
- * DiaryTab — вкладка «Дневник»: поиск продуктов в Open Food Facts.
- *   • Ввод → DEBOUNCE 500мс → запрос (через бэкенд-прокси, см. lib).
+ * DiaryTab — вкладка «Дневник»: быстрый поиск продуктов.
+ *   • Ввод → DEBOUNCE 250мс → локальная база сразу, Open Food Facts фоном.
  *   • Состояния: спиннер загрузки, сообщение об ошибке, пусто.
  *   • Результаты — карточки; тап → PortionPicker (граммы → БЖУ → добавить).
  *   • Пустой запрос → «Популярное» из локальной библиотеки (быстрый доступ).
@@ -45,7 +45,7 @@ function FoodResultCard({ food, onPick }: { food: FoodLibraryItem; onPick: () =>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{food.name}</span>
         <span className="block truncate text-[11px] text-muted-foreground tabular-nums">
-          {food.kcal} ккал · Б{food.protein} Ж{food.fat} У{food.carbs} / 100г
+          {food.category ? `${food.category} · ` : ''}{food.kcal} ккал · Б{food.protein} Ж{food.fat} У{food.carbs} / 100г
         </span>
       </span>
       <span
@@ -56,6 +56,18 @@ function FoodResultCard({ food, onPick }: { food: FoodLibraryItem; onPick: () =>
       </span>
     </button>
   )
+}
+
+function mergeFoodResults(primary: FoodLibraryItem[], secondary: FoodLibraryItem[]) {
+  const seen = new Set<string>()
+  const merged: FoodLibraryItem[] = []
+  for (const food of [...primary, ...secondary]) {
+    const key = `${food.barcode || ''}:${food.name.trim().toLocaleLowerCase('ru-RU')}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(food)
+  }
+  return merged
 }
 
 export function DiaryTab({ onAdd }: DiaryTabProps) {
@@ -73,7 +85,7 @@ export function DiaryTab({ onAdd }: DiaryTabProps) {
     searchFoods('').then(setPopular)
   }, [])
 
-  // DEBOUNCE 500мс: запрос уходит только после паузы в наборе.
+  // DEBOUNCE 250мс: локальная база показывается сразу, внешний поиск дополняет.
   useEffect(() => {
     const q = query.trim()
     if (q.length < 2) {
@@ -87,12 +99,16 @@ export function DiaryTab({ onAdd }: DiaryTabProps) {
       abortRef.current?.abort()
       const ac = new AbortController()
       abortRef.current = ac
+      const localItems = await searchFoods(q, ac.signal)
+      if (ac.signal.aborted) return
+      setResults(localItems)
+
       const res = await searchOpenFoodFacts(q, ac.signal)
       if (ac.signal.aborted) return
-      if (res.ok) setResults(res.items)
-      else setError(res.error)
+      if (res.ok) setResults(mergeFoodResults(localItems, res.items))
+      else if (localItems.length === 0) setError(res.error)
       setLoading(false)
-    }, 500)
+    }, 250)
     return () => clearTimeout(t)
   }, [query])
 
@@ -120,7 +136,7 @@ export function DiaryTab({ onAdd }: DiaryTabProps) {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Поиск продукта в Open Food Facts…"
+          placeholder="Поиск продукта…"
           aria-label="Поиск продукта"
           className={cn(
             GLASS,
@@ -151,7 +167,7 @@ export function DiaryTab({ onAdd }: DiaryTabProps) {
       ) : loading && results.length === 0 ? (
         <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Ищем в Open Food Facts…</span>
+          <span className="text-sm">Ищем продукты…</span>
         </div>
       ) : results.length === 0 ? (
         <div className="flex flex-col items-center gap-1 py-8 text-center">

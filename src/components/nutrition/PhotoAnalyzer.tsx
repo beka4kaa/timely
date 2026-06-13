@@ -4,19 +4,19 @@
  * PhotoAnalyzer — оценка еды по фото через backend vision provider.
  *   1. Выбор/съёмка фото (на мобиле — капчур задней камеры).
  *   2. Картинка сжимается и уходит на бэкенд → vision model → список продуктов.
- *   3. Пользователь выбирает распознанный продукт → PortionPicker
- *      (граммы предзаполнены оценкой ИИ) → добавить.
+ *   3. Можно сразу добавить всё блюдо одной кастомной записью или уточнить
+ *      отдельный ингредиент через PortionPicker.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { Camera, Loader2, Sparkles, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Camera, Loader2, Sparkles, RefreshCw, Utensils } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { PortionPicker } from './PortionPicker'
 import {
-  analyzePhoto, imageToDataURL,
+  analyzePhoto, buildPhotoDishEntry, imageToDataURL, softHaptic,
   type FoodEntry, type PhotoFoodItem,
 } from './lib'
 
@@ -37,6 +37,16 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
   const [phase, setPhase] = useState<Phase>({ step: 'pick' })
   const [preview, setPreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const fullDish = useMemo(
+    () => (phase.step === 'results' ? buildPhotoDishEntry(phase.items) : null),
+    [phase],
+  )
+  const totalPhotoGrams = useMemo(
+    () => (phase.step === 'results'
+      ? Math.round(phase.items.reduce((sum, item) => sum + Math.max(0, item.grams || 0), 0))
+      : 0),
+    [phase],
+  )
 
   useEffect(() => {
     if (open) { setPhase({ step: 'pick' }); setPreview(null) }
@@ -64,6 +74,13 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
 
   const confirmAdd = (entry: Omit<FoodEntry, 'id' | 'addedAt'>) => {
     onAdd(entry)
+    onClose()
+  }
+
+  const addFullDish = () => {
+    if (!fullDish) return
+    softHaptic()
+    onAdd(fullDish)
     onClose()
   }
 
@@ -102,7 +119,31 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={preview} alt="" className="h-28 w-full rounded-2xl object-cover" />
             )}
-            <p className="px-1 text-xs text-muted-foreground">Распознано — выберите продукт:</p>
+            {fullDish && (
+              <button
+                type="button"
+                onClick={addFullDish}
+                className={cn(
+                  'flex items-center gap-3 rounded-2xl p-3 text-left text-white shadow-sm transition-all',
+                  'hover:brightness-105 active:scale-[0.99]',
+                )}
+                style={{ background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' }}
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18">
+                  <Utensils className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">Добавить всё блюдо</span>
+                  <span className="block truncate text-[11px] text-white/80 tabular-nums">
+                    {fullDish.kcal} ккал · Б{fullDish.protein} Ж{fullDish.fat} У{fullDish.carbs}
+                    {totalPhotoGrams > 0 ? ` · ~${totalPhotoGrams} г` : ''}
+                  </span>
+                </span>
+              </button>
+            )}
+            <p className="px-1 text-xs text-muted-foreground">
+              Распознано как ингредиенты. Можно уточнить отдельно:
+            </p>
             <div className="flex flex-col gap-1.5">
               {phase.items.map((food) => (
                 <button
