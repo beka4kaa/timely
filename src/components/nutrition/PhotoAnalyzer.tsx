@@ -167,6 +167,11 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
                         Класс: {food.identifiedClass}
                       </span>
                     )}
+                    {isLowConfidence(food) && (
+                      <span className="mt-0.5 block text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                        Проверь порцию и продукт — оценка примерная
+                      </span>
+                    )}
                   </span>
                 </button>
               ))}
@@ -209,5 +214,14 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function isLowConfidence(food: PhotoFoodItem): boolean {
+  return (
+    (food.portionConfidence !== undefined && food.portionConfidence < 0.65) ||
+    food.portionSource?.startsWith('model_') ||
+    food.nutritionSource === 'vision_model' ||
+    Boolean(food.analysisWarnings?.length)
   )
 }

@@ -36,12 +36,35 @@ export type Totals = Goals
 
 export type MacroKey = keyof Goals
 
-/** Дефолтные цели на день (среднестатистические; позже — из профиля). */
+/** Fallback-цели на день, пока профиль питания ещё не настроен или backend недоступен. */
 export const DEFAULT_GOALS: Goals = {
   kcal: 2200,
   protein: 140,
   fat: 70,
   carbs: 250,
+}
+
+export type NutritionSex = 'male' | 'female'
+export type NutritionActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active'
+export type NutritionGoal = 'lose' | 'maintain' | 'gain'
+
+export interface NutritionProfileInput {
+  sex: NutritionSex
+  age: number
+  heightCm: number
+  weightKg: number
+  activityLevel: NutritionActivityLevel
+  goal: NutritionGoal
+}
+
+export interface NutritionProfile extends NutritionProfileInput {
+  id: number
+  kcalGoal: number
+  proteinGoal: number
+  fatGoal: number
+  carbsGoal: number
+  createdAt: string
+  updatedAt: string
 }
 
 /** Метаданные метрики: подпись, единица, цвет кольца (для градиента). */
@@ -61,6 +84,61 @@ export const MACROS: MacroMeta[] = [
   { key: 'fat', label: 'Жиры', unit: 'г', color: '#a78bfa', colorSoft: '#c4b5fd' },
   { key: 'carbs', label: 'Углеводы', unit: 'г', color: '#34d399', colorSoft: '#6ee7b7' },
 ]
+
+function mapNutritionProfile(raw: Record<string, unknown>): NutritionProfile {
+  return {
+    id: Number(raw.id) || 0,
+    sex: (raw.sex === 'male' ? 'male' : 'female'),
+    age: Number(raw.age) || 25,
+    heightCm: Number(raw.height_cm ?? raw.heightCm) || 170,
+    weightKg: Number(raw.weight_kg ?? raw.weightKg) || 70,
+    activityLevel: String(raw.activity_level ?? raw.activityLevel ?? 'light') as NutritionActivityLevel,
+    goal: String(raw.goal ?? 'maintain') as NutritionGoal,
+    kcalGoal: Number(raw.kcal_goal ?? raw.kcalGoal) || DEFAULT_GOALS.kcal,
+    proteinGoal: Number(raw.protein_goal ?? raw.proteinGoal) || DEFAULT_GOALS.protein,
+    fatGoal: Number(raw.fat_goal ?? raw.fatGoal) || DEFAULT_GOALS.fat,
+    carbsGoal: Number(raw.carbs_goal ?? raw.carbsGoal) || DEFAULT_GOALS.carbs,
+    createdAt: String(raw.created_at ?? raw.createdAt ?? ''),
+    updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ''),
+  }
+}
+
+export function goalsFromProfile(profile: NutritionProfile): Goals {
+  return {
+    kcal: profile.kcalGoal,
+    protein: profile.proteinGoal,
+    fat: profile.fatGoal,
+    carbs: profile.carbsGoal,
+  }
+}
+
+export async function loadNutritionProfile(): Promise<NutritionProfile | null> {
+  const res = await authFetch(`${BACKEND_URL}/api/nutrition/profile/`, {
+    method: 'GET',
+    cache: 'no-store',
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Nutrition profile load failed: ${res.status}`)
+  const data = await res.json()
+  return mapNutritionProfile(data as Record<string, unknown>)
+}
+
+export async function saveNutritionProfile(input: NutritionProfileInput): Promise<NutritionProfile> {
+  const res = await authFetch(`${BACKEND_URL}/api/nutrition/profile/`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      sex: input.sex,
+      age: input.age,
+      height_cm: input.heightCm,
+      weight_kg: input.weightKg,
+      activity_level: input.activityLevel,
+      goal: input.goal,
+    }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body?.error || `Nutrition profile save failed: ${res.status}`)
+  return mapNutritionProfile(body as Record<string, unknown>)
+}
 
 /**
  * Glassmorphism 2.0 — тот же язык, что у остального дашборда (habits/lib.ts):
@@ -210,6 +288,14 @@ export interface PhotoFoodItem extends FoodLibraryItem {
   completenessRatio?: number
   /** Diagnostic confidence for the OpenCV portion estimate. */
   portionConfidence?: number
+  /** Where the portion estimate came from, e.g. opencv_contour or model fallback. */
+  portionSource?: string
+  /** Where per-100g nutrition came from: catalog_baseline or vision_model. */
+  nutritionSource?: string
+  /** Diagnostic confidence for per-100g nutrition. */
+  nutritionConfidence?: number
+  /** Machine-readable warnings for low-confidence photo estimates. */
+  analysisWarnings?: string[]
 }
 
 /** Собирает распознанные с фото продукты в одну запись "готового блюда". */
@@ -294,6 +380,12 @@ export async function analyzePhoto(dataUrl: string, timeoutMs = 36_000): Promise
       defaultCatalogWeight: Number(it.default_catalog_weight ?? it.defaultCatalogWeight) || undefined,
       completenessRatio: Number(it.completeness_ratio ?? it.completenessRatio) || undefined,
       portionConfidence: Number(it.portion_confidence ?? it.portionConfidence) || undefined,
+      portionSource: String(it.portion_source ?? it.portionSource ?? '').trim() || undefined,
+      nutritionSource: String(it.nutrition_source ?? it.nutritionSource ?? '').trim() || undefined,
+      nutritionConfidence: Number(it.nutrition_confidence ?? it.nutritionConfidence) || undefined,
+      analysisWarnings: Array.isArray(it.analysis_warnings)
+        ? it.analysis_warnings.map(String)
+        : (Array.isArray(it.analysisWarnings) ? it.analysisWarnings.map(String) : undefined),
       barcode: '',
       source: 'ai',
     }))

@@ -28,8 +28,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 
-from .models import FoodItem, NutritionEntry
-from .serializers import FoodItemSerializer, NutritionEntrySerializer
+from .goal_calculator import calculate_nutrition_targets
+from .models import FoodItem, NutritionEntry, NutritionProfile
+from .serializers import FoodItemSerializer, NutritionEntrySerializer, NutritionProfileSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,54 @@ class NutritionEntryViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         entry_date = serializer.validated_data.get("entry_date") or date.today()
         serializer.save(user_email=getattr(self.request, "user_email", None), entry_date=entry_date)
+
+
+class NutritionProfileView(APIView):
+    """GET/PUT /api/nutrition/profile/ — saved adaptive calorie and BJU goals."""
+
+    def get(self, request):
+        user_email = getattr(request, "user_email", None)
+        if not user_email:
+            return Response({"error": "Не удалось определить пользователя."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        profile = NutritionProfile.objects.filter(user_email=user_email).first()
+        if not profile:
+            return Response({"exists": False}, status=status.HTTP_404_NOT_FOUND)
+        return Response(NutritionProfileSerializer(profile).data)
+
+    def put(self, request):
+        return self._upsert(request)
+
+    def post(self, request):
+        return self._upsert(request)
+
+    def _upsert(self, request):
+        user_email = getattr(request, "user_email", None)
+        if not user_email:
+            return Response({"error": "Не удалось определить пользователя."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        serializer = NutritionProfileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        targets = calculate_nutrition_targets(
+            sex=data["sex"],
+            age=data["age"],
+            height_cm=data["height_cm"],
+            weight_kg=data["weight_kg"],
+            activity_level=data["activity_level"],
+            goal=data["goal"],
+        )
+        profile, _ = NutritionProfile.objects.update_or_create(
+            user_email=user_email,
+            defaults={
+                **data,
+                "kcal_goal": targets.kcal_goal,
+                "protein_goal": targets.protein_goal,
+                "fat_goal": targets.fat_goal,
+                "carbs_goal": targets.carbs_goal,
+            },
+        )
+        return Response(NutritionProfileSerializer(profile).data)
 
 # Open Food Facts — открытая бесплатная база продуктов (без API-ключа).
 # v2 product endpoint; просим только нужные поля, чтобы ответ был лёгким.

@@ -289,5 +289,6 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "loggers": {
         "ai_engine": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "nutrition": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }

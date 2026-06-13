@@ -13,28 +13,40 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { AnalyticsTab } from './AnalyticsTab'
 import { DiaryTab } from './DiaryTab'
 import { BottomNav, type NutritionTab } from './BottomNav'
 import { AddSheet } from './AddSheet'
 import { BarcodeScanner } from './BarcodeScanner'
 import { PhotoAnalyzer } from './PhotoAnalyzer'
+import { NutritionProfileSurvey } from './NutritionProfileSurvey'
 import {
   DEFAULT_GOALS,
   addEntryToBackend,
   deleteEntryFromBackend,
+  goalsFromProfile,
   loadEntries,
   loadEntriesFromBackend,
+  loadNutritionProfile,
   saveEntries,
+  saveNutritionProfile,
   sumTotals,
   type FoodEntry,
+  type NutritionProfile,
+  type NutritionProfileInput,
 } from './lib'
 
 export function NutritionTracker() {
   const [entries, setEntries] = useState<FoodEntry[]>([])
+  const [goals, setGoals] = useState(DEFAULT_GOALS)
+  const [profile, setProfile] = useState<NutritionProfile | null>(null)
   const [hydrated, setHydrated] = useState(false)
   const [tab, setTab] = useState<NutritionTab>('analytics')
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileSaving, setProfileSaving] = useState(false)
 
   // Модалки/листы добавления.
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -70,7 +82,49 @@ export function NutritionTracker() {
     if (hydrated) saveEntries(entries)
   }, [entries, hydrated])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function hydrateProfile() {
+      try {
+        const savedProfile = await loadNutritionProfile()
+        if (cancelled) return
+        setProfile(savedProfile)
+        if (savedProfile) {
+          setGoals(goalsFromProfile(savedProfile))
+        } else {
+          setProfileOpen(true)
+        }
+      } catch {
+        if (cancelled) return
+        toast.warning('Нормы питания открыты по умолчанию', {
+          description: 'Профиль не загрузился, можно попробовать настроить цели позже.',
+        })
+      }
+    }
+
+    hydrateProfile()
+    return () => { cancelled = true }
+  }, [])
+
   const totals = useMemo(() => sumTotals(entries), [entries])
+
+  const saveProfile = async (data: NutritionProfileInput) => {
+    setProfileSaving(true)
+    try {
+      const savedProfile = await saveNutritionProfile(data)
+      setProfile(savedProfile)
+      setGoals(goalsFromProfile(savedProfile))
+      setProfileOpen(false)
+      toast.success('Нормы питания обновлены', {
+        description: `${savedProfile.kcalGoal} ккал • Б ${savedProfile.proteinGoal} г • Ж ${savedProfile.fatGoal} г • У ${savedProfile.carbsGoal} г`,
+      })
+    } catch {
+      toast.error('Не удалось сохранить профиль питания')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
 
   const addEntry = async (data: Omit<FoodEntry, 'id' | 'addedAt'>) => {
     const localId = (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -114,11 +168,23 @@ export function NutritionTracker() {
   return (
     <div className="flex min-h-full flex-col">
       {/* Заголовок */}
-      <header className="mb-4">
-        <h1 className="font-plus-jakarta text-2xl font-extrabold tracking-tight">Калории и БЖУ</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {tab === 'analytics' ? 'Твой день в цифрах' : 'Найди и добавь продукт'}
-        </p>
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-plus-jakarta text-2xl font-extrabold tracking-tight">Калории и БЖУ</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {tab === 'analytics' ? 'Твой день в цифрах' : 'Найди и добавь продукт'}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 rounded-full bg-background/55 backdrop-blur-xl"
+          onClick={() => setProfileOpen(true)}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Нормы
+        </Button>
       </header>
 
       {/* Контент вкладки (отступ снизу под навбар) */}
@@ -134,7 +200,7 @@ export function NutritionTracker() {
             {tab === 'analytics' ? (
               <AnalyticsTab
                 totals={totals}
-                goals={DEFAULT_GOALS}
+                goals={goals}
                 entries={entries}
                 onRemove={removeEntry}
               />
@@ -159,6 +225,13 @@ export function NutritionTracker() {
       {/* Рабочие модалки добавления */}
       <BarcodeScanner open={scanOpen} onClose={() => setScanOpen(false)} onAdd={addEntry} />
       <PhotoAnalyzer open={photoOpen} onClose={() => setPhotoOpen(false)} onAdd={addEntry} />
+      <NutritionProfileSurvey
+        open={profileOpen}
+        initialProfile={profile}
+        saving={profileSaving}
+        onOpenChange={setProfileOpen}
+        onSubmit={saveProfile}
+      />
     </div>
   )
 }

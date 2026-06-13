@@ -69,3 +69,49 @@ class NutritionEntry(models.Model):
 
     def __str__(self):
         return f"{self.user_email} — {self.name} ({self.entry_date})"
+
+
+class NutritionProfile(models.Model):
+    """Saved per-user nutrition targets calculated from body metrics and goal."""
+
+    SEX_CHOICES = [
+        ("male", "Male"),
+        ("female", "Female"),
+    ]
+    ACTIVITY_CHOICES = [
+        ("sedentary", "Sedentary"),
+        ("light", "Light"),
+        ("moderate", "Moderate"),
+        ("active", "Active"),
+        ("very_active", "Very active"),
+    ]
+    GOAL_CHOICES = [
+        ("lose", "Lose weight"),
+        ("maintain", "Maintain"),
+        ("gain", "Gain weight"),
+    ]
+
+    user_email = models.EmailField(unique=True, db_index=True)
+    sex = models.CharField(max_length=12, choices=SEX_CHOICES)
+    age = models.PositiveSmallIntegerField()
+    height_cm = models.FloatField()
+    weight_kg = models.FloatField()
+    activity_level = models.CharField(max_length=16, choices=ACTIVITY_CHOICES, default="light")
+    goal = models.CharField(max_length=12, choices=GOAL_CHOICES, default="maintain")
+
+    kcal_goal = models.PositiveIntegerField(default=2200)
+    protein_goal = models.PositiveIntegerField(default=140)
+    fat_goal = models.PositiveIntegerField(default=70)
+    carbs_goal = models.PositiveIntegerField(default=250)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["user_email"]
+        indexes = [
+            models.Index(fields=["user_email"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_email} — {self.kcal_goal} kcal"

@@ -16,7 +16,13 @@ from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from habits.views import HabitViewSet
-from nutrition.views import FoodSearchView, BarcodeLookupView, OffSearchView, NutritionEntryViewSet
+from nutrition.views import (
+    FoodSearchView,
+    BarcodeLookupView,
+    OffSearchView,
+    NutritionEntryViewSet,
+    NutritionProfileView,
+)
 from nutrition.photo_views import AnalyzePhotoView
 
 
@@ -76,6 +82,8 @@ urlpatterns = [
     path('api/nutrition/foods', FoodSearchView.as_view(), name='nutrition-foods-no-slash'),
     path('api/nutrition/search-off/', OffSearchView.as_view(), name='nutrition-search-off'),
     path('api/nutrition/search-off', OffSearchView.as_view(), name='nutrition-search-off-no-slash'),
+    path('api/nutrition/profile/', NutritionProfileView.as_view(), name='nutrition-profile'),
+    path('api/nutrition/profile', NutritionProfileView.as_view(), name='nutrition-profile-no-slash'),
     path('api/nutrition/barcode/<str:code>/', BarcodeLookupView.as_view(), name='nutrition-barcode'),
     path('api/nutrition/barcode/<str:code>', BarcodeLookupView.as_view(), name='nutrition-barcode-no-slash'),
     path('api/nutrition/analyze-photo/', AnalyzePhotoView.as_view(), name='nutrition-analyze-photo'),

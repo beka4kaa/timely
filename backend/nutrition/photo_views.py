@@ -7,15 +7,18 @@ POST /api/nutrition/analyze-photo/
   Groq vision → OpenRouter vision router → Gemini. Можно зафиксировать через
   NUTRITION_PHOTO_PROVIDER=groq|openrouter|gemini.
 
-  Модель распознаёт класс/БЖУ и оценивает видимый вес/полноту. Локальный
-  OpenCV estimator остаётся только fallback, если модель не вернула grams.
+  Модель распознаёт класс/название. Вес порции стабилизируется локальным
+  OpenCV estimator, а БЖУ известных классов — локальным baseline-каталогом.
+  LLM-граммы используются только legacy/fallback режимом.
 
   Ответ: { "items": [ {name, identified_class, grams, default_catalog_weight,
     completeness_ratio, kcal, protein, fat, carbs}, ... ] }
-  где БЖУ — НА 100 Г, а grams — динамическая оценка видимой порции на фото.
+  где БЖУ — НА 100 Г, а grams — deterministic оценка видимой порции на фото.
 """
 
 import base64
+import copy
+import hashlib
 import json
 import logging
 import os
@@ -65,7 +68,13 @@ TEXT_ONLY_OPENROUTER_MODELS = {
     "openai/gpt-oss-120b",
     "z-ai/glm-5.1",
 }
-PORTION_STRATEGY = os.getenv("NUTRITION_PORTION_STRATEGY", "model").strip().lower()
+PORTION_STRATEGY = os.getenv("NUTRITION_PORTION_STRATEGY", "hybrid").strip().lower()
+# Cache is opt-in. It saves latency/cost, but must not be used to hide model
+# uncertainty while debugging food recognition quality.
+PHOTO_CACHE_SECONDS = int(os.getenv("NUTRITION_PHOTO_CACHE_SECONDS", "0"))
+PHOTO_CACHE_MAX = int(os.getenv("NUTRITION_PHOTO_CACHE_MAX", "64"))
+PROMPT_VERSION = "nutrition-photo-v2-stable-portion"
+_PHOTO_ANALYSIS_CACHE: dict[str, tuple[float, dict]] = {}
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
@@ -78,23 +87,36 @@ VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 VISION_TIMEOUT = float(os.getenv("NUTRITION_VISION_TIMEOUT", os.getenv("GEMINI_VISION_TIMEOUT", "28")))
 
 _PROMPT = (
-    "Ты — нутрициолог. Определи еду на фото и оцени её пищевую ценность.\n"
+    "Ты — классификатор еды на фото. Определи, что это за еда.\n"
     "Верни СТРОГО JSON без markdown по схеме:\n"
     '{"items":[{"name":"<краткое название на русском>","emoji":"<1 эмодзи еды>",'
     '"identified_class":"<canonical english food class, e.g. bagel/apple/pizza_slice>",'
     '"default_grams":<типичный вес ЦЕЛОГО стандартного экземпляра или порции, г>,'
-    '"visible_grams":<оценка веса ВИДИМОЙ части на фото, г>,'
-    '"completeness_ratio":<видимая доля от целого, 0.0..1.0>,'
     '"kcal":<на 100 г>,"protein":<на 100 г>,"fat":<на 100 г>,"carbs":<на 100 г>}]}\n'
     "Правила:\n"
     "- kcal/protein/fat/carbs — строго НА 100 ГРАММ продукта.\n"
     "- default_grams — вес целого стандартного экземпляра/порции из каталога.\n"
-    "- visible_grams — твоя лучшая оценка веса именно видимой части на фото, учитывая размер, обрезку, надкусы и неполную порцию.\n"
-    "- completeness_ratio = visible_grams / default_grams, округли до 2 знаков.\n"
+    "- НЕ оценивай финальные калории порции и НЕ угадывай видимые граммы: сервер отдельно считает видимую часть по пикселям.\n"
     "- Если на фото несколько разных блюд — перечисли каждое (максимум 5).\n"
     "- Если еду распознать нельзя — верни {\"items\":[]}.\n"
     "- Названия краткие, на русском. Только JSON, ничего больше."
 )
+
+_NUTRITION_BASELINES_PER100 = {
+    "bagel": {"kcal": 270.0, "protein": 10.0, "fat": 2.0, "carbs": 53.0},
+    "donut": {"kcal": 410.0, "protein": 6.0, "fat": 22.0, "carbs": 50.0},
+    "banana": {"kcal": 89.0, "protein": 1.1, "fat": 0.3, "carbs": 23.0},
+    "apple": {"kcal": 52.0, "protein": 0.3, "fat": 0.2, "carbs": 14.0},
+    "citrus": {"kcal": 47.0, "protein": 0.9, "fat": 0.1, "carbs": 12.0},
+    "cookie": {"kcal": 480.0, "protein": 6.0, "fat": 22.0, "carbs": 65.0},
+    "egg": {"kcal": 155.0, "protein": 13.0, "fat": 11.0, "carbs": 1.1},
+    "bread_slice": {"kcal": 265.0, "protein": 9.0, "fat": 3.2, "carbs": 49.0},
+    "croissant": {"kcal": 406.0, "protein": 8.2, "fat": 21.0, "carbs": 45.0},
+    "pizza_slice": {"kcal": 266.0, "protein": 11.0, "fat": 10.0, "carbs": 33.0},
+    "pizza": {"kcal": 266.0, "protein": 11.0, "fat": 10.0, "carbs": 33.0},
+    "burger": {"kcal": 295.0, "protein": 17.0, "fat": 14.0, "carbs": 24.0},
+    "sandwich": {"kcal": 250.0, "protein": 11.0, "fat": 8.0, "carbs": 33.0},
+}
 
 _DATA_URL_RE = re.compile(r"^data:(?P<mime>image/[\w.+-]+);base64,(?P<b64>.+)$", re.DOTALL)
 
@@ -155,6 +177,45 @@ def _content_to_text(content) -> str:
                     parts.append(text)
         return "\n".join(parts)
     return ""
+
+
+def _photo_cache_key(provider: str, raw: bytes) -> str:
+    if provider == "groq":
+        model_key = "|".join(_groq_models())
+    elif provider == "openrouter":
+        model_key = "|".join(_openrouter_models())
+    else:
+        model_key = VISION_MODEL
+    digest = hashlib.sha256(raw).hexdigest()
+    return f"{PROMPT_VERSION}:{provider}:{model_key}:{PORTION_STRATEGY}:{digest}"
+
+
+def _cache_get(key: str) -> dict | None:
+    cached = _PHOTO_ANALYSIS_CACHE.get(key)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if expires_at <= time.monotonic():
+        _PHOTO_ANALYSIS_CACHE.pop(key, None)
+        return None
+    return copy.deepcopy(value)
+
+
+def _cache_set(key: str, value: dict) -> None:
+    if PHOTO_CACHE_MAX <= 0 or PHOTO_CACHE_SECONDS <= 0:
+        return
+    if len(_PHOTO_ANALYSIS_CACHE) >= PHOTO_CACHE_MAX:
+        oldest_key = min(_PHOTO_ANALYSIS_CACHE, key=lambda k: _PHOTO_ANALYSIS_CACHE[k][0])
+        _PHOTO_ANALYSIS_CACHE.pop(oldest_key, None)
+    _PHOTO_ANALYSIS_CACHE[key] = (time.monotonic() + PHOTO_CACHE_SECONDS, copy.deepcopy(value))
+
+
+def _nutrition_for_class(identified_class: str) -> tuple[dict[str, float] | None, str, float]:
+    key = (identified_class or "").strip().lower()
+    nutrition = _NUTRITION_BASELINES_PER100.get(key)
+    if nutrition:
+        return nutrition, "catalog_baseline", 0.86
+    return None, "vision_model", 0.52
 
 
 def _openrouter_models() -> list[str]:
@@ -321,11 +382,123 @@ def _call_gemini(raw: bytes, mime_type: str) -> dict | None:
         VISION_TIMEOUT,
     )
     model = genai.GenerativeModel(VISION_MODEL)
-    result = model.generate_content([
-        _PROMPT,
-        {"mime_type": mime_type, "data": raw},
-    ], request_options={"timeout": VISION_TIMEOUT})
+    result = model.generate_content(
+        [
+            _PROMPT,
+            {"mime_type": mime_type, "data": raw},
+        ],
+        generation_config={"temperature": 0, "response_mime_type": "application/json"},
+        request_options={"timeout": VISION_TIMEOUT},
+    )
     return _parse_json(result.text)
+
+
+def _normalize_photo_items(parsed: dict, raw: bytes) -> list[dict]:
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("items"), list):
+        return []
+
+    items = []
+    for it in parsed["items"][:5]:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()[:120]
+        model_kcal = _num(it.get("kcal"))
+        if not name:
+            continue
+
+        portion_started_at = time.monotonic()
+        identified_class = str(it.get("identified_class") or it.get("class") or "").strip()[:80]
+        model_default_grams = _num(it.get("default_grams"), _num(it.get("grams"), 100)) or 100
+        model_visible_grams = _num(it.get("visible_grams"), _num(it.get("grams"), 0))
+        model_ratio = _ratio(it.get("completeness_ratio"))
+
+        portion = estimate_food_portion(
+            raw,
+            name=name,
+            identified_class=identified_class,
+            model_default_grams=model_default_grams,
+        )
+        nutrition, nutrition_source, nutrition_confidence = _nutrition_for_class(portion.identified_class)
+        if nutrition:
+            kcal = nutrition["kcal"]
+            protein = nutrition["protein"]
+            fat = nutrition["fat"]
+            carbs = nutrition["carbs"]
+        else:
+            kcal = model_kcal
+            protein = _num(it.get("protein"))
+            fat = _num(it.get("fat"))
+            carbs = _num(it.get("carbs"))
+            if kcal <= 0:
+                continue
+
+        if PORTION_STRATEGY == "model" and model_visible_grams:
+            default_weight = int(round(model_default_grams))
+            final_weight = _round_grams(model_visible_grams)
+            completeness_ratio = model_ratio or _ratio(final_weight / max(1, default_weight), 1.0)
+            confidence = 0.72
+            source = "model_visible_grams"
+        elif PORTION_STRATEGY == "model" and model_ratio:
+            default_weight = int(round(model_default_grams))
+            completeness_ratio = model_ratio
+            final_weight = _round_grams(default_weight * completeness_ratio)
+            confidence = 0.68
+            source = "model_completeness_ratio"
+        elif PORTION_STRATEGY == "hybrid" and portion.source != "opencv_contour" and model_visible_grams:
+            default_weight = int(round(model_default_grams))
+            final_weight = _round_grams(model_visible_grams)
+            completeness_ratio = model_ratio or _ratio(final_weight / max(1, default_weight), 1.0)
+            confidence = 0.55
+            source = f"model_visible_grams_fallback:{portion.source}"
+        else:
+            default_weight = portion.default_catalog_weight
+            final_weight = portion.final_weight
+            completeness_ratio = portion.completeness_ratio
+            confidence = portion.confidence
+            source = portion.source
+
+        warnings = []
+        if source != "opencv_contour" or confidence < 0.65:
+            warnings.append("portion_low_confidence")
+        if nutrition_source == "vision_model":
+            warnings.append("nutrition_model_estimate")
+
+        logger.info(
+            "[PhotoAnalyze] portion strategy=%s name=%r class=%r model_default=%sg model_visible=%sg cv_default=%sg cv_ratio=%.2f final=%sg kcal100=%s portion_source=%s nutrition_source=%s time=%.3fs",
+            PORTION_STRATEGY,
+            name,
+            identified_class or portion.identified_class,
+            model_default_grams,
+            model_visible_grams,
+            portion.default_catalog_weight,
+            portion.completeness_ratio,
+            final_weight,
+            kcal,
+            source,
+            nutrition_source,
+            time.monotonic() - portion_started_at,
+        )
+        items.append({
+            "name": name,
+            "identified_class": identified_class or portion.identified_class,
+            "emoji": str(it.get("emoji") or "🍽")[:8],
+            "grams": final_weight,
+            "default_catalog_weight": default_weight,
+            "completeness_ratio": completeness_ratio,
+            "pixel_area": portion.pixel_area,
+            "baseline_area": portion.baseline_area,
+            "portion_confidence": confidence,
+            "portion_source": source,
+            "nutrition_source": nutrition_source,
+            "nutrition_confidence": nutrition_confidence,
+            "analysis_warnings": warnings,
+            "kcal": kcal,
+            "protein": protein,
+            "fat": fat,
+            "carbs": carbs,
+        })
+
+    return items
 
 
 class AnalyzePhotoView(APIView):
@@ -375,6 +548,18 @@ class AnalyzePhotoView(APIView):
             return Response({"error": "Не удалось декодировать изображение."},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        cache_key = _photo_cache_key(provider, raw)
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            logger.info(
+                "[PhotoAnalyze] cache hit provider=%s strategy=%s bytes=%d",
+                provider,
+                PORTION_STRATEGY,
+                len(raw),
+            )
+            cached["cached"] = True
+            return Response(cached)
+
         started_at = time.monotonic()
         try:
             if provider == "groq":
@@ -414,84 +599,6 @@ class AnalyzePhotoView(APIView):
         if not isinstance(parsed, dict) or not isinstance(parsed.get("items"), list):
             return Response({"items": []})
 
-        items = []
-        for it in parsed["items"][:5]:
-            if not isinstance(it, dict):
-                continue
-            name = str(it.get("name") or "").strip()[:120]
-            kcal = _num(it.get("kcal"))
-            if not name or kcal <= 0:
-                continue
-            portion_started_at = time.monotonic()
-            identified_class = str(it.get("identified_class") or it.get("class") or "").strip()[:80]
-            model_default_grams = _num(it.get("default_grams"), _num(it.get("grams"), 100)) or 100
-            model_visible_grams = _num(it.get("visible_grams"), _num(it.get("grams"), 0))
-            model_ratio = _ratio(it.get("completeness_ratio"))
-
-            portion = None
-            if PORTION_STRATEGY in {"cv", "hybrid"} or not model_visible_grams:
-                portion = estimate_food_portion(
-                    raw,
-                    name=name,
-                    identified_class=identified_class,
-                    model_default_grams=model_default_grams,
-                )
-            if PORTION_STRATEGY == "cv" and portion is not None:
-                final_weight = portion.final_weight
-                default_weight = portion.default_catalog_weight
-                completeness_ratio = portion.completeness_ratio
-                confidence = portion.confidence
-                source = portion.source
-            elif model_visible_grams:
-                default_weight = int(round(model_default_grams))
-                final_weight = _round_grams(model_visible_grams)
-                completeness_ratio = model_ratio or _ratio(final_weight / max(1, default_weight), 1.0)
-                confidence = 0.72
-                source = "model_visible_grams"
-            elif model_ratio:
-                default_weight = int(round(model_default_grams))
-                completeness_ratio = model_ratio
-                final_weight = _round_grams(default_weight * completeness_ratio)
-                confidence = 0.68
-                source = "model_completeness_ratio"
-            else:
-                if portion is None:
-                    portion = estimate_food_portion(
-                        raw,
-                        name=name,
-                        identified_class=identified_class,
-                        model_default_grams=model_default_grams,
-                    )
-                default_weight = portion.default_catalog_weight
-                final_weight = portion.final_weight
-                completeness_ratio = portion.completeness_ratio
-                confidence = portion.confidence
-                source = portion.source
-            logger.info(
-                "[PhotoAnalyze] portion name=%r class=%r default=%sg ratio=%.2f final=%sg source=%s time=%.3fs",
-                name,
-                identified_class or (portion.identified_class if portion else ""),
-                default_weight,
-                completeness_ratio,
-                final_weight,
-                source,
-                time.monotonic() - portion_started_at,
-            )
-            items.append({
-                "name": name,
-                "identified_class": identified_class or (portion.identified_class if portion else ""),
-                "emoji": str(it.get("emoji") or "🍽")[:8],
-                "grams": final_weight,
-                "default_catalog_weight": default_weight,
-                "completeness_ratio": completeness_ratio,
-                "pixel_area": portion.pixel_area if portion else 0,
-                "baseline_area": portion.baseline_area if portion else 0,
-                "portion_confidence": confidence,
-                "portion_source": source,
-                "kcal": kcal,
-                "protein": _num(it.get("protein")),
-                "fat": _num(it.get("fat")),
-                "carbs": _num(it.get("carbs")),
-            })
-
-        return Response({"items": items})
+        result = {"items": _normalize_photo_items(parsed, raw)}
+        _cache_set(cache_key, result)
+        return Response(result)
