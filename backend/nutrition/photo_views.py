@@ -3,13 +3,17 @@ nutrition/photo_views.py
 ────────────────────────────────────────────────────────────────────
 POST /api/nutrition/analyze-photo/
   Body: { "image": "data:image/jpeg;base64,<...>" }
-  Оценка еды по фото через Gemini vision (gemini-2.0-flash) — та же
+  Оценка еды по фото через Gemini vision (gemini-2.5-flash) — та же
   библиотека google-generativeai и ключ GEMINI_API_KEY, что у остального
   AI в проекте (см. ai_engine/services.py).
 
-  Ответ: { "items": [ {name, emoji, grams, kcal, protein, fat, carbs}, ... ] }
-  где БЖУ — НА 100 Г, а grams — оценка порции на фото (фронтенд подставит
-  её в PortionPicker, пользователь поправит).
+  Gemini распознаёт класс/БЖУ, затем локальный OpenCV-шаг оценивает видимую
+  полноту продукта и пересчитывает вес:
+      grams = default_catalog_weight * completeness_ratio
+
+  Ответ: { "items": [ {name, identified_class, grams, default_catalog_weight,
+    completeness_ratio, kcal, protein, fat, carbs}, ... ] }
+  где БЖУ — НА 100 Г, а grams — динамическая оценка видимой порции на фото.
 """
 
 import base64
@@ -22,6 +26,8 @@ import google.generativeai as genai
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from .portion_estimator import estimate_food_portion
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +44,13 @@ _PROMPT = (
     "Ты — нутрициолог. Определи еду на фото и оцени её пищевую ценность.\n"
     "Верни СТРОГО JSON без markdown по схеме:\n"
     '{"items":[{"name":"<краткое название на русском>","emoji":"<1 эмодзи еды>",'
-    '"grams":<оценка порции на фото, целое число г>,'
+    '"identified_class":"<canonical english food class, e.g. bagel/apple/pizza_slice>",'
+    '"default_grams":<типичный вес ЦЕЛОГО стандартного экземпляра или порции, г>,'
     '"kcal":<на 100 г>,"protein":<на 100 г>,"fat":<на 100 г>,"carbs":<на 100 г>}]}\n'
     "Правила:\n"
     "- kcal/protein/fat/carbs — строго НА 100 ГРАММ продукта.\n"
-    "- grams — твоя оценка размера ВИДИМОЙ на фото порции.\n"
+    "- default_grams — вес целого стандартного экземпляра/порции из каталога, НЕ видимой части на фото.\n"
+    "- Не пытайся оценивать, сколько продукта откушено или обрезано: это сделает backend по пикселям.\n"
     "- Если на фото несколько разных блюд — перечисли каждое (максимум 5).\n"
     "- Если еду распознать нельзя — верни {\"items\":[]}.\n"
     "- Названия краткие, на русском. Только JSON, ничего больше."
@@ -122,10 +130,25 @@ class AnalyzePhotoView(APIView):
             kcal = _num(it.get("kcal"))
             if not name or kcal <= 0:
                 continue
+            identified_class = str(it.get("identified_class") or it.get("class") or "").strip()[:80]
+            model_default_grams = _num(it.get("default_grams"), _num(it.get("grams"), 100)) or 100
+            portion = estimate_food_portion(
+                raw,
+                name=name,
+                identified_class=identified_class,
+                model_default_grams=model_default_grams,
+            )
             items.append({
                 "name": name,
+                "identified_class": identified_class or portion.identified_class,
                 "emoji": str(it.get("emoji") or "🍽")[:8],
-                "grams": int(_num(it.get("grams"), 100)) or 100,
+                "grams": portion.final_weight,
+                "default_catalog_weight": portion.default_catalog_weight,
+                "completeness_ratio": portion.completeness_ratio,
+                "pixel_area": portion.pixel_area,
+                "baseline_area": portion.baseline_area,
+                "portion_confidence": portion.confidence,
+                "portion_source": portion.source,
                 "kcal": kcal,
                 "protein": _num(it.get("protein")),
                 "fat": _num(it.get("fat")),

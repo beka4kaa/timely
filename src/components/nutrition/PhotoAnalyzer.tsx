@@ -115,8 +115,17 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{food.name}</span>
                     <span className="block text-[11px] text-muted-foreground tabular-nums">
-                      ~{food.grams} г · {food.kcal} ккал/100г
+                      ~{food.grams} г
+                      {food.completenessRatio ? ` · ${Math.round(food.completenessRatio * 100)}% от целого` : ''}
+                      {food.defaultCatalogWeight ? ` (${food.defaultCatalogWeight} г)` : ''}
+                      {' · '}
+                      {food.kcal} ккал/100г
                     </span>
+                    {food.identifiedClass && (
+                      <span className="block truncate text-[10px] text-muted-foreground/80">
+                        Класс: {food.identifiedClass}
+                      </span>
+                    )}
                   </span>
                 </button>
               ))}

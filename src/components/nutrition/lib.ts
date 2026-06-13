@@ -4,8 +4,8 @@
  * Общие типы, токены стекла и помощники для «Трекера калорий и БЖУ».
  *
  * История дня — локальная (localStorage по дню). Библиотека продуктов и
- * поиск по штрихкоду ходят в Django-бэкенд (/api/nutrition/*, см. backend/
- * nutrition). Фото-анализ ИИ пока не подключён (нужна модель/ключ).
+ * поиск по штрихкоду и фото-анализ ходят в Django-бэкенд
+ * (/api/nutrition/*, см. backend/nutrition).
  */
 
 import { BACKEND_URL } from '@/lib/api-utils'
@@ -201,6 +201,14 @@ export async function lookupBarcode(code: string): Promise<BarcodeResult> {
 export interface PhotoFoodItem extends FoodLibraryItem {
   /** Оценка размера видимой на фото порции, г. */
   grams: number
+  /** Canonical class from vision model/backend, e.g. "bagel". */
+  identifiedClass?: string
+  /** Whole-item/catalog baseline before OpenCV completeness adjustment. */
+  defaultCatalogWeight?: number
+  /** Visible completeness ratio, 0..1. */
+  completenessRatio?: number
+  /** Diagnostic confidence for the OpenCV portion estimate. */
+  portionConfidence?: number
 }
 
 /**
@@ -247,6 +255,10 @@ export async function analyzePhoto(dataUrl: string): Promise<PhotoAnalysisResult
       fat: Number(it.fat) || 0,
       carbs: Number(it.carbs) || 0,
       grams: Number(it.grams) || 100,
+      identifiedClass: String(it.identified_class ?? it.identifiedClass ?? '').trim() || undefined,
+      defaultCatalogWeight: Number(it.default_catalog_weight ?? it.defaultCatalogWeight) || undefined,
+      completenessRatio: Number(it.completeness_ratio ?? it.completenessRatio) || undefined,
+      portionConfidence: Number(it.portion_confidence ?? it.portionConfidence) || undefined,
       barcode: '',
       source: 'ai',
     }))
