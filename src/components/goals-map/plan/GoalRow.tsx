@@ -202,7 +202,12 @@ function SortableGoalListImpl({
   const selectedDate = useGoalsStore(s => s.selectedDate)
 
   const sorted = [...goals].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-  const ids = sorted.map(g => g.id)
+  // Include the end-drop zone in the sortable items so dnd-kit resolves a valid
+  // overIndex when hovering it. Without it, overIndex is -1 and the list strategy
+  // displaces every row by the dragged item's full height — a huge gap when
+  // dropping a folder at the very end.
+  const endId = endDropId(parentId)
+  const ids = [...sorted.map(g => g.id), endId]
 
   if (sorted.length === 0 && depth === 0) {
     return (
