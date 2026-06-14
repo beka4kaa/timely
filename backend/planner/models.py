@@ -1,5 +1,121 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 import uuid
+
+
+# ──────────────────────────────────────────────────────────────
+# Goals planning models
+# ──────────────────────────────────────────────────────────────
+
+class Goal(models.Model):
+    TYPE_CHOICES = [
+        ('global_goal', 'Global Goal'),
+        ('subgoal', 'Subgoal'),
+        ('milestone', 'Milestone'),
+        ('task', 'Task'),
+        ('habit', 'Habit'),
+        ('financial_goal', 'Financial Goal'),
+    ]
+    STATUS_CHOICES = [
+        ('not_started', 'Not Started'),
+        ('active', 'Active'),
+        ('on_track', 'On Track'),
+        ('at_risk', 'At Risk'),
+        ('blocked', 'Blocked'),
+        ('done', 'Done'),
+        ('archived', 'Archived'),
+    ]
+    PRIORITY_CHOICES = [
+        ('critical', 'Critical'),
+        ('high', 'High'),
+        ('medium', 'Medium'),
+        ('low', 'Low'),
+    ]
+    SCALE_CHOICES = [
+        ('year', 'Year'),
+        ('month', 'Month'),
+        ('day', 'Day'),
+    ]
+
+    id             = models.CharField(primary_key=True, max_length=64, default=uuid.uuid4, editable=False)
+    user_email     = models.EmailField(db_index=True)
+
+    title          = models.CharField(max_length=512)
+    description    = models.TextField(blank=True, default='')
+    type           = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='not_started')
+    priority       = models.CharField(max_length=10, choices=PRIORITY_CHOICES, null=True, blank=True)
+    planning_scale = models.CharField(max_length=10, choices=SCALE_CHOICES, null=True, blank=True)
+
+    parent         = models.ForeignKey(
+        'self', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='children',
+    )
+
+    # Temporal context
+    year       = models.IntegerField(null=True, blank=True)
+    month      = models.CharField(max_length=7, null=True, blank=True)   # "YYYY-MM"
+    start_date = models.DateField(null=True, blank=True)
+    end_date   = models.DateField(null=True, blank=True)
+    due_date   = models.DateField(null=True, blank=True)
+
+    # Progress (0–100); computed from children when they exist
+    progress = models.IntegerField(default=0)
+
+    # Financial fields
+    target_amount  = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    current_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    currency       = models.CharField(max_length=3, default='USD')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+    def computed_progress(self):
+        """Recursively compute progress from children when they exist."""
+        children = list(self.children.exclude(status='archived'))
+        if not children:
+            return self.progress
+        return round(sum(c.computed_progress() for c in children) / len(children))
+
+    def get_blockers(self):
+        """Return goals that block this one (active blocks links pointing here)."""
+        return Goal.objects.filter(
+            outgoing_links__target=self,
+            outgoing_links__type='blocks',
+        ).exclude(status__in=['done', 'archived'])
+
+
+class GoalLink(models.Model):
+    """Directed relationship between two goals."""
+    LINK_TYPE_CHOICES = [
+        ('depends_on', 'Depends On'),    # source cannot start until target is done
+        ('blocks',     'Blocks'),         # source being blocked means target is blocked
+        ('supports',   'Supports'),       # soft positive contribution
+        ('related_to', 'Related To'),     # informational grouping
+        ('parent_child', 'Parent-Child'), # explicit hierarchy edge (mirrors Goal.parent)
+    ]
+
+    id       = models.CharField(primary_key=True, max_length=64, default=uuid.uuid4, editable=False)
+    source   = models.ForeignKey(Goal, on_delete=models.CASCADE, related_name='outgoing_links')
+    target   = models.ForeignKey(Goal, on_delete=models.CASCADE, related_name='incoming_links')
+    type     = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES)
+    strength = models.IntegerField(default=1)   # 1–3, visual weight in graph
+
+    class Meta:
+        unique_together = ('source', 'target', 'type')
+
+    def clean(self):
+        if self.source_id == self.target_id:
+            raise ValidationError('A goal cannot link to itself.')
+
+    def __str__(self):
+        return f'{self.source} —[{self.type}]→ {self.target}'
 
 class DayPlan(models.Model):
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)

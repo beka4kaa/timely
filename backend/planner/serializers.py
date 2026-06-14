@@ -1,5 +1,44 @@
 from rest_framework import serializers
-from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot
+from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot, Goal, GoalLink
+
+
+class GoalLinkSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GoalLink
+        fields = ['id', 'source', 'target', 'type', 'strength']
+
+
+class GoalSerializer(serializers.ModelSerializer):
+    computed_progress = serializers.SerializerMethodField()
+    children_count    = serializers.SerializerMethodField()
+    # Expose parent id as parentId for camelCase frontend
+    parentId = serializers.CharField(source='parent_id', required=False, allow_null=True)
+    startDate       = serializers.DateField(source='start_date', required=False, allow_null=True)
+    endDate         = serializers.DateField(source='end_date',   required=False, allow_null=True)
+    dueDate         = serializers.DateField(source='due_date',   required=False, allow_null=True)
+    planningScale   = serializers.CharField(source='planning_scale', required=False, allow_null=True)
+    targetAmount    = serializers.DecimalField(source='target_amount',  max_digits=15, decimal_places=2, required=False, allow_null=True)
+    currentAmount   = serializers.DecimalField(source='current_amount', max_digits=15, decimal_places=2, required=False, allow_null=True)
+    createdAt       = serializers.DateTimeField(source='created_at', read_only=True)
+    updatedAt       = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    class Meta:
+        model = Goal
+        fields = [
+            'id', 'user_email', 'title', 'description', 'type', 'status', 'priority',
+            'planningScale', 'parentId',
+            'year', 'month', 'startDate', 'endDate', 'dueDate',
+            'progress', 'computed_progress', 'children_count',
+            'targetAmount', 'currentAmount', 'currency',
+            'createdAt', 'updatedAt',
+        ]
+        read_only_fields = ['user_email', 'computed_progress', 'children_count', 'createdAt', 'updatedAt']
+
+    def get_computed_progress(self, obj):
+        return obj.computed_progress()
+
+    def get_children_count(self, obj):
+        return obj.children.count()
 
 class SubtaskSerializer(serializers.ModelSerializer):
     class Meta:

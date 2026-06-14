@@ -43,6 +43,7 @@ const data = {
         { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
         { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
         { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
+        { title: "Карта целей", url: "/dashboard/goals", icon: TargetIcon },
         { title: "Калории и БЖУ", url: "/dashboard/nutrition", icon: AppleIcon },
       ],
     },
