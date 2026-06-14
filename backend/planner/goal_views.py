@@ -18,8 +18,9 @@ class GoalViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user_email = getattr(self.request, 'user_email', None)
         qs = Goal.objects.select_related('parent').prefetch_related('children')
-        if user_email:
-            qs = qs.filter(user_email=user_email)
+        if not user_email:
+            return qs.none()
+        qs = qs.filter(user_email=user_email)
 
         # Optional filters
         year   = self.request.query_params.get('year')
@@ -36,7 +37,7 @@ class GoalViewSet(viewsets.ModelViewSet):
         if gtype:
             qs = qs.filter(type=gtype)
 
-        return qs.order_by('-created_at')
+        return qs.order_by('parent_id', 'order_index', '-created_at')
 
     def perform_create(self, serializer):
         user_email = getattr(self.request, 'user_email', None)
@@ -137,6 +138,7 @@ class GoalViewSet(viewsets.ModelViewSet):
                         'end_date':       g.get('endDate') or None,
                         'due_date':       g.get('dueDate') or None,
                         'progress':       g.get('progress', 0),
+                        'order_index':    g.get('order', 0),
                         'target_amount':  g.get('targetAmount'),
                         'current_amount': g.get('currentAmount'),
                         'currency':       g.get('currency', 'USD'),
@@ -162,7 +164,7 @@ class GoalViewSet(viewsets.ModelViewSet):
                         },
                     )
 
-        goals_qs = Goal.objects.filter(user_email=user_email).exclude(status='archived')
+        goals_qs = Goal.objects.filter(user_email=user_email).exclude(status='archived').order_by('parent_id', 'order_index', '-created_at')
         links_qs = GoalLink.objects.filter(source__user_email=user_email)
         return Response({
             'goals': GoalSerializer(goals_qs, many=True).data,
@@ -176,8 +178,9 @@ class GoalLinkViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user_email = getattr(self.request, 'user_email', None)
         qs = GoalLink.objects.select_related('source', 'target')
-        if user_email:
-            qs = qs.filter(source__user_email=user_email)
+        if not user_email:
+            return qs.none()
+        qs = qs.filter(source__user_email=user_email)
         ltype = self.request.query_params.get('type')
         if ltype:
             qs = qs.filter(type=ltype)

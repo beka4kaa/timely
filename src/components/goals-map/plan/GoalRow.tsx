@@ -15,7 +15,6 @@ import {
   defaultAnimateLayoutChanges,
   type AnimateLayoutChanges,
 } from '@dnd-kit/sortable'
-import { useDroppable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
 // Keep items animated even when they were just dragged (smoother settle on drop).
@@ -69,74 +68,76 @@ export function GoalRow({ goal, depth = 0 }: { goal: GoalNode; depth?: number })
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="relative"
-    >
-      {/* Insertion line — glows at the top edge of the drop target */}
-      {isDropTarget && !isFolderTarget && <InsertionLine />}
+    <div className="relative">
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition }}
+        className="relative"
+      >
+        {/* Insertion line — glows at the top edge of the drop target */}
+        {isDropTarget && !isFolderTarget && <InsertionLine />}
 
-      {/* Indentation wrapper */}
-      <div style={{ paddingLeft: depth * 18 }}>
-        <div
-          {...attributes}
-          {...listeners}
-          onClick={handleRowClick}
-          className={cn(
-            'group flex items-center gap-2 rounded-xl py-1.5 px-2 cursor-grab active:cursor-grabbing transition-[background-color,box-shadow] duration-150 select-none',
-            isSelected
-              ? 'bg-foreground/[0.06] ring-1 ring-foreground/[0.08]'
-              : 'hover:bg-foreground/[0.035]',
-            isFolderTarget && 'ring-1 ring-pink-400/50 bg-pink-400/[0.07] shadow-[0_0_14px_rgba(244,114,182,0.12)]',
-            isDragging && 'opacity-0',
-          )}
-        >
-          {isTask || !hasChildren ? (
-            <button
-              onClick={e => { e.stopPropagation(); toggleTaskDone(goal.id) }}
-              className="shrink-0 transition-colors"
-            >
-              {isDone
-                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400/70" />
-                : <Circle className="w-3.5 h-3.5 text-foreground/20 hover:text-foreground/40" />}
-            </button>
-          ) : (
-            <button
-              onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
-              className="shrink-0 transition-colors"
-            >
-              {open
-                ? <FolderOpen className={cn('w-4 h-4', isFolderTarget ? 'text-pink-400' : 'text-pink-400/70')} />
-                : <Folder className={cn('w-4 h-4', isFolderTarget ? 'text-pink-400' : 'text-muted-foreground/50 hover:text-muted-foreground/80')} />}
-            </button>
-          )}
+        {/* Indentation wrapper */}
+        <div style={{ paddingLeft: depth * 18 }}>
+          <div
+            {...attributes}
+            {...listeners}
+            onClick={handleRowClick}
+            className={cn(
+              'group flex items-center gap-2 rounded-xl py-1.5 px-2 cursor-grab active:cursor-grabbing transition-[background-color,box-shadow] duration-150 select-none',
+              isSelected
+                ? 'bg-foreground/[0.06] ring-1 ring-foreground/[0.08]'
+                : 'hover:bg-foreground/[0.035]',
+              isFolderTarget && 'ring-1 ring-pink-400/50 bg-pink-400/[0.07] shadow-[0_0_14px_rgba(244,114,182,0.12)]',
+              isDragging && 'opacity-0',
+            )}
+          >
+            {isTask || !hasChildren ? (
+              <button
+                onClick={e => { e.stopPropagation(); toggleTaskDone(goal.id) }}
+                className="shrink-0 transition-colors"
+              >
+                {isDone
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400/70" />
+                  : <Circle className="w-3.5 h-3.5 text-foreground/20 hover:text-foreground/40" />}
+              </button>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+                className="shrink-0 transition-colors"
+              >
+                {open
+                  ? <FolderOpen className={cn('w-4 h-4', isFolderTarget ? 'text-pink-400' : 'text-pink-400/70')} />
+                  : <Folder className={cn('w-4 h-4', isFolderTarget ? 'text-pink-400' : 'text-muted-foreground/50 hover:text-muted-foreground/80')} />}
+              </button>
+            )}
 
-          <span className={cn(
-            'flex-1 min-w-0 truncate',
-            depth === 0 ? 'text-[13px] font-medium' : 'text-[12px] font-normal',
-            isDone ? 'text-muted-foreground/60 line-through' : 'text-foreground/90',
-          )}>
-            {goal.title}
-          </span>
+            <span className={cn(
+              'flex-1 min-w-0 truncate',
+              depth === 0 ? 'text-[13px] font-medium' : 'text-[12px] font-normal',
+              isDone ? 'text-muted-foreground/60 line-through' : 'text-foreground/90',
+            )}>
+              {goal.title}
+            </span>
 
-          {!isDone && !isTask && progress > 0 && (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-foreground/10 overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${progress}%`, background: ACCENT_GRADIENT }} />
+            {!isDone && !isTask && progress > 0 && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="w-10 h-1 rounded-full bg-foreground/10 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${progress}%`, background: ACCENT_GRADIENT }} />
+                </div>
+                {depth === 0 && (
+                  <span className="text-[11px] font-semibold tabular-nums text-muted-foreground/50 w-6 text-right">
+                    {progress}%
+                  </span>
+                )}
               </div>
-              {depth === 0 && (
-                <span className="text-[11px] font-semibold tabular-nums text-muted-foreground/50 w-6 text-right">
-                  {progress}%
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       <AnimatePresence initial={false}>
-        {open && hasChildren && (
+        {!isDragging && open && hasChildren && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -169,17 +170,19 @@ function InsertionLine() {
 // ── End-of-list drop zone: lets you drop AFTER the last item in a folder ──────
 function EndDropZone({ parentId, depth }: { parentId: string | null; depth: number }) {
   const id = endDropId(parentId)
-  const { setNodeRef } = useDroppable({ id })
+  const { setNodeRef, transform, transition } = useSortable({ id, animateLayoutChanges })
   const isActive = useDragStore(s => s.activeId != null)
   const isOver = useDragStore(s => s.overId === id)
 
-  if (!isActive) return <div ref={setNodeRef} style={{ paddingLeft: depth * 18 }} className="h-1" />
-
   return (
-    <div ref={setNodeRef} style={{ paddingLeft: depth * 18 }} className="relative h-6">
+    <div
+      ref={setNodeRef}
+      style={{ paddingLeft: depth * 18, transform: CSS.Transform.toString(transform), transition }}
+      className={cn('relative', isActive ? 'h-2 -my-0.5' : 'h-1')}
+    >
       {isOver && (
         <div
-          className="absolute top-1.5 left-1 right-1 h-[2px] rounded-full"
+          className="absolute left-1 right-1 top-1/2 h-[2px] -translate-y-1/2 rounded-full"
           style={{ background: ACCENT_GRADIENT, boxShadow: '0 0 8px rgba(244,114,182,0.6)' }}
         />
       )}

@@ -10,6 +10,7 @@ import uuid
 class Goal(models.Model):
     TYPE_CHOICES = [
         ('global_goal', 'Global Goal'),
+        ('goal', 'Goal'),
         ('subgoal', 'Subgoal'),
         ('milestone', 'Milestone'),
         ('task', 'Task'),
@@ -33,8 +34,11 @@ class Goal(models.Model):
     ]
     SCALE_CHOICES = [
         ('year', 'Year'),
+        ('quarter', 'Quarter'),
         ('month', 'Month'),
+        ('week', 'Week'),
         ('day', 'Day'),
+        ('multi_year', 'Multi-year'),
     ]
 
     id             = models.CharField(primary_key=True, max_length=64, default=uuid.uuid4, editable=False)
@@ -61,6 +65,7 @@ class Goal(models.Model):
 
     # Progress (0–100); computed from children when they exist
     progress = models.IntegerField(default=0)
+    order_index = models.IntegerField(default=0)
 
     # Financial fields
     target_amount  = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
@@ -71,7 +76,7 @@ class Goal(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['parent_id', 'order_index', '-created_at']
 
     def __str__(self):
         return self.title

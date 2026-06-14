@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { BACKEND_URL } from '@/lib/api-utils'
 

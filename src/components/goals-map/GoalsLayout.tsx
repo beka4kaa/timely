@@ -23,13 +23,36 @@ const VIEWS: { id: GoalView; label: string }[] = [
 export function GoalsLayout() {
   const activeView = useGoalsStore(s => s.activeView)
   const setActiveView = useGoalsStore(s => s.setActiveView)
+  const loadGoals = useGoalsStore(s => s.loadGoals)
+  const isLoading = useGoalsStore(s => s.isLoading)
+  const hasLoaded = useGoalsStore(s => s.hasLoaded)
+  const loadError = useGoalsStore(s => s.loadError)
   const [mounted, setMounted] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [showYearGate, setShowYearGate] = useState(true)
   useEffect(() => setMounted(true), [])
 
-  if (!mounted) {
+  useEffect(() => {
+    if (mounted) void loadGoals()
+  }, [loadGoals, mounted])
+
+  if (!mounted || (isLoading && !hasLoaded)) {
     return <div className="flex items-center justify-center py-32 text-sm text-muted-foreground">Загрузка целей…</div>
+  }
+
+  if (loadError && !hasLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-3 text-center">
+        <p className="text-sm font-medium text-foreground/80">Не удалось загрузить цели с сервера</p>
+        <p className="max-w-sm text-xs text-muted-foreground">{loadError}</p>
+        <button
+          onClick={() => void loadGoals(true)}
+          className="rounded-xl border border-foreground/10 px-3 py-1.5 text-xs text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground transition-colors"
+        >
+          Повторить
+        </button>
+      </div>
+    )
   }
 
   // Reusable План/Граф switcher + create button (floats over the board in graph mode).

@@ -17,6 +17,7 @@ class GoalSerializer(serializers.ModelSerializer):
     endDate         = serializers.DateField(source='end_date',   required=False, allow_null=True)
     dueDate         = serializers.DateField(source='due_date',   required=False, allow_null=True)
     planningScale   = serializers.CharField(source='planning_scale', required=False, allow_null=True)
+    order           = serializers.IntegerField(source='order_index', required=False)
     targetAmount    = serializers.DecimalField(source='target_amount',  max_digits=15, decimal_places=2, required=False, allow_null=True)
     currentAmount   = serializers.DecimalField(source='current_amount', max_digits=15, decimal_places=2, required=False, allow_null=True)
     createdAt       = serializers.DateTimeField(source='created_at', read_only=True)
@@ -28,7 +29,7 @@ class GoalSerializer(serializers.ModelSerializer):
             'id', 'user_email', 'title', 'description', 'type', 'status', 'priority',
             'planningScale', 'parentId',
             'year', 'month', 'startDate', 'endDate', 'dueDate',
-            'progress', 'computed_progress', 'children_count',
+            'progress', 'order', 'computed_progress', 'children_count',
             'targetAmount', 'currentAmount', 'currency',
             'createdAt', 'updatedAt',
         ]
