@@ -188,7 +188,7 @@ function EndDropZone({ parentId, depth }: { parentId: string | null; depth: numb
 }
 
 // ── SortableGoalList — one SortableContext per sibling level, no DndContext ───
-function _SortableGoalList({
+function SortableGoalListImpl({
   goals,
   parentId,
   depth = 0,
@@ -249,5 +249,5 @@ function _SortableGoalList({
   )
 }
 
-SortableGoalList = _SortableGoalList
+SortableGoalList = SortableGoalListImpl
 export { SortableGoalList }
