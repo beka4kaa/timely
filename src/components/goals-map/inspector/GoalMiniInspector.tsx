@@ -73,7 +73,7 @@ export function GoalMiniInspector() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.97 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed bottom-6 right-6 z-50 w-[380px] max-h-[72vh] flex flex-col rounded-[22px] bg-[#0d0d12]/96 border border-white/[0.11] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden"
+        className="fixed bottom-6 right-6 z-50 w-[380px] max-h-[72vh] max-sm:left-3 max-sm:right-3 max-sm:bottom-3 max-sm:w-auto max-sm:max-h-[80vh] flex flex-col rounded-[22px] bg-[#0d0d12]/96 border border-white/[0.11] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden"
       >
         {/* Header */}
         <div className="shrink-0 flex items-start gap-3 px-4 pt-4 pb-3 border-b border-white/[0.07]">
