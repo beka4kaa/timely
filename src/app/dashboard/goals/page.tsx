@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic'
 
 export default function GoalsPage() {
   return (
-    <div className="relative h-full flex flex-col">
+    <div className="relative min-h-full flex flex-col">
       <AmbientBackground />
-      <div className="relative z-10 flex flex-1 flex-col h-full">
+      <div className="relative z-10 flex flex-col">
         <GoalsLayout />
       </div>
     </div>

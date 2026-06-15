@@ -63,8 +63,8 @@ export function GoalsYearOverview() {
         </button>
       </div>
 
-      {/* 2-column month grid that fills the available height to match the calendar */}
-      <div className="grid grid-cols-2 gap-1 flex-1">
+      {/* Desktop stays narrow; mobile uses compact month tiles instead of wide rows. */}
+      <div className="grid grid-cols-2 gap-1 flex-1 max-sm:grid-cols-4 max-sm:gap-1.5 max-sm:flex-none">
         {months.map(m => {
           const selected = m.key === selMonth
           const isCurrent = m.key === todayMonth
@@ -73,7 +73,7 @@ export function GoalsYearOverview() {
               key={m.key}
               onClick={() => setSelectedDate(isCurrent ? todayISO() : `${m.key}-01`)}
               className={cn(
-                'rounded-lg flex items-center justify-center gap-1 text-[11px] font-medium transition-all border min-h-[28px]',
+                'rounded-lg flex items-center justify-center gap-1 text-[11px] font-medium border min-h-[28px] max-sm:aspect-square max-sm:min-h-0 max-sm:flex-col max-sm:gap-0.5 max-sm:rounded-xl max-sm:text-[10px]',
                 selected
                   ? 'border-pink-400/40 bg-pink-400/[0.08] text-foreground shadow-[0_0_8px_rgba(244,114,182,0.10)]'
                   : 'border-foreground/[0.07] text-muted-foreground/70 hover:border-foreground/15 hover:text-foreground/90 hover:bg-foreground/[0.03]',
