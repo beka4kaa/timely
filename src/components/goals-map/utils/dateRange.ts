@@ -117,11 +117,43 @@ export function multiYears(iso: string, count = 3): string[] {
 
 /* ── goal ↔ date matching ── */
 
-/** Does a goal occupy a given calendar day? (span, start, or due) */
+/** The single date that anchors a goal in the plan (due → start → month → year). */
+export function goalAnchor(g: GoalNode): string | null {
+  if (g.dueDate) return g.dueDate
+  if (g.startDate) return g.startDate
+  if (g.month) return `${g.month}-01`
+  if (g.year) return `${g.year}-01-01`
+  return null
+}
+
+/** Plan scopes the goal list can be sliced by. `year_rest` = the year minus the active month. */
+export type PlanScope = 'day' | 'month' | 'year' | 'year_rest'
+
+/**
+ * Does a goal belong to the given scope, measured against `anchorISO` (the
+ * selected date)? Unanchored goals fall into the year overview so they're never
+ * lost, and never leak into the month/day focus.
+ */
+export function goalInScope(g: GoalNode, scope: PlanScope, anchorISO: string): boolean {
+  const a = goalAnchor(g)
+  switch (scope) {
+    case 'year':
+      return a ? a.slice(0, 4) === anchorISO.slice(0, 4) : true
+    case 'year_rest':
+      if (!a) return true
+      return a.slice(0, 4) === anchorISO.slice(0, 4) && a.slice(0, 7) !== anchorISO.slice(0, 7)
+    case 'month':
+      return a ? a.slice(0, 7) === anchorISO.slice(0, 7) : false
+    case 'day':
+      return a === anchorISO
+  }
+}
+
+/** Does a goal occupy a given calendar day? Deadline anchors it; spans still render across their range. */
 export function goalCoversDate(goal: GoalNode, iso: string): boolean {
   if (goal.startDate && goal.endDate) return inRange(iso, goal.startDate, goal.endDate)
-  if (goal.startDate) return goal.startDate === iso
   if (goal.dueDate) return goal.dueDate === iso
+  if (goal.startDate) return goal.startDate === iso
   return false
 }
 
@@ -195,4 +227,24 @@ export function scaleLabel(scale: TimeScale, anchorISO: string): string {
 export function formatDayLong(iso: string): string {
   const d = parseISO(iso)
   return `${d.getDate()} ${MONTHS_RU[d.getMonth()]} ${d.getFullYear()}`
+}
+
+/** Compact deadline label for goal rows: "18 июн" (adds year only if not current). */
+export function formatDeadlineShort(iso: string): string {
+  const d = parseISO(iso)
+  const base = `${d.getDate()} ${MONTHS_RU_SHORT[d.getMonth()].toLowerCase()}`
+  const curYear = new Date().getFullYear()
+  return d.getFullYear() === curYear ? base : `${base} ${d.getFullYear()}`
+}
+
+export type DeadlineTone = 'overdue' | 'today' | 'soon' | 'normal'
+
+/** How urgent a deadline is, for color-coding. Done goals are always 'normal'. */
+export function deadlineTone(iso: string, done = false): DeadlineTone {
+  if (done) return 'normal'
+  const today = todayISO()
+  if (iso < today) return 'overdue'
+  if (iso === today) return 'today'
+  if (iso <= addDays(today, 3)) return 'soon'
+  return 'normal'
 }

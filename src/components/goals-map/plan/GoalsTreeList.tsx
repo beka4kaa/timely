@@ -7,7 +7,7 @@ import type { GoalNode } from '@/types/goals'
 import { useGoalsStore } from '@/stores/goals-store'
 import { useDragStore } from '@/stores/drag-store'
 import { ACCENT_GRADIENT } from '@/components/habits/lib'
-import { rangeForScale, goalsInRange } from '../utils/dateRange'
+import { goalInScope, type PlanScope } from '../utils/dateRange'
 import { SortableGoalList } from './GoalRow'
 import {
   DndContext,
@@ -29,7 +29,15 @@ function parseEndZone(id: string): string | null | undefined {
   return pid === 'root' ? null : pid                   // parentId to append into
 }
 
-export function GoalsTreeList() {
+export function GoalsTreeList({
+  scope = 'month',
+  createScale,
+  emptyHint,
+}: {
+  scope?: PlanScope
+  createScale?: PlanScope
+  emptyHint?: string
+} = {}) {
   const goals = useGoalsStore(s => s.goals)
   const selectedDate = useGoalsStore(s => s.selectedDate)
   const reorderGoal = useGoalsStore(s => s.reorderGoal)
@@ -40,24 +48,31 @@ export function GoalsTreeList() {
   const resetDrag = useDragStore(s => s.reset)
   const [activeId, setActiveId] = useState<string | null>(null)
 
-  const year = Number(selectedDate.slice(0, 4))
-
-  const topGoals = useMemo(() => {
-    const { start, end } = rangeForScale('month', selectedDate)
-    const byRange = new Set(goalsInRange(goals, start, end).map(g => g.id))
-    const yearlyContext = new Set(
-      goals
-        .filter(g => g.planningScale === 'year' && g.year === year && g.status !== 'archived')
-        .map(g => g.id),
-    )
-    const relevant = new Set([...Array.from(byRange), ...Array.from(yearlyContext)])
-
-    const childrenOf = (id: string) => goals.filter(g => g.parentId === id)
-    const hasRel = (g: GoalNode): boolean =>
-      relevant.has(g.id) || childrenOf(g.id).some(hasRel)
-
-    return goals.filter(g => !g.parentId && g.status !== 'archived' && hasRel(g))
-  }, [goals, selectedDate, year])
+  // Walk the tree once: keep a goal if it (or any descendant) is in scope. The
+  // kept set is threaded into the list so each folder only shows its in-scope
+  // children — no more "looking at August but seeing June goals" bleed.
+  const { topGoals, keptIds } = useMemo(() => {
+    const childrenOf = new Map<string | null, GoalNode[]>()
+    for (const g of goals) {
+      if (g.status === 'archived') continue
+      const p = g.parentId ?? null
+      const arr = childrenOf.get(p)
+      if (arr) arr.push(g); else childrenOf.set(p, [g])
+    }
+    const kept = new Set<string>()
+    const visit = (g: GoalNode): boolean => {
+      let anyChild = false
+      for (const c of childrenOf.get(g.id) ?? []) {
+        if (visit(c)) anyChild = true
+      }
+      const keep = goalInScope(g, scope, selectedDate) || anyChild
+      if (keep) kept.add(g.id)
+      return keep
+    }
+    for (const g of childrenOf.get(null) ?? []) visit(g)
+    const roots = (childrenOf.get(null) ?? []).filter(g => kept.has(g.id))
+    return { topGoals: roots, keptIds: kept }
+  }, [goals, scope, selectedDate])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -130,7 +145,14 @@ export function GoalsTreeList() {
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <SortableGoalList goals={topGoals} parentId={null} depth={0} />
+      <SortableGoalList
+        goals={topGoals}
+        parentId={null}
+        depth={0}
+        keptIds={keptIds}
+        createScale={createScale ?? scope}
+        emptyHint={emptyHint}
+      />
 
       {/* Portal the overlay to <body> so it isn't trapped by a filtered/transformed
           ancestor (the framer-motion plan wrapper keeps `filter: blur(0px)`, which
@@ -144,7 +166,7 @@ export function GoalsTreeList() {
           }}
         >
           {activeGoal && (
-            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1a1a24]/95 border border-pink-400/25 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl text-[13px] font-medium text-foreground/95 cursor-grabbing">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/95 dark:bg-[#1a1a24]/95 border border-pink-500/25 dark:border-pink-400/25 shadow-[0_12px_40px_-6px_rgba(15,23,42,0.35)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl text-[13px] font-medium text-foreground/95 cursor-grabbing">
               {activeHasChildren
                 ? <Folder className="w-4 h-4 text-pink-400 shrink-0" />
                 : <Circle className="w-3.5 h-3.5 text-foreground/40 shrink-0" />}
