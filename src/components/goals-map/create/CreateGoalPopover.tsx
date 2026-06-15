@@ -6,6 +6,7 @@ import { X, Plus, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ACCENT_GRADIENT } from '@/components/habits/lib'
 import { useGoalsStore } from '@/stores/goals-store'
+import { GoalDatePicker } from '../inspector/GoalDatePicker'
 
 function lastDayOfMonth(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
@@ -77,7 +78,6 @@ export function CreateGoalPopover({ open, onClose }: Props) {
       planningScale: 'month',
       month,
       year: Number(yearStr),
-      startDate: `${month}-01`,
       dueDate,
     })
     selectGoal(id)
@@ -92,14 +92,14 @@ export function CreateGoalPopover({ open, onClose }: Props) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.97 }}
           transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="fixed top-[72px] right-6 z-50 w-[300px] max-sm:left-3 max-sm:right-3 max-sm:w-auto rounded-[20px] bg-[#0d0d12]/96 border border-white/[0.11] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden"
+          className="fixed top-[72px] right-6 z-50 w-[300px] max-sm:left-3 max-sm:right-3 max-sm:w-auto rounded-[20px] bg-white/95 dark:bg-[#0e0e14]/[0.96] border border-black/[0.06] dark:border-white/[0.11] backdrop-blur-2xl shadow-[0_16px_48px_-8px_rgba(15,23,42,0.35)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-white/[0.07]">
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-foreground/[0.07]">
             <p className="text-[13px] font-semibold text-foreground">Новая цель</p>
             <button
               onClick={onClose}
-              className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors"
+              className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -113,7 +113,7 @@ export function CreateGoalPopover({ open, onClose }: Props) {
               onChange={e => setTitle(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submit() }}
               placeholder="Название цели…"
-              className="w-full rounded-xl bg-white/[0.05] border border-white/[0.08] px-3 py-2.5 text-sm text-foreground outline-none focus:border-white/20 placeholder:text-muted-foreground/50"
+              className="w-full rounded-xl bg-foreground/[0.04] border border-foreground/[0.08] px-3 py-2.5 text-sm text-foreground outline-none focus:border-pink-400/40 placeholder:text-muted-foreground/50"
             />
 
             {/* Type */}
@@ -158,13 +158,12 @@ export function CreateGoalPopover({ open, onClose }: Props) {
               </div>
             </div>
 
-            {/* Custom date input */}
+            {/* Custom date — on-brand picker instead of the native one */}
             {preset === 'custom' && (
-              <input
-                type="date"
+              <GoalDatePicker
                 value={customDate}
-                onChange={e => setCustomDate(e.target.value)}
-                className="rounded-xl bg-white/[0.04] border border-white/[0.07] px-3 py-2 text-[12px] text-foreground/80 outline-none focus:border-white/15 [color-scheme:dark]"
+                onChange={iso => setCustomDate(iso ?? selectedDate)}
+                placeholder="Выбрать дату"
               />
             )}
 

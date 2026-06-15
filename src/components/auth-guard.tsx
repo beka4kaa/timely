@@ -16,7 +16,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   useEffect(() => {
     if (status === "loading") return // Еще загружается
 
-    const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+    const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true"
     if (DEV_BYPASS_AUTH) return // Skip checks if bypassing auth
 
     if (requireAuth && !session) {
@@ -40,7 +40,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   }
 
   // Bypass logic for dev mode
-  const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+  const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true"
 
   if (DEV_BYPASS_AUTH) {
     return <>{children}</>

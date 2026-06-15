@@ -164,12 +164,12 @@ export function GoalsLayout() {
       ) : (
         <div className="flex flex-col gap-3 items-center">
           {/* Top: months + day calendar unified in one compact card (centered) */}
-          <section className={cn(GLASS, 'rounded-[20px] p-3 w-full max-w-2xl')}>
-            <div className="grid grid-cols-[150px_1fr] gap-3 max-sm:grid-cols-1 max-sm:gap-3">
+          <section className={cn(GLASS, 'rounded-[20px] p-3 max-sm:p-2.5 w-full max-w-2xl')}>
+            <div className="grid grid-cols-[150px_1fr] gap-3 max-sm:grid-cols-1 max-sm:gap-2">
               {/* Left: year nav + months */}
               <GoalsYearOverview />
               {/* Right: month title + day calendar */}
-              <div className="border-l border-foreground/[0.07] pl-3 max-sm:border-l-0 max-sm:border-t max-sm:pl-0 max-sm:pt-3">
+              <div className="border-l border-foreground/[0.07] pl-3 max-sm:border-l-0 max-sm:border-t max-sm:pl-0 max-sm:pt-2.5">
                 <SelectedMonthSection />
               </div>
             </div>

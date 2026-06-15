@@ -47,7 +47,7 @@ export function GoalsYearOverview() {
   return (
     <div className="flex flex-col h-full">
       {/* year nav */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 max-sm:mb-1.5">
         <button
           onClick={() => setSelectedDate(addMonths(selectedDate, -12))}
           className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition-colors"
@@ -64,7 +64,7 @@ export function GoalsYearOverview() {
       </div>
 
       {/* Desktop stays narrow; mobile uses compact month tiles instead of wide rows. */}
-      <div className="grid grid-cols-2 gap-1 flex-1 max-sm:grid-cols-4 max-sm:gap-1.5 max-sm:flex-none">
+      <div className="grid grid-cols-2 gap-1 flex-1 max-sm:grid-cols-4 max-sm:gap-1 max-sm:flex-none">
         {months.map(m => {
           const selected = m.key === selMonth
           const isCurrent = m.key === todayMonth
@@ -73,7 +73,7 @@ export function GoalsYearOverview() {
               key={m.key}
               onClick={() => setSelectedDate(isCurrent ? todayISO() : `${m.key}-01`)}
               className={cn(
-                'rounded-lg flex items-center justify-center gap-1 text-[11px] font-medium border min-h-[28px] max-sm:aspect-square max-sm:min-h-0 max-sm:flex-col max-sm:gap-0.5 max-sm:rounded-xl max-sm:text-[10px]',
+                'rounded-lg flex items-center justify-center gap-1 text-[11px] font-medium border min-h-[26px] px-2 py-1 max-sm:h-11 max-[420px]:h-10 max-sm:min-h-0 max-sm:px-1 max-sm:py-0 max-sm:flex-col max-sm:gap-0 max-sm:text-[10px]',
                 selected
                   ? 'border-pink-400/40 bg-pink-400/[0.08] text-foreground shadow-[0_0_8px_rgba(244,114,182,0.10)]'
                   : 'border-foreground/[0.07] text-muted-foreground/70 hover:border-foreground/15 hover:text-foreground/90 hover:bg-foreground/[0.03]',

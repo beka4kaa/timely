@@ -41,7 +41,7 @@ export function CompactMonthCalendar() {
             <button
               key={iso}
               onClick={() => setSelectedDate(iso)}
-              onDoubleClick={() => { const id = createGoal({ title: 'Новая цель', type: 'goal', status: 'active', startDate: iso, month: iso.slice(0, 7) }); selectGoal(id) }}
+              onDoubleClick={() => { const id = createGoal({ title: 'Новая цель', type: 'goal', status: 'active', dueDate: iso, month: iso.slice(0, 7) }); selectGoal(id) }}
               className={cn(
                 'relative h-8 rounded-md flex flex-col items-center justify-center gap-0.5 transition-colors',
                 out && 'opacity-30',

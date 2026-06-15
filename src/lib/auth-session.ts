@@ -7,7 +7,7 @@ export type AppSession = Session & { accessToken?: string }
 export async function getServerSession(
   options: typeof authOptions = authOptions
 ): Promise<AppSession | null> {
-  const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" || process.env.NODE_ENV === "development"
+  const DEV_BYPASS_AUTH = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true"
 
   if (DEV_BYPASS_AUTH) {
     return {
