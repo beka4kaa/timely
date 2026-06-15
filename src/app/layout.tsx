@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Plus_Jakarta_Sans, Onest } from 'next/font/google'
-import localFont from 'next/font/local'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
@@ -43,9 +42,29 @@ export const metadata: Metadata = {
   },
   description: siteDescription,
   applicationName: siteName,
-  alternates: {
-    canonical: '/',
+  authors: [{ name: 'TimelyPlan' }],
+  creator: 'TimelyPlan',
+  publisher: 'TimelyPlan',
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
   },
+  category: 'education',
+  keywords: [
+    'TimelyPlan',
+    'школьный дневник',
+    'планировщик',
+    'цели',
+    'учебный план',
+    'AI-доска',
+  ],
   openGraph: {
     type: 'website',
     url: siteUrl,

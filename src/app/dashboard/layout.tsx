@@ -1,9 +1,22 @@
+import type { Metadata } from "next"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { SidebarScrim } from "@/components/sidebar-scrim"
+
+export const metadata: Metadata = {
+  title: {
+    default: "Dashboard",
+    template: "%s | TimelyPlan",
+  },
+  description: "Личный кабинет TimelyPlan: дневник, цели, расписание, привычки и учебные инструменты.",
+  robots: {
+    index: false,
+    follow: false,
+  },
+}
 
 export default function DashboardLayout({
   children,
