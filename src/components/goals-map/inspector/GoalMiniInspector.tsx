@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useMotionValue, useDragControls, animate as fmAnimate } from 'framer-motion'
 import { X, CheckCircle2, Circle, Plus, Trash2, Ban, GitBranch, Calendar, Link2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,7 @@ import type { GoalNode, GoalPriority } from '@/types/goals'
 import { useGoalsStore } from '@/stores/goals-store'
 import { STATUS_LABEL, STATUS_COLOR, PRIORITY_LABEL, formatMoney } from '../utils/goalColors'
 import { GoalDatePicker } from './GoalDatePicker'
+import { calculateGoalProgress, getActiveBlockers } from '../utils/calculateProgress'
 
 export function GoalMiniInspector() {
   const selectedGoalId = useGoalsStore(s => s.selectedGoalId)
@@ -19,8 +20,6 @@ export function GoalMiniInspector() {
   const deleteGoal = useGoalsStore(s => s.deleteGoal)
   const createGoal = useGoalsStore(s => s.createGoal)
   const toggleTaskDone = useGoalsStore(s => s.toggleTaskDone)
-  const getProgress = useGoalsStore(s => s.getProgress)
-  const getBlockedBy = useGoalsStore(s => s.getBlockedBy)
   const createLink = useGoalsStore(s => s.createLink)
 
   const goal = selectedGoalId ? goals.find(g => g.id === selectedGoalId) ?? null : null
@@ -73,22 +72,33 @@ export function GoalMiniInspector() {
     return () => window.removeEventListener('keydown', handler)
   }, [selectGoal])
 
-  const children = goal ? goals.filter(g => g.parentId === goal.id) : []
-  const progress = goal ? getProgress(goal.id) : 0
-  const blockedBy = goal ? getBlockedBy(goal.id) : []
-  const dependsOn = goal
-    ? links
-        .filter(l => l.source === goal.id && l.type === 'depends_on')
-        .map(l => goals.find(g => g.id === l.target))
-        .filter((g): g is GoalNode => !!g)
-    : []
-
-  const linkedIds = new Set(
-    goal ? [goal.id, ...blockedBy.map(g => g.id), ...dependsOn.map(g => g.id)] : [],
+  const children = useMemo(
+    () => goal ? goals.filter(g => g.parentId === goal.id) : [],
+    [goal, goals],
   )
-  const linkCandidates = goals.filter(
-    g => !linkedIds.has(g.id) && g.status !== 'archived' &&
-      (linkSearch.trim() === '' || g.title.toLowerCase().includes(linkSearch.toLowerCase()))
+  const progress = useMemo(() => goal ? calculateGoalProgress(goal.id, goals) : 0, [goal, goals])
+  const blockedBy = useMemo(() => goal ? getActiveBlockers(goal.id, goals, links) : [], [goal, goals, links])
+  const goalsById = useMemo(() => new Map(goals.map(g => [g.id, g])), [goals])
+  const dependsOn = useMemo(
+    () => goal
+      ? links
+          .filter(l => l.source === goal.id && l.type === 'depends_on')
+          .map(l => goalsById.get(l.target))
+          .filter((g): g is GoalNode => !!g)
+      : [],
+    [goal, links, goalsById],
+  )
+
+  const linkedIds = useMemo(
+    () => new Set(goal ? [goal.id, ...blockedBy.map(g => g.id), ...dependsOn.map(g => g.id)] : []),
+    [goal, blockedBy, dependsOn],
+  )
+  const linkCandidates = useMemo(
+    () => goals.filter(
+      g => !linkedIds.has(g.id) && g.status !== 'archived' &&
+        (linkSearch.trim() === '' || g.title.toLowerCase().includes(linkSearch.toLowerCase()))
+    ),
+    [goals, linkedIds, linkSearch],
   )
 
   return (
@@ -106,7 +116,7 @@ export function GoalMiniInspector() {
           <button
             aria-label="Закрыть"
             onClick={() => selectGoal(null)}
-            className="absolute inset-0 bg-slate-900/30 dark:bg-black/55 backdrop-blur-[3px]"
+            className="absolute inset-0 bg-slate-900/30 dark:bg-black/55 backdrop-blur-[3px] max-sm:backdrop-blur-none"
           />
 
           {/* Notion-style page card */}
@@ -125,10 +135,10 @@ export function GoalMiniInspector() {
             dragMomentum={false}
             onDragEnd={handleSheetDragEnd}
             className={cn(
-              'relative z-10 flex flex-col w-full max-w-xl max-h-[86vh]',
+              'relative z-10 flex flex-col w-full max-w-xl max-h-[86vh] will-change-transform',
               'max-sm:max-w-none max-sm:max-h-[90vh] max-sm:rounded-b-none',
               'rounded-3xl overflow-hidden',
-              'bg-white/95 dark:bg-[#0e0e14]/95 backdrop-blur-2xl',
+              'bg-white/95 dark:bg-[#0e0e14]/95 backdrop-blur-2xl max-sm:backdrop-blur-none',
               'border border-black/[0.06] dark:border-white/[0.10]',
               'shadow-[0_24px_80px_-16px_rgba(15,23,42,0.40)] dark:shadow-[0_20px_70px_rgba(0,0,0,0.6)]',
             )}

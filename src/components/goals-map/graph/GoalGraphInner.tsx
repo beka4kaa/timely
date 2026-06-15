@@ -45,6 +45,7 @@ export default function GoalGraphInner() {
   const [focusMode, setFocusMode] = useState(false)
   const [alwaysLabels, setAlwaysLabels] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
+  const [liteCanvas, setLiteCanvas] = useState(false)
 
   // Shift+click linking: first shift-clicked node is the pending source.
   const [linkSource, setLinkSource] = useState<string | null>(null)
@@ -56,6 +57,14 @@ export default function GoalGraphInner() {
     ro.observe(el)
     setDims({ w: el.clientWidth, h: el.clientHeight })
     return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px), (pointer: coarse)')
+    const sync = () => setLiteCanvas(mq.matches)
+    sync()
+    mq.addEventListener?.('change', sync)
+    return () => mq.removeEventListener?.('change', sync)
   }, [])
 
   const baseData = useMemo(() => {
@@ -137,7 +146,7 @@ export default function GoalGraphInner() {
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.shadowColor = isLinkSrc ? LINK_ACCENT : isSel ? SELECT_GLOW : color
-    ctx.shadowBlur = isLinkSrc ? 18 : isSel ? 16 : inHi && node.id === hoverId ? 8 : 0
+    ctx.shadowBlur = liteCanvas ? 0 : isLinkSrc ? 18 : isSel ? 16 : inHi && node.id === hoverId ? 8 : 0
     ctx.beginPath()
     ctx.arc(node.x!, node.y!, r, 0, 2 * Math.PI)
     ctx.fillStyle = color
@@ -165,7 +174,7 @@ export default function GoalGraphInner() {
       ctx.fillText(label, node.x!, node.y! + r + 2)
     }
     ctx.restore()
-  }, [selectedGoalId, hoverId, highlight, activeId, alwaysLabels, linkSource])
+  }, [selectedGoalId, hoverId, highlight, activeId, alwaysLabels, linkSource, liteCanvas])
 
   const drawPointerArea = useCallback((node: FGNode, color: string, ctx: CanvasRenderingContext2D) => {
     ctx.fillStyle = color
@@ -208,12 +217,12 @@ export default function GoalGraphInner() {
         onNodeHover={(n: any) => setHoverId(n ? n.id : null)}
         onBackgroundClick={() => { if (linkSource) setLinkSource(null); else selectGoal(null) }}
         onEngineStop={() => fgRef.current?.zoomToFit(500, 50)}
-        cooldownTicks={160}
-        d3VelocityDecay={0.32}
+        cooldownTicks={liteCanvas ? 80 : 160}
+        d3VelocityDecay={liteCanvas ? 0.42 : 0.32}
       />
 
       {/* Tools — top-right, just under the floating План/Граф/+ controls */}
-      <div className="absolute top-16 right-4 flex items-center gap-1 p-1 rounded-full bg-white/[0.06] border border-white/10 backdrop-blur-xl">
+      <div className="absolute top-16 right-4 flex items-center gap-1 p-1 rounded-full bg-white/[0.06] border border-white/10 backdrop-blur-xl max-sm:backdrop-blur-none">
         <ToolBtn active={focusMode} disabled={!selectedGoalId} onClick={() => setFocusMode(v => !v)} title="Фокус на выбранном"><Crosshair className="w-4 h-4" /></ToolBtn>
         <ToolBtn active={alwaysLabels} onClick={() => setAlwaysLabels(v => !v)} title="Показать подписи"><Tag className="w-4 h-4" /></ToolBtn>
         <ToolBtn active={false} onClick={resetView} title="Сбросить вид"><RotateCcw className="w-4 h-4" /></ToolBtn>
@@ -221,14 +230,14 @@ export default function GoalGraphInner() {
 
       {/* Shift+click hint — passive, bottom-center */}
       {!linkSource && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 backdrop-blur-xl text-[11px] text-white/45">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 backdrop-blur-xl max-sm:backdrop-blur-none text-[11px] text-white/45">
           Shift + клик по двум целям, чтобы связать
         </div>
       )}
 
       {/* Active link prompt */}
       {linkSource && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-pink-400/15 border border-pink-400/30 backdrop-blur-xl text-[11px] text-pink-100/90 flex items-center gap-2">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-pink-400/15 border border-pink-400/30 backdrop-blur-xl max-sm:backdrop-blur-none text-[11px] text-pink-100/90 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full" style={{ background: LINK_ACCENT }} />
           {sourceTitle ? `«${sourceTitle.length > 22 ? sourceTitle.slice(0, 20) + '…' : sourceTitle}»` : 'Цель выбрана'} → Shift + клик по второй
           <button onClick={() => setLinkSource(null)} className="ml-1 text-pink-100/60 hover:text-pink-100"><X className="w-3 h-3" /></button>
@@ -237,11 +246,11 @@ export default function GoalGraphInner() {
 
       {/* legend behind a button (bottom-left) */}
       <div className="absolute bottom-3 left-3">
-        <button onClick={() => setShowLegend(v => !v)} className="w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10 backdrop-blur-xl text-white/60 hover:text-white/90 transition-colors">
+        <button onClick={() => setShowLegend(v => !v)} className="w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.06] border border-white/10 backdrop-blur-xl max-sm:backdrop-blur-none text-white/60 hover:text-white/90 transition-colors">
           <Info className="w-4 h-4" />
         </button>
         {showLegend && (
-          <div className="absolute bottom-10 left-0 p-3 rounded-2xl bg-[#0e0e13]/90 border border-white/10 backdrop-blur-xl flex flex-col gap-2 min-w-[140px]">
+          <div className="absolute bottom-10 left-0 p-3 rounded-2xl bg-[#0e0e13]/90 border border-white/10 backdrop-blur-xl max-sm:backdrop-blur-none flex flex-col gap-2 min-w-[140px]">
             {LEGEND.map(type => (
               <div key={type} className="flex items-center gap-2.5">
                 <span className="w-2 h-2 rounded-full" style={{ background: graphNodeColor(type, 'active' as any) }} />

@@ -26,14 +26,15 @@ const WHEEL_COOLDOWN  = 280   // ms between year changes
 const GLOW = '0 0 40px rgba(255,255,255,0.36), 0 0 80px rgba(255,255,255,0.10)'
 const MASK  = 'linear-gradient(to bottom, transparent 0%, black 22%, black 72%, transparent 100%)'
 
-// Distance-based depth-of-field: items farther from center shrink, fade and blur.
-function depth(dist: number): { scale: number; opacity: number; blur: number } {
+// Distance-based depth: items farther from center shrink and fade. Avoiding CSS
+// filter keeps the roulette smoother on low-power mobile GPUs.
+function depth(dist: number): { scale: number; opacity: number } {
   switch (Math.min(dist, 4)) {
-    case 0:  return { scale: 1,    opacity: 1,    blur: 0   }
-    case 1:  return { scale: 0.60, opacity: 0.50, blur: 0   }
-    case 2:  return { scale: 0.44, opacity: 0.26, blur: 1.4 }
-    case 3:  return { scale: 0.34, opacity: 0.13, blur: 2.6 }
-    default: return { scale: 0.28, opacity: 0.07, blur: 3.6 }
+    case 0:  return { scale: 1,    opacity: 1    }
+    case 1:  return { scale: 0.60, opacity: 0.50 }
+    case 2:  return { scale: 0.44, opacity: 0.26 }
+    case 3:  return { scale: 0.34, opacity: 0.13 }
+    default: return { scale: 0.28, opacity: 0.07 }
   }
 }
 
@@ -155,7 +156,6 @@ export function YearRouletteGate({ onEnter }: { onEnter: () => void }) {
                   animate={{
                     scale:   d.scale,
                     opacity: selected ? 1 : d.opacity,
-                    filter:  `blur(${selected ? 0 : d.blur}px)`,
                   }}
                   transition={{ type: 'spring', stiffness: 180, damping: 22, mass: 0.8 }}
                   className="font-plus-jakarta text-[96px] font-light leading-none tabular-nums tracking-tight text-foreground"

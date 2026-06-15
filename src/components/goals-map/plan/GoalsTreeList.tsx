@@ -166,7 +166,7 @@ export function GoalsTreeList({
           }}
         >
           {activeGoal && (
-            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/95 dark:bg-[#1a1a24]/95 border border-pink-500/25 dark:border-pink-400/25 shadow-[0_12px_40px_-6px_rgba(15,23,42,0.35)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl text-[13px] font-medium text-foreground/95 cursor-grabbing">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/95 dark:bg-[#1a1a24]/95 border border-pink-500/25 dark:border-pink-400/25 shadow-[0_12px_40px_-6px_rgba(15,23,42,0.35)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl max-sm:backdrop-blur-none text-[13px] font-medium text-foreground/95 cursor-grabbing">
               {activeHasChildren
                 ? <Folder className="w-4 h-4 text-pink-400 shrink-0" />
                 : <Circle className="w-3.5 h-3.5 text-foreground/40 shrink-0" />}

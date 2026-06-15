@@ -92,7 +92,7 @@ export function CreateGoalPopover({ open, onClose }: Props) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -6, scale: 0.97 }}
           transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="fixed top-[72px] right-6 z-50 w-[300px] max-sm:left-3 max-sm:right-3 max-sm:w-auto rounded-[20px] bg-white/95 dark:bg-[#0e0e14]/[0.96] border border-black/[0.06] dark:border-white/[0.11] backdrop-blur-2xl shadow-[0_16px_48px_-8px_rgba(15,23,42,0.35)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden"
+          className="fixed top-[72px] right-6 z-50 w-[300px] max-sm:left-3 max-sm:right-3 max-sm:w-auto rounded-[20px] bg-white/95 dark:bg-[#0e0e14]/[0.96] border border-black/[0.06] dark:border-white/[0.11] backdrop-blur-2xl max-sm:backdrop-blur-none shadow-[0_16px_48px_-8px_rgba(15,23,42,0.35)] dark:shadow-[0_8px_40px_rgba(0,0,0,0.55)] overflow-hidden will-change-transform"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-foreground/[0.07]">

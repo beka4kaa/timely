@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Folder, FolderOpen, Circle, CheckCircle2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,7 +52,7 @@ let SortableGoalList: GoalListFC = () => null
 // ── GoalRow ──────────────────────────────────────────────────────────────────
 export function GoalRow({ goal, depth = 0, keptIds, createScale }: { goal: GoalNode; depth?: number; keptIds?: Set<string>; createScale?: PlanScope }) {
   const goals = useGoalsStore(s => s.goals)
-  const selectedGoalId = useGoalsStore(s => s.selectedGoalId)
+  const isSelected = useGoalsStore(s => s.selectedGoalId === goal.id)
   const selectGoal = useGoalsStore(s => s.selectGoal)
   const toggleTaskDone = useGoalsStore(s => s.toggleTaskDone)
   const getProgress = useGoalsStore(s => s.getProgress)
@@ -60,13 +60,15 @@ export function GoalRow({ goal, depth = 0, keptIds, createScale }: { goal: GoalN
   // Per-row selectors → only this row re-renders when ITS drop state flips.
   const isDropTarget = useDragStore(s => !!s.activeId && s.overId === goal.id && s.activeId !== goal.id)
 
-  const children = goals
-    .filter(g => g.parentId === goal.id && g.status !== 'archived' && (!keptIds || keptIds.has(g.id)))
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const children = useMemo(
+    () => goals
+      .filter(g => g.parentId === goal.id && g.status !== 'archived' && (!keptIds || keptIds.has(g.id)))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [goals, goal.id, keptIds],
+  )
   const hasChildren = children.length > 0
   const [open, setOpen] = useState(depth < 2)
 
-  const isSelected = selectedGoalId === goal.id
   const isDone = goal.status === 'done'
   const isTask = goal.type === 'task'
   const progress = getProgress(goal.id)
@@ -262,13 +264,13 @@ function SortableGoalListImpl({
     selectGoal(id)
   }
 
-  const sorted = [...goals].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const sorted = useMemo(() => [...goals].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [goals])
   // Include the end-drop zone in the sortable items so dnd-kit resolves a valid
   // overIndex when hovering it. Without it, overIndex is -1 and the list strategy
   // displaces every row by the dragged item's full height — a huge gap when
   // dropping a folder at the very end.
   const endId = endDropId(parentId)
-  const ids = [...sorted.map(g => g.id), endId]
+  const ids = useMemo(() => [...sorted.map(g => g.id), endId], [sorted, endId])
 
   if (sorted.length === 0 && depth === 0) {
     return (

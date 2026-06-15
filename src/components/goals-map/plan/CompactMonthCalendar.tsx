@@ -21,6 +21,11 @@ export function CompactMonthCalendar() {
   const selectGoal = useGoalsStore(s => s.selectGoal)
 
   const matrix = useMemo(() => monthMatrix(selectedDate), [selectedDate])
+  const visibleDays = useMemo(() => matrix.flat(), [matrix])
+  const goalsByDay = useMemo(
+    () => new Map(visibleDays.map(iso => [iso, goalsOnDate(goals, iso)] as const)),
+    [goals, visibleDays],
+  )
   const cur = monthOf(selectedDate)
 
   return (
@@ -31,12 +36,12 @@ export function CompactMonthCalendar() {
         ))}
       </div>
       <div className="grid grid-cols-7 gap-0.5">
-        {matrix.flat().map(iso => {
+        {visibleDays.map(iso => {
           const d = parseISO(iso)
           const out = d.getMonth() !== cur
           const today = isToday(iso)
           const selected = selectedDate === iso
-          const dayGoals = goalsOnDate(goals, iso)
+          const dayGoals = goalsByDay.get(iso) ?? []
           return (
             <button
               key={iso}

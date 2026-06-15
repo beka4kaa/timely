@@ -32,10 +32,10 @@ export function GoalsYearOverview() {
   const todayMonth = todayISO().slice(0, 7)
 
   const months = useMemo(() => {
+    const nonArchived = goals.filter(g => g.status !== 'archived')
     return Array.from({ length: 12 }, (_, i) => {
       const key = `${year}-${String(i + 1).padStart(2, '0')}`
       const { start, end } = rangeForScale('month', `${key}-01`)
-      const nonArchived = goals.filter(g => g.status !== 'archived')
       const inMonth = goalsInRange(nonArchived, start, end)
       const avg = inMonth.length
         ? Math.round(inMonth.reduce((a, g) => a + getProgress(g.id), 0) / inMonth.length)

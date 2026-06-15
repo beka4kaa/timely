@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ACCENT_GRADIENT, GLASS } from '@/components/habits/lib'
@@ -10,9 +11,26 @@ import { YearRouletteGate } from './plan/YearRouletteGate'
 import { GoalsYearOverview } from './plan/GoalsYearOverview'
 import { SelectedMonthSection } from './plan/SelectedMonthSection'
 import { GoalsTreeList } from './plan/GoalsTreeList'
-import { GoalsGraphView } from './graph/GoalsGraphView'
-import { GoalMiniInspector } from './inspector/GoalMiniInspector'
-import { CreateGoalPopover } from './create/CreateGoalPopover'
+
+const GoalsGraphView = dynamic(
+  () => import('./graph/GoalsGraphView').then(mod => mod.GoalsGraphView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center text-sm text-white/40">Загрузка графа…</div>
+    ),
+  },
+)
+
+const GoalMiniInspector = dynamic(
+  () => import('./inspector/GoalMiniInspector').then(mod => mod.GoalMiniInspector),
+  { ssr: false },
+)
+
+const CreateGoalPopover = dynamic(
+  () => import('./create/CreateGoalPopover').then(mod => mod.CreateGoalPopover),
+  { ssr: false },
+)
 
 const VIEWS: { id: GoalView; label: string }[] = [
   { id: 'plan', label: 'План' },
@@ -58,8 +76,11 @@ export function GoalsLayout() {
   const isLoading = useGoalsStore(s => s.isLoading)
   const hasLoaded = useGoalsStore(s => s.hasLoaded)
   const loadError = useGoalsStore(s => s.loadError)
+  const selectedGoalId = useGoalsStore(s => s.selectedGoalId)
   const [mounted, setMounted] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [createReady, setCreateReady] = useState(false)
+  const [inspectorReady, setInspectorReady] = useState(false)
   const [showYearGate, setShowYearGate] = useState(true)
   const [planScale, setPlanScale] = useState<PlanScale>('month')
   useEffect(() => setMounted(true), [])
@@ -67,6 +88,14 @@ export function GoalsLayout() {
   useEffect(() => {
     if (mounted) void loadGoals()
   }, [loadGoals, mounted])
+
+  useEffect(() => {
+    if (selectedGoalId) setInspectorReady(true)
+  }, [selectedGoalId])
+
+  useEffect(() => {
+    if (createOpen) setCreateReady(true)
+  }, [createOpen])
 
   if (!mounted || (isLoading && !hasLoaded)) {
     return <div className="flex items-center justify-center py-32 text-sm text-muted-foreground">Загрузка целей…</div>
@@ -90,7 +119,7 @@ export function GoalsLayout() {
   // Reusable План/Граф switcher + create button (floats over the board in graph mode).
   const controls = (
     <div className="flex items-center gap-2 shrink-0 max-sm:justify-center">
-      <div className="inline-flex items-center gap-1 p-1 rounded-full bg-foreground/[0.05] border border-foreground/[0.08] backdrop-blur-xl">
+      <div className="inline-flex items-center gap-1 p-1 rounded-full bg-foreground/[0.05] border border-foreground/[0.08] backdrop-blur-xl max-sm:backdrop-blur-none">
         {VIEWS.map(v => {
           const active = activeView === v.id
           return (
@@ -148,8 +177,8 @@ export function GoalsLayout() {
           {controls}
         </div>
 
-        <GoalMiniInspector />
-        <CreateGoalPopover open={createOpen} onClose={() => setCreateOpen(false)} />
+        {inspectorReady && <GoalMiniInspector />}
+        {createReady && <CreateGoalPopover open={createOpen} onClose={() => setCreateOpen(false)} />}
       </div>
     )
   }
@@ -164,7 +193,7 @@ export function GoalsLayout() {
       ) : (
         <div className="flex flex-col gap-3 items-center">
           {/* Top: months + day calendar unified in one compact card (centered) */}
-          <section className={cn(GLASS, 'rounded-[20px] p-3 max-sm:p-2.5 w-full max-w-2xl')}>
+          <section className={cn(GLASS, 'rounded-[20px] p-3 max-sm:p-2.5 w-full max-w-2xl max-sm:backdrop-blur-none max-sm:backdrop-saturate-100')}>
             <div className="grid grid-cols-[150px_1fr] gap-3 max-sm:grid-cols-1 max-sm:gap-2">
               {/* Left: year nav + months */}
               <GoalsYearOverview />
@@ -180,7 +209,7 @@ export function GoalsLayout() {
             <PlanScaleTabs scale={planScale} onChange={setPlanScale} />
           </div>
 
-          <section className={cn(GLASS, 'rounded-[24px] p-4 w-full max-w-2xl')}>
+          <section className={cn(GLASS, 'rounded-[24px] p-4 w-full max-w-2xl max-sm:backdrop-blur-none max-sm:backdrop-saturate-100')}>
             <div>
               {/* Remount per scope so drag/drop state never leaks between filtered lists. */}
               <GoalsTreeList
@@ -192,8 +221,8 @@ export function GoalsLayout() {
           </section>
         </div>
       )}
-      <GoalMiniInspector />
-      <CreateGoalPopover open={createOpen} onClose={() => setCreateOpen(false)} />
+      {inspectorReady && <GoalMiniInspector />}
+      {createReady && <CreateGoalPopover open={createOpen} onClose={() => setCreateOpen(false)} />}
     </div>
   )
 }

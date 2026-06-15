@@ -73,7 +73,7 @@ export function GoalDatePicker({ value, onChange, placeholder = 'Выбрать 
         <PopoverPrimitive.Content
           align="start"
           sideOffset={8}
-          className="z-[60] w-[270px] rounded-2xl bg-white/95 dark:bg-[#0e0e14]/[0.97] border border-black/[0.07] dark:border-white/[0.12] backdrop-blur-2xl shadow-[0_16px_48px_-8px_rgba(15,23,42,0.35)] dark:shadow-[0_12px_48px_rgba(0,0,0,0.6)] p-3 outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+          className="z-[60] w-[270px] rounded-2xl bg-white/95 dark:bg-[#0e0e14]/[0.97] border border-black/[0.07] dark:border-white/[0.12] backdrop-blur-2xl max-sm:backdrop-blur-none shadow-[0_16px_48px_-8px_rgba(15,23,42,0.35)] dark:shadow-[0_12px_48px_rgba(0,0,0,0.6)] p-3 outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
         >
           {/* Month navigation */}
           <div className="flex items-center justify-between mb-2.5">
