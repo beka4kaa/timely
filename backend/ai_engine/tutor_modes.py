@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .help_policy import HelpPolicy
 
@@ -40,6 +40,9 @@ class TutorMode:
     allowed_skills: tuple[str, ...]
     policy: HelpPolicy
     completion: str
+    # Типизированные инструменты §5.7, доступные в этом режиме. Пустой кортеж —
+    # режим ничего не читает из состояния ученика и ничего не пишет в журнал.
+    allowed_tools: tuple[str, ...] = ()
 
 
 # Полные права: объясняем тему, готовых задач тут нет, скрывать нечего.
@@ -257,6 +260,37 @@ TUTOR_MODES: dict[str, TutorMode] = {
         policy=_OPEN,
         completion="Ошибка классифицирована и исправлена",
     ),
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Матрица «режим → инструменты §5.7»
+#
+# Отдельной таблицей, а не полем внутри каждого режима: так вся матрица видна
+# одним взглядом, и добавление инструмента не требует правки девяти блоков.
+# Отсутствие режима в таблице означает пустой набор — это осознанный случай, а
+# не забывчивость:
+#   quick_answer — справка, писать в журнал нечего;
+#   contest      — во время зачётной работы тьютор не читает состояние и не
+#                  подсказывает, а результат фиксируется отдельно, после сдачи.
+# ──────────────────────────────────────────────────────────────────────────────
+_MODE_TOOLS: dict[str, tuple[str, ...]] = {
+    "explain": ("get_topic_state", "save_learning_event"),
+    "analyze_task": ("get_topic_state",),
+    "solve_together": ("check_answer", "classify_error", "save_learning_event"),
+    "practice": (
+        "get_topic_state",
+        "check_answer",
+        "classify_error",
+        "save_learning_event",
+    ),
+    "review": ("schedule_review", "save_learning_event"),
+    "exam_prep": ("get_topic_state", "check_answer", "save_learning_event"),
+    "post_contest": ("get_topic_state", "classify_error", "save_learning_event"),
+}
+
+TUTOR_MODES = {
+    slug: replace(mode, allowed_tools=_MODE_TOOLS.get(slug, ()))
+    for slug, mode in TUTOR_MODES.items()
 }
 
 # Режим по умолчанию. Совпадает с прежним поведением чата (объясняющий тьютор с

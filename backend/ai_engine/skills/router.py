@@ -26,6 +26,14 @@ from typing import Any
 from ..draw_views import style_from_message
 from ..solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL, openrouter_client
 from ..tutor_modes import TutorMode, get_mode
+from ..tutor_tools import (
+    MAX_TOOL_ROUNDS,
+    TUTOR_TOOLS,
+    ToolContext,
+    resolve_topic,
+    run_tutor_tool,
+    tool_schemas,
+)
 from ..usage import provider_from_base_url, record_model_usage
 from .base import SkillResult
 from .board import BoardSkill
@@ -65,7 +73,12 @@ def tools_for_mode(mode: TutorMode) -> list[dict[str, Any]]:
     не передаёт `tools` в запрос вовсе (OpenAI-совместимые провайдеры отвергают
     `tools: []`).
     """
-    return [SKILLS[name].as_tool() for name in mode.allowed_skills if name in SKILLS]
+    skills = [SKILLS[name].as_tool() for name in mode.allowed_skills if name in SKILLS]
+    # Инструменты §5.7 идут тем же механизмом tool-calling, что и скиллы, но
+    # обрабатываются иначе: их результат возвращается модели, и она продолжает
+    # ответ (см. route_and_run). Порядок «сначала скиллы» сохранён, чтобы
+    # ROUTABLE_TOOLS остался прежним списком для режима по умолчанию.
+    return skills + tool_schemas(mode.allowed_tools)
 
 
 # Прежнее имя-константа: набор тулов режима по умолчанию. Оставлено потому, что
@@ -147,50 +160,158 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
     if tools:
         request_kwargs["tools"] = tools
 
-    response = openrouter_client.chat.completions.create(**request_kwargs)
-    record_model_usage(
-        response,
-        model=OPENROUTER_MODEL,
-        provider=provider_from_base_url(BOARD_LLM_BASE_URL),
-        feature="board_router",
-        input_payload=messages,
+    # Контекст инструментов §5.7 задаёт backend, а не модель: пользователь и
+    # тема берутся из запроса. Тему ищем только если режим вообще пользуется
+    # инструментами — иначе это лишний запрос в БД на каждое сообщение.
+    user_email = str(ctx.get("user_email") or "")
+    tool_context = ToolContext(
+        user_email=user_email,
+        topic=(
+            resolve_topic(user_email, str(ctx.get("topic_name") or ""))
+            if mode.allowed_tools
+            else None
+        ),
+        mode=mode.slug,
     )
 
-    message = response.choices[0].message
-    content = (message.content or "").strip()
-    tool_calls = getattr(message, "tool_calls", None)
-
-    if not tool_calls:
-        logger.info("[router] skill=chat (без тулов), one-shot ответ")
-        return SkillResult(reply=content, board=None, model=OPENROUTER_MODEL, skill="chat")
-
-    call = tool_calls[0]
-    skill_name = call.function.name
-    try:
-        args = json.loads(call.function.arguments or "{}")
-    except (TypeError, ValueError):
-        args = {}
-
-    skill = SKILLS.get(skill_name)
-    if skill is None or skill_name == "chat":
-        logger.warning("[router] неизвестный тул %r — отвечаем как чат", skill_name)
-        return SKILLS["chat"].run(
-            user_message=user_message, history=history, reply=content, model=OPENROUTER_MODEL
+    content = ""
+    # Инструменты возвращают ДАННЫЕ, поэтому после их вызова модель должна
+    # получить результат и продолжить ответ — отсюда цикл. Он ограничен
+    # MAX_TOOL_ROUNDS: модель умеет зацикливаться на «проверю ещё раз», а каждый
+    # круг это отдельный оплаченный запрос.
+    for round_index in range(MAX_TOOL_ROUNDS):
+        request_kwargs["messages"] = messages
+        response = openrouter_client.chat.completions.create(**request_kwargs)
+        record_model_usage(
+            response,
+            model=OPENROUTER_MODEL,
+            provider=provider_from_base_url(BOARD_LLM_BASE_URL),
+            feature="board_router",
+            input_payload=messages,
         )
 
-    # Модель не должна была увидеть этот тул в данном режиме, но GLM-4.6V
-    # нестабилен на tool-calling и умеет позвать функцию, которой в запросе не
-    # было. Раз режим — это правило, а не просьба, проверяем его и на выходе.
-    if skill_name not in mode.allowed_skills:
-        logger.warning(
-            "[router] тул %r недоступен в режиме %r — отвечаем как чат",
-            skill_name,
-            mode.slug,
-        )
-        return SKILLS["chat"].run(
-            user_message=user_message, history=history, reply=content, model=OPENROUTER_MODEL
+        message = response.choices[0].message
+        content = (message.content or "").strip()
+        tool_calls = getattr(message, "tool_calls", None)
+
+        if not tool_calls:
+            logger.info("[router] skill=chat (без тулов), one-shot ответ")
+            return SkillResult(
+                reply=content, board=None, model=OPENROUTER_MODEL, skill="chat"
+            )
+
+        call = tool_calls[0]
+        skill_name = call.function.name
+        try:
+            args = json.loads(call.function.arguments or "{}")
+        except (TypeError, ValueError):
+            args = {}
+
+        # ── Инструмент §5.7: исполняем и отдаём результат модели ─────────────
+        if skill_name in TUTOR_TOOLS:
+            if skill_name not in mode.allowed_tools:
+                logger.warning(
+                    "[router] инструмент %r недоступен в режиме %r — отвечаем как чат",
+                    skill_name,
+                    mode.slug,
+                )
+                return SKILLS["chat"].run(
+                    user_message=user_message,
+                    history=history,
+                    reply=content,
+                    model=OPENROUTER_MODEL,
+                )
+
+            result = run_tutor_tool(skill_name, args, tool_context)
+            logger.info(
+                "[router] tool=%s ok=%s (круг %s)",
+                skill_name,
+                result.get("ok"),
+                round_index + 1,
+            )
+            call_id = getattr(call, "id", None) or f"{skill_name}-{round_index}"
+            messages = [
+                *messages,
+                {
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": skill_name,
+                                "arguments": call.function.arguments or "{}",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                },
+            ]
+            continue
+
+        # ── Скилл: отвечает сам, второго запроса к модели не нужно ───────────
+        skill = SKILLS.get(skill_name)
+        if skill is None or skill_name == "chat":
+            logger.warning("[router] неизвестный тул %r — отвечаем как чат", skill_name)
+            return SKILLS["chat"].run(
+                user_message=user_message,
+                history=history,
+                reply=content,
+                model=OPENROUTER_MODEL,
+            )
+
+        # Модель не должна была увидеть этот тул в данном режиме, но GLM-4.6V
+        # нестабилен на tool-calling и умеет позвать функцию, которой в запросе
+        # не было. Раз режим — это правило, а не просьба, проверяем и на выходе.
+        if skill_name not in mode.allowed_skills:
+            logger.warning(
+                "[router] тул %r недоступен в режиме %r — отвечаем как чат",
+                skill_name,
+                mode.slug,
+            )
+            return SKILLS["chat"].run(
+                user_message=user_message,
+                history=history,
+                reply=content,
+                model=OPENROUTER_MODEL,
+            )
+
+        return _run_skill(
+            skill_name=skill_name,
+            args=args,
+            content=content,
+            user_message=user_message,
+            history=history,
+            ctx=ctx,
         )
 
+    # Круги вышли, а модель всё ещё зовёт инструменты. Отдаём последний текст:
+    # ученику нужен ответ, а не сообщение об исчерпанном лимите.
+    logger.warning("[router] лимит вызовов инструментов исчерпан в режиме %r", mode.slug)
+    return SkillResult(
+        reply=content or "Не удалось сформировать ответ. Попробуйте переформулировать.",
+        board=None,
+        model=OPENROUTER_MODEL,
+        skill="chat",
+    )
+
+
+def _run_skill(
+    *,
+    skill_name: str,
+    args: dict[str, Any],
+    content: str,
+    user_message: str,
+    history: list,
+    ctx: dict[str, Any],
+) -> SkillResult:
+    """Запустить скилл и подставить реплику модели, если сам скилл её не дал."""
+    skill = SKILLS[skill_name]
     logger.info("[router] skill=%s args=%s", skill_name, args)
     result = skill.run(user_message=user_message, history=history, **{**ctx, **args})
 

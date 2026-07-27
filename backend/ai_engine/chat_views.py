@@ -226,6 +226,15 @@ class BoardChatView(APIView):
                 user_message=user_message,
                 history=data.get("history", []),
                 mode=mode.slug,
+                # Контекст инструментов §5.7. Пользователя берём из запроса, а не
+                # из аргументов модели: иначе «инструмент» стал бы способом
+                # прочитать чужой прогресс по подсказке в промпте.
+                user_email=getattr(request, "user_email", "") or "",
+                topic_name=(
+                    (data.get("lesson_plan") or {}).get("topic")
+                    if isinstance(data.get("lesson_plan"), dict)
+                    else ""
+                ),
                 style=data.get("style"),
                 palette=data.get("palette"),
                 reference_image_url=data.get("reference_image_url") or None,
