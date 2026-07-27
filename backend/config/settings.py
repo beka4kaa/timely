@@ -353,7 +353,9 @@ VECTOR_PLANNER_TIMEOUT = int(
 #
 # Текущая раскладка портов на хосте MAC_STUDIO_HOST:
 #   :8080 → mlx-community/Qwen3.6-27B-4bit   (общая VLM: vision + текст)
-#   :8081 → mlx-community/GLM-OCR-bf16       (используется в ocr_views для OCR)
+#   :8081 → mlx-community/GLM-OCR-bf16       (БОЛЬШЕ НЕ ДЕФОЛТ для OCR: см.
+#           блок Vision/OCR ниже — OCR по умолчанию идёт в Qwen3-VL через
+#           OpenRouter, а этот порт остаётся опциональным локальным путём)
 #   :8002 → SAM 2 (facebook/sam2-hiera-large), отдельный FastAPI-сервис,
 #           контракт: POST /api/segment/ {image_base64, points, labels}
 #                     → {mask_base64, score}
@@ -368,11 +370,38 @@ QWEN_API_KEY = os.getenv("QWEN_API_KEY", "sk-local")
 QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "mlx-community/Qwen3.6-27B-4bit")
 QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "60"))
 
-# GLM-OCR / Smart Canvas Analyzer — существующая OpenAI-совместимая GLM
-# интеграция. OCR и analyzer используют общий ai_engine.glm_client.
-VISION_API_BASE_URL = os.getenv("VISION_API_BASE_URL", f"http://{MAC_STUDIO_HOST}:8081/v1")
-VISION_API_KEY = os.getenv("VISION_API_KEY", "sk-local")
-VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "mlx-community/GLM-OCR-bf16")
+# ──────────────────────────────────────────────────────────────────────────────
+# Vision / OCR — Qwen3-VL через OpenRouter (ai_engine.glm_client)
+#
+# Раньше здесь стояла GLM-OCR на Mac Studio (:8081), а PRODUCT.md §7.4 называл
+# целевой моделью self-hosted PaddleOCR-VL. От self-hosted пути отказались:
+# развернуть его негде, а адрес Mac Studio лежит в CGNAT-диапазоне Tailscale
+# (100.64.0.0/10) и из облачного контейнера не маршрутизируется вообще — SYN
+# уходит в никуда, и запрос честно ждёт свой таймаут. Ровно так уже ломался чат
+# (см. AI_ALLOW_LOCAL_LLM_FALLBACK выше), и OCR ломался бы так же.
+#
+# Поэтому по умолчанию — облачная Qwen3-VL через OpenRouter: тот же ключ, что у
+# остальных моделей, никакого своего железа. Локальный путь никуда не делся,
+# он просто перестал быть значением по умолчанию: задайте VISION_API_BASE_URL и
+# VISION_MODEL_NAME, чтобы вернуться на Mac Studio.
+#
+# VISION_API_KEY отдельным ключом оставлен намеренно (можно развести квоты), но
+# по умолчанию подхватывает OPENROUTER_API_KEY, иначе после смены базового URL
+# запрос уходил бы с прежним «sk-local» и провайдер отвечал 401.
+# ──────────────────────────────────────────────────────────────────────────────
+VISION_API_BASE_URL = os.getenv("VISION_API_BASE_URL", "https://openrouter.ai/api/v1")
+VISION_API_KEY = os.getenv("VISION_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "qwen/qwen3-vl-32b-instruct")
+# 32B-модель по сети отвечает дольше локальной: прежних 30 секунд не хватает.
+VISION_TIMEOUT = int(os.getenv("VISION_TIMEOUT", "60"))
+# Бинаризация Оцу в ocr_views.preprocess_and_encode настраивалась под выделенную
+# OCR-модель: она давит полутона и оставляет чистый чёрный текст на белом. Qwen3-VL
+# — универсальная VLM, и ей обычно легче читать изображение без порога (порог
+# съедает слабый штрих карандаша), поэтому по умолчанию выключено.
+# На чистом печатном тексте разницы нет — проверено вживую, оба режима дали
+# одинаковую транскрипцию. Разница ожидается на реальном фото тетради; чтобы
+# было чем сравнить, прежнее поведение оставлено в этом переключателе.
+VISION_OCR_BINARIZE = os.getenv("VISION_OCR_BINARIZE", "0").strip().lower() in {"1", "true", "yes", "on"}
 GLM_ANALYZER_MODEL_NAME = os.getenv("GLM_ANALYZER_MODEL_NAME", VISION_MODEL_NAME)
 GLM_ANALYZER_TIMEOUT = int(os.getenv("GLM_ANALYZER_TIMEOUT", "60"))
 
