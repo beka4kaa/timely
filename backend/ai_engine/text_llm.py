@@ -84,6 +84,7 @@ class TextModel:
         timeout: int,
         max_tokens: int,
         reasoning_enabled: bool = True,
+        reasoning_effort: str | None = None,
         feature: str = "structured_text",
     ) -> _TextResponse:
         """Request a compact JSON object through the existing OpenRouter client.
@@ -91,6 +92,13 @@ class TextModel:
         Provider-side JSON mode improves compliance, but callers still have to
         validate every field.  This helper deliberately returns text rather
         than trusting model output as a Python object.
+
+        ``reasoning_effort`` ("low"/"medium"/"high") caps the OpenRouter
+        reasoning token budget without disabling reasoning outright. Without
+        it, a narrow or ambiguous prompt can make the model "think" for most
+        of ``max_tokens``, leaving nothing for the JSON body — see
+        ``skills/board.py`` where this was measured directly (2735 of 3000
+        tokens burned on reasoning alone).
         """
         if not TEXT_LLM_API_KEY:
             raise TextLLMNotConfigured(
@@ -112,6 +120,10 @@ class TextModel:
                 "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             },
         ]
+        reasoning: dict[str, Any] = {"enabled": bool(reasoning_enabled)}
+        if reasoning_enabled and reasoning_effort:
+            reasoning["effort"] = reasoning_effort
+
         logger.info("[text_llm] JSON-запрос к %s (%s)", self.model, feature)
         response = client.chat.completions.create(
             model=self.model,
@@ -120,7 +132,7 @@ class TextModel:
             temperature=self.temperature,
             timeout=timeout,
             response_format={"type": "json_object"},
-            extra_body={"reasoning": {"enabled": bool(reasoning_enabled)}},
+            extra_body={"reasoning": reasoning},
         )
         text = response.choices[0].message.content or ""
         record_model_usage(

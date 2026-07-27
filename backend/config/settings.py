@@ -182,6 +182,11 @@ PLANNING_MAX_QUESTIONS = int(os.getenv("PLANNING_MAX_QUESTIONS", "4"))
 PLANNING_REASONING_ENABLED = os.getenv(
     "PLANNING_REASONING_ENABLED", "true"
 ).lower() in {"1", "true", "yes", "on"}
+# Caps the reasoning token budget instead of letting it run unbounded: a
+# narrow/tricky topic can otherwise make the model "think" for most of
+# PLANNING_MAX_TOKENS before it ever writes the question JSON, which is slow
+# and burns tokens for a single adaptive follow-up question.
+PLANNING_REASONING_EFFORT = os.getenv("PLANNING_REASONING_EFFORT", "low")
 PLANNING_TIMEOUT = int(os.getenv("PLANNING_TIMEOUT", "20"))
 PLANNING_MAX_TOKENS = int(os.getenv("PLANNING_MAX_TOKENS", "700"))
 

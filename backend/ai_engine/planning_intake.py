@@ -370,6 +370,10 @@ def _ask_model(
         timeout=max(3, min(timeout, 60)),
         max_tokens=max(200, min(max_tokens, 1200)),
         reasoning_enabled=_setting_bool("PLANNING_REASONING_ENABLED", True),
+        reasoning_effort=str(
+            getattr(settings, "PLANNING_REASONING_EFFORT", "low") or ""
+        ).strip().lower()
+        or None,
         feature="planning_intake",
     )
     parsed = _parse_json_object(response.text)
