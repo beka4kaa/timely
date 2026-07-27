@@ -2,6 +2,14 @@ import { create } from 'zustand';
 
 export type Position = { x: number; y: number };
 
+let whiteboardHistorySequence = 0;
+
+/** Общий монотонный номер для истории DOM-элементов и canvas-штрихов. */
+export function nextWhiteboardHistorySequence(): number {
+  whiteboardHistorySequence += 1;
+  return whiteboardHistorySequence;
+}
+
 export type TextElement = {
   id: string;
   type: 'TEXT';
@@ -38,7 +46,15 @@ export type IllustrationLabel = {
   x: number;
   y: number;
   color?: string;
+  /** Semantic grounding target used for deterministic label placement. */
+  target_kind?: 'object' | 'vector' | 'angle' | 'region';
   arrow_to?: { x: number; y: number };
+  /**
+   * Пользовательская позиция подписи в процентах изображения. Якорь
+   * `arrow_to` при этом не двигается: renderer пересчитывает выноску, поэтому
+   * подпись остаётся «магнитно» привязанной к научному объекту.
+   */
+  manual_position?: Position;
 };
 
 /** An optional SAM2 segmentation mask, as a polygon in IMAGE percentages (0–100). */
@@ -68,6 +84,15 @@ export type IllustrationElement = {
   alt?: string;
   /** Стиль генерации (flat/2_5d/3d/sketch) — выбирает типографику подписей. */
   genStyle?: string;
+  /**
+   * Картинка ещё генерируется (прогрессивная выдача): доска приходит с
+   * текстом и структурой сразу, а растр догружается отдельным запросом
+   * (/api/ai/illustration) и подставляется через UPDATE_ELEMENT. Пока флаг
+   * стоит, на холсте показывается скелетон вместо пустого места.
+   */
+  pending?: boolean;
+  /** Текст ошибки, если генерация иллюстрации не удалась. */
+  error?: string;
 };
 
 /** Supported hand-drawn shape kinds (rendered sketchy via rough.js). */
@@ -183,6 +208,8 @@ export type CreateIllustrationAction = {
     masks?: IllustrationMask[] | null;
     alt?: string;
     genStyle?: string;
+    pending?: boolean;
+    error?: string;
   };
 };
 
@@ -194,6 +221,23 @@ export type UpdateElementAction = {
     width?: number;
     height?: number;
     rotation?: number;
+    content?: string;
+    fontSize?: number;
+    lineHeight?: number;
+    color?: string;
+    variant?: TextElement['variant'];
+    function?: string;
+    domain?: [number, number];
+    /**
+     * Поля ниже нужны прогрессивной выдаче: иллюстрация создаётся
+     * плейсхолдером (pending), а когда растр догрузился — тем же id
+     * подставляется картинка с подписями.
+     */
+    src?: string;
+    labels?: IllustrationLabel[];
+    masks?: IllustrationMask[] | null;
+    pending?: boolean;
+    error?: string;
   };
 };
 
@@ -209,11 +253,35 @@ export type WhiteboardAction =
 
 // ----- State Definition -----
 
+export type ExecuteActionsOptions = {
+  /**
+   * CREATE/DELETE/CLEAR записываются автоматически. UPDATE по умолчанию
+   * пропускается, чтобы drag/resize не создавали сотни кадров истории.
+   */
+  history?: 'auto' | 'record' | 'skip';
+  /** Позволяет объединить DOM-элементы и canvas-штрихи в одно действие. */
+  historySequence?: number;
+};
+
+export type ElementHistoryEntry = {
+  elements: WhiteboardElement[];
+  sequence: number;
+};
+
 export interface WhiteboardState {
   elements: WhiteboardElement[];
   camera: Camera;
   selectedElementId: string | null;
-  executeActions: (actionsInput: string | WhiteboardAction[]) => void;
+  elementHistoryPast: ElementHistoryEntry[];
+  elementHistoryFuture: ElementHistoryEntry[];
+  lastElementHistorySequence: number;
+  executeActions: (
+    actionsInput: string | WhiteboardAction[],
+    options?: ExecuteActionsOptions,
+  ) => void;
+  recordElementCheckpoint: (elementsBefore: WhiteboardElement[]) => void;
+  undoElementAction: () => void;
+  redoElementAction: () => void;
   setCamera: (x: number, y: number, zoom?: number) => void;
   panCamera: (dx: number, dy: number) => void;
   setSelectedElement: (id: string | null) => void;
@@ -223,6 +291,9 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
   elements: [],
   camera: { x: 0, y: 0, zoom: 1 },
   selectedElementId: null,
+  elementHistoryPast: [],
+  elementHistoryFuture: [],
+  lastElementHistorySequence: 0,
   
   setSelectedElement: (id) => set({ selectedElementId: id }),
   
@@ -246,7 +317,56 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
     }));
   },
 
-  executeActions: (actionsInput) => {
+  recordElementCheckpoint: (elementsBefore) => {
+    set((state) => {
+      const sequence = nextWhiteboardHistorySequence();
+      return {
+        elementHistoryPast: [
+          ...state.elementHistoryPast,
+          { elements: elementsBefore, sequence },
+        ].slice(-80),
+        elementHistoryFuture: [],
+        lastElementHistorySequence: sequence,
+      };
+    });
+  },
+
+  undoElementAction: () => {
+    set((state) => {
+      const entry = state.elementHistoryPast.at(-1);
+      if (!entry) return state;
+      const nextPast = state.elementHistoryPast.slice(0, -1);
+      return {
+        elements: entry.elements,
+        elementHistoryPast: nextPast,
+        elementHistoryFuture: [
+          ...state.elementHistoryFuture,
+          { elements: state.elements, sequence: entry.sequence },
+        ],
+        lastElementHistorySequence: nextPast.at(-1)?.sequence ?? 0,
+        selectedElementId: null,
+      };
+    });
+  },
+
+  redoElementAction: () => {
+    set((state) => {
+      const entry = state.elementHistoryFuture.at(-1);
+      if (!entry) return state;
+      return {
+        elements: entry.elements,
+        elementHistoryPast: [
+          ...state.elementHistoryPast,
+          { elements: state.elements, sequence: entry.sequence },
+        ],
+        elementHistoryFuture: state.elementHistoryFuture.slice(0, -1),
+        lastElementHistorySequence: entry.sequence,
+        selectedElementId: null,
+      };
+    });
+  },
+
+  executeActions: (actionsInput, options) => {
     set((state) => {
       let actions: WhiteboardAction[];
       
@@ -266,6 +386,18 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
         console.error("executeActions expected an array of actions.");
         return state;
       }
+      if (actions.length === 0) return state;
+
+      const historyMode = options?.history ?? 'auto';
+      const shouldRecordHistory =
+        historyMode === 'record'
+        || (
+          historyMode === 'auto'
+          && actions.some((action) => action.type !== 'UPDATE_ELEMENT')
+        );
+      const historySequence = shouldRecordHistory
+        ? options?.historySequence ?? nextWhiteboardHistorySequence()
+        : 0;
 
       // Clone current elements to apply sequential mutations
       let nextElements = [...state.elements];
@@ -347,6 +479,8 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               masks: p.masks ?? null,
               alt: p.alt,
               genStyle: p.genStyle,
+              pending: p.pending,
+              error: p.error,
             });
             break;
           }
@@ -361,6 +495,27 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               if (action.payload.width !== undefined && sizable) newEl.width = action.payload.width;
               if (action.payload.height !== undefined && sizable) newEl.height = action.payload.height;
               if (action.payload.rotation !== undefined && sizable) newEl.rotation = action.payload.rotation;
+              if (newEl.type === 'TEXT') {
+                if (action.payload.content !== undefined) newEl.content = action.payload.content;
+                if (action.payload.fontSize !== undefined) newEl.fontSize = action.payload.fontSize;
+                if (action.payload.lineHeight !== undefined) newEl.lineHeight = action.payload.lineHeight;
+                if (action.payload.color !== undefined) newEl.color = action.payload.color;
+                if (action.payload.variant !== undefined) newEl.variant = action.payload.variant;
+              }
+              if (newEl.type === 'GRAPH') {
+                if (action.payload.function !== undefined) newEl.function = action.payload.function;
+                if (action.payload.domain !== undefined) newEl.domain = action.payload.domain;
+              }
+              // Прогрессивная выдача: подставляем догрузившуюся картинку в уже
+              // стоящий на холсте плейсхолдер. Только для ILLUSTRATION —
+              // у остальных типов этих полей нет.
+              if (newEl.type === 'ILLUSTRATION') {
+                if (action.payload.src !== undefined) newEl.src = action.payload.src;
+                if (action.payload.labels !== undefined) newEl.labels = action.payload.labels;
+                if (action.payload.masks !== undefined) newEl.masks = action.payload.masks;
+                if (action.payload.pending !== undefined) newEl.pending = action.payload.pending;
+                if (action.payload.error !== undefined) newEl.error = action.payload.error;
+              }
               nextElements[elIndex] = newEl;
             }
             break;
@@ -370,7 +525,27 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
         }
       }
 
-      return { elements: nextElements };
+      const nextPast = shouldRecordHistory
+        ? [
+            ...state.elementHistoryPast,
+            { elements: state.elements, sequence: historySequence },
+          ].slice(-80)
+        : state.elementHistoryPast;
+
+      return {
+        elements: nextElements,
+        elementHistoryPast: nextPast,
+        // Любое новое изменение после undo создаёт новую ветку.
+        elementHistoryFuture: [],
+        lastElementHistorySequence: shouldRecordHistory
+          ? historySequence
+          : state.lastElementHistorySequence,
+        selectedElementId:
+          state.selectedElementId
+          && nextElements.some((element) => element.id === state.selectedElementId)
+            ? state.selectedElementId
+            : null,
+      };
     });
   }
 }));

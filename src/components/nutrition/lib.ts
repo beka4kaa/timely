@@ -356,7 +356,7 @@ export async function analyzePhoto(dataUrl: string, timeoutMs = 36_000): Promise
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/nutrition/analyze-photo/`, {
+    const res = await authFetch(`${BACKEND_URL}/api/nutrition/analyze-photo/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: dataUrl }),

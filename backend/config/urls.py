@@ -10,12 +10,19 @@ from ai_engine.views import (
     AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView,
     DailyTasksView, ScheduleView
 )
-from accounts.views import RegisterView, LoginView, LeaderboardViewSet
+from accounts.views import (
+    RegisterView, LoginView, LeaderboardViewSet, MeView, UserSearchView,
+    TaskViewSet, TaskSubmissionViewSet, ContestViewSet, PrivateLeaderboardViewSet,
+    AdminUserViewSet,
+)
 from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 from ai_engine.ocr_views import OCRView
 from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
+from ai_engine.chat_views import BoardChatView
+from ai_engine.illustration_views import IllustrationView
+from ai_engine.usage_views import AIUsageSummaryView
 from habits.views import HabitViewSet
 from nutrition.views import (
     FoodSearchView,
@@ -49,6 +56,11 @@ router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
 router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-template')
 router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
 router.register(r'leaderboard', LeaderboardViewSet, basename='leaderboard')
+router.register(r'tasks', TaskViewSet, basename='tasks')
+router.register(r'submissions', TaskSubmissionViewSet, basename='submissions')
+router.register(r'contests', ContestViewSet, basename='contests')
+router.register(r'private-leaderboards', PrivateLeaderboardViewSet, basename='private-leaderboards')
+router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 router.register(r'habits', HabitViewSet, basename='habits')
 router.register(r'nutrition/entries', NutritionEntryViewSet, basename='nutrition-entries')
 
@@ -62,6 +74,10 @@ urlpatterns = [
     path('api/auth/register', RegisterView.as_view(), name='register-no-slash'),
     path('api/auth/login/', LoginView.as_view(), name='login'),
     path('api/auth/login', LoginView.as_view(), name='login-no-slash'),
+    path('api/me/', MeView.as_view(), name='me'),
+    path('api/me', MeView.as_view(), name='me-no-slash'),
+    path('api/users/search/', UserSearchView.as_view(), name='user-search'),
+    path('api/users/search', UserSearchView.as_view(), name='user-search-no-slash'),
     
     # AI Actions with trailing slashes (Django standard)
     path('api/ai/generate-program/', GenerateProgramView.as_view(), name='generate-program'),
@@ -79,6 +95,14 @@ urlpatterns = [
     path('api/ai/solve', SolveTaskView.as_view(), name='ai-solve-no-slash'),
     path('api/ai/draw/', WhiteboardDrawView.as_view(), name='ai-draw'),
     path('api/ai/draw', WhiteboardDrawView.as_view(), name='ai-draw-no-slash'),
+    # Роутер скиллов — основная точка входа чата на доске (см. ai_engine.skills).
+    path('api/ai/chat/', BoardChatView.as_view(), name='ai-board-chat'),
+    path('api/ai/chat', BoardChatView.as_view(), name='ai-board-chat-no-slash'),
+    # Вторая фаза прогрессивной выдачи: одна иллюстрация за запрос.
+    path('api/ai/illustration/', IllustrationView.as_view(), name='ai-illustration'),
+    path('api/ai/illustration', IllustrationView.as_view(), name='ai-illustration-no-slash'),
+    path('api/ai/usage/', AIUsageSummaryView.as_view(), name='ai-usage-summary'),
+    path('api/ai/usage', AIUsageSummaryView.as_view(), name='ai-usage-summary-no-slash'),
 
     # Nutrition: food library search + barcode lookup (Open Food Facts proxy)
     path('api/nutrition/foods/', FoodSearchView.as_view(), name='nutrition-foods'),

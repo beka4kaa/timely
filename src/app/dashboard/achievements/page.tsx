@@ -1,23 +1,19 @@
-import { AchievementsComponent } from '@/components/dashboard/achievements-component'
-import { Trophy } from 'lucide-react'
+import { Trophy } from "lucide-react";
+import { AchievementsComponent } from "@/components/dashboard/achievements-component";
+import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
 
 // Отключаем SSR для этой страницы
 export const dynamic = 'force-dynamic'
 
 export default function AchievementsPage() {
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Trophy className="h-8 w-8" />
-          Мои достижения
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Коллекция ваших побед и успехов для мотивации и вдохновения
-        </p>
-      </div>
-      
+    <CoffeePageShell
+      eyebrow="Личная коллекция"
+      title="Achievements"
+      description="Сохраняйте важные победы, замечайте собственный рост и возвращайтесь к нему, когда нужна мотивация."
+      icon={<Trophy className="h-5 w-5" />}
+    >
       <AchievementsComponent />
-    </div>
-  )
+    </CoffeePageShell>
+  );
 }

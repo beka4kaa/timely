@@ -88,12 +88,34 @@ function haloShadow(halo: string): string {
  * генерятся на светлом фоне (см. SCENE_PROMPT_PREFIX), так что дефолт почти
  * всегда совпадает с финальным результатом — перескока цвета нет.
  */
-export function contrastStylesFor(sample: BackdropSample | null): React.CSSProperties {
+function withCollisionBackdrop(
+  styles: React.CSSProperties,
+  sample: BackdropSample | null,
+  enabled: boolean,
+): React.CSSProperties {
+  if (!enabled) return styles;
+  const dark = (sample?.luminance ?? 1) < 0.58;
+  return {
+    ...styles,
+    backgroundColor: dark ? "rgba(12, 16, 24, 0.96)" : "rgba(255, 255, 255, 0.96)",
+    borderRadius: 4,
+    padding: "2px 4px",
+  };
+}
+
+export function contrastStylesFor(
+  sample: BackdropSample | null,
+  preventLineworkOverlap = false,
+): React.CSSProperties {
   if (sample == null) {
-    return {
-      color: TEXT_ON_LIGHT,
-      textShadow: haloShadow("rgba(255, 255, 255, 0.85)"),
-    };
+    return withCollisionBackdrop(
+      {
+        color: TEXT_ON_LIGHT,
+        textShadow: haloShadow("rgba(255, 255, 255, 0.85)"),
+      },
+      sample,
+      preventLineworkOverlap,
+    );
   }
 
   const { luminance, contrast } = sample;
@@ -109,14 +131,20 @@ export function contrastStylesFor(sample: BackdropSample | null): React.CSSPrope
   const strength = Math.max(busyness, midTone);
 
   // Чистый фон с уверенным контрастом — без ореола: «нативная врезка».
-  if (strength < 0.12) return { color };
+  if (strength < 0.12) {
+    return withCollisionBackdrop({ color }, sample, preventLineworkOverlap);
+  }
 
   // Плотность ореола растёт с необходимостью: 0.3 (едва заметный) → 0.95.
   const alpha = 0.3 + 0.65 * strength;
   const halo = darkBg
     ? `rgba(10, 12, 16, ${alpha.toFixed(2)})`
     : `rgba(255, 255, 255, ${alpha.toFixed(2)})`;
-  return { color, textShadow: haloShadow(halo) };
+  return withCollisionBackdrop(
+    { color, textShadow: haloShadow(halo) },
+    sample,
+    preventLineworkOverlap,
+  );
 }
 
 /* ────────────────────────────────────────────────────────────────────
@@ -257,13 +285,12 @@ function sampleBackdropAt(data: ImageData, px: number, py: number): BackdropSamp
  * раскладываем текст ПРАВИЛАМИ:
  *   • фиксированный набор офсетов-кандидатов вокруг якоря (над объектом —
  *     конвенция №1, затем под, по диагоналям, по бокам);
- *   • скоринг кандидатов в основе геометрический: границы, коллизии с уже
- *     размещёнными подписями, чужие якоря, длина leader-line, порядок
- *     предпочтения. Если пиксели картинки доступны, добавляется мягкий штраф
- *     за серый/пёстрый фон под подписью — это уводит текст с блока, плоскости
- *     и стрелок на свободное белое поле. Если canvas недоступен, раскладка всё
- *     равно работает по geometry-only правилам, без возврата к сырым
- *     координатам модели.
+ *   • жёсткие ограничения: bbox текста не пересекаются между собой, с
+ *     leader-line или с заметной линией/стрелкой в растре; leader-line
+ *     начинается на внешней границе bbox и не проходит через чужой текст;
+ *   • мягкий скоринг используется только ПОСЛЕ проверок — чтобы среди
+ *     допустимых мест выбрать ближайшее и семантически естественное.
+ *     Если canvas недоступен, geometry-only ограничения всё равно действуют.
  * Алгоритм rule-based без стохастики: одинаковые подписи → пиксель-в-
  * пиксель одинаковая раскладка, в любом стиле генерации.
  */
@@ -286,11 +313,35 @@ const CANDIDATE_OFFSETS: ReadonlyArray<Offset> = [
   { dx: 28, dy: 14 },
 ];
 
-// Безопасная зона: текстовый блок центрируется в точке, поэтому держим её
-// подальше от краёв, чтобы подпись не резалась рамкой иллюстрации.
+// Безопасная зона АВТОМАТИЧЕСКОЙ раскладки: текстовый блок центрируется в
+// точке, поэтому держим её подальше от краёв. Ручное перетаскивание этой зоной
+// не ограничено — см. OUT_OF_FRAME_MARGIN_PCT.
 const BOUNDS = { xMin: 10, xMax: 90, yMin: 6, yMax: 92 };
+
+// Насколько далеко за рамку картинки можно утащить подпись руками.
+//
+// Зачем вообще выпускать: на плотной схеме свободного места внутри кадра просто
+// нет, и подпись неизбежно ложится на стрелку или на соседний текст. Вынести её
+// на поле — штатный приём учебной графики, выноска при этом продолжает
+// показывать на объект.
+//
+// Почему не безгранично: ограничение ловит «улёт» при резком рывке мышью, после
+// которого подпись пришлось бы искать по всей доске. Полкадра в каждую сторону
+// — этого хватает, чтобы освободить любую точку внутри картинки.
+//
+// NB: рамка НИКОГДА не резала подписи через CSS — ни overflow:hidden, ни
+// clip-path в дереве иллюстрации нет. Держал их ровно этот clamp.
+const OUT_OF_FRAME_MARGIN_PCT = 50;
 const LABEL_GAP_PCT = 2.2;
 const MIN_LEADER_DISTANCE_PCT = 8.5;
+const CONNECTOR_GAP_PCT = 0.9;
+const CONNECTOR_BOX_GAP_PCT = 0.7;
+
+/** Геометрия выноски уже после раскладки текста. */
+export interface LabelConnector {
+  start: SamplePoint;
+  end: SamplePoint;
+}
 
 /** Итог раскладки одной подписи. */
 export interface LabelPlacement {
@@ -299,9 +350,97 @@ export interface LabelPlacement {
   y: number;
   /** Фон под финальной позицией — для contrastStylesFor. */
   sample: BackdropSample | null;
+  /** Консервативная оценка bbox текста в процентах изображения. */
+  width: number;
+  height: number;
+  /** Выноска начинается за пределами bbox, поэтому не перечёркивает текст. */
+  connector: LabelConnector | null;
+  /** Fail-safe для полностью занятого кадра: непрозрачная подложка маскирует штрих. */
+  needsBackdrop: boolean;
 }
 
-type LabelInput = SamplePoint & { arrow_to?: SamplePoint; content?: string };
+/**
+ * Перемещает уже рассчитанную подпись, сохраняя её научный якорь.
+ *
+ * Подпись можно увести ЗА пределы кадра (на поле рядом с иллюстрацией) — там
+ * она не спорит с геометрией, а выноска продолжает показывать на объект.
+ * Далеко улететь не даёт OUT_OF_FRAME_MARGIN_PCT. Если пользователь тянет
+ * текст прямо на точку привязки, подпись мягко останавливается перед ней: так
+ * target и стрелка не оказываются под буквами. Начало leader-line каждый раз
+ * вычисляется заново от внешней границы bbox.
+ */
+export function moveLabelPlacement(
+  placement: LabelPlacement,
+  target: SamplePoint | undefined,
+  requested: SamplePoint,
+): LabelPlacement {
+  const halfW = placement.width / 2;
+  const halfH = placement.height / 2;
+  // Границы считаем по ЦЕНТРУ подписи, но с поправкой на её половину, иначе
+  // широкий текст улетал бы за поле сильнее узкого при одном и том же лимите.
+  const clampPosition = (point: SamplePoint): SamplePoint => ({
+    x: Math.min(
+      100 + OUT_OF_FRAME_MARGIN_PCT - halfW,
+      Math.max(halfW - OUT_OF_FRAME_MARGIN_PCT, point.x),
+    ),
+    y: Math.min(
+      100 + OUT_OF_FRAME_MARGIN_PCT - halfH,
+      Math.max(halfH - OUT_OF_FRAME_MARGIN_PCT, point.y),
+    ),
+  });
+
+  let position = clampPosition(requested);
+
+  if (target) {
+    let dx = position.x - target.x;
+    let dy = position.y - target.y;
+    let length = Math.hypot(dx, dy);
+
+    if (length < 0.001) {
+      dx = placement.x - target.x;
+      dy = placement.y - target.y;
+      length = Math.hypot(dx, dy);
+    }
+    if (length < 0.001) {
+      dx = 0;
+      dy = -1;
+      length = 1;
+    }
+
+    const ux = dx / length;
+    const uy = dy / length;
+    const exitX = Math.abs(ux) < 0.001 ? Number.POSITIVE_INFINITY : halfW / Math.abs(ux);
+    const exitY = Math.abs(uy) < 0.001 ? Number.POSITIVE_INFINITY : halfH / Math.abs(uy);
+    const minimumDistance = Math.min(exitX, exitY) + CONNECTOR_GAP_PCT + 1.25;
+
+    if (length < minimumDistance) {
+      position = clampPosition({
+        x: target.x + ux * minimumDistance,
+        y: target.y + uy * minimumDistance,
+      });
+    }
+  }
+
+  const box = labelBox(position.x, position.y, placement.width, placement.height);
+  return {
+    ...placement,
+    x: position.x,
+    y: position.y,
+    sample: null,
+    connector: connectorFor(box, target),
+    // При произвольном ручном положении пиксельная карта уже не проверена.
+    // Компактная подложка гарантирует, что линии растра не пройдут по буквам.
+    needsBackdrop: true,
+  };
+}
+
+export type LabelTargetKind = "object" | "vector" | "angle" | "region";
+
+type LabelInput = SamplePoint & {
+  arrow_to?: SamplePoint;
+  content?: string;
+  target_kind?: LabelTargetKind;
+};
 
 type LabelBox = {
   x: number;
@@ -328,10 +467,14 @@ function estimatedLabelMetrics(label: LabelInput): { width: number; height: numb
   // without creating layout feedback loops, so use a conservative percent
   // estimate that works for the small board images where collisions hurt most.
   const len = visibleTextLength(label.content);
-  const naturalWidth = len * 1.08 + 4;
-  const width = Math.min(30, Math.max(8, naturalWidth));
+  const naturalWidth = len * 1.18 + 4;
+  const width = Math.min(34, Math.max(8, naturalWidth));
   const lines = Math.max(1, Math.ceil(naturalWidth / width));
-  return { width, height: 4.8 + (lines - 1) * 3.4 };
+  // react-latex-next может увеличить line box почти вдвое даже у визуально
+  // однострочной подписи (MathML + KaTeX baseline). Берём фактический худший
+  // размер с запасом, иначе выноска формально покидает расчётный bbox, но всё
+  // ещё попадает в DOM-box формулы.
+  return { width, height: 10.5 + (lines - 1) * 5.2 };
 }
 
 function labelBox(x: number, y: number, widthPct: number, heightPct: number): LabelBox {
@@ -372,8 +515,140 @@ function boxCenter(box: LabelBox): SamplePoint {
   return { x: box.x, y: box.y };
 }
 
+function expandedBox(box: LabelBox, gap: number): LabelBox {
+  return {
+    ...box,
+    width: box.width + gap * 2,
+    height: box.height + gap * 2,
+    left: box.left - gap,
+    right: box.right + gap,
+    top: box.top - gap,
+    bottom: box.bottom + gap,
+  };
+}
+
+function pointInsideBox(point: SamplePoint, box: LabelBox): boolean {
+  return (
+    point.x >= box.left
+    && point.x <= box.right
+    && point.y >= box.top
+    && point.y <= box.bottom
+  );
+}
+
+function orientation(a: SamplePoint, b: SamplePoint, c: SamplePoint): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+function pointOnSegment(point: SamplePoint, a: SamplePoint, b: SamplePoint): boolean {
+  const epsilon = 1e-6;
+  return (
+    Math.abs(orientation(a, b, point)) <= epsilon
+    && point.x >= Math.min(a.x, b.x) - epsilon
+    && point.x <= Math.max(a.x, b.x) + epsilon
+    && point.y >= Math.min(a.y, b.y) - epsilon
+    && point.y <= Math.max(a.y, b.y) + epsilon
+  );
+}
+
+function segmentsIntersect(
+  a1: SamplePoint,
+  a2: SamplePoint,
+  b1: SamplePoint,
+  b2: SamplePoint,
+): boolean {
+  const o1 = orientation(a1, a2, b1);
+  const o2 = orientation(a1, a2, b2);
+  const o3 = orientation(b1, b2, a1);
+  const o4 = orientation(b1, b2, a2);
+  const epsilon = 1e-6;
+
+  if (
+    ((o1 > epsilon && o2 < -epsilon) || (o1 < -epsilon && o2 > epsilon))
+    && ((o3 > epsilon && o4 < -epsilon) || (o3 < -epsilon && o4 > epsilon))
+  ) {
+    return true;
+  }
+
+  return (
+    (Math.abs(o1) <= epsilon && pointOnSegment(b1, a1, a2))
+    || (Math.abs(o2) <= epsilon && pointOnSegment(b2, a1, a2))
+    || (Math.abs(o3) <= epsilon && pointOnSegment(a1, b1, b2))
+    || (Math.abs(o4) <= epsilon && pointOnSegment(a2, b1, b2))
+  );
+}
+
+function segmentIntersectsBox(
+  start: SamplePoint,
+  end: SamplePoint,
+  box: LabelBox,
+): boolean {
+  if (pointInsideBox(start, box) || pointInsideBox(end, box)) return true;
+  const topLeft = { x: box.left, y: box.top };
+  const topRight = { x: box.right, y: box.top };
+  const bottomRight = { x: box.right, y: box.bottom };
+  const bottomLeft = { x: box.left, y: box.bottom };
+  return (
+    segmentsIntersect(start, end, topLeft, topRight)
+    || segmentsIntersect(start, end, topRight, bottomRight)
+    || segmentsIntersect(start, end, bottomRight, bottomLeft)
+    || segmentsIntersect(start, end, bottomLeft, topLeft)
+  );
+}
+
+function connectorsCross(a: LabelConnector, b: LabelConnector): boolean {
+  // Несколько физических величин могут быть заземлены в одной точке. Их
+  // выноски закономерно сходятся там — это не считается пересечением в поле.
+  if (distance(a.end, b.end) < 0.75) return false;
+  return segmentsIntersect(a.start, a.end, b.start, b.end);
+}
+
+/**
+ * Находим точку пересечения луча «центр подписи → объект» с bbox текста и
+ * выносим начало ещё на небольшой зазор наружу. Линия никогда не лежит под
+ * собственным текстом — независимо от CSS-ореола.
+ */
+function connectorFor(box: LabelBox, target: SamplePoint | undefined): LabelConnector | null {
+  if (!target) return null;
+  const dx = target.x - box.x;
+  const dy = target.y - box.y;
+  const totalDistance = Math.hypot(dx, dy);
+  if (totalDistance < 1e-6 || pointInsideBox(target, expandedBox(box, CONNECTOR_GAP_PCT))) {
+    return null;
+  }
+
+  const tx = Math.abs(dx) < 1e-6 ? Number.POSITIVE_INFINITY : box.width / 2 / Math.abs(dx);
+  const ty = Math.abs(dy) < 1e-6 ? Number.POSITIVE_INFINITY : box.height / 2 / Math.abs(dy);
+  const edgeT = Math.min(tx, ty);
+  const gapT = CONNECTOR_GAP_PCT / totalDistance;
+  return {
+    start: {
+      x: box.x + dx * (edgeT + gapT),
+      y: box.y + dy * (edgeT + gapT),
+    },
+    end: target,
+  };
+}
+
+function targetKindFor(label: LabelInput): LabelTargetKind {
+  if (label.target_kind) return label.target_kind;
+  const text = (label.content ?? "").toLowerCase();
+  if (/θ|theta|угол|градус|°/.test(text)) return "angle";
+  if (
+    /сил|force|gravity|weight|тяжест|нормал|friction|трени|натяж|tension|скорост|velocity|ускор|acceleration|\bmg\b/.test(text)
+    || /^(?:\$?\s*)?(?:n|t|f|v|a|g)(?:\s*\$?)?$/i.test(text)
+  ) {
+    return "vector";
+  }
+  return "object";
+}
+
 function isAngleLabel(label: LabelInput): boolean {
-  return /θ|theta|угол/.test((label.content ?? "").toLowerCase());
+  return targetKindFor(label) === "angle";
+}
+
+function isVectorLabel(label: LabelInput): boolean {
+  return targetKindFor(label) === "vector";
 }
 
 function semanticOffsets(label: LabelInput): Offset[] {
@@ -390,25 +665,34 @@ function semanticOffsets(label: LabelInput): Offset[] {
   }
   if (/трени|friction|f[_\s]?тр|сила\s*f/.test(text)) {
     return [
-      { dx: 12, dy: -9 },
-      { dx: -12, dy: -9 },
-      { dx: 17, dy: -3 },
-      { dx: -17, dy: -3 },
+      { dx: 9, dy: -7 },
+      { dx: -9, dy: -7 },
+      { dx: 11, dy: 5 },
+      { dx: -11, dy: 5 },
     ];
   }
   if (/нормал|normal|^n$|\bn\b/.test(text)) {
     return [
-      { dx: -10, dy: -13 },
-      { dx: 10, dy: -13 },
-      { dx: 0, dy: -15 },
+      { dx: -8, dy: -8 },
+      { dx: 8, dy: -8 },
+      { dx: 10, dy: 4 },
+      { dx: -10, dy: 4 },
     ];
   }
   if (/гравитац|gravity|тяжест|weight|\bmg\b/.test(text)) {
     return [
-      { dx: 10, dy: -4 },
-      { dx: -10, dy: -4 },
-      { dx: 12, dy: 7 },
-      { dx: -12, dy: 7 },
+      { dx: 8, dy: -4 },
+      { dx: -8, dy: -4 },
+      { dx: 9, dy: 6 },
+      { dx: -9, dy: 6 },
+    ];
+  }
+  if (isVectorLabel(label)) {
+    return [
+      { dx: 8, dy: -6 },
+      { dx: -8, dy: -6 },
+      { dx: 9, dy: 5 },
+      { dx: -9, dy: 5 },
     ];
   }
   return [];
@@ -426,34 +710,168 @@ function radialOffsets(anchor: SamplePoint): Offset[] {
   ];
 }
 
-function candidateOffsetsFor(label: LabelInput, anchor: SamplePoint): Offset[] {
-  if (isAngleLabel(label)) {
-    return semanticOffsets(label);
-  }
-  return [...semanticOffsets(label), ...radialOffsets(anchor), ...CANDIDATE_OFFSETS];
+/**
+ * Резервная сетка по всему безопасному полю. Она нужна, когда вокруг объекта
+ * уже проходят несколько сил/стрелок: локальные офсеты тогда принципиально не
+ * могут дать чистое место, а уменьшение шрифта только маскирует проблему.
+ */
+function globalSearchOffsets(anchor: SamplePoint): Offset[] {
+  const xs = [14, 24, 36, 50, 64, 76, 86];
+  const ys = [9, 18, 29, 41, 53, 65, 77, 89];
+  return ys
+    .flatMap((y) => xs.map((x) => ({ dx: x - anchor.x, dy: y - anchor.y })))
+    .sort((a, b) => {
+      const distanceDelta = Math.hypot(a.dx, a.dy) - Math.hypot(b.dx, b.dy);
+      if (Math.abs(distanceDelta) > 1e-6) return distanceDelta;
+      if (a.dy !== b.dy) return a.dy - b.dy;
+      return a.dx - b.dx;
+    });
 }
 
-function candidateBackdropPenalty(data: ImageData | null, box: LabelBox): number {
-  if (!data) return 0;
-  const probes: Array<[number, number]> = [
-    [box.x, box.y],
-    [box.left + 2, box.y],
-    [box.right - 2, box.y],
-    [box.x, box.top + 1.5],
-    [box.x, box.bottom - 1.5],
-  ];
-  const toPx = (pct: number, dim: number) =>
-    Math.round((Math.min(100, Math.max(0, pct)) / 100) * (dim - 1));
-  const samples = probes
-    .map(([x, y]) => sampleBackdropAt(data, toPx(x, data.width), toPx(y, data.height)))
-    .filter((s): s is BackdropSample => s != null);
-  if (samples.length === 0) return 0;
+function uniqueOffsets(offsets: ReadonlyArray<Offset>): Offset[] {
+  const seen = new Set<string>();
+  return offsets.filter((offset) => {
+    const key = `${offset.dx.toFixed(3)},${offset.dy.toFixed(3)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
-  const luminance = samples.reduce((sum, s) => sum + s.luminance, 0) / samples.length;
-  const contrast = Math.max(...samples.map((s) => s.contrast));
-  const nonWhitePenalty = clamp01((0.965 - luminance) / 0.22) * 1.35;
-  const busyPenalty = clamp01((contrast - 0.035) / 0.16) * 2.6;
-  return nonWhitePenalty + busyPenalty;
+function candidateOffsetsFor(label: LabelInput, anchor: SamplePoint): Offset[] {
+  const kind = targetKindFor(label);
+  const preferredDistance = distance(label, anchor);
+  const preferredMax = kind === "angle" ? 10 : kind === "vector" ? 18 : 26;
+  const preferred =
+    Number.isFinite(label.x)
+    && Number.isFinite(label.y)
+    && preferredDistance >= 2
+    && preferredDistance <= preferredMax
+      ? [{ dx: label.x - anchor.x, dy: label.y - anchor.y }]
+      : [];
+  if (isAngleLabel(label)) {
+    return uniqueOffsets([
+      ...preferred,
+      ...semanticOffsets(label),
+      ...CANDIDATE_OFFSETS,
+      ...globalSearchOffsets(anchor),
+    ]);
+  }
+  if (isVectorLabel(label)) {
+    return uniqueOffsets([
+      ...preferred,
+      ...semanticOffsets(label),
+      ...CANDIDATE_OFFSETS,
+      ...globalSearchOffsets(anchor),
+    ]);
+  }
+  return uniqueOffsets([
+    ...preferred,
+    ...semanticOffsets(label),
+    ...radialOffsets(anchor),
+    ...CANDIDATE_OFFSETS,
+    ...globalSearchOffsets(anchor),
+  ]);
+}
+
+interface SurfaceRisk {
+  inkRatio: number;
+  darkRatio: number;
+  edgeRatio: number;
+  contrast: number;
+}
+
+/**
+ * Проверяем ВЕСЬ bbox будущего текста, а не пять точек. Даже тонкая вертикальная
+ * стрелка занимает мало площади и легко проходила между прежними пробами.
+ * `darkRatio` ловит такой штрих, `edgeRatio` — светлые/антиалиасные контуры,
+ * `inkRatio` — цветные стрелки и серые поверхности.
+ */
+function candidateSurfaceRisk(data: ImageData | null, box: LabelBox): SurfaceRisk | null {
+  if (!data) return null;
+  const toStartPx = (pct: number, dim: number) =>
+    Math.floor((Math.min(100, Math.max(0, pct)) / 100) * (dim - 1));
+  const toEndPx = (pct: number, dim: number) =>
+    Math.ceil((Math.min(100, Math.max(0, pct)) / 100) * (dim - 1));
+  const left = toStartPx(box.left, data.width);
+  const right = toEndPx(box.right, data.width);
+  const top = toStartPx(box.top, data.height);
+  const bottom = toEndPx(box.bottom, data.height);
+
+  let count = 0;
+  let ink = 0;
+  let dark = 0;
+  let edges = 0;
+  let luminanceSum = 0;
+  let luminanceSquareSum = 0;
+  const { width, height, data: pixels } = data;
+
+  const rgbaAt = (x: number, y: number): [number, number, number] => {
+    const offset = (y * width + x) * 4;
+    const alpha = pixels[offset + 3] / 255;
+    return [
+      pixels[offset] * alpha + 255 * (1 - alpha),
+      pixels[offset + 1] * alpha + 255 * (1 - alpha),
+      pixels[offset + 2] * alpha + 255 * (1 - alpha),
+    ];
+  };
+
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const [r, g, b] = rgbaAt(x, y);
+      const luminance = relativeLuminance(r, g, b);
+      const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+      count += 1;
+      luminanceSum += luminance;
+      luminanceSquareSum += luminance * luminance;
+      if (luminance < 0.91 || saturation > 0.17) ink += 1;
+      if (luminance < 0.72) dark += 1;
+
+      if (x < Math.min(right, width - 1)) {
+        const [nr, ng, nb] = rgbaAt(x + 1, y);
+        if (Math.max(Math.abs(r - nr), Math.abs(g - ng), Math.abs(b - nb)) > 30) {
+          edges += 1;
+        }
+      }
+      if (y < Math.min(bottom, height - 1)) {
+        const [nr, ng, nb] = rgbaAt(x, y + 1);
+        if (Math.max(Math.abs(r - nr), Math.abs(g - ng), Math.abs(b - nb)) > 30) {
+          edges += 1;
+        }
+      }
+    }
+  }
+
+  if (count === 0) return null;
+  const mean = luminanceSum / count;
+  return {
+    inkRatio: ink / count,
+    darkRatio: dark / count,
+    edgeRatio: edges / (count * 2),
+    contrast: Math.sqrt(Math.max(0, luminanceSquareSum / count - mean * mean)),
+  };
+}
+
+function surfaceIsClear(risk: SurfaceRisk | null): boolean {
+  return (
+    risk == null
+    || (
+      risk.darkRatio <= 0.006
+      && risk.inkRatio <= 0.025
+      && risk.edgeRatio <= 0.022
+      && risk.contrast <= 0.065
+    )
+  );
+}
+
+function surfaceRiskPenalty(risk: SurfaceRisk | null): number {
+  if (!risk) return 0;
+  return (
+    risk.darkRatio * 120
+    + risk.inkRatio * 30
+    + risk.edgeRatio * 90
+    + risk.contrast * 18
+  );
 }
 
 /** Сэмпл «под текстом»: центр + два горизонтальных соседа (текст широкий). */
@@ -472,19 +890,32 @@ function sampleTextArea(data: ImageData, xPct: number, yPct: number): BackdropSa
   };
 }
 
-function layoutLabels(
+type PlacedLabel = {
+  box: LabelBox;
+  connector: LabelConnector | null;
+};
+
+type CandidatePlacement = PlacedLabel & {
+  score: number;
+  surfaceClear: boolean;
+};
+
+export function layoutIllustrationLabels(
   data: ImageData | null,
   labels: ReadonlyArray<LabelInput>,
 ): LabelPlacement[] {
   const anchors = labels.map((l) => l.arrow_to ?? { x: l.x, y: l.y });
-  const placed: LabelBox[] = [];
+  const placed: PlacedLabel[] = [];
 
   return labels.map((label, i) => {
     const anchor = anchors[i];
-    const angleLabel = isAngleLabel(label);
+    const targetKind = targetKindFor(label);
+    const angleLabel = targetKind === "angle";
+    const vectorLabel = targetKind === "vector";
     const metrics = estimatedLabelMetrics(label);
-    let bestBox: LabelBox | null = null;
-    let bestScore = Number.POSITIVE_INFINITY;
+    let bestClear: CandidatePlacement | null = null;
+    let bestFallback: CandidatePlacement | null = null;
+    const seenCandidates = new Set<string>();
 
     candidateOffsetsFor(label, anchor).forEach((off, ci) => {
       const halfW = metrics.width / 2;
@@ -493,13 +924,15 @@ function layoutLabels(
       const x = Math.min(xMax, Math.max(xMin, anchor.x + off.dx));
       const y = Math.min(BOUNDS.yMax, Math.max(BOUNDS.yMin, anchor.y + off.dy));
       const box = labelBox(x, y, metrics.width, metrics.height);
+      const candidateKey = `${x.toFixed(2)},${y.toFixed(2)}`;
+      if (seenCandidates.has(candidateKey)) return;
+      seenCandidates.add(candidateKey);
+      const connector = connectorFor(box, label.arrow_to);
+      const missingRequiredConnector = label.arrow_to != null && connector == null;
 
-      // Скоринг: геометрия обязательна; пиксели, если доступны, дают только
-      // дополнительный штраф за занятое место под текстом.
-      // Коллизии считаем по bbox, а не по центрам: длинные русские подписи
-      // вроде «Нормальная сила» и «Сила трения» не должны склеиваться.
-      const overlapPenalty = placed.reduce((sum, p) => sum + overlapArea(box, p), 0);
-      // Не садимся на ЧУЖОЙ якорь (чтобы подпись А не легла на объект Б).
+      // Это именно запреты, а не штрафы: недопустимый кандидат не может
+      // «победить» из-за близости к объекту.
+      const overlapsPlacedText = placed.some((entry) => overlapArea(box, entry.box) > 0);
       const onForeignAnchor = anchors.some(
         (a, ai) =>
           ai !== i &&
@@ -508,32 +941,72 @@ function layoutLabels(
           a.y >= box.top - 2 &&
           a.y <= box.bottom + 2,
       );
-      const onOwnAnchor = anchor.x >= box.left && anchor.x <= box.right && anchor.y >= box.top && anchor.y <= box.bottom;
-      const leaderDistance = distance(boxCenter(box), anchor);
-      const minLeaderDistance = angleLabel ? 2.5 : MIN_LEADER_DISTANCE_PCT;
-      const tooClosePenalty = leaderDistance < minLeaderDistance
-        ? (minLeaderDistance - leaderDistance) * 0.45
-        : 0;
-      const tooFarPenalty = Math.max(0, leaderDistance - (angleLabel ? 8 : 16)) * (angleLabel ? 0.7 : 0.16);
-      const leaderThroughForeignAnchor = anchors.some(
-        (a, ai) => ai !== i && distancePointToSegment(a, boxCenter(box), anchor) < 4.5,
+      const onOwnAnchor = label.arrow_to != null && pointInsideBox(anchor, expandedBox(box, 0.5));
+      const boxCrossesPlacedConnector = placed.some(
+        (entry) =>
+          entry.connector != null
+          && segmentIntersectsBox(
+            entry.connector.start,
+            entry.connector.end,
+            expandedBox(box, CONNECTOR_BOX_GAP_PCT),
+          ),
       );
+      const connectorCrossesPlacedText =
+        connector != null
+        && placed.some((entry) =>
+          segmentIntersectsBox(
+            connector.start,
+            connector.end,
+            expandedBox(entry.box, CONNECTOR_BOX_GAP_PCT),
+          ));
+      const connectorCrossesConnector =
+        connector != null
+        && placed.some((entry) => entry.connector != null && connectorsCross(connector, entry.connector));
+      const connectorThroughForeignAnchor =
+        connector != null
+        && anchors.some(
+          (a, ai) =>
+            ai !== i
+            && distance(a, connector.end) >= 0.75
+            && distancePointToSegment(a, connector.start, connector.end) < 3.5,
+        );
+
+      if (
+        overlapsPlacedText
+        || missingRequiredConnector
+        || onForeignAnchor
+        || onOwnAnchor
+        || boxCrossesPlacedConnector
+        || connectorCrossesPlacedText
+        || connectorCrossesConnector
+        || connectorThroughForeignAnchor
+      ) {
+        return;
+      }
+
+      const leaderDistance = distance(boxCenter(box), anchor);
+      const minLeaderDistance = angleLabel ? 2.5 : vectorLabel ? 5 : MIN_LEADER_DISTANCE_PCT;
+      const tooClosePenalty = leaderDistance < minLeaderDistance
+        ? (minLeaderDistance - leaderDistance) * (vectorLabel ? 1.1 : 0.45)
+        : 0;
+      const preferredMaxDistance = angleLabel ? 8 : vectorLabel ? 14 : 18;
+      const tooFarPenalty =
+        Math.max(0, leaderDistance - preferredMaxDistance)
+        * (angleLabel ? 0.9 : vectorLabel ? 0.7 : 0.2);
       const anchorCenterDistance = distance(anchor, { x: 50, y: 50 });
       const labelCenterDistance = distance(boxCenter(box), { x: 50, y: 50 });
       const inwardPenalty = !angleLabel && labelCenterDistance < anchorCenterDistance + 4
         ? (anchorCenterDistance + 4 - labelCenterDistance) * 0.12
         : 0;
-      const backdropPenalty = candidateBackdropPenalty(data, box) * (angleLabel ? 0.15 : 1);
+      const surfaceRisk = candidateSurfaceRisk(data, expandedBox(box, 0.5));
+      const backdropPenalty =
+        surfaceRiskPenalty(surfaceRisk) * (angleLabel ? 0.7 : vectorLabel ? 1.2 : 1);
       // Клампинг к границе сдвинул кандидата с его офсета — лёгкий штраф
       // (позиция уже не «над объектом», предпочтём не обрезанный вариант).
       const clampPenalty =
         Math.abs(x - (anchor.x + off.dx)) + Math.abs(y - (anchor.y + off.dy)) > 0.5 ? 0.3 : 0;
 
       const score =
-        overlapPenalty * 5 +
-        (onForeignAnchor ? 7 : 0) +
-        (onOwnAnchor ? (angleLabel ? 0.25 : 5) : 0) +
-        (leaderThroughForeignAnchor ? 4 : 0) +
         tooClosePenalty +
         tooFarPenalty +
         inwardPenalty +
@@ -541,28 +1014,58 @@ function layoutLabels(
         clampPenalty +
         ci * 0.04; // порядок кандидатов: при прочих равных — над объектом
 
-      if (score < bestScore) {
-        bestScore = score;
-        bestBox = box;
+      const candidate: CandidatePlacement = {
+        box,
+        connector,
+        score,
+        surfaceClear: surfaceIsClear(surfaceRisk),
+      };
+      if (candidate.surfaceClear && (bestClear == null || score < bestClear.score)) {
+        bestClear = candidate;
+      }
+      if (bestFallback == null || score < bestFallback.score) {
+        bestFallback = candidate;
       }
     });
 
-    const chosen = bestBox ?? labelBox(anchor.x, anchor.y, metrics.width, metrics.height);
-    placed.push(chosen);
-    // σ/яркость сэмплируются в УЖЕ выбранной позиции — только для ореола и
-    // цвета текста, на выбор места они не влияют.
-    return { x: chosen.x, y: chosen.y, sample: data ? sampleTextArea(data, chosen.x, chosen.y) : null };
+    const emergencyBox = labelBox(
+      Math.min(99 - metrics.width / 2, Math.max(metrics.width / 2 + 1, anchor.x)),
+      Math.min(BOUNDS.yMax, Math.max(BOUNDS.yMin, anchor.y)),
+      metrics.width,
+      metrics.height,
+    );
+    const chosen: CandidatePlacement =
+      bestClear
+      ?? bestFallback
+      ?? {
+        box: emergencyBox,
+        connector: connectorFor(emergencyBox, label.arrow_to),
+        score: Number.POSITIVE_INFINITY,
+        surfaceClear: data == null,
+      };
+    placed.push({ box: chosen.box, connector: chosen.connector });
+    // Если весь кадр занят, `needsBackdrop` включает компактную непрозрачную
+    // подложку. Это последний рубеж: стрелка всё равно не читается сквозь текст.
+    return {
+      x: chosen.box.x,
+      y: chosen.box.y,
+      sample: data ? sampleTextArea(data, chosen.box.x, chosen.box.y) : null,
+      width: chosen.box.width,
+      height: chosen.box.height,
+      connector: chosen.connector,
+      needsBackdrop: data != null && !chosen.surfaceClear,
+    };
   });
 }
 
 /**
  * Раскладка подписей по картинке `src`: детерминированные позиции текста
- * (см. layoutLabels) + фон под каждой для динамического контраста.
+ * (см. layoutIllustrationLabels) + фон под каждой для динамического контраста.
  *
- * До декодирования картинки возвращает позиции из данных модели (текст
- * не прыгает с пустого места), после — финальную раскладку. Эффект
- * зависит от `src` и СОДЕРЖИМОГО координат (coordsKey), а не от identity
- * массива labels, который пересоздаётся родителем на каждый рендер.
+ * До декодирования картинки возвращает geometry-only раскладку текущего
+ * запроса, после — уточнённую по пикселям. Результат от предыдущего `src` или
+ * набора labels никогда не показывается даже на один React-render: именно
+ * такой короткий stale-frame раньше визуально накладывал повторные запросы.
  */
 export function useSmartLabels(
   src: string | null | undefined,
@@ -573,18 +1076,34 @@ export function useSmartLabels(
   const coordsKey = useMemo(
     () =>
       labels
-        .map((l) => `${l.x},${l.y},${l.arrow_to ? `${l.arrow_to.x},${l.arrow_to.y}` : ""},${l.content ?? ""}`)
+        .map((l) => `${l.x},${l.y},${l.arrow_to ? `${l.arrow_to.x},${l.arrow_to.y}` : ""},${l.target_kind ?? ""},${l.content ?? ""}`)
         .join(";"),
     [labels],
   );
-
-  const [placements, setPlacements] = useState<LabelPlacement[]>(() =>
-    layoutLabels(null, labels),
+  const normalizedSrc = src ?? null;
+  const geometryPlacements = useMemo(
+    () => layoutIllustrationLabels(null, labels),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- coordsKey заменяет identity массива
+    [coordsKey],
   );
+
+  const [resolved, setResolved] = useState<{
+    src: string | null;
+    coordsKey: string;
+    placements: LabelPlacement[];
+  }>(() => ({
+    src: normalizedSrc,
+    coordsKey,
+    placements: geometryPlacements,
+  }));
 
   useEffect(() => {
     if (!src || labels.length === 0) {
-      setPlacements(layoutLabels(null, labels));
+      setResolved({
+        src: normalizedSrc,
+        coordsKey,
+        placements: geometryPlacements,
+      });
       return;
     }
 
@@ -594,12 +1113,22 @@ export function useSmartLabels(
       try {
         const imageData = await getImageDataForSrc(src);
         if (cancelled) return;
-        setPlacements(layoutLabels(imageData, labels));
+        setResolved({
+          src,
+          coordsKey,
+          placements: layoutIllustrationLabels(imageData, labels),
+        });
       } catch {
         // Пиксели недоступны (сеть/CORS) — всё равно используем
         // детерминированную геометрическую раскладку вокруг arrow_to,
         // а не сырые координаты модели, иначе текст ложится на фигуры.
-        if (!cancelled) setPlacements(layoutLabels(null, labels));
+        if (!cancelled) {
+          setResolved({
+            src,
+            coordsKey,
+            placements: geometryPlacements,
+          });
+        }
       }
     })();
 
@@ -607,7 +1136,9 @@ export function useSmartLabels(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- coordsKey заменяет labels
-  }, [src, coordsKey]);
+  }, [src, coordsKey, geometryPlacements, normalizedSrc]);
 
-  return placements;
+  return resolved.src === normalizedSrc && resolved.coordsKey === coordsKey
+    ? resolved.placements
+    : geometryPlacements;
 }

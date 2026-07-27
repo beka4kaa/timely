@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes planning-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.planning-popover-enter {
+  animation: planning-popover-enter 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planning-popover-enter {
+    animation: none;
+  }
+}
+
 /* ── Handwriting font (Caveat), self-hosted ───────────────────────────────── */
 @font-face {
   font-family: 'Caveat';
@@ -106,5 +127,43 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+.timely-dashboard-surface {
+  background-color: #f7f5f1;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(112, 92, 66, 0.105) 1px,
+    transparent 1.15px
+  );
+  background-size: 28px 28px;
+}
+
+.timely-dashboard-shell ::selection {
+  background: rgba(194, 151, 92, 0.22);
+  color: #2f2c28;
+}
+
+.timely-dashboard-surface h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.timely-dashboard-surface [data-timely-card] {
+  border-radius: 18px;
+}
+
+@media print {
+  .timely-dashboard-shell > header,
+  .timely-dashboard-shell > aside {
+    display: none !important;
+  }
+
+  .timely-dashboard-surface {
+    position: static !important;
+    overflow: visible !important;
+    background: white !important;
   }
 }

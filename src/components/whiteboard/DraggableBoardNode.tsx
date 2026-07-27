@@ -28,9 +28,7 @@
  *
  * Выделение:
  *   • pointerdown по карточке → узел становится активным (selected).
- *   • Активный узел получает синюю обводку:
- *       ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900
- *     (offset под тёмный фон доски).
+ *   • Активный узел получает тонкий тёплый контур в палитре доски.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -65,12 +63,15 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
   const selectedElementId = useWhiteboardStore((s) => s.selectedElementId);
   const setSelectedElement = useWhiteboardStore((s) => s.setSelectedElement);
   const executeActions = useWhiteboardStore((s) => s.executeActions);
+  const recordElementCheckpoint = useWhiteboardStore((s) => s.recordElementCheckpoint);
 
   const isSelected = selectedElementId === id;
 
   const [mode, setMode] = useState<DragMode>(null);
   const startPointer = useRef({ x: 0, y: 0 });
   const startBox = useRef({ x: 0, y: 0, width: 0 });
+  const historySnapshot = useRef<ReturnType<typeof useWhiteboardStore.getState>["elements"] | null>(null);
+  const didTransform = useRef(false);
 
   // Global pointer move/up while dragging or resizing.
   useEffect(() => {
@@ -83,6 +84,7 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
       const dy = (e.clientY - startPointer.current.y) / camera.zoom;
 
       if (mode === "drag") {
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) didTransform.current = true;
         executeActions([
           {
             type: "UPDATE_ELEMENT",
@@ -96,6 +98,7 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
           },
         ]);
       } else if (mode === "resize") {
+        if (Math.abs(dx) > 0.5) didTransform.current = true;
         executeActions([
           {
             type: "UPDATE_ELEMENT",
@@ -105,7 +108,14 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
       }
     };
 
-    const handleUp = () => setMode(null);
+    const handleUp = () => {
+      if (didTransform.current && historySnapshot.current) {
+        recordElementCheckpoint(historySnapshot.current);
+      }
+      historySnapshot.current = null;
+      didTransform.current = false;
+      setMode(null);
+    };
 
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
@@ -113,11 +123,13 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
     };
-  }, [mode, camera.zoom, id, minWidth, executeActions]);
+  }, [mode, camera.zoom, id, minWidth, executeActions, recordElementCheckpoint]);
 
   const captureStart = (e: React.PointerEvent) => {
     startPointer.current = { x: e.clientX, y: e.clientY };
     startBox.current = { x: position.x, y: position.y, width };
+    historySnapshot.current = useWhiteboardStore.getState().elements;
+    didTransform.current = false;
   };
 
   const beginDrag = (e: React.PointerEvent) => {
@@ -156,10 +168,10 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
       <div
         onPointerDown={beginDrag}
         className={[
-          "relative cursor-move rounded-xl transition-shadow",
+          "relative cursor-move rounded-xl transition-[box-shadow,filter] duration-200",
           isSelected
-            ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900"
-            : "hover:ring-1 hover:ring-blue-500/40",
+            ? "ring-1 ring-[#b7792d]/75 ring-offset-2 ring-offset-[#f7f5f1] shadow-[0_14px_42px_rgba(64,54,42,0.14)]"
+            : "hover:shadow-[0_12px_36px_rgba(64,54,42,0.10)]",
         ].join(" ")}
         style={{ width, pointerEvents: "auto" }}
       >
@@ -169,7 +181,8 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
         {isSelected && resizable && (
           <div
             onPointerDown={beginResize}
-            className="absolute -bottom-2 -right-2 h-4 w-4 cursor-se-resize rounded-full border-2 border-white bg-blue-500 shadow"
+            aria-label="Изменить размер"
+            className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-[#b7792d] shadow-[0_3px_10px_rgba(124,80,27,0.28)] transition-transform hover:scale-125"
           />
         )}
       </div>

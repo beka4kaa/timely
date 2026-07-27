@@ -27,6 +27,7 @@ import {
     Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 interface UserProfile {
     name: string
@@ -155,17 +156,13 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="container max-w-4xl mx-auto py-6 px-4">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    <User className="h-6 w-6" />
-                    Профиль для AI
-                </h1>
-                <p className="text-muted-foreground">
-                    Расскажите AI о себе для персонализированных рекомендаций
-                </p>
-            </div>
-
+        <CoffeePageShell
+            eyebrow="Личные настройки"
+            title="Профиль для AI"
+            description="Расскажите о себе, чтобы рекомендации были точнее и полезнее."
+            icon={<User className="h-5 w-5" />}
+            contentClassName="max-w-5xl"
+        >
             <div className="grid gap-6">
                 {/* Basic Info */}
                 <Card>
@@ -312,7 +309,7 @@ export default function ProfilePage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-lg flex items-center gap-2">
-                                <Sparkles className="h-5 w-5 text-purple-500" />
+                            <Sparkles className="h-5 w-5 text-[#a56e32]" />
                                 Память AI
                             </CardTitle>
                             {memories.length > 0 && (
@@ -361,6 +358,6 @@ export default function ProfilePage() {
                     )}
                 </Button>
             </div>
-        </div>
+        </CoffeePageShell>
     )
 }

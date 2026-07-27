@@ -1,20 +1,19 @@
 "use client"
 
 import { AIAnalysis } from '@/components/mind'
+import { Sparkles } from 'lucide-react'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 export default function AIPage() {
     return (
-        <div className="container max-w-3xl mx-auto py-6 px-4">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    🤖 AI Ассистент
-                </h1>
-                <p className="text-muted-foreground">
-                    Анализ вашего прогресса и рекомендации
-                </p>
-            </div>
-
+        <CoffeePageShell
+            eyebrow="Персональный анализ"
+            title="AI Ассистент"
+            description="Анализ вашего прогресса и спокойные, конкретные рекомендации."
+            icon={<Sparkles className="h-5 w-5" />}
+            contentClassName="max-w-4xl"
+        >
             <AIAnalysis />
-        </div>
+        </CoffeePageShell>
     )
 }

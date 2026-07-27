@@ -44,10 +44,16 @@ image_enrichment.py
 Поставщик изображений (этап [1] пайплайна)
 ───────────────────────────────────────────
   Используем OpenRouter (тот же ключ, что уже есть в проекте).
-  Модель: google/gemini-3.1-flash-image-preview ("Nano Banana 2")
+  Модель: bytedance-seed/seedream-4.5 ($0.04/картинка). Предыдущая модель
+  впечатывала в иллюстрацию псевдо-текст («Fikicn», «Filek», «Porgls») даже
+  с полным TEXT_FREE-контрактом — это ломало пайплайн, где подписи кладутся
+  отдельным слоем. Seedream кадр отдаёт чистым.
   Tier: standard (задаётся через HTTP-заголовок X-OR-Provider-Tier)
   Endpoint: https://openrouter.ai/api/v1/chat/completions
-  Специфика: нужен параметр `modalities: ["image", "text"]`,
+  Специфика: `modalities` зависит от модели — см. _modalities_for.
+             Чистые image-модели (Seedream) принимают только
+             ["image"] и на ["image","text"] отвечают 404;
+             мультимодальные (Gemini Image) — наоборот,
              ответ приходит в choices[0].message.content — список частей,
              среди которых ищем элемент с `type == "image_url"` (а также
              в message.images — см. _extract_image_url и его докстринг,
@@ -57,7 +63,7 @@ image_enrichment.py
 ──────────────────────────────────────────────────────
     IMAGE_GEN_API_URL  = "https://openrouter.ai/api/v1/chat/completions"
     IMAGE_GEN_API_KEY  = env("OPENROUTER_API_KEY")   # уже есть
-    IMAGE_GEN_MODEL    = "google/gemini-3.1-flash-image-preview"
+    IMAGE_GEN_MODEL    = "bytedance-seed/seedream-4.5"
     IMAGE_GEN_TIMEOUT  = 60   # секунды
     IMAGE_GEN_TIER     = "standard"
   (через QWEN_*/SAM2_*/ILLUSTRATION_* настраиваются последующие этапы —
@@ -86,6 +92,8 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from .usage import provider_from_base_url, record_model_usage
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────
@@ -105,10 +113,47 @@ _API_KEY: str = getattr(
 _MODEL: str = getattr(
     settings,
     "IMAGE_GEN_MODEL",
-    "google/gemini-3.1-flash-image-preview",
+    "bytedance-seed/seedream-4.5",
 )
 _TIMEOUT: int = int(getattr(settings, "IMAGE_GEN_TIMEOUT", 60))
 _TIER: str = getattr(settings, "IMAGE_GEN_TIER", "standard")
+
+
+def _is_image_only_model(model: str) -> bool:
+    """Модель, которая умеет отдавать ТОЛЬКО картинку, без текстовой части.
+
+    Seedream — чистая image-модель. Gemini-image (Nano Banana) —
+    мультимодальная: возвращает и картинку, и текст. Разделение важно ровно
+    в одном месте — `_modalities_for`, см. её docstring.
+
+    ДОБАВЛЯЯ НОВУЮ image-модель, впишите её сюда. Иначе запрос уйдёт с
+    modalities ["image", "text"], и провайдер ответит 404 — генерация
+    отвалится целиком, а не деградирует.
+    """
+    lowered = model.lower()
+    return "seedream" in lowered or "bytedance" in lowered
+
+
+def _modalities_for(model: str) -> list[str]:
+    """Какие модальности объявлять в запросе к OpenRouter.
+
+    Чисто image-модели отклоняют запрос с "text" в modalities (проверено
+    вживую: 404 "No endpoints found that support the requested output
+    modalities: image, text"). Gemini-image, наоборот, возвращает и картинку,
+    и текст, поэтому для него список остаётся полным.
+    """
+    return ["image"] if _is_image_only_model(model) else ["image", "text"]
+
+
+# Image-модели специально сильны в рендеринге текста и на длинных промптах
+# «топят» запреты: с полным TEXT_FREE_* контрактом модель всё равно впечатывала
+# псевдо-подписи («Porgls», «Courcta», «Fikicn») прямо в иллюстрацию, что
+# ломает пайплайн — подписи должны накладываться отдельным слоем по
+# координатам грунтинга. Короткая фраза В САМОМ КОНЦЕ промпта это
+# останавливает (проверено вживую: картинка стала чистой).
+TEXT_FREE_TERMINAL: str = (
+    "Absolutely no text, no letters, no numbers, no labels anywhere in the image."
+)
 
 # ──────────────────────────────────────────────────────────────────
 # ЕДИНЫЙ визуальный стиль для ВСЕХ генераций
@@ -209,10 +254,26 @@ STYLE_PRESETS: dict[str, dict[str, str]] = {
             "Clean flat vector educational textbook diagram, precise 2D technical "
             "illustration, white background, soft light gray and muted blue palette, "
             "crisp dark blue-gray outlines, smooth flat fills, subtle depth only, "
-            "consistent line weights, clean labeled arrows, centered balanced "
-            "composition, readable scientific labels reserved for the deterministic "
-            "overlay layer, professional physics textbook style, minimal clutter, "
-            "high clarity, high contrast, polished infographic quality."
+            # ВАЖНО: в позитивной части НЕ упоминаем labels/labeled/text.
+            # Раньше здесь было «clean labeled arrows … readable scientific
+            # labels reserved for the deterministic overlay layer» — оговорку
+            # «reserved for the overlay» диффузионная модель не понимает, она
+            # видит «читаемые научные подписи» и рисует псевдо-текст поверх
+            # схемы (наблюдалось на проде: «Ruterrflord's Gold Foil Experiment»).
+            "consistent line weights, clean plain arrows without any writing, "
+            "centered balanced composition, professional physics textbook style, "
+            "minimal clutter, high clarity, high contrast, polished infographic quality. "
+            # Раньше пресет заканчивался на «minimal clutter» и давал голый
+            # контур: тело нечем отличить от опоры, вектор — от размерной линии.
+            # Просим ровно ту насыщенность, что есть в хороших учебниках:
+            # заливки, цветовое разделение ролей, лёгкий объём — но без 3D.
+            "Objects have solid tinted fills, not empty outlines: bodies in soft grey-blue, "
+            "supports and ground in a heavier neutral tone, motion and force arrows in a "
+            "saturated accent blue so they read instantly against the objects. "
+            "Add gentle flat shading and a soft contact shadow under each object to give "
+            "light volume while staying strictly 2D. Auxiliary construction lines are thin "
+            "and dashed. The result should look like a figure from a modern professional "
+            "textbook, rich and finished — never a bare wireframe sketch."
         ),
         "negative": (
             "photorealistic, 3D render, cinematic lighting, dark background, black "
@@ -284,10 +345,12 @@ TEXT_FREE_OUTPUT_CONTRACT: str = (
     "visible typography or glyphs. Do not draw readable text, pseudo-text, "
     "letters, numbers, labels, captions, title blocks, legends, callout text, "
     "watermarks, signatures, UI text, map labels, or process-name words in any "
-    "language. If the subject normally has labels, leave those areas blank; the "
-    "application will add all labels later as a separate overlay layer. Named "
-    "concepts in the prompt are private instructions only: represent them with "
-    "objects, motion, arrows, layout, color, and shapes, never as written words. "
+    # Фраза «the application will add all labels later» убрана намеренно:
+    # модель не рассуждает про «later», она видит «add all labels» и рисует их.
+    "language. If the subject normally has labels, leave those areas completely "
+    "empty. Named concepts in the prompt are private instructions only: represent "
+    "them with objects, motion, arrows, layout, color, and shapes, never as "
+    "written words. "
 )
 
 TEXT_FREE_FINAL_GUARD: str = (
@@ -378,9 +441,11 @@ NEGATIVE_PROMPT: str = (
     "signatures, typographic marks, circular crops, circle outlines, badges, "
     "emblems, medallions, framed cards, picture frames, decorative borders, "
     "vignettes, white mats, anatomical textures, veins, flesh, blood, "
-    "organic tentacles, messy lines, gore, medical anomalies. Arrows must be "
-    "clean, deliberate and easy to understand visually, never organic or "
-    "tentacle-like shapes."
+    "organic tentacles, messy lines, gore, medical anomalies, duplicate supports, "
+    "parallel duplicate platforms, extra rails, braces, wedges, pedestals, "
+    "double-headed arrows, duplicate arrows, crossing arrows, or callout arrows "
+    "aimed into the center of an object. Arrows must be clean, deliberate and "
+    "easy to understand visually, never organic or tentacle-like shapes."
 )
 
 SCIENTIFIC_FLAT_STYLE_KEY = "scientific_flat_textbook"
@@ -388,24 +453,67 @@ SCIENTIFIC_FLAT_STYLE_KEY = "scientific_flat_textbook"
 SCIENTIFIC_DIAGRAM_PROMPT_CONTRACT: str = (
     "SCIENTIFIC DIAGRAM MODE. Diagram intent: generate a clean educational "
     "scientific diagram that preserves the physical or mathematical meaning, "
-    "using only the necessary objects, arrows and relationships. Visual style: "
-    "clean flat vector textbook illustration on a white or very light background, "
-    "with soft light gray fills, muted blue accents, crisp dark blue-gray outlines, "
-    "consistent line weights and no artistic sketch look. Geometry and layout: "
-    "use a precise 2D orthographic side-view or front-view layout whenever the "
-    "subject allows it; keep the composition centered, balanced and readable, "
-    "with clear separation between objects. Arrows must point exactly in the "
+    "using only the necessary objects, arrows and relationships. Presentation: "
+    "use a professional educational figure on a white or very light background. "
+    "Apply the selected rendering style consistently, but never let that style "
+    "change object count, attachment, contact, vector direction or scientific "
+    "meaning. Geometry and layout: keep one unambiguous side-view or front-view "
+    "topology whenever the subject allows it, even if the selected style adds "
+    "depth; keep the composition centered, balanced and readable, "
+    # «clear separation between objects» стояло без оговорок, и модель отделяла
+    # тело от опоры: брусок висел над чертой земли, как будто левитирует.
+    # Разделять нужно только НЕ СВЯЗАННЫЕ объекты.
+    "with clear separation between UNRELATED objects. "
+    "PHYSICAL CONTACT IS MANDATORY: anything resting on a surface must actually "
+    "touch it — the bottom edge of the body sits flush on the supporting line "
+    "with zero gap, and a soft contact shadow marks the touch point. Render each "
+    "requested ground or support exactly once as one connected filled surface. "
+    "Any visible thickness must belong to that same connected surface; it must "
+    "never look like a second parallel platform, rail, brace or pedestal. Ropes, "
+    "threads and springs visibly attach at both ends: to the object and to its anchor. "
+    "A viewer must be able to tell what holds what. Arrows must point exactly in the "
     "intended direction and use consistent arrowhead sizes. Avoid label overlaps "
     "by leaving clean whitespace around objects and arrows. Scientific correctness: "
     "do not add extra forces, bodies, axes, mechanisms, labels, arrows or decorative "
-    "objects that were not requested. Label behavior: use only labels provided by "
-    "the deterministic overlay layer; keep text areas clean and simple for readable "
-    "labels, preferably outside crowded regions. Do not invent, rewrite, misspell, "
+    # Было: «keep text areas clean and simple for readable labels» — это прямое
+    # приглашение нарисовать читаемые подписи. Оставляем только запрет.
+    "objects that were not requested. Leave generous empty whitespace next to each "
+    "object instead of writing anything there. Do not invent, rewrite, misspell, "
     "render, distort or bake any label, formula, symbol or caption into the pixels. "
-    "Avoid: photorealistic rendering, 3D perspective, dark background, black card "
-    "UI, neon glow, glow behind text, heavy shadows, rough pencil sketch, messy "
-    "hand drawing, clutter, distorted text, extra labels, incorrect arrows and "
+    "Avoid: dark background, black card "
+    # «heavy shadows» оставляем в запрете, но мягкая контактная тень нужна:
+    # без неё тело не читается как стоящее на опоре (см. блок PHYSICAL CONTACT).
+    "UI, neon glow, glow behind text, heavy dramatic shadows, objects floating "
+    "above their support, messy linework, clutter, distorted text, extra labels, "
+    "incorrect arrows and "
     "random decorations. "
+)
+
+MECHANICS_DIAGRAM_PROMPT_CONTRACT: str = (
+    "MECHANICS TOPOLOGY CONTRACT. First satisfy the physical topology, then render "
+    "it: count the requested bodies, surfaces, supports and connectors, and draw "
+    "each exactly once. One requested force equals exactly one single-headed "
+    "vector arrow. Every force arrow starts at the center of mass of the affected "
+    "body and points outward from that body; no force arrow may terminate at the "
+    "body center. Gravity points vertically downward. A normal force is "
+    "perpendicular to and away from the contact surface. Friction is parallel to "
+    "the contact surface and opposes the stated or implied motion. Keep force "
+    "arrows visually separate: no double-headed arrows, no duplicated arrows, no "
+    "crossing arrow shafts and no pointer or callout arrow aimed at an object. "
+    "Do not add coordinate axes, dashed construction guides or auxiliary arrows "
+    "unless the subject explicitly requests them. "
+)
+
+INCLINED_PLANE_PROMPT_CONTRACT: str = (
+    "INCLINED PLANE EXACT TOPOLOGY. Draw exactly ONE block and exactly ONE "
+    "continuous inclined surface. The surface is one simple triangular wedge or "
+    "one connected slab with a single upper slope; the complete bottom face of "
+    "the block rests flush on that upper slope. Do not draw a second parallel "
+    "beam, rail, strip, shelf, mini-platform, brace, leg or wedge beneath, behind "
+    "or through the block. If surface thickness is visible, its lower boundary "
+    "is only the outline of the SAME connected surface, never another object. "
+    "Show the requested angle only as one clean unlabeled arc at the foot of the "
+    "slope. "
 )
 
 SCIENTIFIC_DIAGRAM_CONTEXT_RE = re.compile(
@@ -439,9 +547,14 @@ TASK_DIAGRAM_STYLE_CONTRACT: str = (
     "task diagram, keep the image almost flat and teacher-drawn, like a clean "
     "notebook sketch or a simple diagram drawn on a classroom whiteboard. Use "
     "plain 2D side/front views, simple geometric bodies, simple supports, strings, "
-    "beams, cylinders, blocks and arrows. Keep the palette monochrome black, "
-    "charcoal, soft gray and white; if color is necessary, use at most one muted "
-    "accent color only. Avoid decorative scenery, landscapes, glossy 3D volume, "
+    "beams, cylinders, blocks and arrows. "
+    # Раньше здесь жёстко требовался монохром, и он спорил с палитрой запроса:
+    # схема выходила голым серым контуром, где тело не отличить от опоры.
+    # Ограниченная палитра — да, обесцвечивание — нет.
+    "Keep the palette restrained: neutral greys for bodies and supports plus ONE "
+    "clear accent color used consistently for all arrows and motion, so roles are "
+    "distinguishable at a glance. Objects are filled, not hollow outlines. "
+    "Avoid decorative scenery, landscapes, glossy 3D volume, "
     "isometric depth, complex mechanical textures, realistic rendering, gradients, "
     "large shadows, and overly detailed parts. Use only the essential arrows "
     "needed to explain the given motion or forces; do not invent extra arrows, "
@@ -456,6 +569,21 @@ TASK_DIAGRAM_CONTEXT_RE = re.compile(
     r"spring|пружин|friction|трени|incline|наклон|acceleration|ускор|velocity|скорост|"
     r"rotation|вращ|unwind|размат|vector|вектор|diagram|схем|graph|график|парабол"
     r")",
+    re.I,
+)
+
+MECHANICS_DIAGRAM_CONTEXT_RE = re.compile(
+    r"("
+    r"physics|физик|mechanics|механик|free[-\s]*body|force|сила|gravity|"
+    r"гравитац|weight|тяжест|normal\s+force|нормал|friction|трени|mass|масса|"
+    r"block|брусок|тело|incline|inclined|наклон|pendulum|маятник|pulley|блок|"
+    r"rope|thread|нить|spring|пружин|velocity|скорост|acceleration|ускор"
+    r")",
+    re.I,
+)
+
+INCLINED_PLANE_CONTEXT_RE = re.compile(
+    r"(inclined?\s+(?:plane|surface)|incline|sloped?\s+surface|наклон\w*\s+плоск\w*)",
     re.I,
 )
 
@@ -559,6 +687,18 @@ def _is_scientific_diagram_context(*parts: str | None) -> bool:
     return bool(context and SCIENTIFIC_DIAGRAM_CONTEXT_RE.search(context))
 
 
+def _is_mechanics_diagram_context(*parts: str | None) -> bool:
+    """Heuristic gate for force/vector topology rules."""
+    context = " ".join(p for p in parts if isinstance(p, str))
+    return bool(context and MECHANICS_DIAGRAM_CONTEXT_RE.search(context))
+
+
+def _is_inclined_plane_context(*parts: str | None) -> bool:
+    """Heuristic gate for the strict one-block/one-surface incline contract."""
+    context = " ".join(p for p in parts if isinstance(p, str))
+    return bool(context and INCLINED_PLANE_CONTEXT_RE.search(context))
+
+
 def _has_explicit_non_textbook_style(*parts: str | None) -> bool:
     """Detect user text asking for a different visual style than flat textbook."""
     context = " ".join(p for p in parts if isinstance(p, str))
@@ -567,14 +707,19 @@ def _has_explicit_non_textbook_style(*parts: str | None) -> bool:
 
 def _task_diagram_palette(palette: str | None, task_diagram: bool) -> str | None:
     """
-    For task diagrams, the default natural palette is too colorful. If the user
-    did not explicitly choose a specialized palette, switch to monochrome ink.
+    Палитра по умолчанию для схем к задачам.
+
+    Раньше здесь стоял monochrome-ink: «природная» палитра для чертежа
+    действительно избыточна, но чисто серый выхолащивал схему до примитивного
+    контура — цветом не отличить тело от опоры и вектор от размерной линии.
+    oceanic-clean оставляет чертёж строгим, но даёт синий акцент для стрелок и
+    заливок, как в учебниках (и как у референсов, на которые мы равняемся).
     """
     if not task_diagram:
         return palette
     normalized = (palette or "").strip().lower()
     if not normalized or normalized == "natural-earth":
-        return "monochrome-ink"
+        return "oceanic-clean"
     return palette
 
 
@@ -649,6 +794,10 @@ def _build_final_prompt(
     )
     if scientific_diagram:
         text += f" {SCIENTIFIC_DIAGRAM_PROMPT_CONTRACT}"
+        if _is_mechanics_diagram_context(core):
+            text += f" {MECHANICS_DIAGRAM_PROMPT_CONTRACT}"
+        if _is_inclined_plane_context(core):
+            text += f" {INCLINED_PLANE_PROMPT_CONTRACT}"
     if task_diagram:
         text += f" {TASK_DIAGRAM_STYLE_CONTRACT}"
     if palette_suffix:
@@ -656,7 +805,14 @@ def _build_final_prompt(
     text += f" {NEGATIVE_PROMPT}"
     if style_neg:
         text += f" Avoid for this style: {style_neg}"
+
     text += f" {TEXT_FREE_FINAL_GUARD}"
+    # Чистые image-модели лучше всего соблюдают запрет текста, если короткая
+    # директива стоит буквально последней. На полном промпте раньше хвостом был
+    # только длинный общий guard, и модель всё равно печатала FRiction / 30°G /
+    # псевдо-буквы вроде «Fikicn».
+    if _is_image_only_model(_MODEL):
+        text += f" {TEXT_FREE_TERMINAL}"
     return text
 
 
@@ -677,10 +833,10 @@ def _call_image_api(
     task_diagram: bool = False,
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
+    compact_prompt: bool = False,
 ) -> str:
     """
-    Отправляет запрос к OpenRouter (Nano Banana 2 /
-    google/gemini-3.1-flash-image-preview, standard tier).
+    Отправляет запрос к OpenRouter (модель из IMAGE_GEN_MODEL, standard tier).
 
     Args:
         prompt:              СОДЕРЖАНИЕ картинки (что изобразить).
@@ -709,7 +865,7 @@ def _call_image_api(
         requests.HTTPError — при ответе 4xx/5xx.
         requests.Timeout — при превышении таймаута.
     """
-    prompt = _sanitize_image_prompt(prompt)
+    prompt = prompt.strip() if compact_prompt else _sanitize_image_prompt(prompt)
 
     if not _API_KEY:
         raise ValueError(
@@ -727,22 +883,47 @@ def _call_image_api(
     # ── Выбор режима: image-to-image (edit) vs text-to-image (чистая генерация) ──
     # Итоговую строку в ОБЕИХ ветках собирает _build_final_prompt: глобальный
     # белофоновый префикс + core + аспект + positive стиля + палитра + negative.
-    if reference_image_url:
+    if compact_prompt:
+        # Planner-mode prompts are already assembled from a validated semantic
+        # scene.  Do not append the legacy multi-paragraph style/negative
+        # contracts: they dilute exact counts and relations.  One terminal
+        # text guard remains because Seedream follows it reliably.
+        compact_text = prompt
+        if (
+            _is_image_only_model(_MODEL)
+            and TEXT_FREE_TERMINAL.lower() not in compact_text.lower()
+        ):
+            compact_text = f"{compact_text} {TEXT_FREE_TERMINAL}"
+        if reference_image_url:
+            message_content = [
+                {"type": "image_url", "image_url": {"url": reference_image_url}},
+                {"type": "text", "text": compact_text},
+            ]
+            compact_mode = "compact-edit"
+        else:
+            message_content = compact_text
+            compact_mode = "compact-t2i"
+        logger.info(
+            "[ImageGen] POST %s | model=%s | style=%s | mode=%s | prompt=%.100s…",
+            _API_URL,
+            _MODEL,
+            style or DEFAULT_STYLE,
+            compact_mode,
+            prompt,
+        )
+    elif reference_image_url:
         if scientific_diagram:
             core = (
-                "Restyle the provided structure image into a clean flat vector "
-                "educational textbook diagram. Preserve exact geometry, object "
-                "positions, arrows, label anchor areas and scientific meaning. "
-                f"Subject / content: {prompt}. Use a white background, soft gray "
-                "fills, muted blue accents, crisp dark blue-gray outlines and "
-                "consistent line weight. Do not add new objects. Do not remove "
-                "arrows. Do not distort text areas, formulas, arrows, object "
-                "positions or geometry. Keep text areas clean and simple for the "
-                "deterministic overlay. Do not invent or rewrite labels. Do not "
-                "convert it into a sketch, 3D render, dark UI card or photorealistic "
-                "image. EXCEPTION: remove every visible piece of text, lettering, "
-                "label, caption, pseudo-text or glyph-like mark from the pixels, "
-                "because the application renders labels in a separate overlay layer."
+                "Restyle the provided structure image in the selected rendering "
+                "style while preserving its exact scientific topology. Preserve "
+                "geometry, object count, object positions, physical contacts, "
+                "attachments, force-vector origins, vector directions and scientific "
+                f"meaning. Subject / content: {prompt}. Do not add or remove bodies, "
+                "supports, surfaces, connectors, arrows or construction geometry. "
+                "Do not move an arrowhead, reverse a vector, separate touching "
+                "objects or create a duplicate support. Leave all whitespace regions "
+                "free of glyph-like marks. Remove every visible piece of text, "
+                "lettering, caption, pseudo-text or symbol from the pixels."
             )
         else:
             # Режим смены стиля = НАТИВНОЕ редактирование. Референс передаётся как
@@ -810,7 +991,7 @@ def _call_image_api(
 
     payload: dict[str, Any] = {
         "model": _MODEL,
-        "modalities": ["image", "text"],
+        "modalities": _modalities_for(_MODEL),
         "aspect_ratio": IMAGE_ASPECT_RATIO,
         "image_config": {"aspect_ratio": IMAGE_ASPECT_RATIO},
         "messages": [{"role": "user", "content": message_content}],
@@ -826,7 +1007,20 @@ def _call_image_api(
     resp.raise_for_status()
     data = resp.json()
 
-    return _extract_image_url(data, prompt)
+    image_url = _extract_image_url(data, prompt)
+    record_model_usage(
+        data,
+        model=_MODEL,
+        provider=provider_from_base_url(_API_URL),
+        feature="image_generation",
+        input_payload=payload,
+        image_count=1,
+        metadata={
+            "style": style or DEFAULT_STYLE,
+            "mode": "image_to_image" if reference_image_url else "text_to_image",
+        },
+    )
+    return image_url
 
 
 def generate_raster_image(
@@ -838,6 +1032,7 @@ def generate_raster_image(
     task_diagram: bool = False,
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
+    compact_prompt: bool = False,
 ) -> str:
     """
     Публичная обёртка над _call_image_api — генерирует растровое изображение
@@ -851,6 +1046,8 @@ def generate_raster_image(
         reference_image_url: URL / Data URL существующей картинки — при смене стиля.
                              Когда задан, Gemini редактирует её нативно (image-to-image),
                              сохраняя композицию (см. _call_image_api).
+        compact_prompt:      отправить уже собранный semantic-planner prompt без
+                             legacy style/negative contracts.
 
     Используется как шаг [1] в illustration_pipeline.build_vector_illustration
     (banana → base_image_url, далее опц. SAM2), а также в _enrich_command.
@@ -871,6 +1068,7 @@ def generate_raster_image(
         task_diagram=task_diagram,
         scientific_diagram=scientific_diagram,
         explicit_style_override=explicit_style_override,
+        compact_prompt=compact_prompt,
     )
 
 
@@ -1073,23 +1271,28 @@ def _enrich_command(
     )
     task_diagram_detected = _is_task_diagram_context(*context_parts)
     scientific_diagram_detected = task_diagram_detected or _is_scientific_diagram_context(*context_parts)
+    # Стиль и научная семантика — независимые оси. Раньше Sketch/2.5D/3D
+    # отключали scientific_diagram целиком, а вместе с ним исчезали физические
+    # инварианты: при restyle модель добавляла опоры и меняла стрелки. Теперь
+    # explicit override сохраняет выбранный художественный preset, но строгая
+    # топология и запрет текста остаются включены.
     task_diagram = task_diagram_detected and not explicit_non_textbook_style
-    scientific_diagram = scientific_diagram_detected and not explicit_non_textbook_style
+    scientific_diagram = scientific_diagram_detected
     if task_diagram:
         logger.info(
             "[ImageGen] Task diagram mode enabled (palette=%s → %s)",
             palette or "—",
             _task_diagram_palette(palette, True) or "—",
         )
-    if scientific_diagram:
+    if scientific_diagram and not explicit_non_textbook_style:
         logger.info(
             "[ImageGen] Scientific flat textbook mode enabled (style=%s → %s)",
             style or DEFAULT_STYLE,
             _effective_style_key(style, scientific_diagram=True),
         )
-    elif scientific_diagram_detected and explicit_non_textbook_style:
+    elif scientific_diagram and explicit_non_textbook_style:
         logger.info(
-            "[ImageGen] Scientific diagram detected, but explicit style override kept style=%s",
+            "[ImageGen] Scientific topology enabled; explicit style override kept style=%s",
             style or DEFAULT_STYLE,
         )
 

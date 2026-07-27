@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "framer-motion"
-import { PlusIcon, type LucideIcon } from "lucide-react"
+import { type LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -31,20 +31,9 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-0.5">
-        {/* Quick Create */}
-        <motion.div whileTap={{ scale: 0.97 }} className="px-1 pb-2">
-          <Link
-            href="/dashboard/tasks"
-            className="flex items-center justify-center gap-2 h-9 rounded-lg border border-border text-foreground text-[13px] font-medium hover:bg-foreground/5 transition-colors duration-150 group-data-[collapsible=icon]:px-0"
-          >
-            <PlusIcon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-            <span className="group-data-[collapsible=icon]:hidden">Создать</span>
-          </Link>
-        </motion.div>
-
         {groups.map((group, gi) => (
           <div key={group.label} className="flex flex-col">
-            <div className="px-2.5 pt-3 pb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/45 group-data-[collapsible=icon]:hidden">
+            <div className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a49b91] group-data-[collapsible=icon]:hidden">
               {group.label}
             </div>
             <SidebarMenu className="gap-0.5">
@@ -63,18 +52,23 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                         className={cn(
                           "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-[color,transform] duration-150 hover:translate-x-0.5",
                           active
-                            ? "text-foreground font-medium"
-                            : "text-muted-foreground hover:text-foreground",
+                            ? "font-medium text-[#70491f]"
+                            : "text-[#797269] hover:text-[#332f2a]",
                         )}
                       >
                         {active && (
                           <motion.span
                             layoutId="sidebarActive"
                             transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                            className="absolute inset-0 rounded-lg bg-foreground/10"
+                            className="absolute inset-0 rounded-lg border border-[#e0c59f] bg-[#fff8ec] shadow-[0_3px_14px_rgba(112,73,31,0.06)]"
                           />
                         )}
-                        {item.icon && <item.icon className="relative z-10 h-[17px] w-[17px] shrink-0" strokeWidth={2} />}
+                        {item.icon && (
+                          <item.icon
+                            className="relative z-10 h-[17px] w-[17px] shrink-0"
+                            strokeWidth={1.8}
+                          />
+                        )}
                         <span className="relative z-10 group-data-[collapsible=icon]:hidden">{item.title}</span>
                       </Link>
                     </motion.div>

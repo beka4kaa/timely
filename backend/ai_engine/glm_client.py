@@ -14,6 +14,8 @@ from functools import lru_cache
 from django.conf import settings
 from openai import OpenAI
 
+from .usage import provider_from_base_url, record_model_usage
+
 
 VISION_API_BASE_URL: str = getattr(
     settings,
@@ -72,5 +74,12 @@ def glm_chat_image(
         max_tokens=max_tokens,
         timeout=timeout or GLM_ANALYZER_TIMEOUT,
         temperature=0.0,
+    )
+    record_model_usage(
+        response,
+        model=model or GLM_ANALYZER_MODEL_NAME,
+        provider=provider_from_base_url(VISION_API_BASE_URL),
+        feature="vision_analysis",
+        input_payload=messages,
     )
     return (response.choices[0].message.content or "").strip()

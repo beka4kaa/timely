@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // AI Schedule endpoint - creates a smart daily schedule
 export async function POST(request: NextRequest) {
   try {
+    const headers = await createBackendHeaders(request)
     const body = await request.json()
     
     // This endpoint will use AI to generate a daily schedule
@@ -15,7 +17,7 @@ export async function POST(request: NextRequest) {
     try {
       const response = await fetch(`${BACKEND_URL}/api/ai/schedule/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
       })
       

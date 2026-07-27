@@ -93,11 +93,32 @@ export function cropCanvasToBase64(
 }
 
 /**
+ * Сентинел «авточернила»: штрихи с этим цветом резолвятся в момент отрисовки
+ * по текущей теме (тёмные чернила на светлом холсте, светлые — на тёмном).
+ * Хранить конкретный hex нельзя: белые штрихи, нарисованные в тёмной теме,
+ * пропадали бы после переключения на светлую.
+ */
+export const AUTO_INK = "auto";
+
+/** Цвет «авточернил» для конкретной темы. */
+export function resolveInk(isDark: boolean): string {
+  return isDark ? "#f4f4f5" : "#1e293b";
+}
+
+/**
  * Render a single stroke onto a 2D canvas context using quadratic Bézier
  * curves for smooth interpolation.
+ *
+ * `ink` — во что резолвить AUTO_INK (см. выше); штрихи с конкретным цветом
+ * рисуются как есть.
  */
-export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
-  const { points, color, lineWidth } = stroke;
+export function drawStroke(
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+  ink: string = "#f4f4f5",
+): void {
+  const { points, lineWidth } = stroke;
+  const color = stroke.color === AUTO_INK ? ink : stroke.color;
   if (points.length === 0) return;
 
   ctx.strokeStyle = color;

@@ -119,11 +119,13 @@ Additional capabilities:
 │   ├── hooks/                    # Custom React hooks
 │   ├── lib/                      # Utilities, API clients, stores
 │   │   ├── auth.ts               # NextAuth.js configuration
+│   │   ├── host-routing.ts       # apex vs app.timelyplan.me routing rules
 │   │   ├── diary-store.ts        # Diary state management
 │   │   ├── diary-grades.ts       # Grade calculation logic
 │   │   ├── diary-undo.ts         # Undo system
 │   │   ├── backend-api.ts        # Backend API client
 │   │   └── srs.ts                # Spaced repetition algorithm
+│   ├── middleware.ts              # NextAuth + host-based route protection
 │   └── types/                    # TypeScript type definitions
 │
 ├── backend/                      # Django REST API
@@ -135,7 +137,6 @@ Additional capabilities:
 │   └── ai_engine/                # Gemini AI integration
 │
 ├── public/                       # Static assets (icons, logos)
-├── middleware.ts                  # NextAuth route protection
 ├── next.config.js                # Next.js config with API rewrites
 ├── tailwind.config.js            # Tailwind CSS configuration
 ├── Dockerfile                    # Backend Docker image
