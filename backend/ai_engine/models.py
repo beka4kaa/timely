@@ -172,3 +172,47 @@ class AiCache(models.Model):
     expires_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class AIUsageEvent(models.Model):
+    """Immutable provider-usage ledger used for quotas and billing analytics."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_email = models.EmailField(blank=True, default="", db_index=True)
+    provider = models.CharField(max_length=48, default="unknown")
+    model_name = models.CharField(max_length=160)
+    feature = models.CharField(max_length=80, default="unknown")
+    request_id = models.CharField(max_length=160, blank=True, default="")
+    input_tokens = models.PositiveBigIntegerField(default=0)
+    cached_input_tokens = models.PositiveBigIntegerField(default=0)
+    output_tokens = models.PositiveBigIntegerField(default=0)
+    reasoning_tokens = models.PositiveBigIntegerField(default=0)
+    total_tokens = models.PositiveBigIntegerField(default=0)
+    image_count = models.PositiveIntegerField(default=0)
+    billable_tokens = models.PositiveBigIntegerField(default=0)
+    cost_usd = models.DecimalField(
+        max_digits=14,
+        decimal_places=8,
+        null=True,
+        blank=True,
+    )
+    is_estimated = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["user_email", "created_at"],
+                name="ai_usage_user_created_idx",
+            ),
+            models.Index(
+                fields=["model_name", "created_at"],
+                name="ai_usage_model_created_idx",
+            ),
+            models.Index(
+                fields=["feature", "created_at"],
+                name="ai_usage_feat_created_idx",
+            ),
+        ]

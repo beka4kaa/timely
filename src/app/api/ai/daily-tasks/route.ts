@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // AI Daily Tasks endpoint - generates recommended daily tasks
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const headers = await createBackendHeaders(request)
     // Try to call backend endpoint
     try {
       const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks/`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
       })
       
       if (response.ok) {
@@ -20,7 +22,7 @@ export async function GET() {
     }
     
     // Fetch topics and generate recommendations locally
-    const topicsResponse = await fetch(`${BACKEND_URL}/api/mind/topics/`)
+    const topicsResponse = await fetch(`${BACKEND_URL}/api/mind/topics/`, { headers })
     let topics = []
     
     if (topicsResponse.ok) {
@@ -64,13 +66,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const headers = await createBackendHeaders(request)
     const body = await request.json()
     
     // Try backend first
     try {
       const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
       })
       

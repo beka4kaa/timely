@@ -40,15 +40,15 @@
  *
  *   Слой 1 (z-index: 0)  — база: <div dangerouslySetInnerHTML> с SVG-строкой
  *                           от imagetracerjs; mix-blend-mode: multiply
- *   Слой 2 (z-index: 10) — <svg> со стрелками-указателями (arrow_to)
+ *   Слой 2 (z-index: 15) — <svg> с выносками от границы текста (arrow_to)
  *   Слой 3 (z-index: 20) — абсолютные <div> с KaTeX-лейблами
  *
  * ── ДИНАМИЧЕСКИЙ КОНТРАСТ ПОДПИСЕЙ (Figure Labs compositing) ──────
  *
  * Цвет каждой подписи выбирается по РЕАЛЬНОЙ яркости пикселей картинки
  * под ней (offscreen-canvas сэмплирование, один раз на загрузку картинки),
- * а плотный ореол text-shadow тоном фона «прорезает» стрелки и линии,
- * проходящие под текстом. См. src/lib/illustration-contrast.ts.
+ * раскладка запрещает пересечение bbox текста со стрелками и выносками.
+ * Ореол остаётся страховкой для сложного фона. См. illustration-contrast.ts.
  * ──────────────────────────────────────────────────────────────────
  */
 
@@ -58,6 +58,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
 import { useSmartLabels, contrastStylesFor, type BackdropSample } from "@/lib/illustration-contrast";
+import { IllustrationLeaderLines } from "@/components/whiteboard/IllustrationLeaderLines";
 
 /* ============================================================
  * Типы JSON-схемы
@@ -74,6 +75,7 @@ export interface IllustrationLabel {
   y: number;
   color?: string;
   fontSize?: number;
+  target_kind?: "object" | "vector" | "angle" | "region";
   arrow_to?: ArrowTarget;
 }
 
@@ -345,77 +347,6 @@ function IllustrationError({ message, imageUrl }: { message: string; imageUrl: s
 }
 
 /* ============================================================
- * SVG-слой связей label → объект (Слой 2, z-index: 20)
- * ------------------------------------------------------------
- * Тонкая тёмно-серая линия-указатель от КООРДИНАТЫ лейбла (x, y — это
- * ЦЕНТР текста: см. Label, translate(-50%,-50%)) к точке `arrow_to`,
- * плюс маленькая точка-маркер (r=3) у самого объекта. Строгий «научный»
- * вид: currentColor = text-gray-800/60 (тёмно-серый, слегка прозрачный),
- * без свечения и стрелочных маркеров.
- *
- * Координаты — В ПРОЦЕНТАХ (x1="50%" и т.п.), поэтому слой идеально
- * выравнивается с картинкой и центрированными лейблами при любом масштабе.
- *
- * Сэндвич СТРОГО image(0) < arrows(10) < text(20): стрелки лежат над
- * картинкой, но под подписями — ореол подписи (см. contrastStylesFor)
- * визуально «прорезает» линию там, где она проходит под текстом.
- * ========================================================== */
-
-interface ArrowsLayerProps {
-  labels: IllustrationLabel[];
-  animate: boolean;
-}
-
-function ArrowsLayer({ labels, animate }: ArrowsLayerProps) {
-  const arrowLabels = labels.filter((l) => l.arrow_to != null);
-  if (arrowLabels.length === 0) return null;
-
-  return (
-    <svg
-      aria-hidden="true"
-      className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible text-gray-800/60"
-    >
-      {arrowLabels.map((label, i) => {
-        const connector = (
-          <>
-            {/* Линия: из точных координат лейбла → к объекту (arrow_to) */}
-            <line
-              x1={`${label.x}%`}
-              y1={`${label.y}%`}
-              x2={`${label.arrow_to!.x}%`}
-              y2={`${label.arrow_to!.y}%`}
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
-            {/* Точка-маркер на конце линии, у самого объекта */}
-            <circle
-              cx={`${label.arrow_to!.x}%`}
-              cy={`${label.arrow_to!.y}%`}
-              r="3"
-              className="fill-current"
-            />
-          </>
-        );
-
-        if (animate) {
-          return (
-            <motion.g
-              key={i}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4, delay: 0.25 }}
-            >
-              {connector}
-            </motion.g>
-          );
-        }
-        return <g key={i}>{connector}</g>;
-      })}
-    </svg>
-  );
-}
-
-/* ============================================================
  * Один лейбл (Слой 3, z-index: 20)
  * ========================================================== */
 
@@ -427,11 +358,13 @@ interface LabelProps {
   y: number;
   /** Фон под подписью (яркость + неоднородность) или null, пока не считан. */
   sample: BackdropSample | null;
+  /** true только если на всём кадре не нашлось чистого места. */
+  needsBackdrop: boolean;
   /** true → рукописный Caveat (стиль sketch), false → строгий sans. */
   handwritten: boolean;
 }
 
-function Label({ label, animate, x, y, sample, handwritten }: LabelProps) {
+function Label({ label, animate, x, y, sample, needsBackdrop, handwritten }: LabelProps) {
   const { content } = label;
   const inner = <Latex>{content}</Latex>;
 
@@ -442,10 +375,12 @@ function Label({ label, animate, x, y, sample, handwritten }: LabelProps) {
   // адаптивный ореол «прорезает» стрелки только там, где фон пёстрый
   // (см. illustration-contrast.ts). KaTeX-формулы рендерятся собственным
   // математическим шрифтом KaTeX, но наследуют currentColor и text-shadow.
+  // На одну иллюстрацию сервер допускает максимум шесть подписей, поэтому
+  // можно держать кегль читаемым, а коллизии решать раскладкой, не уменьшением.
   const typography = handwritten
     ? "font-handwriting font-semibold tracking-normal text-sm md:text-base"
     : "font-sans font-medium tracking-normal text-[11px] md:text-xs";
-  const contrast = contrastStylesFor(sample);
+  const contrast = contrastStylesFor(sample, needsBackdrop);
 
   // Позиционирование по ЦЕНТРУ координат (x%, y%) через translate(-50%, -50%).
   // Вынесено на внешний wrapper, чтобы entrance-анимация framer-motion (которая
@@ -457,14 +392,15 @@ function Label({ label, animate, x, y, sample, handwritten }: LabelProps) {
     zIndex: 20,
     pointerEvents: "none",
     userSelect: "none",
-    maxWidth: "30%",
+    width: "max-content",
+    maxWidth: "34%",
     textAlign: "center",
     whiteSpace: "normal",
   };
 
   if (animate) {
     return (
-      <div className="absolute" style={positionStyle}>
+      <div data-illustration-label className="absolute" style={positionStyle}>
         <motion.div
           className={typography}
           style={contrast}
@@ -479,7 +415,11 @@ function Label({ label, animate, x, y, sample, handwritten }: LabelProps) {
   }
 
   return (
-    <div className={cn("absolute", typography)} style={{ ...positionStyle, ...contrast }}>
+    <div
+      data-illustration-label
+      className={cn("absolute", typography)}
+      style={{ ...positionStyle, ...contrast }}
+    >
       {inner}
     </div>
   );
@@ -596,14 +536,6 @@ function Illustration({
   // offscreen-сэмплирования на загрузку картинки, см. useSmartLabels).
   const placements = useSmartLabels(image_url, labels);
 
-  // Стрелки-указатели должны идти от ФИНАЛЬНОЙ позиции текста к объекту —
-  // подменяем x/y в копии подписей для ArrowsLayer.
-  const laidOutLabels = labels.map((l, i) => ({
-    ...l,
-    x: placements[i]?.x ?? l.x,
-    y: placements[i]?.y ?? l.y,
-  }));
-
   const handwritten = command.gen_style === "sketch";
 
   return (
@@ -634,8 +566,8 @@ function Illustration({
           animate={animate}
         />
 
-        {/* ── Слой 2: SVG стрелки (z-index: 10) — от финальных позиций текста ── */}
-        <ArrowsLayer labels={laidOutLabels} animate={animate} />
+        {/* ── Слой 2: выноски из внешней границы bbox к объекту ── */}
+        <IllustrationLeaderLines placements={placements} animate={animate} />
 
         {/* ── Слой 3: KaTeX лейблы с динамическим контрастом (z-index: 20) ── */}
         {labels.map((label, i) => (
@@ -646,6 +578,7 @@ function Illustration({
             x={placements[i]?.x ?? label.x}
             y={placements[i]?.y ?? label.y}
             sample={placements[i]?.sample ?? null}
+            needsBackdrop={placements[i]?.needsBackdrop ?? false}
             handwritten={handwritten}
           />
         ))}

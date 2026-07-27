@@ -1,21 +1,24 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useMemo, useState } from "react";
 import {
-  Trophy,
-  Sigma,
   Atom,
   Code2,
-  BookOpen,
-  Flame,
-  Search,
-  List,
+  Crown,
+  Globe2,
   LayoutGrid,
+  List,
+  Search,
+  Sigma,
+  Trophy,
+  Users,
 } from "lucide-react";
-
-/* ─── Types ────────────────────────────────────────────── */
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  CoffeePageShell,
+  coffeePanelClass,
+} from "@/components/dashboard/coffee-page-shell";
+import { PrivateLeaderboards } from "@/components/leaderboard/PrivateLeaderboards";
 
 type DisciplineKey = "overall" | "math" | "physics" | "programming";
 type ViewMode = "list" | "tiers";
@@ -28,85 +31,30 @@ interface DisciplineTier {
 interface LeaderboardEntry {
   id: string;
   username: string;
-  avatarUrl?: string;
   title: string;
   points: number;
   region: string;
   tiers: DisciplineTier[];
 }
 
-/* ─── Discipline metadata ──────────────────────────────── */
-
 const DISCIPLINES: {
   key: DisciplineKey;
   label: string;
-  icon: React.ReactNode;
-  color: string;
+  icon: typeof Trophy;
 }[] = [
-  { key: "overall", label: "Overall", icon: <Trophy className="w-5 h-5" />, color: "text-amber-500" },
-  { key: "math", label: "Math", icon: <Sigma className="w-5 h-5" />, color: "text-blue-500" },
-  { key: "physics", label: "Physics", icon: <Atom className="w-5 h-5" />, color: "text-emerald-500" },
-  { key: "programming", label: "Coding", icon: <Code2 className="w-5 h-5" />, color: "text-violet-500" },
+  { key: "overall", label: "Overall", icon: Trophy },
+  { key: "math", label: "Math", icon: Sigma },
+  { key: "physics", label: "Physics", icon: Atom },
+  { key: "programming", label: "Coding", icon: Code2 },
 ];
 
-/* ─── Tier helpers ─────────────────────────────────────── */
-
-const TIER_ORDER = ["HT1", "HT2", "HT3", "HT4", "HT5", "LT1", "LT2", "LT3", "LT4", "LT5"];
-const TIER_LABELS: Record<string, string> = {
-  HT1: "Tier 1", HT2: "Tier 2", HT3: "Tier 3", HT4: "Tier 4", HT5: "Tier 5",
-  LT1: "Tier 6", LT2: "Tier 7", LT3: "Tier 8", LT4: "Tier 9", LT5: "Tier 10",
-};
-
-function tierBgClass(tier: string): string {
-  if (tier === "HT1") return "bg-gradient-to-r from-amber-500 to-red-500 text-white";
-  if (tier === "HT2") return "bg-gradient-to-r from-orange-500 to-rose-500 text-white";
-  if (tier === "HT3") return "bg-gradient-to-r from-orange-400 to-amber-500 text-white";
-  if (tier === "HT4") return "bg-gradient-to-r from-yellow-400 to-orange-400 text-white";
-  if (tier === "HT5") return "bg-gradient-to-r from-lime-400 to-green-500 text-white";
-  if (tier === "LT1") return "bg-sky-500/80 text-white";
-  if (tier === "LT2") return "bg-blue-500/70 text-white";
-  if (tier === "LT3") return "bg-indigo-500/60 text-white";
-  if (tier === "LT4") return "bg-slate-500/60 text-white";
-  if (tier === "LT5") return "bg-slate-600/50 text-white";
-  return "bg-muted text-muted-foreground";
-}
-
-function tierColumnHeaderBg(tier: string): string {
-  if (tier === "HT1") return "bg-gradient-to-r from-amber-500 to-red-500 text-white";
-  if (tier === "HT2") return "bg-gradient-to-br from-orange-500/20 to-rose-500/10 text-orange-400 border-orange-500/30";
-  if (tier === "HT3") return "bg-gradient-to-r from-orange-400 to-amber-500 text-white";
-  if (tier === "HT4") return "text-yellow-400 border-yellow-500/20";
-  if (tier === "HT5") return "text-lime-400 border-lime-500/20";
-  if (tier === "LT1") return "text-sky-400 border-sky-500/20";
-  if (tier === "LT2") return "text-blue-400 border-blue-500/20";
-  if (tier === "LT3") return "text-indigo-400 border-indigo-500/20";
-  if (tier === "LT4") return "text-slate-400 border-slate-500/20";
-  if (tier === "LT5") return "text-slate-500 border-slate-600/20";
-  return "";
-}
-
-function rankBg(rank: number): string {
-  if (rank === 1) return "bg-amber-500 text-black";
-  if (rank === 2) return "bg-slate-400 text-black";
-  if (rank === 3) return "bg-amber-700 text-white";
-  return "bg-muted text-muted-foreground";
-}
-
-const disciplineIcon = (key: DisciplineKey, size = "w-4 h-4"): React.ReactNode => {
-  const cls = `${size} opacity-60`;
-  switch (key) {
-    case "overall": return <Trophy className={cls} />;
-    case "math": return <Sigma className={cls} />;
-    case "physics": return <Atom className={cls} />;
-    case "programming": return <Code2 className={cls} />;
-  }
-};
-
-/* ─── Mock data ────────────────────────────────────────── */
-
-const MOCK_LEADERBOARD: LeaderboardEntry[] = [
+const LEADERBOARD: LeaderboardEntry[] = [
   {
-    id: "1", username: "ItzRealBekzhan", title: "Grandmaster", points: 330, region: "CIS",
+    id: "1",
+    username: "ItzRealBekzhan",
+    title: "Grandmaster",
+    points: 330,
+    region: "CIS",
     tiers: [
       { discipline: "overall", tier: "HT3" },
       { discipline: "math", tier: "HT1" },
@@ -115,7 +63,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "2", username: "coldified", title: "Grandmaster", points: 326, region: "EU",
+    id: "2",
+    username: "coldified",
+    title: "Grandmaster",
+    points: 326,
+    region: "EU",
     tiers: [
       { discipline: "overall", tier: "LT1" },
       { discipline: "math", tier: "LT1" },
@@ -124,7 +76,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "3", username: "MathWizard", title: "Grandmaster", points: 290, region: "NA",
+    id: "3",
+    username: "MathWizard",
+    title: "Grandmaster",
+    points: 290,
+    region: "NA",
     tiers: [
       { discipline: "overall", tier: "HT3" },
       { discipline: "math", tier: "HT1" },
@@ -133,7 +89,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "4", username: "janekv", title: "Master", points: 260, region: "EU",
+    id: "4",
+    username: "janekv",
+    title: "Master",
+    points: 260,
+    region: "EU",
     tiers: [
       { discipline: "overall", tier: "LT3" },
       { discipline: "math", tier: "HT4" },
@@ -142,7 +102,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "5", username: "BlvckPhysics", title: "Expert", points: 226, region: "EU",
+    id: "5",
+    username: "BlvckPhysics",
+    title: "Expert",
+    points: 226,
+    region: "EU",
     tiers: [
       { discipline: "overall", tier: "HT2" },
       { discipline: "math", tier: "HT3" },
@@ -151,7 +115,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "6", username: "CodeKylaz", title: "Expert", points: 226, region: "NA",
+    id: "6",
+    username: "CodeKylaz",
+    title: "Expert",
+    points: 226,
+    region: "NA",
     tiers: [
       { discipline: "overall", tier: "HT3" },
       { discipline: "math", tier: "LT3" },
@@ -160,7 +128,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "7", username: "ninorc15", title: "Expert", points: 211, region: "EU",
+    id: "7",
+    username: "ninorc15",
+    title: "Expert",
+    points: 211,
+    region: "EU",
     tiers: [
       { discipline: "overall", tier: "HT1" },
       { discipline: "math", tier: "LT3" },
@@ -169,7 +141,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "8", username: "quantum_leap", title: "Specialist", points: 186, region: "CIS",
+    id: "8",
+    username: "quantum_leap",
+    title: "Specialist",
+    points: 186,
+    region: "CIS",
     tiers: [
       { discipline: "overall", tier: "LT3" },
       { discipline: "math", tier: "LT4" },
@@ -178,7 +154,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "9", username: "yMiau", title: "Specialist", points: 170, region: "EU",
+    id: "9",
+    username: "yMiau",
+    title: "Specialist",
+    points: 170,
+    region: "EU",
     tiers: [
       { discipline: "overall", tier: "LT3" },
       { discipline: "math", tier: "LT3" },
@@ -187,7 +167,11 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
     ],
   },
   {
-    id: "10", username: "AlgoKing", title: "Master", points: 270, region: "NA",
+    id: "10",
+    username: "AlgoKing",
+    title: "Master",
+    points: 270,
+    region: "NA",
     tiers: [
       { discipline: "overall", tier: "HT2" },
       { discipline: "math", tier: "HT2" },
@@ -195,323 +179,290 @@ const MOCK_LEADERBOARD: LeaderboardEntry[] = [
       { discipline: "programming", tier: "HT1" },
     ],
   },
-  {
-    id: "11", username: "euler_fn", title: "Specialist", points: 165, region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "LT4" },
-      { discipline: "math", tier: "HT3" },
-      { discipline: "physics", tier: "LT5" },
-      { discipline: "programming", tier: "LT4" },
-    ],
-  },
-  {
-    id: "12", username: "DarkMatter", title: "Expert", points: 205, region: "CIS",
-    tiers: [
-      { discipline: "overall", tier: "HT4" },
-      { discipline: "math", tier: "LT2" },
-      { discipline: "physics", tier: "HT3" },
-      { discipline: "programming", tier: "LT5" },
-    ],
-  },
-  {
-    id: "13", username: "TensorBoy", title: "Specialist", points: 155, region: "NA",
-    tiers: [
-      { discipline: "overall", tier: "LT5" },
-      { discipline: "math", tier: "LT5" },
-      { discipline: "physics", tier: "HT5" },
-      { discipline: "programming", tier: "HT4" },
-    ],
-  },
-  {
-    id: "14", username: "Pitonchik", title: "Master", points: 250, region: "CIS",
-    tiers: [
-      { discipline: "overall", tier: "HT5" },
-      { discipline: "math", tier: "HT5" },
-      { discipline: "physics", tier: "HT4" },
-      { discipline: "programming", tier: "HT2" },
-    ],
-  },
 ];
 
-/* ─── TierBadge ────────────────────────────────────────── */
+function tierClass(tier: string) {
+  if (tier === "HT1") return "border-[#d6ad67] bg-[#fff2d9] text-[#8b581e]";
+  if (tier.startsWith("HT")) return "border-[#dfc7a4] bg-[#f7ead8] text-[#8a6136]";
+  if (tier === "LT1") return "border-[#b8cdd0] bg-[#e9f1f0] text-[#507074]";
+  return "border-[#d5d0c8] bg-[#efede8] text-[#716a63]";
+}
 
-function TierBadge({ tier, small = false }: { tier: string; small?: boolean }) {
-  const isHigh = tier.startsWith("HT");
-  const px = small ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs";
+function regionClass(region: string) {
+  if (region === "CIS") return "bg-[#e8f1ea] text-[#53705a]";
+  if (region === "EU") return "bg-[#e9eef3] text-[#566a7c]";
+  return "bg-[#f3e8e4] text-[#865d52]";
+}
 
+function rankClass(rank: number) {
+  if (rank === 1) return "border-[#d5ad68] bg-[#fff0d0] text-[#81521d]";
+  if (rank === 2) return "border-[#cbc8c1] bg-[#efede9] text-[#625e57]";
+  if (rank === 3) return "border-[#d0aa88] bg-[#f3dfcf] text-[#815b42]";
+  return "border-[#ddd7ce] bg-[#f6f2ec] text-[#827970]";
+}
+
+function TierBadge({ tier }: { tier: string }) {
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded font-bold tracking-wide ${px} ${tierBgClass(tier)}`}>
-      {isHigh && <Flame className={small ? "w-2.5 h-2.5" : "w-3 h-3"} />}
+    <span
+      className={`inline-flex min-w-[34px] items-center justify-center rounded-full border px-2 py-1 text-[9px] font-bold tracking-[0.06em] ${tierClass(tier)}`}
+    >
       {tier}
     </span>
   );
 }
 
-/* ─── RegionBadge ──────────────────────────────────────── */
-
-function RegionBadge({ region }: { region: string }) {
-  const bg =
-    region === "NA"
-      ? "bg-red-500/20 text-red-400 border-red-500/30"
-      : region === "EU"
-        ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-        : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-
+function LeaderboardList({
+  entries,
+}: {
+  entries: LeaderboardEntry[];
+}) {
   return (
-    <span className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-bold ${bg}`}>
-      {region}
-    </span>
+    <div className={`${coffeePanelClass} overflow-hidden`}>
+      <div className="hidden grid-cols-[58px_1fr_90px_1fr] items-center gap-3 border-b border-[#e2dcd3] bg-[#f5f1ea] px-5 py-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9b9186] sm:grid">
+        <span className="text-center">#</span>
+        <span>Участник</span>
+        <span className="text-center">Регион</span>
+        <span className="text-center">Уровни</span>
+      </div>
+
+      <div className="divide-y divide-[#e8e2da]">
+        {entries.map((entry, index) => {
+          const rank = index + 1;
+          return (
+            <div
+              key={entry.id}
+              className="grid grid-cols-[46px_1fr_auto] items-center gap-3 px-4 py-3.5 transition-colors hover:bg-[#f6f1e9] sm:grid-cols-[58px_1fr_90px_1fr] sm:px-5"
+            >
+              <div className="flex justify-center">
+                <span
+                  className={`grid h-9 w-9 place-items-center rounded-[11px] border text-[11px] font-bold tabular-nums ${rankClass(rank)}`}
+                >
+                  {rank === 1 ? <Crown className="h-3.5 w-3.5" /> : rank}
+                </span>
+              </div>
+
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar className="h-10 w-10 shrink-0 border border-[#ded7cd]">
+                  <AvatarFallback className="bg-[#eee8de] text-[10px] font-semibold text-[#745f49]">
+                    {entry.username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-semibold text-[#3a3530]">
+                    {entry.username}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[#91887e]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#68a079]" />
+                    {entry.title} · {entry.points} pts
+                  </p>
+                </div>
+              </div>
+
+              <div className="hidden justify-center sm:flex">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[9px] font-semibold ${regionClass(entry.region)}`}
+                >
+                  {entry.region}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-1.5 sm:justify-center">
+                {entry.tiers.map((tier) => (
+                  <TierBadge
+                    key={`${entry.id}-${tier.discipline}`}
+                    tier={tier.tier}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
-/* ─── Tiers Column View ────────────────────────────────── */
-
-function TiersColumnView({
+function TierColumns({
   entries,
   discipline,
 }: {
   entries: LeaderboardEntry[];
   discipline: DisciplineKey;
 }) {
-  // Group entries by their tier in this discipline
-  const grouped = useMemo(() => {
-    const map: Record<string, LeaderboardEntry[]> = {};
-    for (const tier of TIER_ORDER) {
-      map[tier] = [];
-    }
-    for (const entry of entries) {
-      const dt = entry.tiers.find((t) => t.discipline === discipline);
-      if (dt && map[dt.tier]) {
-        map[dt.tier].push(entry);
-      }
-    }
-    return map;
-  }, [entries, discipline]);
-
-  // Only show tiers that have at least one player
-  const activeTiers = TIER_ORDER.filter((t) => grouped[t].length > 0);
+  const groups = useMemo(() => {
+    const result = new Map<string, LeaderboardEntry[]>();
+    entries.forEach((entry) => {
+      const tier =
+        entry.tiers.find((item) => item.discipline === discipline)?.tier ??
+        "—";
+      result.set(tier, [...(result.get(tier) ?? []), entry]);
+    });
+    return Array.from(result.entries()).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+  }, [discipline, entries]);
 
   return (
-    <div className="mt-6 grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(activeTiers.length, 5)}, 1fr)` }}>
-      {activeTiers.map((tier) => (
-        <div key={tier} className="rounded-xl border border-border/50 overflow-hidden bg-card/30">
-          {/* Column header */}
-          <div className={`flex items-center justify-center gap-2 py-3 px-2 font-extrabold text-sm border-b border-border/30 ${tierColumnHeaderBg(tier)}`}>
-            {tier.startsWith("HT") && <Trophy className="w-4 h-4" />}
-            {TIER_LABELS[tier] || tier}
-          </div>
-
-          {/* Player list */}
-          <div className="divide-y divide-border/20">
-            {grouped[tier].map((entry) => (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {groups.map(([tier, players]) => (
+        <section key={tier} className={`${coffeePanelClass} overflow-hidden`}>
+          <header className="flex items-center justify-between border-b border-[#e2dcd3] bg-[#f5f1ea] px-4 py-3">
+            <TierBadge tier={tier} />
+            <span className="text-[10px] text-[#9a9187]">
+              {players.length} участников
+            </span>
+          </header>
+          <div className="divide-y divide-[#e8e2da] p-1.5">
+            {players.map((entry) => (
               <div
                 key={entry.id}
-                className="flex items-center gap-2 px-3 py-2.5 hover:bg-muted/30 transition-colors"
+                className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 hover:bg-[#f4efe7]"
               >
-                <Avatar className="h-7 w-7 shrink-0 border border-border/50">
-                  <AvatarImage src={entry.avatarUrl} alt={entry.username} />
-                  <AvatarFallback className="bg-muted text-[10px] font-bold">
+                <Avatar className="h-8 w-8 border border-[#ddd6cc]">
+                  <AvatarFallback className="bg-[#eee8de] text-[9px] font-semibold text-[#745f49]">
                     {entry.username.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                <span className="text-sm font-semibold truncate">{entry.username}</span>
-                <Flame className="w-3 h-3 text-muted-foreground/40 ml-auto shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[#423c36]">
+                  {entry.username}
+                </span>
+                <span className="text-[10px] tabular-nums text-[#8a6137]">
+                  {entry.points}
+                </span>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       ))}
     </div>
   );
 }
 
-/* ─── List View ────────────────────────────────────────── */
-
-function ListView({ entries }: { entries: LeaderboardEntry[] }) {
-  return (
-    <>
-      {/* Table header */}
-      <div className="mt-6 grid grid-cols-[60px_1fr_80px_1fr] items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/50">
-        <span className="text-center">#</span>
-        <span>Player</span>
-        <span className="text-center">Region</span>
-        <span className="text-center">Tiers</span>
-      </div>
-
-      {/* Rows */}
-      <div className="divide-y divide-border/30">
-        {entries.map((entry, i) => {
-          const rank = i + 1;
-          return (
-            <div
-              key={entry.id}
-              className="group grid grid-cols-[60px_1fr_80px_1fr] items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/30"
-            >
-              {/* Rank */}
-              <div className="flex justify-center">
-                <span className={`flex items-center justify-center w-9 h-9 rounded-lg text-sm font-extrabold ${rankBg(rank)}`}>
-                  {rank}.
-                </span>
-              </div>
-
-              {/* Player */}
-              <div className="flex items-center gap-3 min-w-0">
-                <Avatar className="h-11 w-11 border-2 border-border/50 shrink-0">
-                  <AvatarImage src={entry.avatarUrl} alt={entry.username} />
-                  <AvatarFallback className="bg-muted text-xs font-bold">
-                    {entry.username.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm truncate">{entry.username}</p>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-                    {entry.title}
-                    <span className="text-muted-foreground/60">({entry.points} points)</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Region */}
-              <div className="flex justify-center">
-                <RegionBadge region={entry.region} />
-              </div>
-
-              {/* Tiers row */}
-              <div className="flex items-center justify-center gap-2 flex-wrap">
-                {DISCIPLINES.map((d) => {
-                  const found = entry.tiers.find((t) => t.discipline === d.key);
-                  if (!found) {
-                    return (
-                      <span key={d.key} className="flex flex-col items-center gap-0.5">
-                        <span className="opacity-40">{disciplineIcon(d.key, "w-4 h-4")}</span>
-                        <span className="text-[10px] text-muted-foreground/40">—</span>
-                      </span>
-                    );
-                  }
-                  return (
-                    <span key={d.key} className="flex flex-col items-center gap-0.5">
-                      <span className="opacity-60">{disciplineIcon(d.key, "w-4 h-4")}</span>
-                      <TierBadge tier={found.tier} small />
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        {entries.length === 0 && (
-          <div className="py-16 text-center text-muted-foreground">
-            No players found.
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-/* ─── Page ─────────────────────────────────────────────── */
-
 export default function LeaderboardPage() {
-  const [activeTab, setActiveTab] = useState<DisciplineKey>("overall");
+  const [scope, setScope] = useState<"global" | "private">("global");
+  const [discipline, setDiscipline] = useState<DisciplineKey>("overall");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(
     () =>
-      MOCK_LEADERBOARD.filter((e) =>
-        e.username.toLowerCase().includes(search.toLowerCase())
+      LEADERBOARD.filter((entry) =>
+        entry.username.toLowerCase().includes(search.toLowerCase()),
       ),
-    [search]
+    [search],
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* ── Header ── */}
-      <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <BookOpen className="w-7 h-7 text-primary" />
-            <h1 className="text-2xl font-extrabold tracking-tight">Rankings</h1>
-          </div>
-
-          {/* Search */}
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search player…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-border bg-muted/50 py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
-        {/* ── Discipline Tabs + View Toggle ── */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <Tabs
-            value={activeTab}
-            onValueChange={(v) => {
-              setActiveTab(v as DisciplineKey);
-              // Reset to list when switching to "overall"
-              if (v === "overall") setViewMode("list");
-            }}
-            className="w-full sm:w-auto"
+    <CoffeePageShell
+      eyebrow="Рейтинг Timely"
+      title="Leaderboard"
+      description="Общий прогресс по математике, физике и программированию — без визуального шума."
+      icon={<Trophy className="h-5 w-5" />}
+    >
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-fit rounded-full border border-[#ddd6cb] bg-[#eee9e1] p-1">
+          <button
+            type="button"
+            onClick={() => setScope("global")}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium ${
+              scope === "global"
+                ? "bg-[#fffdfa] text-[#704a22] shadow-sm"
+                : "text-[#8b8279]"
+            }`}
           >
-            <TabsList className="h-auto p-1.5 bg-muted/50 rounded-xl flex flex-wrap gap-1">
-              {DISCIPLINES.map((d) => (
-                <TabsTrigger
-                  key={d.key}
-                  value={d.key}
-                  className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all"
-                >
-                  <span className={d.color}>{d.icon}</span>
-                  <span className="text-xs font-medium">{d.label}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          {/* View mode toggle — only show for specific disciplines */}
-          {activeTab !== "overall" && (
-            <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg">
-              <button
-                onClick={() => setViewMode("list")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  viewMode === "list"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <List className="w-3.5 h-3.5" />
-                List
-              </button>
-              <button
-                onClick={() => setViewMode("tiers")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  viewMode === "tiers"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                Tiers
-              </button>
-            </div>
-          )}
+            <Globe2 className="h-3.5 w-3.5" />
+            Глобальный
+          </button>
+          <button
+            type="button"
+            onClick={() => setScope("private")}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium ${
+              scope === "private"
+                ? "bg-[#fffdfa] text-[#704a22] shadow-sm"
+                : "text-[#8b8279]"
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            Приватные
+          </button>
         </div>
 
-        {/* ── Content ── */}
-        {viewMode === "tiers" && activeTab !== "overall" ? (
-          <TiersColumnView entries={filtered} discipline={activeTab} />
-        ) : (
-          <ListView entries={filtered} />
+        {scope === "global" && (
+          <label className="flex h-10 w-full items-center gap-2 rounded-full border border-[#dcd5ca] bg-[#fffdfa] px-3.5 text-[#8b8278] shadow-sm lg:w-[260px]">
+            <Search className="h-3.5 w-3.5" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Найти участника…"
+              className="min-w-0 flex-1 bg-transparent text-[11px] text-[#3e3934] outline-none placeholder:text-[#aaa198]"
+            />
+          </label>
         )}
       </div>
-    </div>
+
+      {scope === "private" ? (
+        <section className={`${coffeePanelClass} p-5`}>
+          <PrivateLeaderboards />
+        </section>
+      ) : (
+        <>
+          <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-[#ded7cd] bg-[#fbfaf7] p-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)] sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-1">
+              {DISCIPLINES.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setDiscipline(item.key)}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[10px] font-medium transition-colors ${
+                      discipline === item.key
+                        ? "bg-[#f2e5d2] text-[#7b5023]"
+                        : "text-[#8c847a] hover:bg-[#f1ede6]"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex rounded-full border border-[#e0d9cf] bg-[#f1ede6] p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                aria-label="Список"
+                className={`grid h-7 w-8 place-items-center rounded-full ${
+                  viewMode === "list"
+                    ? "bg-white text-[#76502a] shadow-sm"
+                    : "text-[#999086]"
+                }`}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("tiers")}
+                aria-label="По уровням"
+                className={`grid h-7 w-8 place-items-center rounded-full ${
+                  viewMode === "tiers"
+                    ? "bg-white text-[#76502a] shadow-sm"
+                    : "text-[#999086]"
+                }`}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {viewMode === "list" ? (
+            <LeaderboardList entries={filtered} />
+          ) : (
+            <TierColumns entries={filtered} discipline={discipline} />
+          )}
+        </>
+      )}
+    </CoffeePageShell>
   );
 }

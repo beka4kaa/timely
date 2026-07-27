@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { WeaknessesTable, AddTopicDialog } from '@/components/mind'
+import { FullAccessGate } from '@/components/full-access-gate'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, List, Table2, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
+import { Plus, List, Table2, ChevronRight, ChevronDown, Trash2, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 interface Topic {
     id: string
@@ -128,46 +130,45 @@ export default function TopicsPage() {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'NOT_STARTED': return 'bg-muted/50 text-muted-foreground'
-            case 'MEDIUM': return 'bg-amber-500/20 text-amber-400'
-            case 'SUCCESS': return 'bg-emerald-500/20 text-emerald-400'
-            case 'MASTERED': return 'bg-blue-500/20 text-blue-400'
+            case 'MEDIUM': return 'bg-amber-100 text-amber-800'
+            case 'SUCCESS': return 'bg-emerald-100 text-emerald-800'
+            case 'MASTERED': return 'bg-blue-100 text-blue-800'
             default: return 'bg-muted'
         }
     }
 
     return (
-        <div className="container max-w-6xl mx-auto py-6 px-4">
-            <div className="mb-4">
-                <h1 className="text-xl font-bold">Topics</h1>
-                <p className="text-sm text-muted-foreground">
-                    Manage your study topics
-                </p>
-            </div>
-
+        <FullAccessGate>
+            <CoffeePageShell
+                eyebrow="Диагностика"
+                title="Слабые темы"
+                description="Соберите темы, которым нужно уделить больше внимания, и следите за прогрессом."
+                icon={<Zap className="h-5 w-5" />}
+            >
             <Tabs defaultValue="list">
                 <div className="flex items-center justify-between mb-3">
-                    <TabsList className="h-8">
+                    <TabsList className="h-9 rounded-full border border-[#ded8cf] bg-[#f0ece5] p-1">
                         <TabsTrigger value="list" className="gap-1.5 text-xs h-7 px-2">
                             <List className="h-3 w-3" />
-                            List
+                            Список
                         </TabsTrigger>
                         <TabsTrigger value="table" className="gap-1.5 text-xs h-7 px-2">
                             <Table2 className="h-3 w-3" />
-                            Table
+                            Таблица
                         </TabsTrigger>
                     </TabsList>
-                    <Button size="sm" className="h-7 text-xs" onClick={() => setShowAddDialog(true)}>
+                    <Button size="sm" className="h-8 rounded-full text-xs" onClick={() => setShowAddDialog(true)}>
                         <Plus className="h-3 w-3 mr-1" />
-                        Add
+                        Добавить
                     </Button>
                 </div>
 
                 <TabsContent value="list" className="mt-0">
                     {loading ? (
-                        <div className="text-center py-6 text-sm text-muted-foreground">Loading...</div>
+                        <div className="text-center py-6 text-sm text-muted-foreground">Загрузка...</div>
                     ) : Object.keys(groupedTopics).length === 0 ? (
                         <div className="text-center py-6 text-sm text-muted-foreground">
-                            No topics yet
+                            Тем пока нет
                         </div>
                     ) : (
                         <div className="space-y-1">
@@ -238,6 +239,7 @@ export default function TopicsPage() {
                 subjects={subjects}
                 onTopicAdded={() => loadData()}
             />
-        </div>
+            </CoffeePageShell>
+        </FullAccessGate>
     )
 }

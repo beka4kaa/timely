@@ -28,7 +28,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
   return (
     <div className="flex flex-col gap-0">
       <Tabs value={activeDow} onValueChange={v => onDayChange(v as DayOfWeek)}>
-        <TabsList className="flex w-full rounded-[20px] bg-white/50 dark:bg-white/[0.05] backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-[0_8px_30px_rgba(15,23,42,0.06)] p-1.5 h-auto gap-1">
+        <TabsList className="flex h-auto w-full gap-1 rounded-[20px] border border-[#ded8cf] bg-[#fbfaf7]/90 p-1.5 shadow-[0_8px_30px_rgba(68,52,34,0.06)] backdrop-blur-xl">
           {days.map(day => {
             const isToday = day.date === today
             const isActive = day.dayOfWeek === activeDow
@@ -39,7 +39,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
                 className={
                   "flex-1 flex flex-col items-center gap-0.5 py-2 text-xs rounded-2xl relative overflow-hidden transition-transform duration-200 " +
                   "hover:scale-[1.04] active:scale-95 " +
-                  (isActive ? "text-white" : "hover:bg-white/60 dark:hover:bg-white/10")
+                  (isActive ? "text-[#754a1c]" : "text-[#777067] hover:bg-[#f1ede6]")
                 }
               >
                 {/* sliding gradient backplate — animates between days via shared layoutId */}
@@ -47,11 +47,11 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
                   <motion.span
                     layoutId="diaryDayActive"
                     transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                    className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-300 to-violet-400"
+                    className="absolute inset-0 rounded-2xl border border-[#d7ad72] bg-[#fff5e4] shadow-[0_5px_16px_rgba(125,82,32,0.08)]"
                   />
                 )}
                 {isToday && (
-                  <span className={"absolute top-1 right-1 z-10 h-1.5 w-1.5 rounded-full ring-2 ring-white/60 " + (isActive ? "bg-white" : "bg-orange-400")} />
+                  <span className={"absolute right-1 top-1 z-10 h-1.5 w-1.5 rounded-full ring-2 ring-white/60 " + (isActive ? "bg-[#b77a32]" : "bg-[#c89758]")} />
                 )}
                 <span className="relative z-10 font-semibold">{DAY_SHORT_LABELS[day.dayOfWeek]}</span>
                 <span className="relative z-10 text-[9px] opacity-70">
@@ -76,7 +76,7 @@ export function DayTabs({ week, activeDow, today, onDayChange }: DayTabsProps) {
             <div className="flex items-center justify-between px-1 pb-2.5">
               <div className="flex items-center gap-2">
                 {day.date === today && (
-                  <span className="h-2 w-2 rounded-full bg-orange-400" title="Сегодня" />
+                  <span className="h-2 w-2 rounded-full bg-[#bf8240]" title="Сегодня" />
                 )}
                 <span className="font-semibold text-sm">{DAY_OF_WEEK_LABELS[day.dayOfWeek]}</span>
                 <span className="text-xs text-muted-foreground">

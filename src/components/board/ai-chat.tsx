@@ -1,7 +1,19 @@
 "use client";
 
-import React, { useRef, useEffect, useCallback, useState } from "react";
-import { SendHorizonal, Bot, User, Plus, History, MoreHorizontal, Loader2, Paperclip, ArrowUp } from "lucide-react";
+import React, {
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+import {
+  ArrowUp,
+  Check,
+  Loader2,
+  PanelRightClose,
+  Plus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LessonFlow, type BoardData } from "./AITutorBoard";
 import {
@@ -11,8 +23,25 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StyleSelectorDropdown, PaletteSelectorDropdown } from "./style-controls/StyleSelectors";
-import { useWhiteboardStore } from "@/stores/whiteboard";
-import { buildLectureWhiteboardActions } from "@/lib/whiteboard-lecture-layout";
+import {
+  useWhiteboardStore,
+  type IllustrationLabel,
+  type Position,
+} from "@/stores/whiteboard";
+import {
+  buildLectureWhiteboardActions,
+  type PendingIllustration,
+} from "@/lib/whiteboard-lecture-layout";
+import {
+  LessonPlanningForm,
+  LessonPlanProgress,
+  type LessonPlan,
+} from "./lesson-plan";
+import { authFetch } from "@/lib/auth-fetch";
+import {
+  AIUsageIndicator,
+  type AIUsageSummary,
+} from "./usage-tracker";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,29 +56,121 @@ export interface ChatMessage {
    * trying (and failing) to hand-draw grids out of primitive lines.
    */
   board?: BoardData | null;
+  /**
+   * Уточняющий вопрос от скилла `ask_clarification`: ассистент не угадывает
+   * размытый запрос, а предлагает готовые варианты (первый — рекомендуемый).
+   * Ответ одним кликом дешевле неверной иллюстрации: та стоит ~25 секунд.
+   */
+  clarify?: ClarifyPrompt | null;
+  /** Вопрос уже отвечен — кнопки гасим, чтобы история не «кликалась» заново. */
+  clarifyAnswered?: boolean;
+  /** Короткая строка intake, а не обычный диалоговый bubble. */
+  planningEvent?: boolean;
+}
+
+export interface ClarifyOption {
+  label: string;
+  description?: string;
+  recommended?: boolean;
+}
+
+export interface ClarifyPrompt {
+  question: string;
+  options: ClarifyOption[];
+}
+
+export interface ChatContextSnapshot {
+  lastUserMessage: string;
+  contextPercent: number;
+  usedTokens: number;
+  limitTokens: number;
+  userMessageCount: number;
 }
 
 export interface AIChatProps {
   className?: string;
+  lessonPlan?: LessonPlan | null;
+  activeLessonTaskIndex?: number;
+  onLessonPlanChange?: (plan: LessonPlan | null) => void;
+  onActiveLessonTaskChange?: (index: number) => void;
+  onOpenLessonPlan?: () => void;
+  onContextChange?: (snapshot: ChatContextSnapshot) => void;
+  usageSummary?: AIUsageSummary | null;
+  usageLoading?: boolean;
+  onUsageChange?: () => void;
+  onClose?: () => void;
+}
+
+const ESTIMATED_CONTEXT_TOKEN_LIMIT = 128_000;
+
+/**
+ * Сохраняет вручную расставленные подписи при доезде растра.
+ *
+ * Вторая фаза приходит отдельным запросом и заменяет `labels` целиком. Если
+ * пользователь успел утащить подпись, пока на её месте был плейсхолдер, его
+ * `manual_position` молча терялась. Переносим по совпадению текста, а не по
+ * индексу: бэкенд может вернуть другое число подписей, и тогда позиция
+ * приклеилась бы к чужой строке.
+ */
+function mergeManualLabelPositions(
+  elementId: string,
+  incoming: IllustrationLabel[],
+): IllustrationLabel[] {
+  const element = useWhiteboardStore
+    .getState()
+    .elements.find((candidate) => candidate.id === elementId);
+  if (!element || element.type !== "ILLUSTRATION") return incoming;
+
+  const manualByContent = new Map<string, Position>();
+  for (const label of element.labels) {
+    if (label.manual_position) manualByContent.set(label.content, label.manual_position);
+  }
+  if (manualByContent.size === 0) return incoming;
+
+  return incoming.map((label) => {
+    const manual = manualByContent.get(label.content);
+    return manual ? { ...label, manual_position: manual } : label;
+  });
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function AIChat({ className }: AIChatProps) {
+export function AIChat({
+  className,
+  lessonPlan,
+  activeLessonTaskIndex,
+  onLessonPlanChange,
+  onActiveLessonTaskChange,
+  onOpenLessonPlan,
+  onContextChange,
+  usageSummary = null,
+  usageLoading = false,
+  onUsageChange,
+  onClose,
+}: AIChatProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Привет! Я — твой AI-тьютор. Напиши задачу или нарисуй её на доске, а я помогу с решением 🎯",
-    },
-  ]);
+  // Пустой список = экран приветствия по центру (как в Claude), а не пузырь
+  // от ассистента. Приветствие исчезает с первым сообщением само собой.
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // Приветствие зависит от времени суток; считается один раз на маунт,
+  // чтобы фраза не менялась под курсором на границе часа.
+  const [greeting] = useState(() => {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return "Доброе утро! Что разберём?";
+    if (h >= 12 && h < 18) return "Что разберём сегодня?";
+    if (h >= 18 && h < 23) return "Добрый вечер! Что разберём?";
+    return "Поздняя сессия? Давай разберём";
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [generationStyle, setGenerationStyle] = useState("flat");
+  const [internalLessonPlan, setInternalLessonPlan] =
+    useState<LessonPlan | null>(null);
+  const [internalActiveTaskIndex, setInternalActiveTaskIndex] = useState(0);
+  const [planningResetKey, setPlanningResetKey] = useState(0);
   // Дефолтная палитра — natural-earth: естественные/географические тона.
   // Раньше дефолт был he_inspired (медицинский H&E), из-за чего гео-схемы
   // генерились в красно-«мясных» оттенках.
@@ -59,6 +180,29 @@ export function AIChat({ className }: AIChatProps) {
   const camera = useWhiteboardStore((s) => s.camera);
   const selectedElementId = useWhiteboardStore((s) => s.selectedElementId);
   const elements = useWhiteboardStore((s) => s.elements);
+  const currentLessonPlan =
+    lessonPlan === undefined ? internalLessonPlan : lessonPlan;
+  const currentTaskIndex =
+    activeLessonTaskIndex === undefined
+      ? internalActiveTaskIndex
+      : activeLessonTaskIndex;
+  const currentLessonTask = currentLessonPlan?.tasks[currentTaskIndex] ?? null;
+
+  const updateLessonPlan = useCallback(
+    (plan: LessonPlan | null) => {
+      if (onLessonPlanChange) onLessonPlanChange(plan);
+      else setInternalLessonPlan(plan);
+    },
+    [onLessonPlanChange],
+  );
+
+  const updateActiveTask = useCallback(
+    (index: number) => {
+      if (onActiveLessonTaskChange) onActiveLessonTaskChange(index);
+      else setInternalActiveTaskIndex(index);
+    },
+    [onActiveLessonTaskChange],
+  );
 
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
@@ -72,9 +216,111 @@ export function AIChat({ className }: AIChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages]);
 
-  const sendMessage = async () => {
-    const text = inputValue.trim();
-    if (!text || isLoading) return;
+  const contextSnapshot = useMemo<ChatContextSnapshot>(() => {
+    const userMessages = messages.filter((message) => message.role === "user");
+    const characterCount = messages.reduce(
+      (total, message) => total + message.content.length,
+      0,
+    );
+    const estimatedTokens = Math.ceil(characterCount / 3.5);
+    const estimatedPercent = Math.round(
+      (estimatedTokens / ESTIMATED_CONTEXT_TOKEN_LIMIT) * 100,
+    );
+
+    return {
+      lastUserMessage: userMessages.at(-1)?.content ?? "",
+      contextPercent: Math.min(
+        100,
+        Math.max(userMessages.length > 0 ? 1 : 0, estimatedPercent),
+      ),
+      usedTokens: estimatedTokens,
+      limitTokens: ESTIMATED_CONTEXT_TOKEN_LIMIT,
+      userMessageCount: userMessages.length,
+    };
+  }, [messages]);
+
+  useEffect(() => {
+    onContextChange?.(contextSnapshot);
+  }, [contextSnapshot, onContextChange]);
+
+  /**
+   * Догружает растры для иллюстраций, поставленных плейсхолдерами.
+   *
+   * Каждая картинка — отдельный запрос: они приходят по одной и сразу
+   * подставляются на холст, вместо того чтобы держать пустой экран все ~25
+   * секунд на каждую. Ошибка одной иллюстрации не мешает остальным — на её
+   * месте останется плейсхолдер с текстом ошибки.
+   */
+  const loadPendingIllustrations = useCallback(
+    async (pending: PendingIllustration[], topicHint?: string) => {
+      const state = useWhiteboardStore.getState();
+
+      await Promise.all(
+        pending.map(async ({ elementId, command }) => {
+          try {
+            const res = await authFetch("/api/ai/illustration", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                command,
+                topic_hint: topicHint ?? "",
+                style: generationStyle,
+                palette: generationPalette,
+              }),
+            });
+            const raw = await res.text();
+            const data = raw ? JSON.parse(raw) : {};
+            if (!res.ok) throw new Error(data.error || `Сервер вернул ${res.status}`);
+
+            const enriched = data.command ?? {};
+            const src: string | undefined = enriched.base_image_url || enriched.image_url;
+            if (!src) {
+              throw new Error(
+                typeof enriched.image_error === "string"
+                  ? enriched.image_error
+                  : "Не удалось сгенерировать иллюстрацию"
+              );
+            }
+
+            state.executeActions([
+              {
+                type: "UPDATE_ELEMENT",
+                payload: {
+                  id: elementId,
+                  src,
+                  labels: mergeManualLabelPositions(
+                    elementId,
+                    Array.isArray(enriched.labels) ? enriched.labels : []
+                  ),
+                  masks: Array.isArray(enriched.masks) ? enriched.masks : null,
+                  pending: false,
+                },
+              },
+            ]);
+            onUsageChange?.();
+          } catch (e: any) {
+            state.executeActions([
+              {
+                type: "UPDATE_ELEMENT",
+                payload: {
+                  id: elementId,
+                  pending: false,
+                  error: e?.message || "Иллюстрация не сгенерировалась",
+                },
+              },
+            ]);
+          }
+        })
+      );
+    },
+    [generationStyle, generationPalette, onUsageChange]
+  );
+
+  // `overrideText` — ответ, выбранный кликом по варианту уточняющего вопроса:
+  // он не проходит через поле ввода, но в остальном это обычное сообщение.
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? inputValue).trim();
+    if (!text || isLoading || !currentLessonPlan) return;
 
     // Add user message
     const userMsg: ChatMessage = {
@@ -114,7 +360,11 @@ export function AIChat({ className }: AIChatProps) {
           ? refEl.labels
           : undefined;
 
-      const res = await fetch("/api/ai/draw", {
+      // Роутер скиллов на бэкенде (ai_engine.skills): сам решает, нужен ли
+      // обычный ответ или отрисовка. Раньше здесь был прямой /api/ai/draw, и
+      // каждое сообщение тащило board-DSL промпт — простой вопрос отвечался
+      // ~137 секунд и рисовал непрошеную доску.
+      const res = await authFetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -122,6 +372,12 @@ export function AIChat({ className }: AIChatProps) {
           history,
           style: generationStyle,
           palette: generationPalette,
+          // Картинки не ждём: доска с текстом и подписями приходит за ~18с,
+          // а растры догружаются отдельными запросами (loadPendingIllustrations).
+          defer_images: true,
+          lesson_plan: currentLessonPlan,
+          active_lesson_task:
+            currentLessonPlan.tasks[currentTaskIndex] ?? null,
           ...(referenceImageUrl && { reference_image_url: referenceImageUrl }),
           ...(referenceLabels && { reference_labels: referenceLabels }),
         }),
@@ -163,16 +419,24 @@ export function AIChat({ className }: AIChatProps) {
         const maxColumnHeight =
           typeof window !== "undefined" ? (window.innerHeight - 190) / zoom : 640;
 
-        const actionsToExecute = buildLectureWhiteboardActions({
-          boardSteps: board.board_steps,
-          baseX,
-          baseY,
-          maxColumnHeight,
-          generationStyle,
-        });
+        const { actions: actionsToExecute, pendingIllustrations } =
+          buildLectureWhiteboardActions({
+            boardSteps: board.board_steps,
+            baseX,
+            baseY,
+            maxColumnHeight,
+            generationStyle,
+          });
 
         if (actionsToExecute.length > 0) {
           state.executeActions(actionsToExecute);
+        }
+
+        // Прогрессивная выдача: места под иллюстрации уже заняты
+        // плейсхолдерами, теперь догружаем растры по одному. Намеренно НЕ
+        // ждём их здесь — сообщение с текстом должно появиться сразу.
+        if (pendingIllustrations.length > 0) {
+          void loadPendingIllustrations(pendingIllustrations, board.topic);
         }
 
         // Filter out ALL visual commands from board_steps so they don't show in the chat at all!
@@ -198,13 +462,28 @@ export function AIChat({ className }: AIChatProps) {
         }
       }
 
+      // Уточняющий вопрос от скилла ask_clarification — приходит вместо доски.
+      const clarify: ClarifyPrompt | null =
+        data.clarify && Array.isArray(data.clarify.options) && data.clarify.options.length > 0
+          ? (data.clarify as ClarifyPrompt)
+          : null;
+
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: data.reply || (board ? "Вот разбор:" : "Готово."),
         board,
+        clarify,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      onUsageChange?.();
+
+      if (
+        !clarify &&
+        currentTaskIndex < currentLessonPlan.tasks.length - 1
+      ) {
+        updateActiveTask(currentTaskIndex + 1);
+      }
     } catch (e: any) {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -225,155 +504,377 @@ export function AIChat({ className }: AIChatProps) {
   };
 
   const clearChat = () => {
-    setMessages([
+    setMessages([]);
+    setInputValue("");
+    setPlanningResetKey((value) => value + 1);
+    updateLessonPlan(null);
+    updateActiveTask(0);
+  };
+
+  const handleCreateLessonPlan = (plan: LessonPlan) => {
+    setMessages((current) => [
+      ...current,
       {
-        id: "welcome",
+        id: `planning-ready-${Date.now()}`,
         role: "assistant",
-        content:
-          "Привет! Я — твой AI-тьютор. Напиши задачу или нарисуй её на доске, а я помогу с решением 🎯",
+        content: "План принят · можно начинать",
+        planningEvent: true,
+      },
+    ]);
+    setInputValue("");
+    updateLessonPlan(plan);
+    updateActiveTask(0);
+  };
+
+  const handlePlanningEvent = (content: string) => {
+    setMessages((current) => [
+      ...current,
+      {
+        id: `planning-${Date.now()}-${current.length}`,
+        role: "assistant",
+        content,
+        planningEvent: true,
       },
     ]);
   };
 
+  const resetPlanningEvents = () => {
+    setMessages((current) =>
+      current.filter((message) => !message.planningEvent),
+    );
+  };
+
+  const preparePrompt = (prompt: string) => {
+    setInputValue(prompt);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   return (
     <div
-      className={`flex flex-col h-full min-h-0 bg-white/80 dark:bg-[#0a0a0a]/90 backdrop-blur-xl ${className ?? ""}`}
+      className={`flex h-full min-h-0 flex-col bg-[#f8f6f2] text-[#37322c] ${className ?? ""}`}
     >
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-black/10 dark:border-zinc-800/50 shrink-0">
-        <h2 className="text-[13px] font-medium text-slate-700 dark:text-zinc-200">
-          AI Tutor
-        </h2>
-        <div className="flex items-center gap-3 text-slate-400 dark:text-zinc-500">
+      {/* ── Compact header: chat is the only workspace mode. ── */}
+      <div className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#dedbd4] bg-[#fbfaf7] px-3.5">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <h2 className="font-serif text-[14px] font-semibold tracking-[-0.015em] text-[#37322c]">
+            AI тьютор
+          </h2>
+          <span className="truncate text-[10px] text-[#a09a91]">
+            · Научная доска
+          </span>
+        </div>
+        <div className="flex items-center gap-0.5 text-[#918b82]">
+          {messages.length > 0 && (
+            <span className="mr-1 text-[10px] tabular-nums text-[#aaa49b]">
+              {messages.filter((message) => message.role === "user").length}
+            </span>
+          )}
           <button
+            type="button"
             onClick={clearChat}
-            className="hover:text-zinc-300 transition-colors"
+            aria-label="Новый чат"
             title="Новый чат"
+            className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
           >
-            <Plus className="w-[15px] h-[15px]" />
+            <Plus className="h-3.5 w-3.5" />
           </button>
-          <button className="hover:text-zinc-300 transition-colors">
-            <History className="w-[15px] h-[15px]" />
-          </button>
-          <button className="hover:text-zinc-300 transition-colors">
-            <MoreHorizontal className="w-[15px] h-[15px]" />
-          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Скрыть AI Tutor"
+              title="Скрыть AI Tutor"
+              className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
+
+      {currentLessonPlan && (
+        <div className="shrink-0 border-b border-[#e4e0d8] bg-[#fbfaf7]/72 px-3 py-2">
+          <LessonPlanProgress
+            plan={currentLessonPlan}
+            activeTaskIndex={currentTaskIndex}
+            onOpen={onOpenLessonPlan ?? (() => undefined)}
+            maxVisible={3}
+          />
+        </div>
+      )}
 
       {/* ── Messages ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-5">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
-          >
-            {/* Avatar */}
-            <div
-              className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs bg-zinc-800 text-zinc-400 border border-zinc-700/50 mt-0.5`}
-            >
-              {msg.role === "assistant" ? (
-                <Bot className="w-3.5 h-3.5" />
-              ) : (
-                <User className="w-3.5 h-3.5" />
-              )}
-            </div>
-
-            {/* Bubble */}
-            <div
-              className={`flex flex-col gap-3 max-w-[92%] px-4 py-3 text-[13px] leading-relaxed whitespace-pre-wrap ${
-                msg.role === "assistant"
-                  ? "bg-black/[0.04] dark:bg-zinc-900/80 text-slate-700 dark:text-zinc-200 rounded-2xl rounded-tl-sm border border-black/5 dark:border-zinc-800/50"
-                  : "bg-indigo-600 text-white rounded-2xl rounded-tr-sm"
-              }`}
-            >
-              {msg.content}
-
-              {/* Inline "lesson board": tables/formulas/charts/diagrams
-                  rendered as pixel-perfect macro widgets (not hand-drawn).
-                  Uses LessonFlow (natural document flow) rather than the
-                  square scaled AITutorBoard canvas — in a narrow chat
-                  bubble the canvas's scale factor (~0.25) would shrink
-                  text/tables/charts to near-illegible sizes. */}
-              {msg.board && (
-                <LessonFlow
-                  data={msg.board}
-                  showHeader={!!(msg.board.subject || msg.board.topic)}
-                />
-              )}
-            </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
+        {!currentLessonPlan ? (
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            {messages
+              .filter((message) => message.planningEvent)
+              .map((message) => (
+                <div
+                  key={message.id}
+                  className="flex items-center gap-2 px-1 text-[10px] text-[#8e877e]"
+                >
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-[#b98343]" />
+                  <span className="truncate">{message.content}</span>
+                </div>
+              ))}
+            <LessonPlanningForm
+              key={planningResetKey}
+              onCreate={handleCreateLessonPlan}
+              onPlanningEvent={handlePlanningEvent}
+              onResetEvents={resetPlanningEvents}
+            />
           </div>
-        ))}
+        ) : (
+          <>
+            {messages.length === 0 && !isLoading && (
+              <div className="flex flex-col gap-3 py-1">
+                <div>
+                  <h3 className="font-serif text-[18px] font-medium tracking-[-0.025em] text-[#38332d]">
+                    {currentLessonTask
+                      ? `Начнём: ${currentLessonTask.title}`
+                      : greeting}
+                  </h3>
+                  <p className="mt-1 max-w-[310px] text-[11px] leading-relaxed text-[#908a81]">
+                    {currentLessonTask?.description ??
+                      "План готов. Задай первый вопрос, и мы пройдём его по шагам."}
+                  </p>
+                </div>
 
-        {/* Loading indicator */}
-        {isLoading && (
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs bg-black/5 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 border border-black/5 dark:border-zinc-700/50 mt-0.5">
-              <Bot className="w-3.5 h-3.5" />
-            </div>
-            <div className="max-w-[85%] px-4 py-3 text-[13px] leading-relaxed bg-black/[0.04] dark:bg-zinc-900/80 text-slate-500 dark:text-zinc-400 rounded-2xl rounded-tl-sm border border-black/5 dark:border-zinc-800/50 flex items-center gap-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Думаю...
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* ── Input area ── */}
-      <div className="px-3 pb-3 pt-2 shrink-0">
-        <div className="flex flex-col rounded-3xl border border-black/10 dark:border-zinc-800 bg-black/[0.03] dark:bg-[#121212] px-3 pt-3 pb-2 transition-colors focus-within:border-indigo-400 dark:focus-within:border-zinc-700">
-          <textarea
-            ref={textareaRef}
-            placeholder="Describe the scientific figure you want to create..."
-            rows={1}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onInput={handleInput}
-            onKeyDown={handleKeyDown}
-            className="w-full resize-none bg-transparent px-2 text-[14px] text-slate-800 dark:text-zinc-200 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none min-h-[30px] max-h-[160px] leading-relaxed mb-2"
-          />
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg">
-                <Paperclip className="w-[18px] h-[18px]" />
-              </Button>
-              <PaletteSelectorDropdown value={generationPalette} onChange={setGenerationPalette} />
-            </div>
-
-            <div className="flex items-center gap-1">
-              <StyleSelectorDropdown value={generationStyle} onChange={setGenerationStyle} />
-              
-              <span className="px-3 text-[13px] font-medium text-zinc-200">Auto</span>
-              
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={sendMessage}
-                      disabled={isLoading || !inputValue.trim()}
-                      className="h-8 w-8 ml-1 rounded-full bg-white text-black hover:bg-zinc-200 transition-colors disabled:opacity-30 disabled:bg-zinc-700 disabled:text-zinc-500"
+                <div className="space-y-1.5">
+                  {[
+                    [
+                      "Начать этап",
+                      currentLessonTask?.description ??
+                        `Начнём урок по теме «${currentLessonPlan.topic}»`,
+                    ],
+                    [
+                      "Показать на доске",
+                      `Покажи на доске текущий этап «${currentLessonTask?.title ?? currentLessonPlan.topic}»`,
+                    ],
+                    [
+                      "Проверить знания",
+                      `Задай короткий проверочный вопрос по теме «${currentLessonPlan.topic}»`,
+                    ],
+                  ].map(([title, description]) => (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() => preparePrompt(description)}
+                      className="block w-full rounded-[12px] border border-[#ddd9d1] bg-white/55 px-3 py-2.5 text-left outline-none transition-colors hover:border-[#c8a877] hover:bg-[#fffaf1] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25"
                     >
-                      {isLoading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <ArrowUp className="w-4 h-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    Отправить (Enter)
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                      <span className="block font-serif text-[13px] font-semibold text-[#49423a]">
+                        {title}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-relaxed text-[#9b958c]">
+                        {description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) =>
+              msg.planningEvent ? (
+                <div
+                  key={msg.id}
+                  className="flex items-center gap-2 px-1 text-[10px] text-[#8e877e]"
+                >
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-[#b98343]" />
+                  <span className="truncate">{msg.content}</span>
+                </div>
+              ) : (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`flex max-w-[94%] flex-col gap-3 whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.55] ${
+                      msg.role === "assistant"
+                        ? "rounded-[16px] border border-[#dedad3] bg-white/62 text-[#514b43]"
+                        : "rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
+                    }`}
+                  >
+                    {msg.content}
+
+                    {msg.board && (
+                      <LessonFlow
+                        data={msg.board}
+                        showHeader={!!(msg.board.subject || msg.board.topic)}
+                      />
+                    )}
+
+                    {msg.clarify && (
+                      <div className="flex flex-col gap-1.5 not-prose">
+                        {msg.clarify.options.map((opt, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={msg.clarifyAnswered || isLoading}
+                          onClick={() => {
+                            setMessages((prev) =>
+                              prev.map((message) =>
+                                message.id === msg.id
+                                  ? { ...message, clarifyAnswered: true }
+                                  : message,
+                              ),
+                            );
+                            sendMessage(opt.label);
+                          }}
+                          className={`rounded-xl border px-3 py-2 text-left transition-colors disabled:cursor-default disabled:opacity-50 ${
+                            opt.recommended
+                              ? "border-[#c8944d] bg-[#fff7e9] hover:bg-[#fff1d9]"
+                              : "border-[#d8d3cb] bg-white/55 hover:bg-white"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className="font-medium">{opt.label}</span>
+                            {opt.recommended && (
+                              <span className="text-[10px] text-[#a56820]">
+                                рекомендуется
+                              </span>
+                            )}
+                          </span>
+                          {opt.description && (
+                            <span className="mt-0.5 block text-[11px] opacity-70">
+                              {opt.description}
+                            </span>
+                          )}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          disabled={msg.clarifyAnswered || isLoading}
+                          onClick={() => textareaRef.current?.focus()}
+                          className="rounded-xl border border-dashed border-[#d2cdc5] px-3 py-2 text-left text-[12px] opacity-70 transition-opacity hover:opacity-100 disabled:cursor-default disabled:opacity-40"
+                        >
+                          Другое — напишу сам
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ),
+            )}
+
+            {isLoading && (
+              <div className="rounded-[14px] border border-[#c9944e] bg-[#f5efe5] p-3.5 text-[#61574c]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#936023]">
+                    Собираю разбор
+                  </span>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#b7792d]" />
+                </div>
+                <div className="mt-3 space-y-2 text-[12px]">
+                  <div className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 text-[#b7792d]" />
+                    Понял запрос и структуру темы
+                  </div>
+                  <div className="flex items-center gap-2 font-medium text-[#3f3932]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#b7792d]" />
+                    Строю объяснение и схему…
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </>
+        )}
+          </div>
+
+          {currentLessonPlan && (
+          <div className="shrink-0 px-3 pb-1">
+            <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+              {[
+                "Объясни проще",
+                "Дай задачу",
+                "Построй график",
+                "Добавь пример",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => preparePrompt(prompt)}
+                  className="shrink-0 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] px-3 py-1.5 font-serif text-[12px] text-[#7e776e] transition-colors hover:border-[#c5a474] hover:text-[#6f481c]"
+                >
+                  {prompt}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      </div>
+          )}
+
+          {/* ── Input area ── */}
+          {currentLessonPlan && (
+          <div
+            className="shrink-0 px-3 pt-2"
+            style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+          >
+            <div className="flex flex-col rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] px-3 pb-2 pt-3 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#c79a5b] focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)]">
+              <textarea
+                ref={textareaRef}
+                placeholder="Спроси или попроси нарисовать…"
+                rows={1}
+                value={inputValue}
+                onChange={(event) => setInputValue(event.target.value)}
+                onInput={handleInput}
+                onKeyDown={handleKeyDown}
+                className="mb-2 min-h-[30px] max-h-[160px] w-full resize-none bg-transparent px-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
+              />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <PaletteSelectorDropdown
+                    value={generationPalette}
+                    onChange={setGenerationPalette}
+                  />
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <AIUsageIndicator
+                    summary={usageSummary}
+                    isLoading={usageLoading}
+                    context={{
+                      usedTokens: contextSnapshot.usedTokens,
+                      limitTokens: contextSnapshot.limitTokens,
+                      percent: contextSnapshot.contextPercent,
+                    }}
+                  />
+
+                  <StyleSelectorDropdown
+                    value={generationStyle}
+                    onChange={setGenerationStyle}
+                  />
+
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => sendMessage()}
+                          disabled={isLoading || !inputValue.trim()}
+                          className="ml-1 h-8 w-8 rounded-full bg-[#c9a16c] text-white transition-colors hover:bg-[#af7d3d] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b]"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ArrowUp className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Отправить (Enter)
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </div>
+            </div>
+          </div>
+          )}
     </div>
   );
 }

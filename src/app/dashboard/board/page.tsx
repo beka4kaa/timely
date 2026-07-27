@@ -1,8 +1,5 @@
-"use client";
-
-import React from "react";
-import { BoardLayout } from "@/components/board";
+import { redirect } from "next/navigation";
 
 export default function BoardPage() {
-  return <BoardLayout />;
+  redirect("/dashboard/whiteboard");
 }

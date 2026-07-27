@@ -1,18 +1,15 @@
 import json
 import re
-import time
 import logging
 
-from openai import APIConnectionError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-# Reuse the already-configured OpenRouter client + model from solve_views
-from .solve_views import openrouter_client, OPENROUTER_MODEL
-
-# Image enrichment: resolves image_prompt → image_url via Nano Banana 2
-from .image_enrichment import enrich_board_steps
+# Генерация доски переехала в ai_engine.skills.board (BoardSkill) — здесь
+# остались DSL-промпт, санитайзеры и legacy-вью, делегирующая в скилл. Вызов
+# модели и обогащение иллюстраций живут в скилле, поэтому клиент OpenRouter и
+# enrich_board_steps тут больше не импортируются.
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +26,11 @@ DRAW_SYSTEM_PROMPT = r"""Ты — интерактивный AI-учитель �
 2. Для любых рисунков, схем, геометрии (кубы, круги, графики и т.д.) ВСЕГДА используй команду "image_with_labels". Эта команда триггерит мощный генератор изображений. НЕ пытайся рисовать примитивами.
 3. Для лекций/теории/пошаговых объяснений НЕ пытайся верстать текст пиксельными координатами. Верни команды в порядке чтения: короткий текстовый блок → формула/таблица/иллюстрация при необходимости → следующий текстовый блок. Фронтенд сам детерминированно разложит это на доске колонками сверху вниз, затем в новый столбец. Для text/formula/table/barchart можно ставить x=0,y=0.
 4. Не более 10 команд суммарно по всем шагам (это важно для скорости генерации).
-4a. КРИТИЧНО: используй МАКСИМУМ ОДНУ команду "image_with_labels" на весь ответ. Одна задача = одна иллюстрация. НЕ создавай несколько картинок (по одной на этап) — собери всё в ОДНУ иллюстрацию с несколькими подписями (labels). Это жёсткое правило.
+4a. КРИТИЧНО, сколько делать иллюстраций. Правило одно: ОДНА ФИЗИЧЕСКАЯ СИТУАЦИЯ = ОДНА картинка.
+   • Если пользователь описал ОДНУ ситуацию — сделай РОВНО ОДНУ "image_with_labels", даже если разбираешь её в несколько этапов. НЕ дроби одну сцену на картинку-на-этап.
+   • Если в запросе НЕСКОЛЬКО РАЗНЫХ задач или сцен (брусок на плоскости; отдельно маятник; отдельно блок с грузом) — сделай ОТДЕЛЬНУЮ "image_with_labels" на каждую. НЕ склеивай разные задачи в один кадр: получается нечитаемая каша, где ничего не разобрать.
+   • Максимум 4 иллюстрации на ответ. Если задач больше — возьми 4 самые важные и скажи об этом текстом.
+4b. КРИТИЧНО, сколько подписей. Максимум 6 labels на ОДНУ иллюстрацию, и это потолок, а не цель. Подписывай только то, без чего рисунок не понять. Если подписей просится больше — это верный признак, что ты пытаешься уместить в один кадр несколько разных сцен: раздели их по правилу 4a.
 5. Если рисовать ничего не нужно (чистая теория/объяснение) — верни "board_steps": [] или шаги с пустыми "commands": [].
 5a. Если пользователь просит «полную лекцию», «объясни тему», «как учитель на доске» — обязательно дели материал на 3–7 коротких text/formula/table блоков, не одним огромным текстом. Длинный абзац хуже: его сложнее читать и он чаще пересекается с рисунками.
 6. "reply" — короткий ответ ученику в чат (1-3 предложения, на языке вопроса).
@@ -76,6 +77,7 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
     "labels": [
       {
         "content": "Верхняя грань",
+        "target_kind": "object",
         "x": 50,
         "y": 20,
         "arrow_to": {"x": 50, "y": 30}
@@ -88,9 +90,13 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
   • image_prompt — ТОЛЬКО английский, и описывает ТОЛЬКО СОДЕРЖАНИЕ: какие объекты на картинке, их форма, цвет, взаимное расположение, пропорции, ракурс/перспектива. НЕ пиши слова о художественном стиле ('3d render', 'minimalist', 'realistic', 'cartoon', 'sketch', 'photo' и т.п.) — единый визуальный стиль для ВСЕХ иллюстраций уже жёстко задан системой централизованно (это сделано специально, чтобы все картинки в уроке выглядели так, будто их нарисовал один художник в одной манере). Твоя задача — только описать ЧТО изображено, а не КАК это нарисовано.
   • Никогда не упоминай текст, подписи, цифры или надписи внутри image_prompt — для подписей есть отдельное поле "labels".
   • ВАЖНО: названия процессов/объектов тоже НЕ должны быть просьбой написать слова на картинке. В image_prompt описывай визуальные признаки, объекты, движение, стрелки и взаимное расположение; любые слова для пользователя клади только в labels.content.
-  • Для задач по физике/математике/механике делай image_prompt как простую школьную схему: только нужные тела, опоры, нити/пружины и 1–3 необходимые стрелки движения/сил. Не добавляй фон, пейзаж, декоративные элементы, лишние механизмы и лишние стрелки “для красоты”.
+  • Для задач по физике/математике/механике сначала зафиксируй ТОПОЛОГИЮ сцены: точное число тел, поверхностей, опор, нитей/пружин и стрелок. Каждый запрошенный объект рисуется ровно один раз. Не добавляй фон, пейзаж, декоративные элементы, лишние механизмы, направляющие и стрелки “для красоты”.
+  • НАКЛОННАЯ ПЛОСКОСТЬ: image_prompt обязан требовать ровно ОДИН брусок на ровно ОДНОЙ связной наклонной поверхности. Нижняя грань бруска непосредственно касается верхней границы плоскости. Запрещены вторая параллельная рейка/полоса/полка, дополнительный клин, подпорка, ножка или платформа под/за бруском.
+  • СИЛЫ: одна сила = одна односторонняя стрелка. Хвост каждой стрелки силы начинается в центре тела, наконечник направлен ОТ тела: mg строго вниз, N перпендикулярно наружу от поверхности, трение вдоль поверхности против движения. Запрещены двусторонние, дублирующиеся и пересекающиеся стрелки, а также стрелки-выноски, направленные наконечником в центр тела.
   • x/y в labels — проценты от размера изображения (0–100), НЕ пиксели.
-  • arrow_to — координаты цели стрелки в тех же процентах.
+  • target_kind в каждой labels — один из: "object", "vector", "angle", "region". Для подписи силы ставь "vector"; для угла — "angle"; для тела/детали — "object"; для процесса/зоны — "region".
+  • arrow_to — координаты СМЫСЛОВОЙ ЦЕЛИ в тех же процентах: у "vector" это середина древка соответствующей стрелки силы (НИКОГДА не центр тела), у "angle" — середина дуги, у "object" — центр объекта, у "region" — центр области.
+  • x/y — ближайшее свободное место рядом с arrow_to. Не клади текст на тело, стрелку или другую подпись; не выноси его далеко через весь рисунок.
   • content может содержать LaTeX: "$F = ma$".
   • Не задавай цвет подписи. Цвет overlay-текста выбирает приложение автоматически: только чёрный или белый по яркости фона.
   • "requires_segmentation" (boolean) — нужно ли ВЫРЕЗАТЬ отдельные объекты на картинке для интерактивной подсветки:
@@ -102,25 +108,74 @@ JSON-СХЕМА КОМАНД (массив "commands" внутри каждог�
 """
 
 
+# В JSON валидны только escape-последовательности \" \\ \/ \b \f \n \r \t и
+# \uXXXX. Любой другой бэкслеш делает весь документ невалидным.
+#
+# Почему это важно именно здесь: board-DSL просит подписи в LaTeX ($N$,
+# $F_{тр}$, $30^\circ$), а команды LaTeX начинаются с бэкслеша. Модель почти
+# всегда пишет его ОДИНАРНЫМ — «$30^\circ$» вместо «$30^\\circ$». Один такой
+# символ ронял разбор ВСЕГО ответа, и вместо доски пользователь видел в чате
+# простыню сырого JSON (см. ветку «Модель не выдала JSON» в skills/board.py).
+# Ловим и \u, за которым нет четырёх hex-цифр: «\upsilon» тоже не escape.
+#
+# Сканируем ПАРАМИ, а не «бэкслеш + заглядывание вперёд»: иначе на уже
+# корректном «\\circ» второй бэкслеш выглядит как одиночный перед «c» и его
+# удваивают — получается «\\\circ», то есть починка сама всё ломает.
+# Альтернатива ниже сначала съедает валидный escape целиком, поэтому его вторая
+# половина под замену уже не попадает.
+_JSON_ESCAPE_SCAN_RE = re.compile(r'\\(u[0-9a-fA-F]{4}|["\\/bfnrt])|\\')
+
+
+def _repair_json_escapes(text: str) -> str:
+    """Удваивает бэкслеши, не образующие валидный JSON-escape."""
+    return _JSON_ESCAPE_SCAN_RE.sub(
+        lambda match: match.group(0) if match.group(1) else "\\\\",
+        text,
+    )
+
+
+# Вторая, более коварная половина той же проблемы. Часть команд LaTeX начинается
+# с букв, которые в JSON ЗНАЧАТ управляющий символ:
+#     \theta → TAB + "heta"      \frac → FF + "rac"
+#     \beta  → BS  + "eta"       \nu   → LF + "u"      \rho → CR + "ho"
+# Такой документ парсится УСПЕШНО, ошибки нет — подпись просто молча портится,
+# и на доску вместо «θ» приезжает «<таб>heta». Поэтому внутри математических
+# вставок ($...$) удваиваем ОДИНОЧНЫЕ бэкслеши: там бэкслеш — это всегда
+# команда LaTeX и никогда не JSON-escape. Уже удвоенные не трогаем.
+_MATH_SPAN_RE = re.compile(r"\$[^$\n]{1,300}\$")
+_LONE_BACKSLASH_RE = re.compile(r"(?<!\\)\\(?!\\)")
+
+
+def _escape_latex_in_math_spans(text: str) -> str:
+    return _MATH_SPAN_RE.sub(
+        lambda match: _LONE_BACKSLASH_RE.sub(r"\\\\", match.group(0)),
+        text,
+    )
+
+
 def _extract_json(text: str):
     """Best-effort extraction of the outermost JSON object from a model reply."""
     if not text:
         return None
     cleaned = text.replace("```json", "").replace("```", "").strip()
-    # Fast path
-    try:
-        return json.loads(cleaned)
-    except Exception:
-        pass
+
+    candidates = [cleaned]
     # Fallback: grab from first '{' to last '}'
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start != -1 and end != -1 and end > start:
-        snippet = cleaned[start : end + 1]
-        try:
-            return json.loads(snippet)
-        except Exception:
-            return None
+        candidates.append(cleaned[start : end + 1])
+
+    for candidate in candidates:
+        repaired = _repair_json_escapes(_escape_latex_in_math_spans(candidate))
+        # Починенный вариант ПЕРВЫМ: на валидном JSON без LaTeX он совпадает с
+        # исходным (обе замены — no-op), а на LaTeX-подписях только он и даёт
+        # верный текст. Исходный остаётся запасным.
+        for attempt in (repaired, candidate):
+            try:
+                return json.loads(attempt)
+            except Exception:
+                continue
     return None
 
 
@@ -147,6 +202,63 @@ _CONTEXTUAL_FOLLOWUP_RE = re.compile(
 )
 
 
+# Стиль, названный прямо в сообщении. Фронтенд шлёт `style` из выпадашки, а не
+# из текста, поэтому «do sketch» или «сделай в 3d» раньше не меняли НИЧЕГО:
+# параметр оставался прежним, и картинка перерисовывалась в том же виде.
+_STYLE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("sketch", ("sketch", "скетч", "скетчем", "эскиз", "от руки", "hand drawn", "hand-drawn")),
+    ("2_5d", ("2.5d", "2_5d", "25d", "изометр", "isometric")),
+    ("3d", ("3d", "3д", "объ[её]мн", "render", "рендер")),
+    ("flat", ("flat", "флэт", "плоск", "векторн")),
+)
+
+
+# Служебные слова, которые окружают команду смены стиля и сами смысла не несут.
+_STYLE_FILLER_RE = re.compile(
+    r"\b(?:do|make|turn|convert|redraw|re-?render|it|this|that|as|to|into|in|same|"
+    r"task|style|mode|please|now|again|a|the|"
+    r"сделай|сделать|перерисуй|преобразуй|измени|поменяй|давай|"
+    r"это|эту|её|его|картинку|иллюстрацию|изображение|схему|рисунок|"
+    r"в|во|на|тоже|то|самое|же|стиль|стиле|режим|режиме|теперь|а|и|ну)\b",
+    re.I,
+)
+
+
+def style_from_message(text: str) -> str | None:
+    """Извлекает стиль, названный в самом запросе, иначе None.
+
+    Срабатывает ТОЛЬКО на командах смены стиля («do sketch», «сделай в 3d»),
+    но не на описании сюжета. Проверка такая: убираем служебные слова — если
+    от сообщения осталось практически одно название стиля, это команда.
+    Иначе слово было частью предмета: «Нарисуй плоское зеркало» — про зеркало,
+    а не просьба рисовать во flat-стиле.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    lowered = text.lower()
+
+    matched: str | None = None
+    for key, needles in _STYLE_KEYWORDS:
+        for needle in needles:
+            if re.search(needle, lowered):
+                matched = key
+                break
+        if matched:
+            break
+    if not matched:
+        return None
+
+    # Что останется, если выбросить служебные слова и само название стиля.
+    residue = _STYLE_FILLER_RE.sub(" ", lowered)
+    for _key, needles in _STYLE_KEYWORDS:
+        for needle in needles:
+            residue = re.sub(needle + r"\w*", " ", residue)
+    residue = re.sub(r"[^\w]+", "", residue)
+
+    # Пара символов шума допустима, целое слово — уже предмет, а не стиль.
+    return matched if len(residue) <= 3 else None
+
+
 def _looks_like_style_restyle(text: str) -> bool:
     """Короткие команды вида "do sketch" должны менять стиль текущей картинки."""
     if not isinstance(text, str):
@@ -154,11 +266,29 @@ def _looks_like_style_restyle(text: str) -> bool:
     return bool(_STYLE_RESTYLE_RE.match(text))
 
 
+# Голая команда без предмета: «нарисуй», «нарисуй мне», «покажи схему».
+# Такое сообщение НИКОГДА не является самостоятельной задачей — рисовать в нём
+# нечего, предмет остался в предыдущей реплике. Прежняя эвристика считала его
+# «новой задачей» и выбрасывала историю: после разговора о первом законе
+# Ньютона «нарисуй мне» превращалось в случайный куб с подписями граней.
+_BARE_DRAW_COMMAND_RE = re.compile(
+    r"^\s*(?:а\s+|и\s+|ну\s+)?(?:теперь\s+|тогда\s+)?"
+    r"(?:нарисуй|начерти|построй|изобрази|покажи|схему|draw|show|plot|sketch)"
+    r"(?:\s+(?:мне|нам|её|его|их|схему|рисунок|картинку|please|me|us|it))*"
+    r"\s*[.!?]*\s*$",
+    re.I,
+)
+
+
 def _needs_chat_history(text: str) -> bool:
     """Use old chat only for explicit follow-ups; new tasks stay clean."""
     if not isinstance(text, str):
         return False
-    return _looks_like_style_restyle(text) or bool(_CONTEXTUAL_FOLLOWUP_RE.search(text))
+    return (
+        _looks_like_style_restyle(text)
+        or bool(_BARE_DRAW_COMMAND_RE.match(text))
+        or bool(_CONTEXTUAL_FOLLOWUP_RE.search(text))
+    )
 
 
 def _history_for_model(history: list, user_message: str) -> list:
@@ -181,6 +311,18 @@ def _history_for_model(history: list, user_message: str) -> list:
 # enrichment service replaces image_prompt with image_url before the response
 # reaches the frontend ScientificIllustration component.
 _ALLOWED_COMMANDS = {"text", "line", "circle", "rect", "formula", "table", "barchart", "image_with_labels"}
+
+# Сколько сгенерированных иллюстраций максимум отдаём за один ответ. Каждая —
+# это ~25с генерации плюс грунтинг, поэтому потолок нужен; четыре покрывают
+# типичный «разбери мне эти задачи» и не превращают ответ в ленту картинок.
+MAX_ILLUSTRATIONS_PER_ANSWER = 4
+
+# Подписей на ОДНУ иллюстрацию. Свыше этого кадр перестаёт читаться (замерено
+# на проде: 18 подписей на картинку — сплошная каша), а грунтинг дорожает
+# линейно по их числу. Лишние отбрасываем, оставляя первые — модель ставит
+# важные вперёд.
+MAX_LABELS_PER_ILLUSTRATION = 6
+ALLOWED_LABEL_TARGET_KINDS = {"object", "vector", "angle", "region"}
 
 
 def _num(value, fallback=0):
@@ -317,6 +459,12 @@ def _sanitize_command(cmd):
                 }
                 if "fontSize" in lbl:
                     clean_lbl["fontSize"] = _num(lbl["fontSize"], 0.85)
+                target_kind = lbl.get("target_kind")
+                if (
+                    isinstance(target_kind, str)
+                    and target_kind.strip().lower() in ALLOWED_LABEL_TARGET_KINDS
+                ):
+                    clean_lbl["target_kind"] = target_kind.strip().lower()
                 # arrow_to: {x, y}
                 arrow = lbl.get("arrow_to")
                 if isinstance(arrow, dict) and "x" in arrow and "y" in arrow:
@@ -325,6 +473,8 @@ def _sanitize_command(cmd):
                         "y": _num(arrow["y"], 0),
                     }
                 clean_labels.append(clean_lbl)
+                if len(clean_labels) >= MAX_LABELS_PER_ILLUSTRATION:
+                    break
             out["labels"] = clean_labels
         else:
             out["labels"] = []
@@ -348,12 +498,14 @@ def _sanitize_board_data(parsed):
     if not isinstance(steps_in, list) or not steps_in:
         return None
 
-    # Жёсткий лимит: МАКСИМУМ ОДНА сгенерированная иллюстрация (image_with_labels)
-    # на весь ответ. Системный промпт просит модель об этом, но LLM не всегда
-    # слушается и иногда возвращает несколько image_with_labels (по одной на под-
-    # этап темы) — на доску тогда валится сразу 3-4 картинки с одного запроса.
-    # Считаем их сквозным счётчиком по всем шагам и отбрасываем всё сверх первой
-    # (заодно экономим вызовы генератора — обогащается только одна).
+    # Лимит иллюстраций на ответ. Раньше он был жёстко равен ОДНОЙ: правило
+    # ввели, когда модель плодила по картинке на каждый под-этап одной темы.
+    # Но на запросе из нескольких РАЗНЫХ задач оно давало обратный эффект —
+    # модель слепляла их в один кадр (наблюдалось: пять задач и 18 подписей на
+    # одной картинке, нечитаемо и медленно). Теперь одна ситуация по-прежнему
+    # рисуется одной картинкой, а разные задачи — разными; лишнее сверх лимита
+    # режем. Картинки обогащаются параллельно (IMAGE_GEN_MAX_WORKERS), поэтому
+    # время растёт не суммой, а примерно максимумом.
     steps = []
     image_count = 0
     for i, step in enumerate(steps_in):
@@ -367,8 +519,8 @@ def _sanitize_board_data(parsed):
                 if clean is None:
                     continue
                 if clean.get("type") == "image_with_labels":
-                    if image_count >= 1:
-                        continue  # уже есть одна иллюстрация — лишние режем
+                    if image_count >= MAX_ILLUSTRATIONS_PER_ANSWER:
+                        continue  # лимит исчерпан — лишние иллюстрации режем
                     image_count += 1
                 commands.append(clean)
         if not commands:
@@ -426,99 +578,22 @@ class WhiteboardDrawView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        messages = [{"role": "system", "content": DRAW_SYSTEM_PROMPT}]
-        contextual_history = _history_for_model(history, user_message)
-        if contextual_history:
-            logger.info("Whiteboard draw context: using %d recent history messages", len(contextual_history))
-        else:
-            logger.info("Whiteboard draw context: clean new request, history omitted")
-        messages.extend(contextual_history)
-        messages.append({"role": "user", "content": user_message})
-
         try:
-            logger.info(f"Whiteboard draw request → OpenRouter ({OPENROUTER_MODEL})")
-            # OpenRouter connectivity from this host is occasionally flaky.
-            # Connection errors fail instantly, so retry a few times quickly
-            # (this does NOT risk the long hangs that slow-request retries do).
-            response = None
-            last_conn_err = None
-            for attempt in range(3):
-                try:
-                    response = openrouter_client.chat.completions.create(
-                        model=OPENROUTER_MODEL,
-                        messages=messages,
-                        max_tokens=1200,
-                        temperature=0.4,
-                        timeout=75,
-                    )
-                    break
-                except APIConnectionError as ce:
-                    last_conn_err = ce
-                    logger.warning(f"OpenRouter connection error (attempt {attempt + 1}/3), retrying…")
-                    time.sleep(1.5)
-            if response is None:
-                raise last_conn_err if last_conn_err else Exception("No response from model")
-            raw = response.choices[0].message.content or ""
-            parsed = _extract_json(raw)
+            # Единственная реализация генерации доски живёт в BoardSkill —
+            # этот эндпоинт остаётся ради обратной совместимости и делегирует
+            # туда. Импорт локальный: skills.board импортирует данный модуль на
+            # уровне модуля, поэтому глобальный импорт здесь дал бы цикл.
+            from .skills.board import BoardSkill
 
-            if not parsed or not isinstance(parsed, dict):
-                # Model didn't return JSON — treat the whole thing as a chat reply.
-                return Response({"reply": raw.strip() or "Не удалось сформировать ответ.", "board": None})
-
-            reply = parsed.get("reply") or ""
-
-            # ── Классификация intent (решение Llama, правило 7 промпта) ──
-            intent_raw = parsed.get("intent")
-            intent = intent_raw.strip().lower() if isinstance(intent_raw, str) else "new"
-            forced_restyle = bool(gen_reference_image_url) and _looks_like_style_restyle(user_message)
-            is_restyle = bool(gen_reference_image_url) and (intent == "restyle" or forced_restyle)
-            if forced_restyle and intent != "restyle":
-                logger.info("Whiteboard draw intent forced to restyle by short style command")
-            logger.info(f"Whiteboard draw intent={intent} (restyle={is_restyle})")
-
-            # При restyle переиспользуем подписи предыдущей иллюстрации КАК ЕСТЬ
-            # (та же композиция через i2i → те же координаты валидны). Подменяем
-            # ДО санитайзера — он провалидирует их той же логикой, что и labels
-            # от модели.
-            if is_restyle and reference_labels:
-                for step in parsed.get("board_steps") or []:
-                    if isinstance(step, dict):
-                        for cmd in step.get("commands") or []:
-                            if isinstance(cmd, dict) and cmd.get("type") == "image_with_labels":
-                                cmd["labels"] = reference_labels
-
-            board = _sanitize_board_data(parsed)
-
-            # ── Обогащение иллюстраций ─────────────────────────────────────────
-            # Команды `image_with_labels` с `image_prompt` прогоняются через
-            # пайплайн (image_enrichment._enrich_command →
-            # illustration_pipeline.build_vector_illustration). На выходе —
-            # строгий контракт {base_image_url, labels, masks}:
-            #   • base_image_url — ВСЕГДА оригинальная картинка от Banana;
-            #   • masks — опц. полигоны SAM2, ТОЛЬКО если Llama выставила
-            #     requires_segmentation=true (для сцен/пейзажей — null);
-            # При сбое генерации — image_error (фронтенд покажет текст-ошибку).
-            if board and isinstance(board.get("board_steps"), list):
-                topic_hint = " ".join(
-                    part for part in (board.get("subject") or "", board.get("topic") or "") if part
-                )
-                board["board_steps"] = enrich_board_steps(
-                    board["board_steps"],
-                    topic_hint=topic_hint,
-                    style=gen_style,
-                    palette=gen_palette,
-                    # Референс включает i2i ТОЛЬКО при restyle — для новой темы
-                    # генерим с нуля, даже если фронтенд прислал кандидата.
-                    reference_image_url=gen_reference_image_url if is_restyle else None,
-                    # При restyle координаты подписей уже финальные (от исходной
-                    # картинки, композиция сохранена) — vision-грунтинг не нужен
-                    # и только внёс бы дрожание позиций.
-                    skip_grounding=is_restyle,
-                )
-            # ──────────────────────────────────────────────────────────────────
-
-            payload = {"reply": (reply or "").strip(), "board": board, "model": OPENROUTER_MODEL}
-            return Response(payload)
+            result = BoardSkill().run(
+                user_message=user_message,
+                history=history,
+                style=gen_style,
+                palette=gen_palette,
+                reference_image_url=gen_reference_image_url,
+                reference_labels=reference_labels,
+            )
+            return Response(result.as_payload())
 
         except Exception as e:
             error_msg = str(e)

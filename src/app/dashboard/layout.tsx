@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
+import type { CSSProperties } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
-import { SidebarProvider } from "@/components/ui/sidebar"
-import { SidebarScrim } from "@/components/sidebar-scrim"
 
 export const metadata: Metadata = {
   title: {
@@ -25,31 +24,46 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthGuard requireAuth={true}>
-      <SidebarProvider defaultOpen={false}>
-        {/* Контейнер всего дашборда */}
-        <div className="relative h-screen w-full overflow-hidden bg-background">
-          
-          {/* Сайдбар вырван из flex/grid и помещен в absolute (z-index: 50). 
-              Теперь он висит поверх всего контента и не сдвигает его. */}
-          <div className="absolute inset-y-0 left-0 z-50 h-full">
-            <AppSidebar />
-          </div>
-
-          {/* Затемнение контента, когда сайдбар открыт (drawer-эффект) */}
-          <SidebarScrim />
-
-          {/* Контент занимает всю ширину окна (100vw) всегда */}
-          <main className="absolute inset-0 z-0 flex flex-col h-full w-full overflow-hidden">
-            <DiaryHeaderProvider>
-              <SiteHeader />
-              <div className="flex-1 overflow-auto w-full h-full relative">
-                {children}
-              </div>
-            </DiaryHeaderProvider>
+      <DiaryHeaderProvider>
+        <div
+          className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light]"
+        style={
+          {
+              "--background": "42 33% 97%",
+              "--foreground": "28 12% 18%",
+              "--card": "40 38% 99%",
+              "--card-foreground": "28 12% 18%",
+              "--popover": "40 38% 99%",
+              "--popover-foreground": "28 12% 18%",
+              "--primary": "31 44% 37%",
+              "--primary-foreground": "40 33% 98%",
+              "--secondary": "38 24% 92%",
+              "--secondary-foreground": "28 14% 24%",
+              "--muted": "38 20% 93%",
+              "--muted-foreground": "30 8% 46%",
+              "--accent": "38 24% 92%",
+              "--accent-foreground": "28 14% 24%",
+              "--border": "34 18% 84%",
+              "--input": "34 18% 84%",
+              "--ring": "32 45% 50%",
+              "--sidebar-background": "42 35% 98%",
+              "--sidebar-foreground": "28 12% 20%",
+              "--sidebar-primary": "32 45% 39%",
+              "--sidebar-primary-foreground": "40 33% 98%",
+              "--sidebar-accent": "38 24% 92%",
+              "--sidebar-accent-foreground": "28 14% 24%",
+              "--sidebar-border": "34 18% 84%",
+              "--sidebar-ring": "32 45% 50%",
+          } as CSSProperties
+        }
+      >
+          <SiteHeader />
+          <AppSidebar />
+          <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-16 z-0 overflow-auto md:left-[58px]">
+            {children}
           </main>
-
         </div>
-      </SidebarProvider>
+      </DiaryHeaderProvider>
     </AuthGuard>
   )
 }

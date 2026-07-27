@@ -68,6 +68,7 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -78,6 +79,8 @@ import requests
 from django.conf import settings
 
 from .image_enrichment import generate_raster_image
+from .label_layout import layout_labels_on_margins
+from .usage import provider_from_base_url, record_model_usage
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +98,29 @@ _SAM2_TIMEOUT: int = int(getattr(settings, "SAM2_TIMEOUT", 120))
 # уменьшенной копии 384×~210, и сервис НЕ выигрывает от распараллеливания).
 _SAM2_MAX_DIM: int = int(getattr(settings, "ILLUSTRATION_SAM2_MAX_DIM", 384))
 _SAM2_MAX_WORKERS: int = int(getattr(settings, "ILLUSTRATION_SAM2_MAX_WORKERS", 2))
+
+
+def _flag(name: str, default: str) -> bool:
+    raw = str(getattr(settings, name, os.getenv(name, default))).strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+# SAM2 хостился на Mac Studio, которой больше нет, и облачного аналога у
+# китайских провайдеров нет. По умолчанию сегментация выключена — маски просто
+# не отдаются, иллюстрация и подписи работают как прежде. Код сегментации
+# сохранён: поднимете SAM2 снова — включите флаг и укажите SAM2_API_URL.
+_SEGMENTATION_ENABLED: bool = _flag("ILLUSTRATION_SEGMENTATION_ENABLED", "false")
+
+# Локальный Qwen на :8080 тоже умер вместе с Mac Studio. Раньше грунтинг ходил
+# сначала туда и только по таймауту (60с) уходил в OpenRouter — то есть КАЖДАЯ
+# иллюстрация платила минуту ожидания впустую. Теперь локальный путь пробуется
+# только если его явно включили.
+_GROUNDING_USE_LOCAL_QWEN: bool = _flag("ILLUSTRATION_GROUNDING_USE_LOCAL_QWEN", "false")
+
+# Выносить текст подписей на свободные поля кадра (см. label_layout). Без этого
+# текст ставится прямо над объектом, попадает на пёстрые пиксели, и фронтенд
+# рисует под ним белый ореол-подложку. Выключается, если раскладка мешает.
+_LABEL_MARGIN_LAYOUT: bool = _flag("ILLUSTRATION_LABEL_MARGIN_LAYOUT", "true")
 
 _QWEN_API_BASE_URL: str = getattr(settings, "QWEN_API_BASE_URL", f"http://{_MAC_HOST}:8080/v1")
 _QWEN_API_KEY: str = getattr(settings, "QWEN_API_KEY", "sk-local")
@@ -115,15 +141,11 @@ _OPENROUTER_API_KEY: str = getattr(
 _GROUNDING_FALLBACK_MODEL: str = getattr(
     settings,
     "GROUNDING_FALLBACK_MODEL",
-    # Gemini 3.1 Flash Image Preview («Nano Banana 2») — та же модель, которой
-    # проект генерит сами картинки (IMAGE_GEN_MODEL): принимает image-input и
-    # отвечает текстом, так что Set-of-Mark grounding-запрос ей по силам.
-    # Одна модель на генерацию и грунтинг = один биллинг и никаких сюрпризов
-    # с доступностью в каталоге OpenRouter.
-    os.getenv(
-        "GROUNDING_FALLBACK_MODEL",
-        getattr(settings, "IMAGE_GEN_MODEL", "google/gemini-3.1-flash-image-preview"),
-    ),
+    # Модель для грунтинга — обязательно ЧАТ-модель со зрением, а НЕ генератор
+    # картинок. Раньше сюда наследовался IMAGE_GEN_MODEL, и это ломало грунтинг
+    # (генератор картинок не умеет vision-chat): координаты подписей молча
+    # оставались неточными. GLM-4.6V читает картинку и отдаёт JSON.
+    os.getenv("GROUNDING_FALLBACK_MODEL", "z-ai/glm-4.6v"),
 )
 
 # Vision-грунтинг подписей: после генерации спрашиваем у Qwen, ГДЕ объекты реально
@@ -722,7 +744,15 @@ def _qwen_label_crop(img_bgr: np.ndarray, bbox: tuple[int, int, int, int], topic
             timeout=_QWEN_TIMEOUT,
         )
         resp.raise_for_status()
-        label = resp.json()["choices"][0]["message"]["content"].strip()
+        data = resp.json()
+        record_model_usage(
+            data,
+            model=_QWEN_MODEL_NAME,
+            provider=provider_from_base_url(_QWEN_API_BASE_URL),
+            feature="object_labeling",
+            input_payload=prompt,
+        )
+        label = data["choices"][0]["message"]["content"].strip()
         label = label.strip(' \t\n."\'«»').splitlines()[0][:60]
         return label or "Объект"
     except Exception as exc:  # noqa: BLE001
@@ -807,14 +837,30 @@ def _vision_chat(
             }],
             "max_tokens": 600,
             "temperature": 0.0,
+            # GLM-4.6V — thinking-модель: с включённым reasoning весь бюджет
+            # в 600 токенов уходил во внутреннее рассуждение, а `content`
+            # возвращался ПУСТОЙ, и грунтинг молча деградировал до догадок
+            # Llama. Здесь нужен только короткий JSON с координатами —
+            # рассуждать не над чем.
+            "reasoning": {"enabled": False},
         },
         timeout=timeout,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"] or ""
+    data = resp.json()
+    record_model_usage(
+        data,
+        model=model,
+        provider=provider_from_base_url(url),
+        feature="label_grounding",
+        input_payload=prompt,
+    )
+    return data["choices"][0]["message"]["content"] or ""
 
 
-def _parse_grounding_json(raw: str) -> list[tuple[str, float, float]]:
+def _parse_grounding_json(
+    raw: str, image_size: tuple[int, int] | None = None
+) -> list[tuple[str, float, float]]:
     """
     Парсит ответ Qwen в УПОРЯДОЧЕННЫЙ список [(имя_norm, x%, y%), ...] —
     порядок сохраняем, чтобы можно было сматчить позиционно, если имена не
@@ -834,10 +880,23 @@ def _parse_grounding_json(raw: str) -> list[tuple[str, float, float]]:
                 data = json.loads(m.group(0))
             except Exception:
                 return []
+
+    # GLM-4.6V вместо голого массива охотно отдаёт обёртку вида
+    # {"items": [...]} (наблюдалось вживую). Разворачиваем любой словарь с
+    # единственным списком внутри — терять из-за этого весь грунтинг глупо.
+    if isinstance(data, dict):
+        for key in ("items", "objects", "labels", "results", "data", "points"):
+            if isinstance(data.get(key), list):
+                data = data[key]
+                break
+        else:
+            lists = [v for v in data.values() if isinstance(v, list)]
+            data = lists[0] if len(lists) == 1 else None
+
     if not isinstance(data, list):
         return []
 
-    out: list[tuple[str, float, float]] = []
+    raw_items: list[tuple[str, float, float]] = []
     for item in data:
         if not isinstance(item, dict):
             continue
@@ -847,9 +906,32 @@ def _parse_grounding_json(raw: str) -> list[tuple[str, float, float]]:
             y = float(item.get("y"))
         except (TypeError, ValueError):
             continue
-        if 0.0 <= x <= 100.0 and 0.0 <= y <= 100.0:
-            out.append((name, x, y))
-    return out
+        if x < 0 or y < 0:
+            continue
+        raw_items.append((name, x, y))
+
+    if not raw_items:
+        return []
+
+    # Модель просят вернуть проценты, но GLM регулярно отвечает ПИКСЕЛЯМИ
+    # (например x=285 при ширине 1024). Раньше такие значения молча
+    # отбрасывались условием 0..100, и грунтинг деградировал до догадок Llama.
+    # Если хоть одна координата вышла за 100 — считаем, что весь ответ в
+    # пикселях, и нормируем по фактическому размеру отправленной картинки.
+    if image_size and any(x > 100.0 or y > 100.0 for _, x, y in raw_items):
+        width, height = image_size
+        if width > 0 and height > 0:
+            logger.info(
+                "[Illustration] grounding: ответ в пикселях, нормируем по %dx%d", width, height
+            )
+            raw_items = [
+                (name, x / width * 100.0, y / height * 100.0) for name, x, y in raw_items
+            ]
+
+    return [
+        (name, x, y) for name, x, y in raw_items
+        if 0.0 <= x <= 100.0 and 0.0 <= y <= 100.0
+    ]
 
 
 def _ground_labels_with_vision(
@@ -858,9 +940,10 @@ def _ground_labels_with_vision(
     topic_hint: str = "",
 ) -> list[dict]:
     """
-    Спрашивает у Qwen (vision) РЕАЛЬНЫЕ позиции объектов на сгенерированной
+    Спрашивает у Qwen (vision) РЕАЛЬНЫЕ позиции семантических целей на
+    сгенерированной
     картинке и возвращает НОВЫЙ список подписей с уточнёнными координатами:
-      • arrow_to        → точный центр объекта (туда смотрят точка и линия);
+      • arrow_to        → объект: центр; вектор: середина древка; угол: дуга;
       • x / y (текст)   → чуть ВЫШЕ центра (_GROUNDING_LABEL_RISE_PCT), чтобы
                           подпись стояла над объектом, а не закрывала его.
 
@@ -875,6 +958,32 @@ def _ground_labels_with_vision(
     names = [n for n in names if n]
     if not names:
         return labels
+
+    def target_kind(label: dict) -> str:
+        explicit = str(label.get("target_kind") or "").strip().lower()
+        if explicit in {"object", "vector", "angle", "region"}:
+            return explicit
+
+        content = str(label.get("content") or label.get("text") or "").strip().lower()
+        if re.search(r"(?:θ|theta|угол|градус|°)", content):
+            return "angle"
+        if (
+            content in {"n", "t", "mg", "f", "v", "a", "g"}
+            or re.search(
+                r"(?:сил|force|gravity|weight|тяжест|нормал|friction|трени|"
+                r"натяж|tension|скорост|velocity|ускор|acceleration|"
+                r"электрическ\w*\s+пол|magnetic\s+field|f[_\s]?[a-zа-я])",
+                content,
+            )
+        ):
+            return "vector"
+        return "object"
+
+    target_kinds = [target_kind(label) for label in labels]
+    grounding_items = "; ".join(
+        f'{i + 1}. «{name}» (target_kind={kind})'
+        for i, (name, kind) in enumerate(zip(names, target_kinds))
+    )
 
     # Подготовка копии для Qwen. ВАЖНО (замер на живом Qwen): для координат нужна
     # НЕ мелкая (384 SAM2-копия давала 0 попаданий), а ~1024px + координатная
@@ -899,44 +1008,50 @@ def _ground_labels_with_vision(
     )
     # NB: НЕ просим «пропустить отсутствующие» — на сцене подписи часто
     # ПРОЦЕССЫ (испарение/осадки), а не предметы, и с «пропусти» Qwen выкидывал
-    # их все. Просим центр ОБЛАСТИ процесса и ВСЕ объекты в ТОМ ЖЕ порядке/именах
-    # — это даёт и матч по имени, и позиционный фолбэк.
+    # их все. Тип цели важен: прежнее единое «центр объекта/процесса» заставляло
+    # vision ставить подпись силы в центр бруска вместо стрелки этой силы.
     prompt = (
         "На изображении — научная иллюстрация." + topic_line + grid_line +
-        " Для КАЖДОГО объекта/процесса из списка укажи координаты центра ОБЛАСТИ, "
-        "где он показан (если это процесс — испарение, осадки и т.п. — укажи центр "
-        "зоны, где он происходит: соответствующие стрелки/поток/элемент). "
+        " Для КАЖДОГО пункта найди цель строго по target_kind: "
+        "object — геометрический центр самого объекта; "
+        "vector — середина ДРЕВКА соответствующей видимой стрелки, не центр тела, "
+        "не наконечник и не другая стрелка; "
+        "angle — середина соответствующей дуги угла; "
+        "region — центр области процесса или явления. "
         "Верни ВСЕ перечисленные пункты, СТРОГО в том же порядке и с теми же "
-        "названиями. Список: " + "; ".join(names) + ". "
+        "названиями. Список: " + grounding_items + ". "
         'Ответь СТРОГО JSON-массивом [{"name":"<пункт>","x":<0-100>,"y":<0-100>}], '
         "без markdown и пояснений."
     )
 
-    # Транспорт: локальный Qwen → при недоступности тот же запрос в OpenRouter.
-    # Без обоих грунтинг невозможен — тогда честно остаёмся на догадках Llama.
-    try:
-        raw = _vision_chat(
-            f"{_QWEN_API_BASE_URL}/chat/completions",
-            _QWEN_API_KEY, _QWEN_MODEL_NAME, prompt, img_b64, _QWEN_TIMEOUT,
+    # Транспорт грунтинга. Локальный Qwen (Mac Studio) отключён по умолчанию —
+    # хоста больше нет, и попытка достучаться стоила 60с таймаута на КАЖДОЙ
+    # иллюстрации. Основной путь — OpenRouter; локальный включается флагом
+    # ILLUSTRATION_GROUNDING_USE_LOCAL_QWEN, если своё железо вернётся.
+    attempts: list[tuple[str, str, str, str]] = []
+    if _GROUNDING_USE_LOCAL_QWEN:
+        attempts.append(
+            ("локальный Qwen", f"{_QWEN_API_BASE_URL}/chat/completions", _QWEN_API_KEY, _QWEN_MODEL_NAME)
         )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[Illustration] grounding: локальный Qwen недоступен (%s) — фолбэк на OpenRouter (%s)",
-            exc, _GROUNDING_FALLBACK_MODEL,
-        )
-        try:
-            raw = _vision_chat(
-                _OPENROUTER_API_URL,
-                _OPENROUTER_API_KEY, _GROUNDING_FALLBACK_MODEL, prompt, img_b64, _QWEN_TIMEOUT,
-            )
-        except Exception as exc2:  # noqa: BLE001
-            logger.warning(
-                "[Illustration] grounding: OpenRouter-фолбэк тоже не удался, координаты Llama как есть: %s",
-                exc2,
-            )
-            return labels
+    attempts.append(
+        ("OpenRouter", _OPENROUTER_API_URL, _OPENROUTER_API_KEY, _GROUNDING_FALLBACK_MODEL)
+    )
 
-    located_list = _parse_grounding_json(raw)
+    raw = ""
+    for name, url, key, model in attempts:
+        try:
+            raw = _vision_chat(url, key, model, prompt, img_b64, _QWEN_TIMEOUT)
+            break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[Illustration] grounding: %s не ответил (%s)", name, exc)
+    if not raw:
+        logger.warning("[Illustration] grounding: ни один провайдер не ответил, координаты Llama как есть")
+        return labels
+
+    # Размер именно ТОЙ картинки, что ушла в модель — нужен, чтобы
+    # нормировать ответ, если он пришёл в пикселях (см. _parse_grounding_json).
+    vis_h, vis_w = vis.shape[:2]
+    located_list = _parse_grounding_json(raw, image_size=(vis_w, vis_h))
     if not located_list:
         logger.info("[Illustration] grounding: Qwen ничего не локализовал, координаты Llama как есть")
         return labels
@@ -947,6 +1062,7 @@ def _ground_labels_with_vision(
     n_fixed = 0
     for i, lbl in enumerate(labels):
         new = dict(lbl)
+        new["target_kind"] = target_kinds[i]
         name = _norm_name(lbl.get("content") or lbl.get("text") or "")
         pos = by_name.get(name)
         # Фолбэк: если по имени не нашли, но Qwen вернул столько же пунктов в том
@@ -1090,6 +1206,9 @@ def build_vector_illustration(
     # под сегментацию (куб+сфера, органеллы — requires_segmentation=True) —
     # изолированно на белом фоне, чтобы SAM2 чисто вырезал контуры
     # (см. _build_final_prompt в image_enrichment).
+    # Тайминги по этапам: без них «долго грузится» невозможно диагностировать —
+    # непонятно, ушло время в генерацию растра, в грунтинг или в раскладку.
+    t_stage = time.monotonic()
     try:
         image_url = generate_raster_image(
             image_prompt,
@@ -1102,6 +1221,7 @@ def build_vector_illustration(
             explicit_style_override=explicit_style_override,
         )
         result["base_image_url"] = image_url
+        logger.info("[Illustration][timing] генерация растра: %.1fс", time.monotonic() - t_stage)
     except Exception as exc:  # noqa: BLE001
         logger.error("[Illustration] Генерация растра не удалась: %s", exc, exc_info=True)
         result["pipeline_error"] = f"Генерация изображения не удалась: {exc}"
@@ -1117,16 +1237,48 @@ def build_vector_illustration(
         # от ИСХОДНОЙ иллюстрации с уже финальными координатами, а композиция
         # сохранена i2i-режимом. Грунтинг не нужен и только внёс бы дрожание.
         if _VISION_GROUNDING and not skip_grounding:
+            t_stage = time.monotonic()
             try:
                 img_bgr = _image_url_to_bgr(image_url)
-                # Грунтим: arrow_to → реальный центр объекта, текст — над ним.
-                # Уточнённые координаты идут и в ответ, и (как seed) в SAM2 ниже.
+                # Грунтим семантически: object → центр, vector → середина
+                # стрелки, angle → дуга. Координаты идут и в ответ, и в SAM2.
                 seed_labels = _ground_labels_with_vision(img_bgr, seed_labels, topic_hint)
+                logger.info(
+                    "[Illustration][timing] грунтинг (%d подписей): %.1fс",
+                    len(seed_labels), time.monotonic() - t_stage,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "[Illustration] vision-грунтинг не удался, координаты Llama как есть: %s", exc
                 )
+
+        # ── [1.6] Раскладка текста на поля ────────────────────────────────
+        # Грунтинг даёт точную семантическую цель (arrow_to). Object/region
+        # можно вынести в спокойное поле; vector/angle остаются локальными,
+        # иначе длинная выноска сама начинает выглядеть как лишняя сила.
+        # Требуется декодированная картинка — при restyle её ещё нет.
+        if _LABEL_MARGIN_LAYOUT and seed_labels:
+            try:
+                if img_bgr is None:
+                    img_bgr = _image_url_to_bgr(image_url)
+                seed_labels = layout_labels_on_margins(img_bgr, seed_labels)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[Illustration] раскладка подписей не удалась: %s", exc)
+
         result["labels"] = seed_labels
+
+    # SAM2 жил на Mac Studio, которой больше нет. Пока сегментация выключена,
+    # даже не пытаемся стучаться: каждая seed-точка иначе висит до
+    # _SAM2_TIMEOUT (120с), а таких точек несколько — иллюстрация уходила бы в
+    # минуты ожидания ради результата, который всё равно недоступен.
+    # Подписи при этом остаются: их координаты даёт vision-грунтинг выше.
+    # Включить обратно: ILLUSTRATION_SEGMENTATION_ENABLED=true + живой SAM2_API_URL.
+    if not _SEGMENTATION_ENABLED:
+        logger.info(
+            "[Illustration] сегментация отключена (ILLUSTRATION_SEGMENTATION_ENABLED=false) "
+            "→ base_image_url + подписи без масок"
+        )
+        return result
 
     # Сегментация не нужна (сцена/пейзаж/процесс) — отдаём картинку + (грунт.) подписи.
     if not requires_segmentation:

@@ -3,9 +3,9 @@ nutrition/photo_views.py
 ────────────────────────────────────────────────────────────────────
 POST /api/nutrition/analyze-photo/
   Body: { "image": "data:image/jpeg;base64,<...>" }
-  Оценка еды по фото через vision-модель. По умолчанию auto выбирает
-  Groq vision → OpenRouter vision router → Gemini. Можно зафиксировать через
-  NUTRITION_PHOTO_PROVIDER=groq|openrouter|gemini.
+  Оценка еды по фото через vision-модель. Провайдер — OpenRouter (GLM-4.5V);
+  Groq остаётся запасным вариантом, если задать его явно. Google-модели из
+  проекта убраны. Переключение: NUTRITION_PHOTO_PROVIDER=openrouter|groq.
 
   Модель распознаёт класс/название. Вес порции стабилизируется локальным
   OpenCV estimator, а БЖУ известных классов — локальным baseline-каталогом.
@@ -25,12 +25,13 @@ import os
 import re
 import time
 
-import google.generativeai as genai
 import requests
 from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from ai_engine.usage import provider_from_base_url, record_model_usage
 
 from .portion_estimator import estimate_food_portion
 
@@ -58,10 +59,11 @@ OPENROUTER_API_KEY = os.getenv(
     "NUTRITION_OPENROUTER_API_KEY",
     os.getenv("OPENROUTER_API_KEY", ""),
 )
-OPENROUTER_MODEL = os.getenv("NUTRITION_OPENROUTER_MODEL", "openrouter/free")
+OPENROUTER_MODEL = os.getenv("NUTRITION_OPENROUTER_MODEL", "z-ai/glm-4.5v")
+# Фолбэки — тоже без Google (был google/gemma-*): проект на китайских моделях.
 OPENROUTER_FALLBACK_MODELS = os.getenv(
     "NUTRITION_OPENROUTER_FALLBACK_MODELS",
-    "google/gemma-4-26b-a4b-it:free,nvidia/nemotron-nano-12b-v2-vl:free,nex-agi/nex-n2-pro:free",
+    "z-ai/glm-4.6v,qwen/qwen3-vl-235b-a22b-instruct",
 )
 TEXT_ONLY_OPENROUTER_MODELS = {
     "openai/gpt-oss-120b:free",
@@ -76,15 +78,7 @@ PHOTO_CACHE_MAX = int(os.getenv("NUTRITION_PHOTO_CACHE_MAX", "64"))
 PROMPT_VERSION = "nutrition-photo-v2-stable-portion"
 _PHOTO_ANALYSIS_CACHE: dict[str, tuple[float, dict]] = {}
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-
-# Модель для vision. По умолчанию gemini-2.5-flash: у бесплатного tier есть
-# квота на неё (проверено), тогда как у gemini-2.0-flash free-лимит = 0.
-# Переопределяется через GEMINI_VISION_MODEL.
-VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
-VISION_TIMEOUT = float(os.getenv("NUTRITION_VISION_TIMEOUT", os.getenv("GEMINI_VISION_TIMEOUT", "28")))
+VISION_TIMEOUT = float(os.getenv("NUTRITION_VISION_TIMEOUT", "28"))
 
 _PROMPT = (
     "Ты — классификатор еды на фото. Определи, что это за еда.\n"
@@ -182,10 +176,8 @@ def _content_to_text(content) -> str:
 def _photo_cache_key(provider: str, raw: bytes) -> str:
     if provider == "groq":
         model_key = "|".join(_groq_models())
-    elif provider == "openrouter":
-        model_key = "|".join(_openrouter_models())
     else:
-        model_key = VISION_MODEL
+        model_key = "|".join(_openrouter_models())
     digest = hashlib.sha256(raw).hexdigest()
     return f"{PROMPT_VERSION}:{provider}:{model_key}:{PORTION_STRATEGY}:{digest}"
 
@@ -299,6 +291,13 @@ def _call_openai_compatible_vision(
         )
     resp.raise_for_status()
     data = resp.json()
+    record_model_usage(
+        data,
+        model=model_name,
+        provider=provider_from_base_url(api_url),
+        feature="nutrition_photo",
+        input_payload=payload,
+    )
     message = ((data.get("choices") or [{}])[0].get("message") or {})
     return _parse_json(_content_to_text(message.get("content")))
 
@@ -369,28 +368,6 @@ def _call_openrouter(image_data_url: str, raw_size: int) -> tuple[dict | None, s
     if last_exc:
         raise last_exc
     raise RuntimeError("No OpenRouter models configured")
-
-
-def _call_gemini(raw: bytes, mime_type: str) -> dict | None:
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY не задан.")
-
-    logger.info(
-        "[PhotoAnalyze] start provider=gemini model=%s bytes=%d timeout=%.1fs",
-        VISION_MODEL,
-        len(raw),
-        VISION_TIMEOUT,
-    )
-    model = genai.GenerativeModel(VISION_MODEL)
-    result = model.generate_content(
-        [
-            _PROMPT,
-            {"mime_type": mime_type, "data": raw},
-        ],
-        generation_config={"temperature": 0, "response_mime_type": "application/json"},
-        request_options={"timeout": VISION_TIMEOUT},
-    )
-    return _parse_json(result.text)
 
 
 def _normalize_photo_items(parsed: dict, raw: bytes) -> list[dict]:
@@ -506,16 +483,19 @@ class AnalyzePhotoView(APIView):
 
     def post(self, request):
         provider = PHOTO_PROVIDER
+        # auto больше НЕ выбирает Google: проект переведён на OpenRouter
+        # (GLM-4.5V). Groq остаётся допустимым, только если его явно задали
+        # переменной, а сам Gemini-путь из выбора убран.
         if provider == "auto":
-            if GROQ_API_KEY:
-                provider = "groq"
-            elif OPENROUTER_API_KEY:
-                provider = "openrouter"
-            else:
-                provider = "gemini"
-        if provider not in {"groq", "openrouter", "gemini"}:
+            provider = "openrouter" if OPENROUTER_API_KEY else "groq"
+        if provider not in {"groq", "openrouter"}:
             return Response(
-                {"error": f"Неизвестный провайдер фото-анализа: {PHOTO_PROVIDER}."},
+                {
+                    "error": (
+                        f"Неподдерживаемый провайдер фото-анализа: {PHOTO_PROVIDER}. "
+                        "Доступны: openrouter, groq."
+                    )
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         if provider == "groq" and not GROQ_API_KEY:
@@ -526,11 +506,6 @@ class AnalyzePhotoView(APIView):
         if provider == "openrouter" and not OPENROUTER_API_KEY:
             return Response(
                 {"error": "Фото-анализ OpenRouter не настроен: задайте OPENROUTER_API_KEY."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        if provider == "gemini" and not GEMINI_API_KEY:
-            return Response(
-                {"error": "Фото-анализ Gemini не настроен: задайте GEMINI_API_KEY."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -564,11 +539,8 @@ class AnalyzePhotoView(APIView):
         try:
             if provider == "groq":
                 parsed, provider_model = _call_groq(image, len(raw))
-            elif provider == "openrouter":
-                parsed, provider_model = _call_openrouter(image, len(raw))
             else:
-                parsed = _call_gemini(raw, m.group("mime"))
-                provider_model = VISION_MODEL
+                parsed, provider_model = _call_openrouter(image, len(raw))
         except (requests.Timeout, requests.HTTPError, requests.RequestException) as exc:
             logger.error("[PhotoAnalyze] %s failed: %s", provider, exc, exc_info=True)
             message = str(exc).lower()

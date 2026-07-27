@@ -12,7 +12,7 @@ from typing import Any
 import cv2
 import numpy as np
 import requests
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 
 class VectorValidationError(ValueError):
@@ -559,31 +559,6 @@ def _path_points_for_png(d: str) -> list[tuple[int, int]]:
     return points
 
 
-def maybe_call_flux_structure_adapter(png_bytes: bytes, prompt: str) -> dict[str, Any] | None:
-    """
-    Optional prototype-only FLUX adapter.
-
-    No production client exists in the repo. This function is intentionally tiny
-    and skipped unless FLUX_STRUCTURE_API_URL is explicitly set.
-    """
-    url = os.getenv("FLUX_STRUCTURE_API_URL")
-    if not url:
-        return None
-    payload = {
-        "prompt": prompt,
-        "image_base64": base64.b64encode(png_bytes).decode("ascii"),
-        "strength": float(os.getenv("FLUX_STRUCTURE_STRENGTH", "0.18")),
-        "control_mode": os.getenv("FLUX_STRUCTURE_CONTROL_MODE", "structure"),
-    }
-    headers: dict[str, str] = {}
-    token = os.getenv("FLUX_API_KEY")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    response = requests.post(url, json=payload, headers=headers, timeout=120)
-    response.raise_for_status()
-    return response.json() if response.headers.get("content-type", "").startswith("application/json") else {"bytes": len(response.content)}
-
-
 def math_graph_layout() -> dict[str, Any]:
     return {
         "type": "vector_layout",
@@ -695,15 +670,6 @@ class VectorDslPrototypeTests(TestCase):
         with self.assertRaises(VectorValidationError):
             VectorRenderer().render(layout)
 
-    def test_optional_flux_adapter_skips_without_credentials(self) -> None:
-        renderer = VectorRenderer()
-        png = svg_to_png_bytes(renderer.render(math_graph_layout()))
-        if not os.getenv("FLUX_STRUCTURE_API_URL"):
-            self.assertIsNone(maybe_call_flux_structure_adapter(png, "Educational whiteboard illustration, clean black pencil sketch, preserve exact geometry, preserve all arrows, preserve all labels, no extra objects, no distorted text."))
-            return
-        result = maybe_call_flux_structure_adapter(png, "Educational whiteboard illustration, clean black pencil sketch, preserve exact geometry, preserve all arrows, preserve all labels, no extra objects, no distorted text.")
-        self.assertIsInstance(result, dict)
-
 
 class TaskDiagramPromptTests(TestCase):
     def test_task_diagram_context_detection(self) -> None:
@@ -726,7 +692,7 @@ class TaskDiagramPromptTests(TestCase):
 
         self.assertIn("TASK / PROBLEM DIAGRAM MODE", prompt)
         self.assertIn("classroom whiteboard", prompt)
-        self.assertIn("pure black, dark slate, light grey, pure white", prompt)
+        self.assertIn("deep ocean blue, sky blue, pure white, cool grey", prompt)
         self.assertNotIn("clear water blue, nature green, earth brown", prompt)
 
     def test_regular_scene_does_not_get_task_diagram_modifier(self) -> None:
@@ -792,6 +758,101 @@ class ScientificFlatTextbookPromptTests(TestCase):
         self.assertIn("rough pencil sketch", prompt)
         self.assertIn("glow behind text", prompt)
 
+    def test_inclined_plane_prompt_enforces_exact_topology_and_forces(self) -> None:
+        from ai_engine.image_enrichment import _build_final_prompt
+
+        prompt = _build_final_prompt(
+            (
+                "Subject / visual content to depict: exactly one block on an inclined "
+                "plane with gravity, normal force, friction and an angle arc."
+            ),
+            style="flat",
+            palette="natural-earth",
+            scene=True,
+            task_diagram=True,
+            scientific_diagram=True,
+        )
+
+        self.assertIn("MECHANICS TOPOLOGY CONTRACT", prompt)
+        self.assertIn("INCLINED PLANE EXACT TOPOLOGY", prompt)
+        self.assertIn("exactly ONE block and exactly ONE continuous inclined surface", prompt)
+        self.assertIn("no force arrow may terminate at the body center", prompt)
+        self.assertIn("no double-headed arrows", prompt)
+        self.assertIn("second parallel", prompt)
+        self.assertIn("callout arrows aimed into the center", prompt)
+
+    def test_text_free_guard_is_the_last_instruction(self) -> None:
+        """Короткая директива запрета текста должна стоять В САМОМ КОНЦЕ.
+
+        На длинном промпте image-модель «топит» запреты в середине и всё равно
+        печатает псевдо-подписи; терминальная фраза это перебивает.
+        """
+        from unittest.mock import patch
+
+        from ai_engine.image_enrichment import TEXT_FREE_TERMINAL, _build_final_prompt
+
+        with patch("ai_engine.image_enrichment._MODEL", "bytedance-seed/seedream-4.5"):
+            prompt = _build_final_prompt(
+                "Subject / visual content to depict: a block on an inclined plane.",
+                style="flat",
+                palette="natural-earth",
+                scientific_diagram=True,
+            )
+
+        self.assertTrue(prompt.endswith(TEXT_FREE_TERMINAL))
+
+    def test_image_only_models_never_request_text_modality(self) -> None:
+        """Регрессия: Seedream — чисто image-модель. Если она не попадёт в
+        `_is_image_only_model`, запрос уйдёт с modalities ["image", "text"] и
+        провайдер ответит 404 "No endpoints found that support the requested
+        output modalities" — то есть генерация сломается целиком."""
+        from ai_engine.image_enrichment import _modalities_for
+
+        self.assertEqual(_modalities_for("bytedance-seed/seedream-4.5"), ["image"])
+
+        # Gemini-image возвращает и картинку, и текст — полный список остаётся.
+        self.assertEqual(
+            _modalities_for("google/gemini-3-pro-image"), ["image", "text"]
+        )
+
+    def test_explicit_sketch_keeps_mechanics_contract_without_flat_style(self) -> None:
+        from ai_engine.image_enrichment import _build_final_prompt
+
+        prompt = _build_final_prompt(
+            "Subject / visual content to depict: one block on an inclined plane with force arrows.",
+            style="sketch",
+            palette="natural-earth",
+            scientific_diagram=True,
+            explicit_style_override=True,
+        )
+
+        self.assertIn("STRICTLY MONOCHROME hand-drawn black ink pen", prompt)
+        self.assertIn("MECHANICS TOPOLOGY CONTRACT", prompt)
+        self.assertIn("INCLINED PLANE EXACT TOPOLOGY", prompt)
+        self.assertNotIn("Clean flat vector educational textbook diagram", prompt)
+
+    def test_enrichment_keeps_scientific_topology_during_style_override(self) -> None:
+        from unittest.mock import patch
+
+        from ai_engine.image_enrichment import _enrich_command
+
+        command = {
+            "type": "image_with_labels",
+            "image_prompt": "one block on an inclined plane with gravity and normal force",
+            "requires_segmentation": False,
+            "labels": [],
+        }
+        with patch(
+            "ai_engine.illustration_pipeline.build_vector_illustration",
+            return_value={"base_image_url": "data:image/png;base64,AA==", "labels": []},
+        ) as build:
+            enriched = _enrich_command(command, style="sketch")
+
+        self.assertTrue(build.call_args.kwargs["scientific_diagram"])
+        self.assertTrue(build.call_args.kwargs["explicit_style_override"])
+        self.assertFalse(build.call_args.kwargs["task_diagram"])
+        self.assertEqual(enriched["gen_style"], "sketch")
+
     def test_cylinder_unwinding_prompt_preserves_required_content(self) -> None:
         from ai_engine.image_enrichment import _build_final_prompt
 
@@ -829,9 +890,118 @@ class ScientificFlatTextbookPromptTests(TestCase):
         self.assertIn("flat vector educational textbook diagram", prompt)
         self.assertIn("white or very light background", prompt)
         self.assertIn("Arrows must point exactly", prompt)
-        self.assertIn("readable labels", prompt)
         self.assertIn("minimal clutter", prompt)
         self.assertIn("polished infographic quality", prompt)
+
+    def test_prompt_never_asks_for_labels_in_positive_voice(self) -> None:
+        """Позитивные упоминания подписей заставляют модель их рисовать.
+
+        Регрессия из прода: в промпте было «clean labeled arrows … readable
+        scientific labels reserved for the deterministic overlay layer» и
+        «keep text areas clean and simple for readable labels». Оговорку про
+        overlay диффузионная модель не понимает — она видит «читаемые научные
+        подписи» и впечатывает псевдо-текст в картинку («Ruterrflord's Gold
+        Foil Experiment», «Ineniger Exs»), поверх которого потом ложатся
+        настоящие подписи. Запреты («no text», «do not draw labels») оставлять
+        МОЖНО — вредны именно утвердительные формулировки.
+        """
+        from ai_engine.image_enrichment import _build_final_prompt
+
+        forbidden = ("readable labels", "labeled arrows", "readable scientific labels")
+        for scientific, task in ((True, True), (True, False), (False, False)):
+            prompt = _build_final_prompt(
+                "Subject / visual content to depict: a block on an inclined plane.",
+                style="flat",
+                palette="monochrome-ink",
+                scientific_diagram=scientific,
+                task_diagram=task,
+            )
+            for phrase in forbidden:
+                self.assertNotIn(
+                    phrase,
+                    prompt,
+                    f"позитивное упоминание подписей {phrase!r} вернулось в промпт "
+                    f"(scientific={scientific}, task={task})",
+                )
+
+
+class ExtractJsonLatexEscapeTests(TestCase):
+    """Разбор ответа модели, когда в подписях LaTeX.
+
+    Реальный баг: board-DSL просит подписи вида «$30^\\circ$», модель пишет
+    бэкслеш ОДИНАРНЫМ, и json.loads падает на «Invalid \\escape». Разбор всего
+    ответа возвращал None, скилл уходил в ветку «модель не выдала JSON», и
+    пользователь получал в чате простыню сырого JSON вместо доски.
+    """
+
+    def test_single_backslash_latex_still_parses(self) -> None:
+        from ai_engine.draw_views import _extract_json
+
+        raw = r'{"reply": "ок", "topic": "Угол наклона $30^\circ$"}'
+        parsed = _extract_json(raw)
+
+        self.assertIsInstance(parsed, dict)
+        self.assertEqual(parsed["topic"], r"Угол наклона $30^\circ$")
+
+    def test_common_latex_commands_survive(self) -> None:
+        from ai_engine.draw_views import _extract_json
+
+        for latex in (r"$\vec{F}$", r"$\frac{1}{2}$", r"$\alpha$", r"$\upsilon$", r"$\theta$"):
+            with self.subTest(latex=latex):
+                parsed = _extract_json('{"content": "%s"}' % latex)
+                self.assertIsInstance(parsed, dict)
+                self.assertEqual(parsed["content"], latex)
+
+    def test_valid_escapes_are_not_mangled(self) -> None:
+        """Починка не должна ломать корректный JSON: \\n остаётся переводом
+        строки, \\uXXXX — символом, а не превращается в литеральный текст."""
+        from ai_engine.draw_views import _extract_json
+
+        parsed = _extract_json(r'{"a": "line1\nline2", "b": "АБ", "c": "path\\to", "d": "q\"q"}')
+
+        self.assertEqual(parsed["a"], "line1\nline2")
+        self.assertEqual(parsed["b"], "АБ")
+        self.assertEqual(parsed["c"], "path\\to")
+        self.assertEqual(parsed["d"], 'q"q')
+
+    def test_fenced_json_with_latex_parses(self) -> None:
+        from ai_engine.draw_views import _extract_json
+
+        raw = '```json\n{"reply": "ок", "topic": "$30^\\circ$"}\n```'
+        self.assertIsInstance(_extract_json(raw), dict)
+
+    def test_still_returns_none_for_non_json(self) -> None:
+        from ai_engine.draw_views import _extract_json
+
+        self.assertIsNone(_extract_json("Просто текстовый ответ без JSON."))
+        self.assertIsNone(_extract_json(""))
+
+    def test_full_board_payload_with_latex_labels(self) -> None:
+        """Форма, на которой это реально сломалось: доска с image_with_labels,
+        где среди подписей есть «Угол наклона $30^\\circ$»."""
+        from ai_engine.draw_views import _extract_json, _sanitize_board_data
+
+        raw = (
+            '{"reply": "ок", "intent": "new", "subject": "Физика",'
+            ' "topic": "Наклонная плоскость", "board_steps": [{"step_number": 1,'
+            ' "title": "Силы", "commands": [{"type": "image_with_labels",'
+            ' "image_prompt": "a block on an incline", "labels": ['
+            r'{"content": "Вес $mg$", "x": 50, "y": 50},'
+            r'{"content": "Угол наклона $30^\circ$", "x": 20, "y": 20}'
+            "]}]}]}"
+        )
+        parsed = _extract_json(raw)
+        self.assertIsInstance(parsed, dict)
+
+        board = _sanitize_board_data(parsed)
+        commands = board["board_steps"][0]["commands"]
+        labels = [
+            label["content"]
+            for command in commands
+            if command.get("type") == "image_with_labels"
+            for label in command.get("labels") or []
+        ]
+        self.assertIn(r"Угол наклона $30^\circ$", labels)
 
 
 class DrawContextHygieneTests(TestCase):
@@ -854,3 +1024,574 @@ class DrawContextHygieneTests(TestCase):
             {"role": "assistant", "content": "Готово, это цилиндр."},
         ]
         self.assertEqual(len(_history_for_model(history, "сделай это скетчем")), 2)
+
+    def test_label_target_kind_is_sanitized(self) -> None:
+        from ai_engine.draw_views import _sanitize_command
+
+        command = {
+            "type": "image_with_labels",
+            "image_prompt": "one block with one downward force arrow",
+            "labels": [
+                {
+                    "content": "$mg$",
+                    "target_kind": "VECTOR",
+                    "x": 50,
+                    "y": 40,
+                    "arrow_to": {"x": 50, "y": 55},
+                },
+                {
+                    "content": "Брусок",
+                    "target_kind": "raw_svg",
+                    "x": 50,
+                    "y": 50,
+                },
+            ],
+        }
+
+        sanitized = _sanitize_command(command)
+        self.assertEqual(sanitized["labels"][0]["target_kind"], "vector")
+        self.assertNotIn("target_kind", sanitized["labels"][1])
+
+
+class SemanticLabelGroundingTests(TestCase):
+    def test_vector_label_targets_arrow_shaft_not_body_center(self) -> None:
+        from unittest.mock import patch
+
+        from ai_engine.illustration_pipeline import _ground_labels_with_vision
+
+        captured: dict[str, str] = {}
+
+        def fake_vision_chat(_url, _key, _model, prompt, _image, _timeout):
+            captured["prompt"] = prompt
+            return '[{"name":"Сила тяжести mg","x":62,"y":58}]'
+
+        labels = [
+            {
+                "content": "Сила тяжести mg",
+                "target_kind": "vector",
+                "x": 50.0,
+                "y": 40.0,
+                "arrow_to": {"x": 50.0, "y": 50.0},
+            }
+        ]
+        image = np.full((120, 200, 3), 255, np.uint8)
+        with (
+            patch("ai_engine.illustration_pipeline._GROUNDING_USE_GRID", False),
+            patch("ai_engine.illustration_pipeline._vision_chat", side_effect=fake_vision_chat),
+        ):
+            grounded = _ground_labels_with_vision(image, labels, "брусок на плоскости")
+
+        self.assertIn("середина ДРЕВКА", captured["prompt"])
+        self.assertIn("не центр тела", captured["prompt"])
+        self.assertIn("target_kind=vector", captured["prompt"])
+        self.assertEqual(grounded[0]["target_kind"], "vector")
+        self.assertEqual(grounded[0]["arrow_to"], {"x": 62.0, "y": 58.0})
+
+
+class LabelMarginLayoutTests(TestCase):
+    """Раскладка подписей по спокойным зонам (ai_engine.label_layout).
+
+    Мотивация: раньше текст ставился вслепую на 7% выше объекта, попадал на
+    саму иллюстрацию, и фронтенд рисовал под ним белый ореол-подложку. Тесты
+    синтетические — без сети и без обращений к моделям.
+    """
+
+    @staticmethod
+    def _frame(content_x0: float, content_x1: float, w: int = 640, h: int = 360):
+        """Белый кадр с чёрным блоком содержимого в диапазоне X (в процентах)."""
+        import cv2
+        import numpy as np
+
+        img = np.full((h, w, 3), 245, np.uint8)
+        cv2.rectangle(
+            img,
+            (int(w * content_x0 / 100), int(h * 0.25)),
+            (int(w * content_x1 / 100), int(h * 0.75)),
+            (20, 20, 20),
+            -1,
+        )
+        return img
+
+    def test_text_moves_off_the_object_onto_quiet_background(self) -> None:
+        from ai_engine.label_layout import _BusynessMap, _label_box_pct, layout_labels_on_margins
+
+        img = self._frame(35, 65)
+        labels = [{"content": "Ядро", "arrow_to": {"x": 50.0, "y": 50.0}}]
+        result = layout_labels_on_margins(img, labels)[0]
+
+        # Текст обязан уехать с объекта на чистый фон.
+        busy = _BusynessMap(img)
+        bw, bh = _label_box_pct(result["content"])
+        self.assertLess(busy.std(result["x"], result["y"], bw, bh), 0.05)
+        # arrow_to не трогаем — выноска должна по-прежнему указывать на объект.
+        self.assertEqual(result["arrow_to"], {"x": 50.0, "y": 50.0})
+
+    def test_label_stays_fully_inside_canvas(self) -> None:
+        """Координата — ЦЕНТР текста, поэтому у края половина может уехать."""
+        from ai_engine.label_layout import _label_box_pct, layout_labels_on_margins
+
+        img = self._frame(40, 60)
+        labels = [{"content": "Очень длинная подпись объекта", "arrow_to": {"x": 50.0, "y": 30.0}}]
+        result = layout_labels_on_margins(img, labels)[0]
+
+        bw, _bh = _label_box_pct(result["content"])
+        self.assertGreaterEqual(result["x"] - bw / 2, 0.0)
+        self.assertLessEqual(result["x"] + bw / 2, 100.0)
+
+    def test_leader_line_does_not_cross_the_frame(self) -> None:
+        """Подпись остаётся на стороне своего объекта."""
+        from ai_engine.label_layout import layout_labels_on_margins
+
+        img = self._frame(30, 70)
+        labels = [
+            {"content": "Слева", "arrow_to": {"x": 34.0, "y": 40.0}},
+            {"content": "Справа", "arrow_to": {"x": 66.0, "y": 60.0}},
+        ]
+        for lb in layout_labels_on_margins(img, labels):
+            self.assertEqual(
+                lb["x"] < 50.0,
+                lb["arrow_to"]["x"] < 50.0,
+                f"подпись {lb['content']!r} уехала через середину кадра",
+            )
+
+    def test_labels_do_not_overlap_each_other(self) -> None:
+        from ai_engine.label_layout import _label_box_pct, layout_labels_on_margins
+
+        img = self._frame(45, 55)
+        labels = [{"content": f"Подпись {i}", "arrow_to": {"x": 50.0, "y": 50.0}} for i in range(5)]
+        placed = layout_labels_on_margins(img, labels)
+
+        boxes = [(lb["x"], lb["y"], *_label_box_pct(lb["content"])) for lb in placed]
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                ax, ay, aw, ah = boxes[i]
+                bx, by, bw, bh = boxes[j]
+                overlap = abs(ax - bx) * 2 < (aw + bw) and abs(ay - by) * 2 < (ah + bh)
+                self.assertFalse(overlap, f"подписи {i} и {j} наехали друг на друга")
+
+    def test_labels_without_arrow_to_are_untouched(self) -> None:
+        """Без грунтинга объекта двигать подпись наугад хуже, чем оставить."""
+        from ai_engine.label_layout import layout_labels_on_margins
+
+        img = self._frame(30, 70)
+        labels = [{"content": "Свободная", "x": 12.0, "y": 88.0}]
+        self.assertEqual(layout_labels_on_margins(img, labels), labels)
+
+    def test_vector_and_angle_labels_stay_local(self) -> None:
+        from ai_engine.label_layout import layout_labels_on_margins
+
+        img = self._frame(30, 70)
+        labels = [
+            {
+                "content": "$mg$",
+                "target_kind": "vector",
+                "x": 52.0,
+                "y": 44.0,
+                "arrow_to": {"x": 52.0, "y": 50.0},
+            },
+            {
+                "content": "$\\theta$",
+                "target_kind": "angle",
+                "x": 24.0,
+                "y": 74.0,
+                "arrow_to": {"x": 22.0, "y": 78.0},
+            },
+        ]
+
+        self.assertEqual(layout_labels_on_margins(img, labels), labels)
+
+    def test_full_bleed_scene_still_finds_quiet_zones(self) -> None:
+        """Полнокадровая сцена: фоновых полей нет, но спокойные зоны есть.
+
+        Регрессия: первая версия искала пиксели цвета рамки и на пейзаже
+        получала поля 0% — раскладка не срабатывала вообще.
+        """
+        import cv2
+        import numpy as np
+
+        from ai_engine.label_layout import _BusynessMap, _label_box_pct, layout_labels_on_margins
+
+        h, w = 360, 640
+        img = np.zeros((h, w, 3), np.uint8)
+        img[: int(h * 0.5), :, :] = (220, 200, 170)          # ровное «небо»
+        img[int(h * 0.5) :, :, :] = (120, 160, 90)           # ровная «земля»
+        for x in range(int(w * 0.4), int(w * 0.6), 4):       # пёстрая деталь в центре
+            cv2.line(img, (x, int(h * 0.3)), (x, int(h * 0.8)), (10, 10, 10), 2)
+
+        labels = [{"content": "Объект", "arrow_to": {"x": 50.0, "y": 55.0}}]
+        result = layout_labels_on_margins(img, labels)[0]
+
+        self.assertIn("x", result)
+        busy = _BusynessMap(img)
+        bw, bh = _label_box_pct(result["content"])
+        self.assertLess(busy.std(result["x"], result["y"], bw, bh), 0.05)
+
+
+class ClarifySkillTests(TestCase):
+    """Скилл уточняющего вопроса (ai_engine.skills.clarify)."""
+
+    def _run(self, **kwargs):
+        from ai_engine.skills.clarify import ClarifySkill
+
+        return ClarifySkill().run(user_message="", history=[], **kwargs)
+
+    def test_first_option_is_marked_recommended(self) -> None:
+        result = self._run(
+            question="На какое тело?",
+            options=[{"label": "Автомобиль"}, {"label": "Падающий мяч"}],
+        )
+        options = result.meta["clarify"]["options"]
+        self.assertTrue(options[0]["recommended"])
+        self.assertNotIn("recommended", options[1])
+        self.assertEqual(result.skill, "ask_clarification")
+
+    def test_model_supplied_other_option_is_dropped(self) -> None:
+        """Интерфейс сам рисует «Другое — напишу сам».
+
+        Модель всё равно иногда дописывает такой пункт (наблюдалось вживую), и
+        рядом с кнопкой интерфейса дубликат выглядит багом.
+        """
+        result = self._run(
+            question="На какое тело?",
+            options=[
+                {"label": "Автомобиль"},
+                {"label": "Падающий мяч"},
+                {"label": "Другое", "description": "Укажу свою ситуацию"},
+                {"label": "Свой вариант"},
+            ],
+        )
+        labels = [o["label"] for o in result.meta["clarify"]["options"]]
+        self.assertEqual(labels, ["Автомобиль", "Падающий мяч"])
+
+    def test_real_options_are_not_mistaken_for_other(self) -> None:
+        """Фильтр «Другое» не должен съедать настоящие варианты."""
+        from ai_engine.skills.clarify import _is_other_option
+
+        for label in ("Самолёт", "Иномарка", "Свободное падение", "Наклонная плоскость"):
+            self.assertFalse(_is_other_option(label), f"{label!r} ошибочно принят за «Другое»")
+
+    def test_options_are_capped(self) -> None:
+        from ai_engine.skills.clarify import MAX_OPTIONS
+
+        result = self._run(
+            question="Что рисуем?",
+            options=[{"label": f"Вариант {i}"} for i in range(10)],
+        )
+        self.assertLessEqual(len(result.meta["clarify"]["options"]), MAX_OPTIONS)
+
+    def test_degenerate_question_falls_back_to_plain_chat(self) -> None:
+        """Вопрос без выбора бесполезен — отдаём его обычной репликой."""
+        result = self._run(question="Что именно нужно?", options=[{"label": "Единственный"}])
+        self.assertEqual(result.skill, "chat")
+        self.assertNotIn("clarify", result.meta)
+        self.assertIn("Что именно нужно", result.reply)
+
+    def test_clarification_tool_is_exposed_to_the_model(self) -> None:
+        from ai_engine.skills.router import ROUTABLE_TOOLS
+
+        names = [t["function"]["name"] for t in ROUTABLE_TOOLS]
+        self.assertIn("ask_clarification", names)
+        self.assertIn("draw_board", names)
+
+
+class VectorRendererGeometryTests(TestCase):
+    """Числовая проверка направлений сил (ai_engine.vector_renderer).
+
+    Регрессия из прода: векторы, привязанные к поверхности, рисовались
+    горизонтально и ровно друг на друге. Причина была двойная —
+    `_render_vector` передавал в `_direction` только `comp["direction"]`
+    (то есть None, ключи привязки лежат на верхнем уровне), а формулы для
+    perpendicular_to/parallel_to были зеркальны по знаку. Глазами такое
+    легко пропустить, поэтому проверяем углы арифметикой.
+    """
+
+    @staticmethod
+    def _arrow_angles(angle_deg: float) -> list[float]:
+        """Углы всех векторов со стрелкой в математической системе (y вверх)."""
+        import math as _math
+        import re as _re
+
+        from ai_engine.vector_renderer import VectorRenderer
+
+        layout = {
+            "type": "vector_layout",
+            "schema_version": "0.1",
+            "canvas": {"width": 800, "height": 500, "background": "white"},
+            "components": [
+                {"id": "i", "type": "surface", "shape": "incline", "angle_deg": angle_deg},
+                {"id": "b", "type": "body", "shape": "block", "on": "i", "size": "medium"},
+                {"id": "w", "type": "vector", "kind": "force", "target": "b.center",
+                 "direction": "down", "label": "mg", "length": "medium"},
+                {"id": "n", "type": "vector", "kind": "force", "target": "b.center",
+                 "perpendicular_to": "i", "side": "outward", "label": "N", "length": "short"},
+                {"id": "f", "type": "vector", "kind": "force", "target": "b.center",
+                 "parallel_to": "i", "sense": "up_slope", "label": "F", "length": "short"},
+            ],
+        }
+        svg = VectorRenderer().render(layout)
+        angles = []
+        for x1, y1, x2, y2 in _re.findall(
+            r'<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"[^>]*marker-end', svg
+        ):
+            dx, dy = float(x2) - float(x1), float(y2) - float(y1)
+            angles.append(_math.degrees(_math.atan2(-dy, dx)))
+        return angles
+
+    def _assert_angle(self, actual: float, expected: float, name: str) -> None:
+        delta = abs(((actual - expected + 180) % 360) - 180)
+        self.assertLess(delta, 0.5, f"{name}: получено {actual:.1f}°, ожидалось {expected:.1f}°")
+
+    def test_forces_point_in_physically_correct_directions(self) -> None:
+        for incline in (20.0, 30.0, 45.0):
+            with self.subTest(incline=incline):
+                mg, normal, friction = self._arrow_angles(incline)
+                # Тяжесть всегда строго вниз, независимо от наклона.
+                self._assert_angle(mg, -90.0, "mg")
+                # Внешняя нормаль перпендикулярна склону: 90° + угол склона.
+                self._assert_angle(normal, 90.0 + incline, "N")
+                # Трение вверх по склону — вдоль поверхности.
+                self._assert_angle(friction, incline, "Fтр")
+
+    def test_normal_is_perpendicular_to_friction(self) -> None:
+        """Инвариант, не зависящий от системы координат."""
+        _mg, normal, friction = self._arrow_angles(30.0)
+        delta = abs(((normal - friction + 180) % 360) - 180)
+        self.assertAlmostEqual(delta, 90.0, delta=0.5)
+
+    def test_surface_bound_vectors_are_not_collapsed_to_horizontal(self) -> None:
+        """Прямая защита от исходного бага: N и Fтр не совпадают и не горизонтальны."""
+        _mg, normal, friction = self._arrow_angles(30.0)
+        self.assertNotAlmostEqual(normal, friction, delta=1.0)
+        for name, angle in (("N", normal), ("Fтр", friction)):
+            self.assertGreater(
+                abs(((angle + 180) % 360) - 180), 1.0,
+                f"{name} схлопнулся в горизонталь — вернулся запасной Vec(1, 0)",
+            )
+
+
+class FollowUpContextTests(TestCase):
+    """Короткие команды-продолжения не должны терять тему разговора.
+
+    Регрессия из прода: после объяснения первого закона Ньютона запрос
+    «нарисуй мне» уходил в модель БЕЗ истории и БЕЗ темы от роутера — она
+    сочиняла случайный сюжет и выдала куб с подписями «Верхняя грань» /
+    «Правая грань» вместо схемы по инерции.
+    """
+
+    def test_bare_draw_commands_keep_chat_history(self) -> None:
+        from ai_engine.draw_views import _needs_chat_history
+
+        for text in (
+            "нарисуй мне",
+            "нарисуй",
+            "покажи схему",
+            "а теперь нарисуй",
+            "построй",
+            "draw me",
+        ):
+            self.assertTrue(
+                _needs_chat_history(text),
+                f"{text!r} — команда без предмета, историю выбрасывать нельзя",
+            )
+
+    def test_self_contained_requests_stay_clean(self) -> None:
+        """Полноценная задача не должна тянуть контекст прошлой темы."""
+        from ai_engine.draw_views import _needs_chat_history
+
+        for text in (
+            "Нарисуй брусок на наклонной плоскости 30 градусов",
+            "Построй график функции y = x^2 - 4x + 3",
+            "Изобрази строение растительной клетки",
+        ):
+            self.assertFalse(
+                _needs_chat_history(text),
+                f"{text!r} — самостоятельная задача, старый контекст ей вреден",
+            )
+
+    def test_router_topic_replaces_bare_command(self) -> None:
+        """Тема от роутера подставляется вместо бессодержательной команды.
+
+        Роутер видит историю и разрешает ссылку («нарисуй мне» → «Первый закон
+        Ньютона…»), но раньше BoardSkill этот аргумент игнорировал.
+        """
+        from unittest.mock import patch
+
+        from ai_engine.skills.board import BoardSkill
+
+        topic = "Первый закон Ньютона (закон инерции) — тела в покое и движении"
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            raise RuntimeError("stop after capturing the prompt")
+
+        with patch("ai_engine.skills.board.openrouter_client") as client:
+            client.chat.completions.create.side_effect = fake_create
+            with self.assertRaises(RuntimeError):
+                BoardSkill().run(user_message="нарисуй мне", history=[], topic=topic)
+
+        sent = captured["messages"][-1]["content"]
+        self.assertIn("Первый закон Ньютона", sent)
+
+    def test_detailed_request_is_not_overwritten_by_topic(self) -> None:
+        """Содержательный запрос ведёт; тема роутера идёт лишь уточнением."""
+        from unittest.mock import patch
+
+        from ai_engine.skills.board import BoardSkill
+
+        message = "Нарисуй брусок на наклонной плоскости 30 градусов со всеми силами"
+        captured: dict = {}
+
+        def fake_create(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            raise RuntimeError("stop")
+
+        with patch("ai_engine.skills.board.openrouter_client") as client:
+            client.chat.completions.create.side_effect = fake_create
+            with self.assertRaises(RuntimeError):
+                BoardSkill().run(user_message=message, history=[], topic="схема сил")
+
+        sent = captured["messages"][-1]["content"]
+        self.assertIn("наклонной плоскости", sent)
+
+
+class StyleCommandTests(TestCase):
+    """Текстовые команды смены стиля («do sketch», «в 3d»).
+
+    Регрессия из прода: фронтенд шлёт `style` из выпадашки, а не из текста, и
+    напечатанное «do sketch» не меняло НИЧЕГО — картинка перерисовывалась в
+    прежнем стиле. Плюс роутер отвечал на такое обычным текстом, не вызывая
+    отрисовку вообще.
+    """
+
+    def test_style_commands_are_recognised(self) -> None:
+        from ai_engine.draw_views import style_from_message
+
+        cases = {
+            "do sketch": "sketch",
+            "сделай скетчем": "sketch",
+            "в 3d тоже самое": "3d",
+            "do it flat style same task": "flat",
+            "сделай изометрию": "2_5d",
+            "перерисуй в 2.5d": "2_5d",
+            "теперь flat": "flat",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(style_from_message(text), expected, f"{text!r}")
+
+    def test_subject_descriptions_are_not_treated_as_style(self) -> None:
+        """Слово стиля внутри описания предмета — это предмет, а не стиль."""
+        from ai_engine.draw_views import style_from_message
+
+        for text in (
+            "Нарисуй плоское зеркало и ход лучей через него",
+            "Нарисуй объёмную модель клетки с органеллами",
+            "Изобрази изометрическую проекцию куба и разрез",
+            "Построй график функции",
+        ):
+            self.assertIsNone(style_from_message(text), f"{text!r} принято за команду стиля")
+
+    def test_router_sends_style_command_straight_to_board(self) -> None:
+        """Маршрут детерминированный: модель на такое не зовёт тул.
+
+        Без этого «do sketch» уходило в обычный чат, и GLM отвечал текстом
+        «вот более набросочный вариант», не перерисовывая картинку.
+        """
+        from unittest.mock import patch
+
+        from ai_engine.skills import router
+
+        history = [{"role": "user", "content": "нарисуй брусок на наклонной плоскости"}]
+        with patch.object(router.SKILLS["draw_board"], "run") as board_run:
+            board_run.return_value = router.SkillResult(reply="ok", skill="draw_board")
+            with patch.object(router, "openrouter_client") as client:
+                result = router.route_and_run(user_message="do sketch", history=history)
+                client.chat.completions.create.assert_not_called()
+        self.assertEqual(result.skill, "draw_board")
+        board_run.assert_called_once()
+
+    def test_style_command_without_history_goes_through_the_model(self) -> None:
+        """Перерисовывать нечего — пусть решает модель, а не эвристика."""
+        from unittest.mock import patch
+
+        from ai_engine.skills import router
+
+        with patch.object(router, "openrouter_client") as client:
+            client.chat.completions.create.side_effect = RuntimeError("модель вызвана")
+            with self.assertRaises(RuntimeError):
+                router.route_and_run(user_message="do sketch", history=[])
+
+
+class LessonPlanContextTests(SimpleTestCase):
+    """План урока направляет существующий chat/router pipeline."""
+
+    def setUp(self) -> None:
+        self.plan = {
+            "topic": "Второй закон Ньютона",
+            "objective": "Научиться строить схему сил и применять F = ma",
+            "levelLabel": "Знаком с темой",
+            "resultType": "solve_problem",
+            "difficulties": ["Построить модель"],
+            "successCriteria": [
+                "Выбрать способ решения",
+                "Проверить направление сил",
+            ],
+            "tasks": [
+                {
+                    "title": "Ключевая идея",
+                    "description": "Связать равнодействующую с ускорением.",
+                },
+                {
+                    "title": "Наглядная схема",
+                    "description": "Показать тело и все действующие силы.",
+                },
+            ],
+        }
+
+    def test_lesson_instruction_contains_active_task(self) -> None:
+        from ai_engine.chat_views import build_lesson_instruction
+
+        instruction = build_lesson_instruction(
+            self.plan,
+            self.plan["tasks"][1],
+        )
+
+        self.assertIn("Второй закон Ньютона", instruction)
+        self.assertIn("Текущий этап: Наглядная схема", instruction)
+        self.assertIn("Результат на доске: solve_problem", instruction)
+        self.assertIn("Особый фокус: Построить модель", instruction)
+        self.assertIn("Критерии успеха:", instruction)
+        self.assertIn("не переписывай план молча", instruction)
+
+    def test_invalid_lesson_plan_is_ignored(self) -> None:
+        from ai_engine.chat_views import build_lesson_instruction
+
+        self.assertEqual(build_lesson_instruction("raw prompt", {}), "")
+        self.assertEqual(build_lesson_instruction({"topic": "Тема"}, {}), "")
+
+    def test_router_receives_lesson_instruction_as_system_context(self) -> None:
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from ai_engine.skills import router
+
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="Ответ по этапу.", tool_calls=None)
+                )
+            ]
+        )
+        with patch.object(router, "openrouter_client") as client:
+            client.chat.completions.create.return_value = response
+            result = router.route_and_run(
+                user_message="Объясни",
+                history=[],
+                lesson_instruction="Текущий этап: Наглядная схема",
+            )
+
+        system_prompt = client.chat.completions.create.call_args.kwargs["messages"][0][
+            "content"
+        ]
+        self.assertIn("Текущий этап: Наглядная схема", system_prompt)
+        self.assertEqual(result.reply, "Ответ по этапу.")

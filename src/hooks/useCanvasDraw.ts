@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import type {
   Stroke,
   Point,
@@ -6,11 +7,16 @@ import type {
   CropResult,
 } from "../components/whiteboard/types";
 import {
+  AUTO_INK,
   drawStroke,
+  resolveInk,
   screenToCanvas,
   uid,
 } from "../components/whiteboard/utils";
-import { useWhiteboardStore } from "@/stores/whiteboard";
+import {
+  nextWhiteboardHistorySequence,
+  useWhiteboardStore,
+} from "@/stores/whiteboard";
 
 // ─── Constants ──────────────────────────────────────────
 const DEBOUNCE_MS = 1500;
@@ -74,11 +80,12 @@ export interface UseCanvasDrawReturn {
   strokes: Stroke[];
   strokeColor: string;
   lineWidth: number;
+  lastStrokeHistorySequence: number;
   handlePointerDown: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   handlePointerMove: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   handlePointerUp: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   attachZoomListeners: (container: HTMLElement) => () => void;
-  clearCanvas: () => void;
+  clearCanvas: (historySequence?: number) => void;
   undo: () => void;
   setStrokeColor: (color: string) => void;
   setLineWidth: (width: number) => void;
@@ -86,7 +93,8 @@ export interface UseCanvasDrawReturn {
 }
 
 export function useCanvasDraw(
-  onCrop?: (result: CropResult) => void
+  onCrop?: (result: CropResult) => void,
+  forceLightCanvas = false,
 ): UseCanvasDrawReturn {
   const canvasRef = useRef<HTMLCanvasElement>(null!);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,13 +102,23 @@ export function useCanvasDraw(
 
   // Use useState (exactly like old working hook)
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [strokeHistory, setStrokeHistory] = useState<
+    Array<{ strokes: Stroke[]; sequence: number }>
+  >([]);
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [strokeColor, setStrokeColor] = useState("#ffffff");
+  // Дефолт — «авточернила»: тёмные на светлой теме, светлые на тёмной.
+  // Раньше был жёсткий #ffffff, и на светлом холсте штрихи были невидимы.
+  const [strokeColor, setStrokeColor] = useState(AUTO_INK);
   const [lineWidth, setLineWidth] = useState(3);
 
   // Camera from Zustand store
   const camera = useWhiteboardStore((s) => s.camera);
+
+  // Тема нужна для резолва AUTO_INK в момент отрисовки; смена темы
+  // перерисовывает холст (ink в зависимостях redraw).
+  const { resolvedTheme } = useTheme();
+  const ink = resolveInk(forceLightCanvas ? false : resolvedTheme === "dark");
 
   // ── Canvas rendering ──
   const redraw = useCallback(
@@ -117,12 +135,12 @@ export function useCanvasDraw(
       ctx.translate(-camera.x, -camera.y);
       ctx.scale(camera.zoom, camera.zoom);
 
-      for (const s of allStrokes) drawStroke(ctx, s);
-      if (active) drawStroke(ctx, active);
+      for (const s of allStrokes) drawStroke(ctx, s, ink);
+      if (active) drawStroke(ctx, active, ink);
 
       ctx.restore();
     },
-    [camera]
+    [camera, ink]
   );
 
   // Redraw when strokes or camera change
@@ -131,6 +149,7 @@ export function useCanvasDraw(
   }, [strokes, currentStroke, camera, redraw]);
 
   const strokesRef = useRef<Stroke[]>([]);
+  const strokeHistoryRef = useRef<Array<{ strokes: Stroke[]; sequence: number }>>([]);
   useEffect(() => {
     strokesRef.current = strokes;
   }, [strokes]);
@@ -238,12 +257,21 @@ export function useCanvasDraw(
       if (!currentStroke) return;
       e.preventDefault();
 
-      setStrokes((prev) => {
-        const nextStrokes = [...prev, currentStroke];
-        strokesRef.current = nextStrokes; // Sync update for getCrop
-        pendingStrokes.current.push(currentStroke);
-        return nextStrokes;
-      });
+      const previousStrokes = strokesRef.current;
+      const nextStrokes = [...previousStrokes, currentStroke];
+      const nextHistory = [
+        ...strokeHistoryRef.current,
+        {
+          strokes: previousStrokes,
+          sequence: nextWhiteboardHistorySequence(),
+        },
+      ].slice(-80);
+
+      strokesRef.current = nextStrokes;
+      strokeHistoryRef.current = nextHistory;
+      pendingStrokes.current.push(currentStroke);
+      setStrokes(nextStrokes);
+      setStrokeHistory(nextHistory);
 
       setCurrentStroke(null);
       setIsDrawing(false);
@@ -290,19 +318,35 @@ export function useCanvasDraw(
   );
 
   // ── Actions ──
-  const clearCanvas = useCallback(() => {
+  const clearCanvas = useCallback((historySequence?: number) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     pendingStrokes.current = [];
+    const previousStrokes = strokesRef.current;
+    if (previousStrokes.length > 0) {
+      const nextHistory = [
+        ...strokeHistoryRef.current,
+        {
+          strokes: previousStrokes,
+          sequence: historySequence ?? nextWhiteboardHistorySequence(),
+        },
+      ].slice(-80);
+      strokeHistoryRef.current = nextHistory;
+      setStrokeHistory(nextHistory);
+    }
+    strokesRef.current = [];
     setStrokes([]);
     setCurrentStroke(null);
     setIsDrawing(false);
   }, []);
 
   const undo = useCallback(() => {
-    setStrokes((prev) => {
-      if (prev.length === 0) return prev;
-      return prev.slice(0, -1);
-    });
+    const entry = strokeHistoryRef.current.at(-1);
+    if (!entry) return;
+    const nextHistory = strokeHistoryRef.current.slice(0, -1);
+    strokeHistoryRef.current = nextHistory;
+    strokesRef.current = entry.strokes;
+    setStrokeHistory(nextHistory);
+    setStrokes(entry.strokes);
   }, []);
 
   return {
@@ -310,6 +354,7 @@ export function useCanvasDraw(
     strokes,
     strokeColor,
     lineWidth,
+    lastStrokeHistorySequence: strokeHistory.at(-1)?.sequence ?? 0,
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
