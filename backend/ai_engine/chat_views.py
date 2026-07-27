@@ -17,7 +17,9 @@ from .planning_intake import (
     confirm_planning_intake,
     handle_planning_intake,
 )
+from .help_policy import check_help_allowed, resolve_profile
 from .skills import route_and_run
+from .tutor_modes import get_mode
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +110,20 @@ def build_lesson_instruction(lesson_plan, active_task) -> str:
     ).strip()
 
 
+def build_hint_instruction(rung: int, title: str) -> str:
+    """Инструкция модели выдать РОВНО одну ступень лестницы помощи (§5.5).
+
+    Ступень выбирает backend, а не модель: без этого «дай подсказку» превращалось
+    бы в полное решение с первого нажатия — именно так модель и понимает просьбу
+    о помощи, если её не ограничить.
+    """
+    return (
+        f"ЗАПРОС ПОДСКАЗКИ. Выдай ровно одну подсказку уровня {rung}: «{title}».\n"
+        "- Не давай подсказку более высокого уровня и не решай задачу целиком.\n"
+        "- Одна короткая подсказка, затем верни ход ученику вопросом."
+    )
+
+
 def error_response(exc: Exception) -> Response:
     """Ошибки провайдера → понятные HTTP-коды и текст для UI."""
     error_msg = str(exc)
@@ -165,10 +181,60 @@ class BoardChatView(APIView):
         if not (isinstance(reference_labels, list) and reference_labels):
             reference_labels = None
 
+        # Режим и права разрешает СЕРВЕР. Клиент присылает только пожелание —
+        # slug режима и профиль помощи, — а `get_mode` и `resolve_profile`
+        # приводят их к допустимым значениям: неизвестный slug молча становится
+        # режимом по умолчанию, а профиль умеет лишь ужесточать политику режима.
+        # Так «режим» остаётся правилом, а не полем, которым клиент открывает
+        # себе готовые ответы (PRODUCT.md §3.3).
+        mode = get_mode(data.get("mode"))
+        policy = resolve_profile(mode.policy, data.get("help_profile"))
+
+        def as_int(key: str) -> int:
+            try:
+                return max(0, int(data.get(key) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        hint_level = as_int("hint_level")
+        attempts = as_int("attempts")
+
+        # Просьба о подсказке — отдельный ход, а не обычное сообщение: ступень
+        # выдаёт backend по политике режима, поэтому клиент не может получить
+        # решение, просто нажав «подсказка» нужное число раз.
+        instructions = [
+            build_lesson_instruction(data.get("lesson_plan"), data.get("active_lesson_task"))
+        ]
+        granted_rung = None
+        if data.get("request_hint"):
+            decision = check_help_allowed(policy, attempts=attempts, hint_level=hint_level)
+            if not decision.allowed:
+                return Response(
+                    {
+                        "reply": decision.reason,
+                        "policy_blocked": True,
+                        "mode": mode.slug,
+                        "policy": policy.as_dict(),
+                        "hint_level": hint_level,
+                    }
+                )
+            granted_rung = decision.granted_rung
+            instructions.append(build_hint_instruction(granted_rung, decision.rung_title))
+
         try:
             result = route_and_run(
                 user_message=user_message,
                 history=data.get("history", []),
+                mode=mode.slug,
+                # Контекст инструментов §5.7. Пользователя берём из запроса, а не
+                # из аргументов модели: иначе «инструмент» стал бы способом
+                # прочитать чужой прогресс по подсказке в промпте.
+                user_email=getattr(request, "user_email", "") or "",
+                topic_name=(
+                    (data.get("lesson_plan") or {}).get("topic")
+                    if isinstance(data.get("lesson_plan"), dict)
+                    else ""
+                ),
                 style=data.get("style"),
                 palette=data.get("palette"),
                 reference_image_url=data.get("reference_image_url") or None,
@@ -176,12 +242,19 @@ class BoardChatView(APIView):
                 # defer_images=true → доска возвращается без картинок, фронтенд
                 # догружает их через /api/ai/illustration (прогрессивная выдача).
                 enrich_images=not bool(data.get("defer_images")),
-                lesson_instruction=build_lesson_instruction(
-                    data.get("lesson_plan"),
-                    data.get("active_lesson_task"),
-                ),
+                lesson_instruction="\n\n".join(part for part in instructions if part),
             )
-            return Response(result.as_payload())
+            payload = result.as_payload()
+            # Фронтенду нужен разрешённый режим и его политика: по ним рисуется
+            # активный пункт переключателя и решается, показывать ли кнопку
+            # подсказки. Считать это на клиенте нельзя — он не владеет правилами.
+            payload["mode"] = mode.slug
+            payload["policy"] = policy.as_dict()
+            if granted_rung is not None:
+                # Клиент запоминает достигнутую ступень и присылает её в
+                # следующем запросе — лестница движется только вперёд.
+                payload["hint_level"] = granted_rung
+            return Response(payload)
         except Exception as exc:  # noqa: BLE001 — маппим на HTTP ниже
             logger.error("Board chat error: %s", exc, exc_info=True)
             return error_response(exc)

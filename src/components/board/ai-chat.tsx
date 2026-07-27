@@ -10,7 +10,9 @@ import React, {
 import {
   ArrowUp,
   Check,
+  ChevronDown,
   History,
+  Lightbulb,
   Loader2,
   PanelRightClose,
   Plus,
@@ -55,6 +57,13 @@ import {
   type ChatSessionDetail,
   type ChatSessionSummary,
 } from "./chat-sessions-api";
+import {
+  DEFAULT_TUTOR_MODE,
+  PRIMARY_TUTOR_MODES,
+  tutorModeTitle,
+  type HelpPolicySnapshot,
+  type TutorModeSlug,
+} from "./tutor-modes";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -138,6 +147,9 @@ function serializeSessionPayload(input: {
   topic: string;
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
+  mode: string;
+  hint_level: number;
+  attempt_count: number;
 }): string {
   return JSON.stringify(input);
 }
@@ -248,6 +260,19 @@ export function AIChat({
   // генерились в красно-«мясных» оттенках.
   const [generationPalette, setGenerationPalette] = useState("natural-earth");
 
+  // ── Режим тьютора (PRODUCT.md §5.2) ────────────────────────────────────────
+  // Клиент хранит ВЫБОР режима и достигнутую ступень подсказок, но не правила:
+  // `policy` целиком приходит из ответа сервера, и только по ней решается,
+  // показывать ли кнопку подсказки. Пока ни одного ответа не было, политика
+  // null — кнопка скрыта, что честнее, чем угадать права заранее.
+  const [tutorMode, setTutorMode] = useState<TutorModeSlug>(DEFAULT_TUTOR_MODE);
+  const [modePickerOpen, setModePickerOpen] = useState(false);
+  const [helpPolicy, setHelpPolicy] = useState<HelpPolicySnapshot | null>(null);
+  const [hintLevel, setHintLevel] = useState(0);
+  // Самостоятельные попытки: считаем обычные сообщения ученика, потому что
+  // именно они и есть попытка. Сервер сверяет счётчик с `required_attempts`.
+  const [attemptCount, setAttemptCount] = useState(0);
+
   const executeActions = useWhiteboardStore((s) => s.executeActions);
   const camera = useWhiteboardStore((s) => s.camera);
   const selectedElementId = useWhiteboardStore((s) => s.selectedElementId);
@@ -302,6 +327,16 @@ export function AIChat({
       updateLessonPlan(session.lesson_plan);
       updateActiveTask(0);
       setCurrentSessionId(session.id);
+      // Возобновляем режим и лестницу помощи. Сессии, сохранённые до появления
+      // режимов, приходят с пустым `mode` — берём режим по умолчанию, то есть
+      // ровно то поведение, которым эта сессия и велась.
+      const restoredMode = (PRIMARY_TUTOR_MODES.find(
+        (option) => option.slug === session.mode,
+      )?.slug ?? DEFAULT_TUTOR_MODE) as TutorModeSlug;
+      setTutorMode(restoredMode);
+      setHintLevel(session.hint_level ?? 0);
+      setAttemptCount(session.attempt_count ?? 0);
+      setHelpPolicy(session.policy ?? null);
       // The server already holds exactly this, so autosave must not PATCH it
       // straight back — see lastSavedPayloadRef.
       lastSavedPayloadRef.current = serializeSessionPayload({
@@ -309,6 +344,9 @@ export function AIChat({
         topic: session.topic,
         messages: session.messages,
         lesson_plan: session.lesson_plan,
+        mode: restoredMode,
+        hint_level: session.hint_level ?? 0,
+        attempt_count: session.attempt_count ?? 0,
       });
       window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, session.id);
       return session;
@@ -339,6 +377,11 @@ export function AIChat({
         topic: currentLessonPlan?.topic ?? "",
         messages,
         lesson_plan: currentLessonPlan,
+        // Режим и состояние лестницы — часть сессии: без них возобновлённый
+        // разговор терял бы правила и начинал подсказки с первой ступени.
+        mode: tutorMode,
+        hint_level: hintLevel,
+        attempt_count: attemptCount,
       };
       // Nothing actually changed since the last successful save — skip the
       // round trip. Messages carry whole BoardData objects, so a redundant
@@ -372,7 +415,14 @@ export function AIChat({
       }
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [messages, currentLessonPlan, currentSessionId]);
+  }, [
+    messages,
+    currentLessonPlan,
+    currentSessionId,
+    tutorMode,
+    hintLevel,
+    attemptCount,
+  ]);
 
   const refreshHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -530,7 +580,10 @@ export function AIChat({
 
   // `overrideText` — ответ, выбранный кликом по варианту уточняющего вопроса:
   // он не проходит через поле ввода, но в остальном это обычное сообщение.
-  const sendMessage = async (overrideText?: string) => {
+  const sendMessage = async (
+    overrideText?: string,
+    { requestHint = false }: { requestHint?: boolean } = {},
+  ) => {
     const text = (overrideText ?? inputValue).trim();
     if (!text || isLoading || !hasChatAccess) return;
 
@@ -543,6 +596,12 @@ export function AIChat({
     setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
     setIsLoading(true);
+
+    // Попытка — это обычное сообщение ученика. Просьба о подсказке попыткой не
+    // является, иначе «подскажи» дважды открывало бы готовое решение в режиме,
+    // который требует двух самостоятельных попыток.
+    const attemptsForRequest = requestHint ? attemptCount : attemptCount + 1;
+    if (!requestHint) setAttemptCount(attemptsForRequest);
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -582,6 +641,11 @@ export function AIChat({
         body: JSON.stringify({
           message: text,
           history,
+          // Режим — пожелание клиента; сервер его валидирует и сам решает права.
+          mode: tutorMode,
+          hint_level: hintLevel,
+          attempts: attemptsForRequest,
+          ...(requestHint && { request_hint: true }),
           style: generationStyle,
           palette: generationPalette,
           // Картинки не ждём: доска с текстом и подписями приходит за ~18с,
@@ -612,6 +676,26 @@ export function AIChat({
               ? "Модель долго отвечает. Попробуйте упростить запрос или повторить."
               : `Сервер вернул ${res.status}. Возможно, модель перегружена — попробуйте ещё раз.`)
         );
+      }
+
+      // Права всегда берём из ответа: политика могла ужесточиться (сменился
+      // режим, кончилась лестница), и держать свою копию правил на клиенте
+      // значило бы рисовать кнопку подсказки, которой сервер уже откажет.
+      if (data.policy) setHelpPolicy(data.policy as HelpPolicySnapshot);
+      if (typeof data.hint_level === "number") setHintLevel(data.hint_level);
+
+      // Отказ по политике — нормальная реплика тьютора, а не ошибка: доски и
+      // разбора в нём нет, поэтому дальше по обработке идти незачем.
+      if (data.policy_blocked) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: data.reply || "Сейчас эта помощь недоступна.",
+          },
+        ]);
+        return;
       }
 
       // The AI may return structured "lesson board" data (board_steps with
@@ -728,6 +812,12 @@ export function AIChat({
     setCurrentSessionId(null);
     lastSavedPayloadRef.current = null;
     window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    // Новый разговор — новая лестница и новый счёт попыток. Режим оставляем:
+    // ученик только что его выбрал, и сбрасывать этот выбор на «Новый чат»
+    // означало бы молча менять правила занятия.
+    setHintLevel(0);
+    setAttemptCount(0);
+    setHelpPolicy(null);
     // Invalidates any load still in flight, so a slow restore can't
     // resurrect the chat the user just cleared.
     sessionEpochRef.current += 1;
@@ -781,15 +871,67 @@ export function AIChat({
     <div
       className={`flex h-full min-h-0 flex-col bg-[#f8f6f2] text-[#37322c] ${className ?? ""}`}
     >
-      {/* ── Compact header: chat is the only workspace mode. ── */}
+      {/* ── Compact header: режим тьютора + история. ── */}
       <div className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#dedbd4] bg-[#fbfaf7] px-3.5">
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <h2 className="font-serif text-[14px] font-semibold tracking-[-0.015em] text-[#37322c]">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h2 className="shrink-0 font-serif text-[14px] font-semibold tracking-[-0.015em] text-[#37322c]">
             AI тьютор
           </h2>
-          <span className="truncate text-[10px] text-[#a09a91]">
-            · Научная доска
-          </span>
+          {/* Переключатель режима (§5.2). Правила режима применяет сервер —
+              здесь только выбор, поэтому кнопка ничего не «включает» локально. */}
+          <Popover open={modePickerOpen} onOpenChange={setModePickerOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                title="Режим занятия"
+                className="flex min-w-0 items-center gap-1 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2 py-[3px] text-[10px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#d3cdc2] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+              >
+                <span className="truncate">{tutorModeTitle(tutorMode)}</span>
+                <ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-64 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+            >
+              <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+                Режим занятия
+              </div>
+              <div className="py-1">
+                {PRIMARY_TUTOR_MODES.map((option) => (
+                  <button
+                    key={option.slug}
+                    type="button"
+                    onClick={() => {
+                      // Смена режима начинает лестницу помощи заново: ступени,
+                      // полученные по прежним правилам, к новым не относятся.
+                      if (option.slug !== tutorMode) {
+                        setTutorMode(option.slug);
+                        setHintLevel(0);
+                        setHelpPolicy(null);
+                      }
+                      setModePickerOpen(false);
+                    }}
+                    className={`block w-full px-3 py-2 text-left transition-colors hover:bg-[#f1ede6] ${
+                      option.slug === tutorMode ? "bg-[#f4f0e9]" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-medium text-[#37322c]">
+                        {option.title}
+                      </span>
+                      {option.slug === tutorMode && (
+                        <Check className="h-3 w-3 text-[#8a7a5e]" />
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[10px] leading-snug text-[#8f887f]">
+                      {option.goal}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="flex items-center gap-0.5 text-[#918b82]">
           {messages.length > 0 && (
@@ -849,8 +991,17 @@ export function AIChat({
                         <div className="truncate text-[12px] font-medium text-[#4a433b]">
                           {item.title || "Новый чат"}
                         </div>
-                        <div className="mt-0.5 text-[10px] text-[#a39c93]">
-                          {formatSessionDate(item.updated_at)}
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[#a39c93]">
+                          <span>{formatSessionDate(item.updated_at)}</span>
+                          {/* Бейдж режима: по нему видно, чем была сессия —
+                              объяснением темы или контестом. Сессии, сохранённые
+                              до появления режимов, приходят с пустым `mode`, и
+                              бейджа у них просто нет. */}
+                          {tutorModeTitle(item.mode) && (
+                            <span className="rounded-full bg-[#efece5] px-1.5 py-[1px] text-[9px] text-[#8b8479]">
+                              {tutorModeTitle(item.mode)}
+                            </span>
+                          )}
                         </div>
                       </button>
                       {confirmDeleteId === item.id ? (
@@ -1104,6 +1255,29 @@ export function AIChat({
           {hasChatAccess && (
           <div className="shrink-0 px-3 pb-1">
             <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
+              {/* Лестница помощи (§5.5). Кнопка появляется, только если сервер
+                  прислал политику, где подсказки разрешены: гадать о правах на
+                  клиенте нельзя, а показывать кнопку, которой откажут, — обман.
+                  Ступень выдаёт backend, здесь лишь отображается прогресс. */}
+              {helpPolicy?.hints_allowed && (
+                <button
+                  type="button"
+                  onClick={() => sendMessage("Подскажи", { requestHint: true })}
+                  disabled={isLoading || hintLevel >= helpPolicy.max_hint_level}
+                  title={
+                    hintLevel >= helpPolicy.max_hint_level
+                      ? "Подсказки на этом этапе закончились"
+                      : "Следующая подсказка"
+                  }
+                  className="flex shrink-0 items-center gap-1 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] px-3 py-1.5 font-serif text-[12px] text-[#7e776e] transition-colors hover:border-[#c5a474] hover:text-[#6f481c] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#d9d4cc] disabled:hover:text-[#7e776e]"
+                >
+                  <Lightbulb className="h-3 w-3 shrink-0" />
+                  Подсказка
+                  <span className="tabular-nums opacity-60">
+                    {hintLevel}/{helpPolicy.max_hint_level}
+                  </span>
+                </button>
+              )}
               {[
                 "Объясни проще",
                 "Дай задачу",
