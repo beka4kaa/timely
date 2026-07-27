@@ -7,6 +7,7 @@ question, and builds the final ``LessonPlan`` deterministically.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -22,6 +23,17 @@ from .skills.clarify import _is_other_option
 from .text_llm import TextModel
 
 logger = logging.getLogger(__name__)
+
+# httpx's per-call `timeout` is a per-chunk *read idle* timeout, not a wall-clock
+# deadline: a provider that trickles keep-alive bytes while a reasoning model
+# "thinks" resets that idle timer on every chunk, so the call can run far past
+# the intended timeout (observed: ~20s configured, ~120s actual before an
+# unrelated infra boundary killed it). This intake step is meant to be a fast,
+# interactive wait, so it gets its own hard wall-clock deadline via a background
+# thread instead of trusting the HTTP client's timeout alone.
+_PLANNING_MODEL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="planning-intake-model"
+)
 
 SESSION_SALT = "timely.planning-intake.v1"
 SESSION_MAX_AGE_SECONDS = 2 * 60 * 60
@@ -357,9 +369,12 @@ def _ask_model(
     model_name = str(
         getattr(settings, "PLANNING_MODEL", "deepseek/deepseek-v4-flash")
     )
-    timeout = int(getattr(settings, "PLANNING_TIMEOUT", 20))
+    timeout = max(3, min(int(getattr(settings, "PLANNING_TIMEOUT", 20)), 60))
     max_tokens = int(getattr(settings, "PLANNING_MAX_TOKENS", 700))
-    response = TextModel(model=model_name, temperature=0.2).generate_json_content(
+    model = TextModel(model=model_name, temperature=0.2)
+
+    future = _PLANNING_MODEL_EXECUTOR.submit(
+        model.generate_json_content,
         system_prompt=_planner_system_prompt(),
         payload={
             "type": "planning_intake_context",
@@ -367,7 +382,7 @@ def _ask_model(
             "asked_question_ids": asked_ids,
             "questions_remaining": max(0, _max_questions() - len(asked_ids)),
         },
-        timeout=max(3, min(timeout, 60)),
+        timeout=timeout,
         max_tokens=max(200, min(max_tokens, 1200)),
         reasoning_enabled=_setting_bool("PLANNING_REASONING_ENABLED", True),
         reasoning_effort=str(
@@ -376,6 +391,11 @@ def _ask_model(
         or None,
         feature="planning_intake",
     )
+    # A grace window on top of the client's own `timeout` for the normal path
+    # to fire first; this is the hard backstop when it doesn't (see module
+    # docstring above _PLANNING_MODEL_EXECUTOR). The abandoned call keeps
+    # running in its thread until the provider connection eventually closes.
+    response = future.result(timeout=timeout + 5)
     parsed = _parse_json_object(response.text)
     return _validate_question(parsed, answers=answers, asked_ids=asked_ids), model_name
 
