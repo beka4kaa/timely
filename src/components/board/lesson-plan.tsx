@@ -82,27 +82,22 @@ const LEVEL_OPTIONS: Array<{ value: LessonLevel; label: string }> = [
 
 const DURATION_OPTIONS = [20, 35, 50] as const;
 
-const RESULT_OPTIONS: Array<{
-  value: LessonResultType;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "understand",
-    label: "Понять",
-    description: "Объяснение и наглядная схема",
-  },
-  {
-    value: "solve_problem",
-    label: "Решить задачу",
-    description: "Конкретное условие и полный ход",
-  },
-  {
-    value: "prepare",
-    label: "Подготовиться",
-    description: "Карта темы и проверка",
-  },
-];
+// The board result type is not a second question — it is the same axis as the
+// goal, so it is derived rather than asked. The finer "what exactly to do on
+// the board" nuance is covered by the adaptive question on the next step.
+const GOAL_TO_RESULT_TYPE: Record<LessonGoal, LessonResultType> = {
+  understand: "understand",
+  solve: "solve_problem",
+  prepare: "prepare",
+};
+
+// Kept only for labelling the derived value in the planning summary — the
+// backend still returns a `result_type` field.
+const RESULT_TYPE_LABELS: Record<LessonResultType, string> = {
+  understand: "Понять",
+  solve_problem: "Решить задачу",
+  prepare: "Подготовиться",
+};
 
 function taskTemplates(input: PlanningInput) {
   const commonStart = {
@@ -371,8 +366,7 @@ export function buildLocalPlanningSummary(input: {
     GOAL_OPTIONS.find((option) => option.value === input.goal)?.label ??
     GOAL_OPTIONS[0].label;
   const resultLabel =
-    RESULT_OPTIONS.find((option) => option.value === input.resultType)?.label ??
-    RESULT_OPTIONS[0].label;
+    RESULT_TYPE_LABELS[input.resultType] ?? RESULT_TYPE_LABELS.understand;
   const levelLabel =
     LEVEL_OPTIONS.find((option) => option.value === input.level)?.label ??
     LEVEL_OPTIONS[1].label;
@@ -491,7 +485,6 @@ export function LessonPlanningForm({
 }) {
   const [topic, setTopic] = useState("");
   const [goal, setGoal] = useState<LessonGoal | null>(null);
-  const [resultType, setResultType] = useState<LessonResultType | null>(null);
   const [level, setLevel] = useState<LessonLevel | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [screen, setScreen] = useState<IntakeScreen>("topic");
@@ -512,6 +505,11 @@ export function LessonPlanningForm({
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const requestCounterRef = useRef(0);
+
+  // Derived, not stored: keeping it as separate state allowed goal and
+  // resultType to disagree (e.g. goal=understand + result=solve_problem),
+  // which downstream code resolved inconsistently.
+  const resultType = goal ? GOAL_TO_RESULT_TYPE[goal] : null;
 
   const emitEvent = useCallback(
     (label: string, value: string) => {
@@ -617,25 +615,20 @@ export function LessonPlanningForm({
     setPopoverState("question");
   };
 
-  const chooseResultType = (
-    selectedGoal: LessonGoal,
-    nextResultType: LessonResultType,
-  ) => {
+  const chooseGoal = (selectedGoal: LessonGoal) => {
     if (selectedChoiceId) return;
-    setResultType(nextResultType);
-    setSelectedChoiceId(`result:${nextResultType}`);
+    setGoal(selectedGoal);
+    setSelectedChoiceId(`goal:${selectedGoal}`);
     emitEvent(
       "Цель",
       GOAL_OPTIONS.find((option) => option.value === selectedGoal)?.label ??
         selectedGoal,
     );
-    emitEvent(
-      "На доске",
-      RESULT_OPTIONS.find((option) => option.value === nextResultType)?.label ??
-        nextResultType,
-    );
     window.setTimeout(() => {
-      void loadAdaptiveQuestion(selectedGoal, nextResultType);
+      void loadAdaptiveQuestion(
+        selectedGoal,
+        GOAL_TO_RESULT_TYPE[selectedGoal],
+      );
     }, 140);
   };
 
@@ -784,7 +777,7 @@ export function LessonPlanningForm({
           screen === "topic"
             ? "Одна тема или конкретная задача — без длинного описания."
             : screen === "intent"
-              ? "Два связанных выбора помогут сразу настроить доску."
+              ? "Выбери, к какому результату идём — доска настроится под него."
               : screen === "context"
                 ? "Можно выбрать ориентировочно — план останется гибким."
                 : screen === "summary"
@@ -822,57 +815,22 @@ export function LessonPlanningForm({
         )}
 
         {screen === "intent" && (
-          <div className="space-y-3.5">
-            <fieldset>
-              <legend className="mb-1.5 text-[10px] font-medium text-[#756e66]">
-                Цель
-              </legend>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(100px,1fr))] gap-1.5">
-                {GOAL_OPTIONS.map((option) => (
-                  <ChoiceCard
-                    key={option.value}
-                    option={option}
-                    selected={goal === option.value}
-                    compact
-                    onClick={() => {
-                      setGoal(option.value);
-                      setResultType(null);
-                      setSelectedChoiceId("");
-                    }}
-                  />
-                ))}
-              </div>
-            </fieldset>
-
-            <fieldset
-              className={`transition-opacity duration-150 ${
-                goal ? "opacity-100" : "pointer-events-none opacity-35"
-              }`}
-            >
-              <legend className="mb-1.5 text-[10px] font-medium text-[#756e66]">
-                Что именно сделать на доске?
-              </legend>
-              <div className="grid gap-1.5">
-                {RESULT_OPTIONS.map((option) => (
-                  <ChoiceCard
-                    key={option.value}
-                    option={option}
-                    selected={
-                      selectedChoiceId === `result:${option.value}` ||
-                      resultType === option.value
-                    }
-                    disabled={
-                      Boolean(selectedChoiceId) &&
-                      selectedChoiceId !== `result:${option.value}`
-                    }
-                    compact
-                    onClick={() => {
-                      if (goal) chooseResultType(goal, option.value);
-                    }}
-                  />
-                ))}
-              </div>
-            </fieldset>
+          <div className="grid gap-1.5">
+            {GOAL_OPTIONS.map((option) => (
+              <ChoiceCard
+                key={option.value}
+                option={option}
+                selected={
+                  selectedChoiceId === `goal:${option.value}` ||
+                  goal === option.value
+                }
+                disabled={
+                  Boolean(selectedChoiceId) &&
+                  selectedChoiceId !== `goal:${option.value}`
+                }
+                onClick={() => chooseGoal(option.value)}
+              />
+            ))}
           </div>
         )}
 
@@ -992,7 +950,6 @@ export function LessonPlanningForm({
               {[
                 ["Тема", summary.topic],
                 ["Цель", summary.goal],
-                ["На доске", summary.result_type],
                 ["Фокус", summary.focus],
                 [
                   "Формат",
@@ -1218,13 +1175,6 @@ export function LessonPlanDetailsDialog({
             <Clock3 className="h-3 w-3" />
             {plan.durationMinutes} мин
           </span>
-          {plan.resultType && (
-            <span className="rounded-full border border-[#ddd8cf] bg-white/60 px-2.5 py-1.5">
-              {RESULT_OPTIONS.find(
-                (option) => option.value === plan.resultType,
-              )?.label ?? plan.resultType}
-            </span>
-          )}
         </div>
 
         <p className="mt-3 text-[12px] leading-relaxed text-[#817a71]">
