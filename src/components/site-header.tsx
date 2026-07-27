@@ -123,35 +123,30 @@ export function SiteHeader() {
   const hasTimerStarted = elapsedSeconds > 0 || isTimerRunning;
 
   return (
-    <header className="fixed inset-x-0 top-0 z-[90] flex h-16 items-center border-b border-[#dedbd4] bg-[#fbfaf7]/95 px-3 text-[#2f2c28] backdrop-blur-xl md:px-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <header className="fixed inset-x-0 top-0 z-[90] flex h-12 items-center border-b border-[#dedbd4] bg-[#fbfaf7]/95 px-2.5 text-[#2f2c28] backdrop-blur-xl md:px-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <Link
           href="/dashboard/diary"
-          className="flex shrink-0 items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+          className="flex shrink-0 items-center gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
         >
           <Image
             src="/logo.svg"
             alt="Timely"
-            width={28}
-            height={28}
+            width={24}
+            height={24}
             priority
             className="shrink-0"
           />
-          <span className="hidden h-8 w-px bg-[#d8d4cc] sm:block" />
+          <span className="hidden h-6 w-px bg-[#d8d4cc] sm:block" />
         </Link>
 
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <span className="font-serif text-[16px] font-semibold tracking-[-0.02em] text-[#8a5b24]">
-              Timely
-            </span>
-            <span className="hidden truncate font-serif text-[15px] text-[#34302b] sm:inline">
-              {meta.title}
-            </span>
-          </div>
-          <p className="hidden truncate text-[11px] text-[#9a958c] sm:block">
-            {meta.subtitle}
-          </p>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="font-serif text-[15px] font-semibold tracking-[-0.02em] text-[#8a5b24]">
+            Timely
+          </span>
+          <span className="hidden truncate font-serif text-[14px] text-[#34302b] sm:inline">
+            {meta.title}
+          </span>
         </div>
       </div>
 
@@ -219,7 +214,7 @@ export function SiteHeader() {
                   ? "Продолжить таймер"
                   : "Начать таймер"
             }
-            className={`flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+            className={`flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
               isTimerRunning
                 ? "border-[#c99a5a] bg-[#fff8eb] text-[#83561f]"
                 : "border-[#ddd9d1] bg-white/70 text-[#746f67] hover:border-[#c9c3b9] hover:bg-white"
@@ -247,7 +242,7 @@ export function SiteHeader() {
               }}
               aria-label="Сбросить таймер"
               title="Сбросить таймер"
-              className="-ml-1 grid h-9 w-8 place-items-center rounded-r-full text-[#9a9389] outline-none transition-colors hover:text-[#4c453d] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+              className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-[#9a9389] outline-none transition-colors hover:text-[#4c453d] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
             >
               <RotateCcw className="h-3.5 w-3.5" />
             </button>

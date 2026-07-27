@@ -59,7 +59,7 @@ export default function DashboardLayout({
       >
           <SiteHeader />
           <AppSidebar />
-          <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-16 z-0 overflow-auto md:left-[58px]">
+          <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-0 overflow-auto md:left-[58px]">
             {children}
           </main>
         </div>

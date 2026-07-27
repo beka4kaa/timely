@@ -81,6 +81,14 @@ const LEVEL_OPTIONS: Array<{ value: LessonLevel; label: string }> = [
 ];
 
 const DURATION_OPTIONS = [20, 35, 50] as const;
+const MIN_CUSTOM_DURATION = 5;
+const MAX_CUSTOM_DURATION = 180;
+
+function isPresetDuration(
+  value: number | null,
+): value is (typeof DURATION_OPTIONS)[number] {
+  return value !== null && (DURATION_OPTIONS as readonly number[]).includes(value);
+}
 
 // The board result type is not a second question — it is the same axis as the
 // goal, so it is derived rather than asked. The finer "what exactly to do on
@@ -504,6 +512,8 @@ export function LessonPlanningForm({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [customDurationOpen, setCustomDurationOpen] = useState(false);
+  const [customDurationValue, setCustomDurationValue] = useState("");
   const requestCounterRef = useRef(0);
 
   // Derived, not stored: keeping it as separate state allowed goal and
@@ -918,7 +928,10 @@ export function LessonPlanningForm({
                   <button
                     key={duration}
                     type="button"
-                    onClick={() => setDurationMinutes(duration)}
+                    onClick={() => {
+                      setDurationMinutes(duration);
+                      setCustomDurationOpen(false);
+                    }}
                     aria-pressed={durationMinutes === duration}
                     className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 ${
                       durationMinutes === duration
@@ -929,7 +942,67 @@ export function LessonPlanningForm({
                     {duration} мин
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomDurationValue(
+                      !isPresetDuration(durationMinutes) && durationMinutes
+                        ? String(durationMinutes)
+                        : "",
+                    );
+                    setCustomDurationOpen(true);
+                  }}
+                  aria-pressed={!isPresetDuration(durationMinutes) && durationMinutes !== null}
+                  className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 ${
+                    !isPresetDuration(durationMinutes) && durationMinutes !== null
+                      ? "border-[#b9803b] bg-[#fff8ec] text-[#80521d]"
+                      : "border-dashed border-[#d5cfc6] bg-white/62 text-[#837c73] hover:bg-white"
+                  }`}
+                >
+                  {!isPresetDuration(durationMinutes) && durationMinutes !== null
+                    ? `${durationMinutes} мин`
+                    : "Своё число"}
+                </button>
               </div>
+
+              {customDurationOpen && (
+                <form
+                  className="mt-1.5 flex gap-1.5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const parsed = Math.round(Number(customDurationValue));
+                    if (
+                      !Number.isFinite(parsed) ||
+                      parsed < MIN_CUSTOM_DURATION ||
+                      parsed > MAX_CUSTOM_DURATION
+                    ) {
+                      return;
+                    }
+                    setDurationMinutes(parsed);
+                    setCustomDurationOpen(false);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_CUSTOM_DURATION}
+                    max={MAX_CUSTOM_DURATION}
+                    value={customDurationValue}
+                    onChange={(event) => setCustomDurationValue(event.target.value)}
+                    placeholder={`${MIN_CUSTOM_DURATION}–${MAX_CUSTOM_DURATION} мин`}
+                    className="h-9 min-w-0 flex-1 rounded-[11px] border border-[#d8d2c9] bg-white/75 px-3 font-serif text-[12px] outline-none placeholder:text-[#aaa49b] focus:border-[#b98545]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!customDurationValue.trim()}
+                    aria-label="Сохранить время"
+                    className="grid h-9 w-9 place-items-center rounded-[11px] bg-[#302d2a] text-white disabled:bg-[#ded9d1] disabled:text-[#aaa49b]"
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </form>
+              )}
             </fieldset>
 
             <button

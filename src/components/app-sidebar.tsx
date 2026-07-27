@@ -43,7 +43,7 @@ export function AppSidebar() {
   const initials = userName.slice(0, 2).toUpperCase();
 
   return (
-    <aside className="fixed bottom-0 left-0 top-16 z-[70] hidden w-[58px] flex-col items-center border-r border-[#dedbd4] bg-[#fbfaf7] py-2 md:flex">
+    <aside className="fixed bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-[#dedbd4] bg-[#fbfaf7] py-2 md:flex">
       <TooltipProvider delayDuration={120}>
         <nav
           aria-label="Разделы Timely"
