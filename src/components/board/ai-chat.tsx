@@ -240,6 +240,9 @@ export function AIChat({
   const [historyError, setHistoryError] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [planningResetKey, setPlanningResetKey] = useState(0);
+  // Set when the user bypasses the lesson-plan intake via "Пропустить" — the
+  // chat opens immediately with no plan, and no plan is ever sent as context.
+  const [planningSkipped, setPlanningSkipped] = useState(false);
   // Дефолтная палитра — natural-earth: естественные/географические тона.
   // Раньше дефолт был he_inspired (медицинский H&E), из-за чего гео-схемы
   // генерились в красно-«мясных» оттенках.
@@ -256,6 +259,7 @@ export function AIChat({
       ? internalActiveTaskIndex
       : activeLessonTaskIndex;
   const currentLessonTask = currentLessonPlan?.tasks[currentTaskIndex] ?? null;
+  const hasChatAccess = Boolean(currentLessonPlan) || planningSkipped;
 
   const updateLessonPlan = useCallback(
     (plan: LessonPlan | null) => {
@@ -528,7 +532,7 @@ export function AIChat({
   // он не проходит через поле ввода, но в остальном это обычное сообщение.
   const sendMessage = async (overrideText?: string) => {
     const text = (overrideText ?? inputValue).trim();
-    if (!text || isLoading || !currentLessonPlan) return;
+    if (!text || isLoading || !hasChatAccess) return;
 
     // Add user message
     const userMsg: ChatMessage = {
@@ -585,7 +589,7 @@ export function AIChat({
           defer_images: true,
           lesson_plan: currentLessonPlan,
           active_lesson_task:
-            currentLessonPlan.tasks[currentTaskIndex] ?? null,
+            currentLessonPlan?.tasks[currentTaskIndex] ?? null,
           ...(referenceImageUrl && { reference_image_url: referenceImageUrl }),
           ...(referenceLabels && { reference_labels: referenceLabels }),
         }),
@@ -688,6 +692,7 @@ export function AIChat({
 
       if (
         !clarify &&
+        currentLessonPlan &&
         currentTaskIndex < currentLessonPlan.tasks.length - 1
       ) {
         updateActiveTask(currentTaskIndex + 1);
@@ -715,6 +720,7 @@ export function AIChat({
     setMessages([]);
     setInputValue("");
     setPlanningResetKey((value) => value + 1);
+    setPlanningSkipped(false);
     updateLessonPlan(null);
     updateActiveTask(0);
     // The old conversation stays saved in history; this just stops treating
@@ -758,6 +764,12 @@ export function AIChat({
     setMessages((current) =>
       current.filter((message) => !message.planningEvent),
     );
+  };
+
+  const handleSkipPlanning = () => {
+    resetPlanningEvents();
+    setPlanningSkipped(true);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   const preparePrompt = (prompt: string) => {
@@ -914,7 +926,7 @@ export function AIChat({
 
       {/* ── Messages ── */}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
-        {!currentLessonPlan ? (
+        {!hasChatAccess ? (
           <div className="flex h-full min-h-0 flex-col gap-2">
             {messages
               .filter((message) => message.planningEvent)
@@ -932,6 +944,7 @@ export function AIChat({
               onCreate={handleCreateLessonPlan}
               onPlanningEvent={handlePlanningEvent}
               onResetEvents={resetPlanningEvents}
+              onSkip={handleSkipPlanning}
             />
           </div>
         ) : (
@@ -946,41 +959,45 @@ export function AIChat({
                   </h3>
                   <p className="mt-1 max-w-[310px] text-[11px] leading-relaxed text-[#908a81]">
                     {currentLessonTask?.description ??
-                      "План готов. Задай первый вопрос, и мы пройдём его по шагам."}
+                      (currentLessonPlan
+                        ? "План готов. Задай первый вопрос, и мы пройдём его по шагам."
+                        : "Спрашивай что угодно — план не обязателен.")}
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  {[
-                    [
-                      "Начать этап",
-                      currentLessonTask?.description ??
-                        `Начнём урок по теме «${currentLessonPlan.topic}»`,
-                    ],
-                    [
-                      "Показать на доске",
-                      `Покажи на доске текущий этап «${currentLessonTask?.title ?? currentLessonPlan.topic}»`,
-                    ],
-                    [
-                      "Проверить знания",
-                      `Задай короткий проверочный вопрос по теме «${currentLessonPlan.topic}»`,
-                    ],
-                  ].map(([title, description]) => (
-                    <button
-                      key={title}
-                      type="button"
-                      onClick={() => preparePrompt(description)}
-                      className="block w-full rounded-[12px] border border-[#ddd9d1] bg-white/55 px-3 py-2.5 text-left outline-none transition-colors hover:border-[#c8a877] hover:bg-[#fffaf1] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25"
-                    >
-                      <span className="block font-serif text-[13px] font-semibold text-[#49423a]">
-                        {title}
-                      </span>
-                      <span className="mt-0.5 block text-[11px] leading-relaxed text-[#9b958c]">
-                        {description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                {currentLessonPlan && (
+                  <div className="space-y-1.5">
+                    {[
+                      [
+                        "Начать этап",
+                        currentLessonTask?.description ??
+                          `Начнём урок по теме «${currentLessonPlan.topic}»`,
+                      ],
+                      [
+                        "Показать на доске",
+                        `Покажи на доске текущий этап «${currentLessonTask?.title ?? currentLessonPlan.topic}»`,
+                      ],
+                      [
+                        "Проверить знания",
+                        `Задай короткий проверочный вопрос по теме «${currentLessonPlan.topic}»`,
+                      ],
+                    ].map(([title, description]) => (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => preparePrompt(description)}
+                        className="block w-full rounded-[12px] border border-[#ddd9d1] bg-white/55 px-3 py-2.5 text-left outline-none transition-colors hover:border-[#c8a877] hover:bg-[#fffaf1] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25"
+                      >
+                        <span className="block font-serif text-[13px] font-semibold text-[#49423a]">
+                          {title}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-[#9b958c]">
+                          {description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1093,7 +1110,7 @@ export function AIChat({
         )}
           </div>
 
-          {currentLessonPlan && (
+          {hasChatAccess && (
           <div className="shrink-0 px-3 pb-1">
             <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
               {[
@@ -1116,7 +1133,7 @@ export function AIChat({
           )}
 
           {/* ── Input area ── */}
-          {currentLessonPlan && (
+          {hasChatAccess && (
           <div
             className="shrink-0 px-3 pt-2"
             style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
