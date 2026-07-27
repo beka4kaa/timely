@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache, ChatSession
 from mind.models import Subject, Topic
 
 # Try to import StudySession (may not exist if migration not applied)
@@ -95,3 +95,32 @@ class AiMemorySerializer(serializers.ModelSerializer):
     class Meta:
         model = AiMemory
         fields = '__all__'
+
+
+class ChatSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatSession
+        fields = ['id', 'user_email', 'title', 'topic', 'messages', 'lesson_plan', 'created_at', 'updated_at']
+        read_only_fields = ['user_email', 'created_at', 'updated_at']
+
+    def validate_messages(self, value):
+        """`messages` is a free-form JSONField written straight from the
+        client; the frontend always sends the chat array, and anything else
+        would break loadChatSession()'s setMessages()."""
+        if not isinstance(value, list):
+            raise serializers.ValidationError('messages must be a list')
+        return value
+
+    def validate_lesson_plan(self, value):
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError('lesson_plan must be an object or null')
+        return value
+
+
+class ChatSessionListSerializer(serializers.ModelSerializer):
+    """Lightweight variant for the history list: omits `messages` so listing
+    many saved chats doesn't ship every message body over the wire."""
+
+    class Meta:
+        model = ChatSession
+        fields = ['id', 'title', 'topic', 'created_at', 'updated_at']

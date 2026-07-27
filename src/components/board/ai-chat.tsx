@@ -10,9 +10,12 @@ import React, {
 import {
   ArrowUp,
   Check,
+  History,
   Loader2,
   PanelRightClose,
   Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LessonFlow, type BoardData } from "./AITutorBoard";
@@ -22,6 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StyleSelectorDropdown, PaletteSelectorDropdown } from "./style-controls/StyleSelectors";
 import {
   useWhiteboardStore,
@@ -42,6 +46,15 @@ import {
   AIUsageIndicator,
   type AIUsageSummary,
 } from "./usage-tracker";
+import {
+  createChatSession,
+  deleteChatSession,
+  getChatSession,
+  listChatSessions,
+  updateChatSession,
+  type ChatSessionDetail,
+  type ChatSessionSummary,
+} from "./chat-sessions-api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,6 +115,41 @@ export interface AIChatProps {
 }
 
 const ESTIMATED_CONTEXT_TOKEN_LIMIT = 128_000;
+const ACTIVE_SESSION_STORAGE_KEY = "timely:whiteboard-active-chat-session:v1";
+
+/** Falls back to the first user message when there's no lesson topic yet
+ * (e.g. autosave firing before the planning wizard finished). */
+function deriveSessionTitle(
+  plan: LessonPlan | null,
+  messages: ChatMessage[],
+): string {
+  if (plan?.topic) return plan.topic;
+  const firstUserMessage = messages.find((m) => m.role === "user")?.content.trim();
+  if (!firstUserMessage) return "Новый чат";
+  return firstUserMessage.length > 60
+    ? `${firstUserMessage.slice(0, 60)}…`
+    : firstUserMessage;
+}
+
+/** Stable serialization of everything autosave writes, used to tell an
+ * actual change from a re-render that produced identical content. */
+function serializeSessionPayload(input: {
+  title: string;
+  topic: string;
+  messages: ChatMessage[];
+  lesson_plan: LessonPlan | null;
+}): string {
+  return JSON.stringify(input);
+}
+
+function formatSessionDate(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 /**
  * Сохраняет вручную расставленные подписи при доезде растра.
@@ -170,6 +218,27 @@ export function AIChat({
   const [internalLessonPlan, setInternalLessonPlan] =
     useState<LessonPlan | null>(null);
   const [internalActiveTaskIndex, setInternalActiveTaskIndex] = useState(0);
+  // Saved-chat-history bookkeeping: null until the first message creates a
+  // session, then every later change PATCHes the same row.
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const hasRestoredSessionRef = useRef(false);
+  const sessionCreateInFlightRef = useRef(false);
+  // Serialized copy of what the server already holds. Autosave compares
+  // against it and skips a no-op request — otherwise loading a chat from
+  // history would immediately PATCH it straight back, and messages carry
+  // whole BoardData payloads.
+  const lastSavedPayloadRef = useRef<string | null>(null);
+  // Mirrors `messages` for the restore race: the mount-restore request must
+  // not overwrite a conversation the user started while it was in flight.
+  const messagesRef = useRef<ChatMessage[]>([]);
+  // Bumped whenever the active chat is replaced or cleared; a load whose
+  // epoch is stale by the time it resolves drops its result on the floor.
+  const sessionEpochRef = useRef(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<ChatSessionSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [planningResetKey, setPlanningResetKey] = useState(0);
   // Дефолтная палитра — natural-earth: естественные/географические тона.
   // Раньше дефолт был he_inspired (медицинский H&E), из-за чего гео-схемы
@@ -203,6 +272,145 @@ export function AIChat({
     },
     [onActiveLessonTaskChange],
   );
+
+  // Keeps messagesRef in step with the rendered conversation.
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  /** Loads a saved chat into view — used both by mount-restore and by the
+   * history picker. Replaces whatever's currently on screen, unless
+   * `skipIfDirty` is set and the user has meanwhile started typing into a
+   * conversation of their own. Returns null when the load was skipped. */
+  const loadChatSession = useCallback(
+    async (
+      id: string,
+      { skipIfDirty = false }: { skipIfDirty?: boolean } = {},
+    ): Promise<ChatSessionDetail | null> => {
+      const epoch = ++sessionEpochRef.current;
+      const session = await getChatSession(id);
+      // Both checks happen AFTER the await: the whole point is the request
+      // being slow. A newer load (or clearChat) wins over this one, and a
+      // restore never overwrites messages the user typed meanwhile.
+      if (epoch !== sessionEpochRef.current) return null;
+      if (skipIfDirty && messagesRef.current.length > 0) return null;
+      setMessages(session.messages);
+      updateLessonPlan(session.lesson_plan);
+      updateActiveTask(0);
+      setCurrentSessionId(session.id);
+      // The server already holds exactly this, so autosave must not PATCH it
+      // straight back — see lastSavedPayloadRef.
+      lastSavedPayloadRef.current = serializeSessionPayload({
+        title: session.title,
+        topic: session.topic,
+        messages: session.messages,
+        lesson_plan: session.lesson_plan,
+      });
+      window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, session.id);
+      return session;
+    },
+    [updateLessonPlan, updateActiveTask],
+  );
+
+  // Resume the last active chat on mount, so a refresh/relogin doesn't lose
+  // the conversation. Runs once; a stale/deleted id is dropped silently.
+  useEffect(() => {
+    if (hasRestoredSessionRef.current) return;
+    hasRestoredSessionRef.current = true;
+    const savedId = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!savedId) return;
+    loadChatSession(savedId, { skipIfDirty: true }).catch(() => {
+      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    });
+  }, [loadChatSession]);
+
+  // Best-effort autosave: debounced so a burst of streaming updates doesn't
+  // fire a request per keystroke-equivalent. Creates the session on the
+  // first message, then PATCHes the same row as the conversation grows.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const payload = {
+        title: deriveSessionTitle(currentLessonPlan, messages),
+        topic: currentLessonPlan?.topic ?? "",
+        messages,
+        lesson_plan: currentLessonPlan,
+      };
+      // Nothing actually changed since the last successful save — skip the
+      // round trip. Messages carry whole BoardData objects, so a redundant
+      // save is not cheap.
+      const serialized = serializeSessionPayload(payload);
+      if (serialized === lastSavedPayloadRef.current) return;
+
+      if (!currentSessionId) {
+        if (sessionCreateInFlightRef.current) return;
+        sessionCreateInFlightRef.current = true;
+        createChatSession({ id: crypto.randomUUID(), ...payload })
+          .then((created) => {
+            lastSavedPayloadRef.current = serialized;
+            setCurrentSessionId(created.id);
+            window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, created.id);
+          })
+          .catch(() => {
+            // Best-effort: the ref stays put, so the next edit retries.
+          })
+          .finally(() => {
+            sessionCreateInFlightRef.current = false;
+          });
+      } else {
+        updateChatSession(currentSessionId, payload)
+          .then(() => {
+            lastSavedPayloadRef.current = serialized;
+          })
+          .catch(() => {
+            // Best-effort: the ref stays put, so the next edit retries.
+          });
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [messages, currentLessonPlan, currentSessionId]);
+
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      setHistoryItems(await listChatSessions());
+    } catch {
+      setHistoryError("Не удалось загрузить историю чатов");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const handleHistoryOpenChange = (open: boolean) => {
+    setHistoryOpen(open);
+    setConfirmDeleteId(null);
+    if (open) void refreshHistory();
+  };
+
+  const handleSelectHistorySession = async (id: string) => {
+    if (id === currentSessionId) {
+      setHistoryOpen(false);
+      return;
+    }
+    try {
+      await loadChatSession(id);
+      setHistoryOpen(false);
+    } catch {
+      setHistoryError("Не удалось открыть этот чат");
+    }
+  };
+
+  const handleDeleteHistorySession = async (id: string) => {
+    try {
+      await deleteChatSession(id);
+      setHistoryItems((current) => current.filter((item) => item.id !== id));
+      setConfirmDeleteId(null);
+      if (id === currentSessionId) clearChat();
+    } catch {
+      setHistoryError("Не удалось удалить чат");
+    }
+  };
 
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
@@ -509,6 +717,14 @@ export function AIChat({
     setPlanningResetKey((value) => value + 1);
     updateLessonPlan(null);
     updateActiveTask(0);
+    // The old conversation stays saved in history; this just stops treating
+    // it as the active one so the next message starts a fresh session.
+    setCurrentSessionId(null);
+    lastSavedPayloadRef.current = null;
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    // Invalidates any load still in flight, so a slow restore can't
+    // resurrect the chat the user just cleared.
+    sessionEpochRef.current += 1;
   };
 
   const handleCreateLessonPlan = (plan: LessonPlan) => {
@@ -569,6 +785,99 @@ export function AIChat({
               {messages.filter((message) => message.role === "user").length}
             </span>
           )}
+          <Popover open={historyOpen} onOpenChange={handleHistoryOpenChange}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="История чатов"
+                title="История чатов"
+                className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+              >
+                <History className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-72 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+            >
+              <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+                История чатов
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {historyLoading && (
+                  <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-[#8f887f]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Загружаем…
+                  </div>
+                )}
+                {!historyLoading && historyError && (
+                  <div className="px-3 py-4 text-[12px] text-[#b0473e]">
+                    {historyError}
+                  </div>
+                )}
+                {!historyLoading && !historyError && historyItems.length === 0 && (
+                  <div className="px-3 py-4 text-[12px] text-[#8f887f]">
+                    Пока нет сохранённых чатов
+                  </div>
+                )}
+                {!historyLoading &&
+                  !historyError &&
+                  historyItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`group flex items-start gap-1.5 border-b border-[#efece5] px-3 py-2.5 last:border-b-0 ${
+                        item.id === currentSessionId ? "bg-[#f4f0e9]" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectHistorySession(item.id)}
+                        className="min-w-0 flex-1 text-left outline-none"
+                      >
+                        <div className="truncate text-[12px] font-medium text-[#4a433b]">
+                          {item.title || "Новый чат"}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-[#a39c93]">
+                          {formatSessionDate(item.updated_at)}
+                        </div>
+                      </button>
+                      {confirmDeleteId === item.id ? (
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteHistorySession(item.id)}
+                            aria-label="Подтвердить удаление"
+                            title="Подтвердить удаление"
+                            className="grid h-6 w-6 place-items-center rounded-full text-[#b0473e] outline-none transition-colors hover:bg-[#f6e4e1]"
+                          >
+                            <Check className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            aria-label="Отменить удаление"
+                            title="Отменить удаление"
+                            className="grid h-6 w-6 place-items-center rounded-full text-[#8f887f] outline-none transition-colors hover:bg-[#efece5]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(item.id)}
+                          aria-label="Удалить чат"
+                          title="Удалить чат"
+                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#c2bcb2] opacity-0 outline-none transition-colors hover:bg-[#efece5] hover:text-[#8f887f] focus-visible:opacity-100 group-hover:opacity-100"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           <button
             type="button"
             onClick={clearChat}

@@ -216,3 +216,36 @@ class AIUsageEvent(models.Model):
                 name="ai_usage_feat_created_idx",
             ),
         ]
+
+
+class ChatSession(models.Model):
+    """
+    A saved AI Tutor conversation for the whiteboard.
+
+    id is a client-generated UUID string (same convention as
+    diary.WeeklyTemplate), so the frontend can create-then-PATCH the same
+    session as the conversation grows without a round trip for the id first.
+    `messages` stores the whole client-side message array as-is (same shape
+    the frontend already sends as `history` to /api/ai/chat). `lesson_plan`
+    is the LessonPlan object driving the conversation (topic/goal/tasks) —
+    resuming a chat without it would leave sendMessage() unusable, since the
+    frontend requires an active plan to send further messages. Whiteboard
+    canvas/illustration content is intentionally out of scope for now.
+    """
+    id = models.CharField(primary_key=True, max_length=36)
+    user_email = models.EmailField(db_index=True)
+    title = models.CharField(max_length=255, blank=True, default="")
+    topic = models.CharField(max_length=255, blank=True, default="")
+    messages = models.JSONField(default=list)
+    lesson_plan = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user_email", "updated_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_email} — {self.title or self.id}"
