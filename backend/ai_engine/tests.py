@@ -1595,3 +1595,33 @@ class LessonPlanContextTests(SimpleTestCase):
         ]
         self.assertIn("Текущий этап: Наглядная схема", system_prompt)
         self.assertEqual(result.reply, "Ответ по этапу.")
+
+    def test_router_model_call_has_hard_wall_clock_deadline(self) -> None:
+        """httpx's client-side `timeout` only bounds idle-read gaps, not total
+        wall-clock duration (see router.py's module comment) — a provider
+        that keeps the connection alive without ever erroring can hang the
+        call far past its configured timeout. This confirms the background
+        thread + future.result(timeout=...) backstop actually fires, instead
+        of the caller blocking on a hung call indefinitely."""
+        import time
+        from unittest.mock import patch
+
+        from ai_engine.skills import router
+
+        def _hangs_past_its_own_timeout(**kwargs):
+            time.sleep(2)
+            raise AssertionError("should have been abandoned before returning")
+
+        with patch.object(router, "openrouter_client") as client, patch.object(
+            router, "_ROUTER_MODEL_TIMEOUT", 0.2
+        ), patch.object(router, "_ROUTER_MODEL_GRACE_SECONDS", 0.3):
+            client.chat.completions.create.side_effect = _hangs_past_its_own_timeout
+            started = time.monotonic()
+            with self.assertRaises(TimeoutError) as ctx:
+                router.route_and_run(user_message="Объясни", history=[])
+            elapsed = time.monotonic() - started
+
+        self.assertLess(
+            elapsed, 1.5, "hard deadline did not bound wall-clock time"
+        )
+        self.assertIn("timeout", str(ctx.exception).lower())

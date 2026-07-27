@@ -19,6 +19,7 @@ board-DSL промпт. Замерено на «Что такое произво
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 from typing import Any
@@ -32,6 +33,19 @@ from .chat import CHAT_SYSTEM_PROMPT, ChatSkill
 from .clarify import ClarifySkill
 
 logger = logging.getLogger(__name__)
+
+# httpx's per-call `timeout` only bounds idle time between reads, not total
+# wall-clock duration: a provider trickling keep-alive bytes resets that idle
+# timer on every chunk, so the call can run far past the configured timeout
+# (this exact behavior already took down the planning-intake endpoint — see
+# planning_intake.py's module docstring). This call runs on EVERY chat
+# message, so it gets the same hard wall-clock backstop via a background
+# thread instead of trusting the client's own timeout alone.
+_ROUTER_MODEL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8, thread_name_prefix="chat-router-model"
+)
+_ROUTER_MODEL_TIMEOUT = 60
+_ROUTER_MODEL_GRACE_SECONDS = 10
 
 # Реестр скиллов. Чтобы добавить новый — реализуйте Skill и впишите сюда:
 # роутер сам покажет его модели и сам смаршрутизирует вызов.
@@ -84,17 +98,31 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
-    response = openrouter_client.chat.completions.create(
+    future = _ROUTER_MODEL_EXECUTOR.submit(
+        openrouter_client.chat.completions.create,
         model=OPENROUTER_MODEL,
         messages=messages,
         tools=ROUTABLE_TOOLS,
         max_tokens=1500,
         temperature=0.7,
-        timeout=60,
+        timeout=_ROUTER_MODEL_TIMEOUT,
         # Для маршрутизации и обычного ответа думать нечего — reasoning только
         # жжёт токены и время (замерено: 144 токена/3.9с против 30/2.0с).
         extra_body={"reasoning": {"enabled": False}},
     )
+    hard_deadline = _ROUTER_MODEL_TIMEOUT + _ROUTER_MODEL_GRACE_SECONDS
+    try:
+        # Grace window on top of the client's own `timeout` for the normal
+        # path to fire first; this is the hard backstop when it doesn't (see
+        # module-level comment above). The abandoned call keeps running in
+        # its thread until the provider connection eventually closes.
+        response = future.result(timeout=hard_deadline)
+    except concurrent.futures.TimeoutError as exc:
+        # Message must contain "timeout" — chat_views.error_response() maps
+        # on that substring to a friendly 504 instead of a generic 502.
+        raise TimeoutError(
+            f"Router model call exceeded its {hard_deadline}s hard timeout"
+        ) from exc
     record_model_usage(
         response,
         model=OPENROUTER_MODEL,
