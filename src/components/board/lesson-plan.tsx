@@ -486,10 +486,13 @@ export function LessonPlanningForm({
   onCreate,
   onPlanningEvent,
   onResetEvents,
+  onSkip,
 }: {
   onCreate: (plan: LessonPlan) => void;
   onPlanningEvent?: (event: string) => void;
   onResetEvents?: () => void;
+  /** Always-visible bypass: skips the rest of the intake and opens the plain chat. */
+  onSkip?: () => void;
 }) {
   const [topic, setTopic] = useState("");
   const [goal, setGoal] = useState<LessonGoal | null>(null);
@@ -771,6 +774,7 @@ export function LessonPlanningForm({
         totalSteps={4}
         state={popoverState}
         notice={notice}
+        onSkip={onSkip}
         eyebrow={screen === "summary" ? "План готов" : "Настройка урока"}
         question={
           screen === "topic"

@@ -23,6 +23,8 @@ export interface PlanningQuestionPopoverProps {
   children?: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** Always-visible bypass: skips the rest of the intake and opens the plain chat. */
+  onSkip?: () => void;
 }
 
 export function PlanningProgressDots({
@@ -77,6 +79,7 @@ export function PlanningQuestionPopover({
   children,
   footer,
   className = "",
+  onSkip,
 }: PlanningQuestionPopoverProps) {
   const isLoading = state === "loading";
 
@@ -91,7 +94,18 @@ export function PlanningQuestionPopover({
         <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9b7548]">
           {eyebrow}
         </span>
-        <PlanningProgressDots step={step} totalSteps={totalSteps} />
+        <div className="flex items-center gap-3">
+          <PlanningProgressDots step={step} totalSteps={totalSteps} />
+          {onSkip && (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="whitespace-nowrap text-[10px] font-medium text-[#a49c8f] underline decoration-dotted underline-offset-2 outline-none transition-colors hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+            >
+              Пропустить
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-3">
