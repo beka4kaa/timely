@@ -1,5 +1,7 @@
 from rest_framework import serializers
+from .help_policy import HELP_PROFILES
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache, ChatSession
+from .tutor_modes import get_mode
 from mind.models import Subject, Topic
 
 # Try to import StudySession (may not exist if migration not applied)
@@ -100,8 +102,15 @@ class AiMemorySerializer(serializers.ModelSerializer):
 class ChatSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
-        fields = ['id', 'user_email', 'title', 'topic', 'messages', 'lesson_plan', 'created_at', 'updated_at']
-        read_only_fields = ['user_email', 'created_at', 'updated_at']
+        fields = [
+            'id', 'user_email', 'title', 'topic', 'messages', 'lesson_plan',
+            'mode', 'help_profile', 'policy', 'goal', 'hint_level',
+            'attempt_count', 'status', 'created_at', 'updated_at',
+        ]
+        # `policy` — вычисленные права, а не пожелание: их выдаёт
+        # help_policy.resolve_profile на сервере. Разрешить клиенту писать сюда
+        # значило бы разрешить ему самому включить готовые ответы (§3.3).
+        read_only_fields = ['user_email', 'policy', 'created_at', 'updated_at']
 
     def validate_messages(self, value):
         """`messages` is a free-form JSONField written straight from the
@@ -116,11 +125,29 @@ class ChatSessionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('lesson_plan must be an object or null')
         return value
 
+    def validate_mode(self, value):
+        """Нормализуем slug режима вместо отказа.
+
+        Опечатка в режиме не повод потерять сохранение целого разговора, а
+        `get_mode` уже умеет безопасный фолбэк. Пустая строка сохраняется как
+        есть: это «режим не выбран», то есть поведение по умолчанию.
+        """
+        if not value:
+            return ''
+        return get_mode(value).slug
+
+    def validate_help_profile(self, value):
+        if not value:
+            return ''
+        return value if value in HELP_PROFILES else ''
+
 
 class ChatSessionListSerializer(serializers.ModelSerializer):
     """Lightweight variant for the history list: omits `messages` so listing
     many saved chats doesn't ship every message body over the wire."""
 
     class Meta:
+        # `mode` нужен списку: по нему история показывает, чем была сессия —
+        # объяснением темы или контестом.
         model = ChatSession
-        fields = ['id', 'title', 'topic', 'created_at', 'updated_at']
+        fields = ['id', 'title', 'topic', 'mode', 'status', 'created_at', 'updated_at']

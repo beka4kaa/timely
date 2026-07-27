@@ -25,6 +25,7 @@ from typing import Any
 
 from ..draw_views import style_from_message
 from ..solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL, openrouter_client
+from ..tutor_modes import TutorMode, get_mode
 from ..usage import provider_from_base_url, record_model_usage
 from .base import SkillResult
 from .board import BoardSkill
@@ -44,57 +45,109 @@ SKILLS = {
     )
 }
 
-# ChatSkill в тулы НЕ отдаём: «просто ответить» — это поведение по умолчанию,
-# когда модель не позвала ни одного тула. Отдельный тул для него заставил бы
-# модель делать лишний выбор и стоил бы второго запроса.
-ROUTABLE_TOOLS = [
-    SKILLS["draw_board"].as_tool(),
-    SKILLS["ask_clarification"].as_tool(),
-]
-
 # Сколько последних сообщений даём роутеру для контекста. Больше не нужно:
 # роутер решает намерение, а не пишет диссертацию, и каждое сообщение здесь —
 # это входные токены на КАЖДЫЙ запрос.
 ROUTER_HISTORY_LIMIT = 6
 
 
-def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any) -> SkillResult:
-    """Определить намерение и выполнить подходящий скилл."""
-    history = history or []
+def tools_for_mode(mode: TutorMode) -> list[dict[str, Any]]:
+    """Инструменты, которые видит модель в этом режиме.
 
-    # Команда смены стиля («do sketch», «в 3d», «сделай изометрию») —
-    # маршрутизируем ДЕТЕРМИНИРОВАННО, не спрашивая модель. Промптом её не
-    # уговорить: на «do sketch» GLM отвечал текстом «вот более набросочный
-    # вариант» и тул не звал, то есть картинка не перерисовывалась вовсе.
-    # Условие — в истории уже что-то рисовали, иначе перерисовывать нечего.
-    if history and style_from_message(user_message):
-        logger.info("[router] skill=draw_board (команда смены стиля, без вызова модели)")
-        return SKILLS["draw_board"].run(user_message=user_message, history=history, **ctx)
+    ChatSkill в тулы НЕ отдаём ни в одном режиме: «просто ответить» — поведение
+    по умолчанию, когда модель не позвала ни одного тула. Отдельный тул для него
+    заставил бы модель делать лишний выбор и стоил бы второго запроса.
 
-    lesson_instruction = str(ctx.get("lesson_instruction") or "").strip()
-    system_prompt = CHAT_SYSTEM_PROMPT
-    if lesson_instruction:
-        system_prompt = f"{system_prompt}\n\n{lesson_instruction}"
+    Единственное место, где собирается список тулов. Иначе режим «Контест»
+    остался бы честным только на словах: промпт просит не помогать, а тул
+    `draw_board` при этом лежит на столе, и модели достаточно один раз его
+    позвать. Пустой `allowed_skills` даёт пустой список — вызывающий код тогда
+    не передаёт `tools` в запрос вовсе (OpenAI-совместимые провайдеры отвергают
+    `tools: []`).
+    """
+    return [SKILLS[name].as_tool() for name in mode.allowed_skills if name in SKILLS]
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+
+# Прежнее имя-константа: набор тулов режима по умолчанию. Оставлено потому, что
+# оно по-прежнему точно описывает запрос без явного режима.
+ROUTABLE_TOOLS = tools_for_mode(get_mode(None))
+
+
+def build_router_messages(
+    *,
+    user_message: str,
+    history: list,
+    mode: TutorMode,
+    lesson_instruction: str = "",
+) -> list[dict[str, Any]]:
+    """Собрать `messages` для роутящего запроса.
+
+    Единственный сборщик промпта для ВСЕХ путей чата. Вынесен из route_and_run
+    именно за этим: пока сборка была инлайном, каждый новый путь (например
+    стриминговый) заводил себе вторую копию, и правила режима разъехались бы
+    между путями молча — снаружи это выглядит как «в стриме тьютор ведёт себя
+    иначе», и причину не найти.
+
+    Слои промпта по порядку: общие правила чата (язык, LaTeX, когда рисовать) →
+    правила режима → инструкция текущего урока. Общий слой идёт первым, потому
+    что он про ФОРМАТ ответа, а режим — про поведение; так режим уточняет формат,
+    а не наоборот.
+    """
+    layers = [CHAT_SYSTEM_PROMPT, mode.prompt]
+    instruction = str(lesson_instruction or "").strip()
+    if instruction:
+        layers.append(instruction)
+
+    messages: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(layers)}]
     for item in history[-ROUTER_HISTORY_LIMIT:]:
         role = item.get("role")
         content = item.get("content")
         if role in ("user", "assistant") and isinstance(content, str) and content.strip():
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
+    return messages
 
-    response = openrouter_client.chat.completions.create(
-        model=OPENROUTER_MODEL,
-        messages=messages,
-        tools=ROUTABLE_TOOLS,
-        max_tokens=1500,
-        temperature=0.7,
-        timeout=60,
+
+def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any) -> SkillResult:
+    """Определить намерение и выполнить подходящий скилл."""
+    history = history or []
+    mode = get_mode(ctx.get("mode"))
+
+    # Команда смены стиля («do sketch», «в 3d», «сделай изометрию») —
+    # маршрутизируем ДЕТЕРМИНИРОВАННО, не спрашивая модель. Промптом её не
+    # уговорить: на «do sketch» GLM отвечал текстом «вот более набросочный
+    # вариант» и тул не звал, то есть картинка не перерисовывалась вовсе.
+    # Условие — в истории уже что-то рисовали, иначе перерисовывать нечего.
+    # Режим тоже должен разрешать доску: иначе этот шорткат стал бы способом
+    # нарисовать схему там, где `tools_for_mode` её намеренно не отдаёт.
+    if history and style_from_message(user_message) and "draw_board" in mode.allowed_skills:
+        logger.info("[router] skill=draw_board (команда смены стиля, без вызова модели)")
+        return SKILLS["draw_board"].run(user_message=user_message, history=history, **ctx)
+
+    messages = build_router_messages(
+        user_message=user_message,
+        history=history,
+        mode=mode,
+        lesson_instruction=str(ctx.get("lesson_instruction") or ""),
+    )
+    tools = tools_for_mode(mode)
+
+    request_kwargs: dict[str, Any] = {
+        "model": OPENROUTER_MODEL,
+        "messages": messages,
+        "max_tokens": 1500,
+        "temperature": 0.7,
+        "timeout": 60,
         # Для маршрутизации и обычного ответа думать нечего — reasoning только
         # жжёт токены и время (замерено: 144 токена/3.9с против 30/2.0с).
-        extra_body={"reasoning": {"enabled": False}},
-    )
+        "extra_body": {"reasoning": {"enabled": False}},
+    }
+    # `tools: []` провайдеры отвергают, а в режиме «Контест» список пуст по
+    # замыслу — поэтому ключа в запросе просто нет.
+    if tools:
+        request_kwargs["tools"] = tools
+
+    response = openrouter_client.chat.completions.create(**request_kwargs)
     record_model_usage(
         response,
         model=OPENROUTER_MODEL,
@@ -121,6 +174,19 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
     skill = SKILLS.get(skill_name)
     if skill is None or skill_name == "chat":
         logger.warning("[router] неизвестный тул %r — отвечаем как чат", skill_name)
+        return SKILLS["chat"].run(
+            user_message=user_message, history=history, reply=content, model=OPENROUTER_MODEL
+        )
+
+    # Модель не должна была увидеть этот тул в данном режиме, но GLM-4.6V
+    # нестабилен на tool-calling и умеет позвать функцию, которой в запросе не
+    # было. Раз режим — это правило, а не просьба, проверяем его и на выходе.
+    if skill_name not in mode.allowed_skills:
+        logger.warning(
+            "[router] тул %r недоступен в режиме %r — отвечаем как чат",
+            skill_name,
+            mode.slug,
+        )
         return SKILLS["chat"].run(
             user_message=user_message, history=history, reply=content, model=OPENROUTER_MODEL
         )

@@ -28,6 +28,10 @@ export interface ChatSessionSummary {
   id: string;
   title: string;
   topic: string;
+  /** Режим тьютора, которым велась сессия. Пустая строка — сохранено до
+   * появления режимов; бэкенд трактует её как режим по умолчанию. */
+  mode: string;
+  status: string;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +39,10 @@ export interface ChatSessionSummary {
 export interface ChatSessionDetail extends ChatSessionSummary {
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
+  /** Права выдаёт сервер (read-only), клиент их только читает. */
+  policy: import("./tutor-modes").HelpPolicySnapshot | null;
+  hint_level: number;
+  attempt_count: number;
 }
 
 async function unwrap<T>(response: Response): Promise<T> {
@@ -61,6 +69,9 @@ export async function createChatSession(input: {
   topic: string;
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
+  mode?: string;
+  hint_level?: number;
+  attempt_count?: number;
 }): Promise<ChatSessionDetail> {
   const response = await authFetch(sessionPath(), {
     method: "POST",
@@ -76,6 +87,9 @@ export async function updateChatSession(
     topic: string;
     messages: ChatMessage[];
     lesson_plan: LessonPlan | null;
+    mode: string;
+    hint_level: number;
+    attempt_count: number;
   }>,
 ): Promise<ChatSessionDetail> {
   const response = await authFetch(sessionPath(id), {
