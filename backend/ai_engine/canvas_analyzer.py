@@ -168,12 +168,12 @@ Required JSON shape:
         "schema_version": "0.1",
         "canvas": {"aspect_ratio": "16:9", "background": "white", "layout_slot": "main_diagram"},
         "components": [
-          {"id": "incline1", "type": "surface", "shape": "incline", "angle_deg": 30, "label": "θ"},
-          {"id": "block1", "type": "body", "shape": "block", "label": "m", "on": "incline1", "size": "medium"},
-          {"id": "weight", "type": "vector", "kind": "force", "subtype": "weight", "target": "block1.center", "direction": "down", "label": "mg"},
-          {"id": "normal", "type": "vector", "kind": "force", "subtype": "normal", "target": "block1.center", "direction": {"perpendicular_to": "incline1", "side": "outward"}, "label": "N"},
-          {"id": "friction", "type": "vector", "kind": "force", "subtype": "friction", "target": "block1.center", "direction": {"parallel_to": "incline1", "sense": "up_slope"}, "label": "f"},
-          {"id": "theta", "type": "angle_arc", "between": ["incline1", "horizontal"], "label": "θ"}
+          {"id": "incline1", "type": "surface", "shape": "incline", "angle_deg": 30},
+          {"id": "block1", "type": "body", "shape": "block", "on": "incline1", "size": "medium"},
+          {"id": "weight", "type": "vector", "kind": "force", "subtype": "weight", "target": "block1.center", "direction": "down", "label": "Сила тяжести mg"},
+          {"id": "normal", "type": "vector", "kind": "force", "subtype": "normal", "target": "block1.center", "direction": {"perpendicular_to": "incline1", "side": "outward"}, "label": "Нормальная реакция N"},
+          {"id": "friction", "type": "vector", "kind": "force", "subtype": "friction", "target": "block1.center", "direction": {"parallel_to": "incline1", "sense": "up_slope"}, "label": "Сила трения f"},
+          {"id": "theta", "type": "angle_arc", "between": ["incline1", "horizontal"], "label": "30°"}
         ]
       }
     }
@@ -223,6 +223,13 @@ Diagram rules:
   parallel_to, between, from, to.
 - Avoid start/end numeric arrays, points arrays, SVG snippets, path data and
   arbitrary pixel coordinates.
+- For the standard block-on-a-30-degree-incline free-body diagram, use exactly
+  one incline, one block, one small angle_arc and exactly three force vectors:
+  weight vertically down, normal outward/perpendicular and friction up_slope.
+  Do not invent an external force, duplicate a vector, add a second angle arc,
+  or place a second label on the surface/body. Use "30°" on the angle_arc.
+- Labels describe semantic components only. The backend decides their exact
+  positions and guarantees that text does not cross vector shafts.
 """.strip()
 
 

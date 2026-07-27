@@ -2,19 +2,20 @@
 
 import { useState } from 'react'
 import { StudyTimer, SessionsList } from '@/components/mind'
+import { Timer } from 'lucide-react'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 export default function StudyTrackerPage() {
     const [refreshTrigger, setRefreshTrigger] = useState(0)
 
     return (
-        <div className="container max-w-5xl mx-auto py-6 px-4">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold">Трекер учёбы</h1>
-                <p className="text-muted-foreground">
-                    Отслеживайте время, которое вы тратите на обучение
-                </p>
-            </div>
-
+        <CoffeePageShell
+            eyebrow="Фокус"
+            title="Трекер учёбы"
+            description="Отслеживайте время, которое вы тратите на обучение."
+            icon={<Timer className="h-5 w-5" />}
+            contentClassName="max-w-5xl"
+        >
             <div className="space-y-8">
                 <StudyTimer
                     onSessionEnd={() => setRefreshTrigger(prev => prev + 1)}
@@ -25,6 +26,6 @@ export default function StudyTrackerPage() {
                     <SessionsList refreshTrigger={refreshTrigger} />
                 </div>
             </div>
-        </div>
+        </CoffeePageShell>
     )
 }

@@ -66,45 +66,45 @@ const CATEGORIES = {
   professional: { 
     label: 'Профессиональные', 
     icon: Briefcase,
-    color: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:border-blue-800',
+    color: 'bg-[#edf1f2] text-[#516a70] border-[#c9d8da]',
     description: 'Карьерные достижения и рабочие успехи'
   },
   educational: { 
     label: 'Образовательные', 
     icon: GraduationCap,
-    color: 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-300 dark:border-indigo-800',
+    color: 'bg-[#eeeaf2] text-[#675e73] border-[#d5cddd]',
     description: 'Обучение, сертификаты, новые знания'
   },
   health: { 
     label: 'Здоровье и спорт', 
     icon: Dumbbell,
-    color: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300 dark:border-green-800',
+    color: 'bg-[#eaf1e9] text-[#58705b] border-[#ccdbca]',
     description: 'Спортивные достижения, здоровый образ жизни'
   },
   personal: { 
     label: 'Личные достижения', 
     icon: Star,
-    color: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-300 dark:border-yellow-800',
+    color: 'bg-[#f7eedc] text-[#856432] border-[#e2cfaa]',
     description: 'Личностный рост, преодоление страхов'
   },
   creative: { 
     label: 'Творчество', 
     icon: Palette,
-    color: 'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-900 dark:text-pink-300 dark:border-pink-800',
+    color: 'bg-[#f4e9e7] text-[#825f58] border-[#dfccc8]',
     description: 'Творческие проекты, искусство, хобби'
   },
   financial: { 
     label: 'Финансовые', 
     icon: DollarSign,
-    color: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-300 dark:border-emerald-800',
+    color: 'bg-[#e8f0eb] text-[#52705d] border-[#c9d9cf]',
     description: 'Финансовые цели, инвестиции, накопления'
   },
 }
 
 const IMPORTANCE_LEVELS = {
-  high: { label: 'Очень важно', color: 'bg-red-100 text-red-800', icon: Crown },
-  medium: { label: 'Важно', color: 'bg-orange-100 text-orange-800', icon: Medal },
-  low: { label: 'Приятно', color: 'bg-gray-100 text-gray-800', icon: Star },
+  high: { label: 'Очень важно', color: 'bg-[#f4e2dc] text-[#8b4d42]', icon: Crown },
+  medium: { label: 'Важно', color: 'bg-[#f5e9d5] text-[#855e2f]', icon: Medal },
+  low: { label: 'Приятно', color: 'bg-[#ebe8e2] text-[#6e675f]', icon: Star },
 }
 
 const MOTIVATIONAL_QUOTES = [
@@ -235,27 +235,26 @@ export function AchievementsComponent() {
   const randomAchievement = getRandomAchievement()
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 text-[#39332e]">
       {/* Мотивационная секция */}
-      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+      <Card className="overflow-hidden rounded-[20px] border-[#ddc8a7] bg-gradient-to-r from-[#f2e5d1] via-[#faf4ea] to-[#f4eadc] shadow-[0_12px_40px_rgba(78,57,31,0.06)]">
         <CardContent className="p-6">
           <div className="flex items-start space-x-4">
-            <div className="bg-purple-100 p-3 rounded-full">
-              <Sparkles className="h-8 w-8 text-purple-600" />
+            <div className="rounded-[15px] border border-[#ddc39c] bg-[#fff8eb] p-3">
+              <Sparkles className="h-7 w-7 text-[#9a6730]" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-purple-900 mb-2 flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-600" />
+              <h3 className="mb-2 flex items-center gap-2 font-serif text-lg font-medium text-[#493b2e]">
                 Мотивация дня
               </h3>
-              <p className="text-purple-700 font-medium mb-3">&ldquo;{randomQuote}&rdquo;</p>
+              <p className="mb-3 text-[13px] font-medium leading-6 text-[#725b43]">&ldquo;{randomQuote}&rdquo;</p>
               {randomAchievement && (
-                <div className="bg-white/70 p-3 rounded-lg">
-                  <p className="text-sm text-purple-600 font-medium flex items-center gap-2">
+                <div className="rounded-[13px] border border-white/80 bg-white/60 p-3">
+                  <p className="flex items-center gap-2 text-[12px] font-medium text-[#865c31]">
                     <Target className="h-4 w-4" />
                     Вспомните: {randomAchievement.title}
                   </p>
-                  <p className="text-xs text-purple-500 mt-1">
+                  <p className="mt-1 text-[10px] text-[#a18668]">
                     {randomAchievement.date.toLocaleDateString('ru-RU')}
                   </p>
                 </div>
@@ -266,37 +265,37 @@ export function AchievementsComponent() {
       </Card>
 
       {/* Статистика */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Card className="rounded-[17px] border-[#ded7cd] bg-[#fbfaf7] shadow-[0_8px_28px_rgba(65,49,31,0.04)]">
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-purple-600">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">Всего достижений</p>
+            <div className="font-serif text-2xl font-medium text-[#8a5b2b]">{stats.total}</div>
+            <p className="text-[10px] text-[#8e857b]">Всего достижений</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[17px] border-[#ded7cd] bg-[#fbfaf7] shadow-[0_8px_28px_rgba(65,49,31,0.04)]">
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-blue-600">{stats.thisMonth}</div>
-            <p className="text-xs text-muted-foreground">В этом месяце</p>
+            <div className="font-serif text-2xl font-medium text-[#60747a]">{stats.thisMonth}</div>
+            <p className="text-[10px] text-[#8e857b]">В этом месяце</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[17px] border-[#ded7cd] bg-[#fbfaf7] shadow-[0_8px_28px_rgba(65,49,31,0.04)]">
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-red-600">{stats.highImportance}</div>
-            <p className="text-xs text-muted-foreground">Важных достижений</p>
+            <div className="font-serif text-2xl font-medium text-[#9a5549]">{stats.highImportance}</div>
+            <p className="text-[10px] text-[#8e857b]">Важных достижений</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[17px] border-[#ded7cd] bg-[#fbfaf7] shadow-[0_8px_28px_rgba(65,49,31,0.04)]">
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-green-600">{stats.categories}</div>
-            <p className="text-xs text-muted-foreground">Категорий освоено</p>
+            <div className="font-serif text-2xl font-medium text-[#55705c]">{stats.categories}</div>
+            <p className="text-[10px] text-[#8e857b]">Категорий освоено</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Фильтры и добавление */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-auto">
-          <TabsList className="grid w-fit grid-cols-7">
+          <TabsList className="grid w-fit grid-cols-7 rounded-full border border-[#ded7cd] bg-[#eee9e1] p-1">
             <TabsTrigger value="all">Все</TabsTrigger>
             {Object.entries(CATEGORIES).map(([key, category]) => (
               <TabsTrigger key={key} value={key} className="text-xs">
@@ -308,12 +307,12 @@ export function AchievementsComponent() {
 
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+            <Button className="rounded-full bg-[#8a5b2b] px-4 text-white hover:bg-[#72471f]">
               <Plus className="h-4 w-4 mr-2" />
               Новое достижение
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl rounded-[22px] border-[#d9d1c5] bg-[#fbfaf7] text-[#39332e] shadow-[0_24px_75px_rgba(61,46,29,0.18)]">
             <DialogHeader>
               <DialogTitle className="flex items-center space-x-2">
                 <Trophy className="h-5 w-5 text-yellow-500" />
@@ -435,9 +434,9 @@ export function AchievementsComponent() {
       </div>
 
       {/* Список достижений */}
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {filteredAchievements.length === 0 ? (
-          <Card>
+          <Card className="rounded-[20px] border-[#ded7cd] bg-[#fbfaf7]">
             <CardContent className="p-8 text-center">
               <Trophy className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
               <h3 className="text-lg font-medium mb-2">Нет достижений</h3>
@@ -447,7 +446,10 @@ export function AchievementsComponent() {
                   : `Нет достижений в категории "${CATEGORIES[selectedCategory as keyof typeof CATEGORIES]?.label}"`
                 }
               </p>
-              <Button onClick={() => setIsAddDialogOpen(true)}>
+              <Button
+                onClick={() => setIsAddDialogOpen(true)}
+                className="rounded-full bg-[#8a5b2b] text-white hover:bg-[#72471f]"
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Добавить достижение
               </Button>
@@ -461,13 +463,13 @@ export function AchievementsComponent() {
             
             return (
               <Card key={achievement.id} className={cn(
-                "transition-all duration-200 hover:shadow-md",
+                "overflow-hidden rounded-[20px] shadow-[0_10px_34px_rgba(65,49,31,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_42px_rgba(65,49,31,0.08)]",
                 category.color,
                 "border-l-4"
               )}>
                 <CardContent className="p-6">
                   <div className="flex items-start space-x-4">
-                    <div className="bg-white p-3 rounded-full">
+                    <div className="rounded-[14px] border border-white/80 bg-white/80 p-3 shadow-sm">
                       <IconComponent className="h-6 w-6" />
                     </div>
                     
@@ -503,7 +505,7 @@ export function AchievementsComponent() {
                       {/* Эмоции и влияние */}
                       <div className="grid md:grid-cols-2 gap-4 mt-4">
                         {achievement.feeling && (
-                          <div className="bg-white/70 p-3 rounded-lg">
+                          <div className="rounded-[13px] border border-white/80 bg-white/65 p-3">
                             <h4 className="text-sm font-medium mb-1 flex items-center">
                               <Heart className="h-4 w-4 mr-1 text-red-500" />
                               Ощущения
@@ -513,7 +515,7 @@ export function AchievementsComponent() {
                         )}
                         
                         {achievement.impact && (
-                          <div className="bg-white/70 p-3 rounded-lg">
+                          <div className="rounded-[13px] border border-white/80 bg-white/65 p-3">
                             <h4 className="text-sm font-medium mb-1 flex items-center">
                               <Zap className="h-4 w-4 mr-1 text-yellow-500" />
                               Влияние

@@ -1,21 +1,17 @@
-import google.generativeai as genai
 import os
 import json
 from datetime import datetime
 
-# Initialize Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    print("WARNING: GEMINI_API_KEY is not set - AI features will not work!")
+# Текстовые задачи переехали с gemini-2.0-flash на deepseek-v4-flash через
+# OpenRouter. `get_text_model()` повторяет интерфейс genai.GenerativeModel,
+# поэтому промпты и разбор ответов ниже не изменились.
+from .text_llm import get_text_model, is_configured as _text_llm_configured
+
+if not _text_llm_configured():
+    print("WARNING: OPENROUTER_API_KEY is not set - AI features will not work!")
 
 def generate_learning_program_content(goal, timeframe, hours_per_day, current_level, subjects, context=None):
-    if not GEMINI_API_KEY:
-        print("ERROR: GEMINI_API_KEY is not configured in environment")
-        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
-
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = get_text_model()
 
     # Extract context parameters with defaults
     ctx = context or {}
@@ -495,9 +491,7 @@ Generate a COMPLETE schedule with ALL {total_topics} topics having full learning
         }
 
 def generate_fast_topics(subject_name, extra_prompt=""):
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = get_text_model()
     
     prompt = f"""
     Analyze this text and extract TOPICS and SUBTOPICS for the subject: {subject_name}.
@@ -543,9 +537,7 @@ def generate_fast_topics(subject_name, extra_prompt=""):
         return []
 
 def analyze_progress(context_data):
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = get_text_model()
     
     prompt = f"""
     Analyze the user's study progress.
@@ -568,9 +560,7 @@ def analyze_progress(context_data):
         return {"error": "Failed to analyze"}
 
 def modify_program(current_program_summary, user_request):
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not configured. Please set it in environment variables.")
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = get_text_model()
     
     prompt = f"""
     Modify this learning program based on user request.

@@ -179,6 +179,19 @@ function formatBarChartCommand(command: RawCommand): string {
   return [title, ...rows].filter(Boolean).join("\n");
 }
 
+/** Иллюстрация, поставленная плейсхолдером: растр догружается отдельно. */
+export interface PendingIllustration {
+  /** id элемента на холсте — по нему подставляем картинку через UPDATE_ELEMENT. */
+  elementId: string;
+  /** Исходная команда image_with_labels с image_prompt. */
+  command: RawCommand;
+}
+
+export interface BuildLectureActionsResult {
+  actions: WhiteboardAction[];
+  pendingIllustrations: PendingIllustration[];
+}
+
 export function buildLectureWhiteboardActions({
   boardSteps,
   baseX,
@@ -186,8 +199,12 @@ export function buildLectureWhiteboardActions({
   maxColumnHeight,
   generationStyle,
   now = Date.now(),
-}: BuildLectureActionsInput): WhiteboardAction[] {
+}: BuildLectureActionsInput): BuildLectureActionsResult {
   const actions: WhiteboardAction[] = [];
+  // Иллюстрации, для которых растр ещё предстоит догрузить (прогрессивная
+  // выдача). Вызывающий проходит по списку и дёргает /api/ai/illustration,
+  // подставляя результат в элемент с тем же elementId.
+  const pendingIllustrations: PendingIllustration[] = [];
   const columnTop = baseY;
   const columnHeight = clamp(maxColumnHeight, MIN_COLUMN_HEIGHT, MAX_COLUMN_HEIGHT);
   const columnBottom = columnTop + columnHeight;
@@ -235,7 +252,10 @@ export function buildLectureWhiteboardActions({
           width: COLUMN_WIDTH,
           fontSize: FONT_BY_VARIANT[variant],
           lineHeight: LINE_HEIGHT_BY_VARIANT[variant],
-          color: "#f8fafc",
+          // Цвет НЕ задаём. Инлайновый color перебивает классы рендерера
+          // (`text-slate-950 dark:text-zinc-100`), а зашит тут был #f8fafc —
+          // почти белый. В тёмной теме это выглядело нормально, а в светлой
+          // текст лекции становился невидимым на светлом холсте.
           variant,
         },
       });
@@ -246,7 +266,11 @@ export function buildLectureWhiteboardActions({
 
   const pushIllustration = (command: RawCommand) => {
     const baseImageUrl = command.base_image_url || command.image_url;
-    if (!baseImageUrl) return false;
+    // Прогрессивная выдача: команда без картинки, но с image_prompt — это ещё
+    // не сгенерированная иллюстрация. Занимаем под неё место сразу и ставим
+    // плейсхолдер; растр подставит чат через UPDATE_ELEMENT, когда догрузит.
+    const pending = !baseImageUrl && Boolean(command.image_prompt);
+    if (!baseImageUrl && !pending) return false;
     ensureSpace(IMAGE_HEIGHT);
     const id = `ai-${now}-${serial++}`;
     actions.push({
@@ -254,7 +278,7 @@ export function buildLectureWhiteboardActions({
       payload: {
         id,
         position: { x, y },
-        src: baseImageUrl,
+        src: baseImageUrl || "",
         width: IMAGE_WIDTH,
         height: IMAGE_HEIGHT,
         rotation: 0,
@@ -262,8 +286,10 @@ export function buildLectureWhiteboardActions({
         masks: Array.isArray(command.masks) ? command.masks : null,
         alt: typeof command.alt === "string" ? command.alt : undefined,
         genStyle: typeof command.gen_style === "string" ? command.gen_style : generationStyle,
+        pending: pending || undefined,
       },
     });
+    if (pending) pendingIllustrations.push({ elementId: id, command });
     reserveColumns(IMAGE_WIDTH, IMAGE_HEIGHT, SECTION_GAP);
     y += IMAGE_HEIGHT + SECTION_GAP;
     return true;
@@ -356,5 +382,5 @@ export function buildLectureWhiteboardActions({
     }
   });
 
-  return actions;
+  return { actions, pendingIllustrations };
 }

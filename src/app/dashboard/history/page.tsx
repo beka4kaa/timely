@@ -1,20 +1,23 @@
 "use client"
 
 import { DaysList } from '@/components/study-planner'
-import { useRouter } from 'next/navigation'
+import { History } from 'lucide-react'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 export default function HistoryPage() {
-    const router = useRouter()
-
     return (
-        <div className="container max-w-5xl mx-auto py-6 px-4">
+        <CoffeePageShell
+            eyebrow="Архив занятий"
+            title="История"
+            description="Возвращайтесь к прошлым учебным дням и отслеживайте последовательность работы."
+            icon={<History className="h-5 w-5" />}
+            contentClassName="max-w-5xl"
+        >
             <DaysList
                 onSelectDate={(date) => {
-                    // Could navigate to a specific date page
-                    // For now just show in console
                     console.log('Selected date:', date)
                 }}
             />
-        </div>
+        </CoffeePageShell>
     )
 }

@@ -85,9 +85,9 @@ def valid_inclined_plane_response() -> dict:
                     "schema_version": "0.1",
                     "canvas": {"aspect_ratio": "16:9", "background": "white", "layout_slot": "main_diagram"},
                     "components": [
-                        {"id": "incline1", "type": "surface", "shape": "incline", "angle_deg": 30, "label": "θ"},
-                        {"id": "block1", "type": "body", "shape": "block", "label": "m", "on": "incline1", "size": "medium"},
-                        {"id": "weight", "type": "vector", "kind": "force", "subtype": "weight", "target": "block1.center", "direction": "down", "label": "mg"},
+                        {"id": "incline1", "type": "surface", "shape": "incline", "angle_deg": 30},
+                        {"id": "block1", "type": "body", "shape": "block", "on": "incline1", "size": "medium"},
+                        {"id": "weight", "type": "vector", "kind": "force", "subtype": "weight", "target": "block1.center", "direction": "down", "label": "Сила тяжести mg"},
                         {
                             "id": "normal",
                             "type": "vector",
@@ -95,7 +95,7 @@ def valid_inclined_plane_response() -> dict:
                             "subtype": "normal",
                             "target": "block1.center",
                             "direction": {"perpendicular_to": "incline1", "side": "outward"},
-                            "label": "N",
+                            "label": "Нормальная реакция N",
                         },
                         {
                             "id": "friction",
@@ -104,9 +104,9 @@ def valid_inclined_plane_response() -> dict:
                             "subtype": "friction",
                             "target": "block1.center",
                             "direction": {"parallel_to": "incline1", "sense": "up_slope"},
-                            "label": "f",
+                            "label": "Сила трения f",
                         },
-                        {"id": "theta", "type": "angle_arc", "between": ["incline1", "horizontal"], "label": "θ"},
+                        {"id": "theta", "type": "angle_arc", "between": ["incline1", "horizontal"], "label": "30°"},
                     ],
                 },
             }
@@ -310,7 +310,10 @@ class CanvasAnalyzerEndpointTests(TestCase):
         self.assertIn("rendered_diagrams", body)
         self.assertEqual(body["rendered_diagrams"][0]["source_of_truth"], "svg")
         self.assertEqual(body["rendered_diagrams"][0]["render_status"], "svg_only")
-        self.assertFalse(body["meta"]["flux_called"])
+        # Источник истины — детерминированный SVG. Никаких следов внешнего
+        # стилизатора в ответе быть не должно.
+        self.assertNotIn("flux_called", body["meta"])
+        self.assertNotIn("flux_url", body["rendered_diagrams"][0])
 
     @patch("ai_engine.canvas_analyzer_views.analyze_canvas_with_glm")
     def test_endpoint_validation_error_shape(self, mock_analyze) -> None:

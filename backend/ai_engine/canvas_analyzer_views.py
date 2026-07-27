@@ -77,7 +77,6 @@ class CanvasAnalyzerView(APIView):
                     "schema_version": analyzer_data["schema_version"],
                     "language": analyzer_data["language"],
                     "glm_json_repaired": repaired,
-                    "flux_called": False,
                 },
             }
         )
@@ -97,7 +96,6 @@ def render_diagrams(diagrams: list[dict]) -> list[dict]:
                     "title": diagram.get("title", ""),
                     "svg": svg,
                     "png_url": png_url,
-                    "flux_url": None,
                     "source_of_truth": "svg",
                     "render_status": "svg_only",
                 }
@@ -110,7 +108,6 @@ def render_diagrams(diagrams: list[dict]) -> list[dict]:
                     "title": diagram.get("title", ""),
                     "svg": None,
                     "png_url": None,
-                    "flux_url": None,
                     "source_of_truth": "vector_layout",
                     "render_status": "render_failed",
                     "error": str(exc),

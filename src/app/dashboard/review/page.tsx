@@ -13,6 +13,7 @@ import {
     AlertTriangle,
     Calendar,
     Loader2,
+    RefreshCwIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -21,6 +22,7 @@ import {
     isOverdue,
     formatInterval,
 } from '@/types/mind'
+import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 export default function ReviewPage() {
     const [topics, setTopics] = useState<Topic[]>([])
@@ -116,11 +118,17 @@ export default function ReviewPage() {
     // Review mode
     if (reviewingTopic) {
         return (
-            <div className="container max-w-2xl mx-auto py-6 px-4">
-                <Card className="bg-gradient-to-br from-gray-900 to-gray-800 border-gray-700">
+            <CoffeePageShell
+                eyebrow="Активное повторение"
+                title={reviewingTopic.name}
+                description="Оцените, насколько уверенно вы помните эту тему."
+                icon={<Play className="h-5 w-5" />}
+                contentClassName="max-w-3xl"
+            >
+                <Card className="border-[#d8cbb8] bg-[#fbfaf7]">
                     <CardHeader className="text-center">
                         <div className="text-4xl mb-4">{reviewingTopic.subjectEmoji || '📚'}</div>
-                        <CardTitle className="text-2xl text-white">{reviewingTopic.name}</CardTitle>
+                        <CardTitle className="font-serif text-2xl text-[#302b26]">{reviewingTopic.name}</CardTitle>
                         <p className="text-muted-foreground">{reviewingTopic.subjectName || 'Без предмета'}</p>
                     </CardHeader>
                     <CardContent className="p-8">
@@ -131,7 +139,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                className="h-20 flex-col gap-2 text-red-700 hover:bg-red-50 hover:text-red-800"
                                 onClick={() => handleReview(reviewingTopic.id, 'AGAIN')}
                             >
                                 <span className="text-lg">😵</span>
@@ -140,7 +148,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                                className="h-20 flex-col gap-2 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
                                 onClick={() => handleReview(reviewingTopic.id, 'HARD')}
                             >
                                 <span className="text-lg">😓</span>
@@ -149,7 +157,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                                className="h-20 flex-col gap-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                                 onClick={() => handleReview(reviewingTopic.id, 'GOOD')}
                             >
                                 <span className="text-lg">😊</span>
@@ -158,7 +166,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+                                className="h-20 flex-col gap-2 text-[#8a5b2b] hover:bg-[#fff5e4] hover:text-[#70451c]"
                                 onClick={() => handleReview(reviewingTopic.id, 'EASY')}
                             >
                                 <span className="text-lg">🤩</span>
@@ -174,26 +182,25 @@ export default function ReviewPage() {
                         </Button>
                     </CardContent>
                 </Card>
-            </div>
+            </CoffeePageShell>
         )
     }
 
     return (
-        <div className="container max-w-4xl mx-auto py-6 px-4">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold">Повторение</h1>
-                <p className="text-muted-foreground">
-                    Темы, которые нужно повторить
-                </p>
-            </div>
-
+        <CoffeePageShell
+            eyebrow="Интервальная практика"
+            title="Повторение"
+            description="Темы, которые стоит повторить сегодня и в ближайшие дни."
+            icon={<RefreshCwIcon className="h-5 w-5" />}
+            contentClassName="max-w-5xl"
+        >
             <div className="space-y-8">
                 {/* Overdue */}
                 {overdue.length > 0 && (
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <AlertTriangle className="h-5 w-5 text-red-500" />
-                            <h2 className="text-lg font-semibold text-red-400">Просрочено</h2>
+                            <h2 className="text-lg font-semibold text-red-700">Просрочено</h2>
                             <Badge variant="destructive">{overdue.length}</Badge>
                         </div>
                         <div className="space-y-2">
@@ -207,8 +214,8 @@ export default function ReviewPage() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Zap className="h-5 w-5 text-amber-500" />
-                            <h2 className="text-lg font-semibold text-amber-400">На сегодня</h2>
-                            <Badge className="bg-amber-500/20 text-amber-400">{dueToday.length}</Badge>
+                            <h2 className="text-lg font-semibold text-amber-700">На сегодня</h2>
+                            <Badge className="bg-amber-100 text-amber-800">{dueToday.length}</Badge>
                         </div>
                         <div className="space-y-2">
                             {dueToday.map(renderTopicCard)}
@@ -221,8 +228,8 @@ export default function ReviewPage() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Calendar className="h-5 w-5 text-blue-500" />
-                            <h2 className="text-lg font-semibold text-blue-400">На этой неделе</h2>
-                            <Badge className="bg-blue-500/20 text-blue-400">{upcoming.length}</Badge>
+                            <h2 className="text-lg font-semibold text-blue-700">На этой неделе</h2>
+                            <Badge className="bg-blue-100 text-blue-800">{upcoming.length}</Badge>
                         </div>
                         <div className="space-y-2">
                             {upcoming.map(renderTopicCard)}
@@ -241,6 +248,6 @@ export default function ReviewPage() {
                     </Card>
                 )}
             </div>
-        </div>
+        </CoffeePageShell>
     )
 }

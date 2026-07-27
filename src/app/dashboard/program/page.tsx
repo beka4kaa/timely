@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
+import { FullAccessGate } from '@/components/full-access-gate'
 import {
     Sparkles,
     Loader2,
@@ -239,7 +240,7 @@ function SortableTopicItem({ topic }: SortableTopicItemProps) {
     )
 }
 
-export default function ProgramPage() {
+function ProgramContent() {
     const [loading, setLoading] = useState(true)
     const [generating, setGenerating] = useState(false)
     const [program, setProgram] = useState<LearningProgram | null>(null)
@@ -1390,3 +1391,10 @@ export default function ProgramPage() {
     )
 }
 
+export default function ProgramPage() {
+    return (
+        <FullAccessGate>
+            <ProgramContent />
+        </FullAccessGate>
+    )
+}

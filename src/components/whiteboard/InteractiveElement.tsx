@@ -8,7 +8,12 @@ interface InteractiveElementProps {
 }
 
 export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element, children, cameraZoom }) => {
-  const { selectedElementId, setSelectedElement, executeActions } = useWhiteboardStore();
+  const {
+    selectedElementId,
+    setSelectedElement,
+    executeActions,
+    recordElementCheckpoint,
+  } = useWhiteboardStore();
   const isSelected = selectedElementId === element.id;
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -18,10 +23,14 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
   
   const initialPointer = useRef({ x: 0, y: 0 });
   const initialTransform = useRef({ x: 0, y: 0, width: 0, height: 0, rotation: 0 });
+  const historySnapshot = useRef<WhiteboardElement[] | null>(null);
+  const didTransform = useRef(false);
 
   // Only IMAGE elements support resize/rotate here; position is universal.
   // (ILLUSTRATION nodes use DraggableBoardNode instead — see Whiteboard.tsx.)
   const isImage = element.type === 'IMAGE';
+  const showSelectionRing =
+    isSelected && (element.type === 'IMAGE' || element.type === 'SHAPE');
   const width = isImage ? element.width : 'auto';
   const height = isImage ? element.height : 'auto';
   const rotation = isImage ? element.rotation : 0;
@@ -29,6 +38,11 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
   useEffect(() => {
     const handleGlobalPointerUp = () => {
       if (isDragging || isResizing || isRotating) {
+        if (didTransform.current && historySnapshot.current) {
+          recordElementCheckpoint(historySnapshot.current);
+        }
+        historySnapshot.current = null;
+        didTransform.current = false;
         setIsDragging(false);
         setIsResizing(false);
         setIsRotating(false);
@@ -42,6 +56,7 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
       const dy = (e.clientY - initialPointer.current.y) / cameraZoom;
 
       if (isDragging) {
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) didTransform.current = true;
         executeActions([{
           type: 'UPDATE_ELEMENT',
           payload: {
@@ -53,6 +68,7 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
           }
         }]);
       } else if (isResizing && isImage) {
+        if (Math.abs(dx) > 0.5) didTransform.current = true;
         // Uniform scaling based on dx mostly, or hypotenuse
         const aspect = initialTransform.current.width / initialTransform.current.height;
         let newWidth = Math.max(50, initialTransform.current.width + dx);
@@ -75,6 +91,7 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
         const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
         // initial angle offset
         const initialAngle = Math.atan2(initialPointer.current.y - centerY, initialPointer.current.x - centerX) * 180 / Math.PI;
+        if (Math.abs(angle - initialAngle) > 0.5) didTransform.current = true;
         
         executeActions([{
           type: 'UPDATE_ELEMENT',
@@ -95,13 +112,24 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
     };
-  }, [isDragging, isResizing, isRotating, cameraZoom, element.id, isImage, executeActions]);
+  }, [
+    isDragging,
+    isResizing,
+    isRotating,
+    cameraZoom,
+    element.id,
+    isImage,
+    executeActions,
+    recordElementCheckpoint,
+  ]);
 
   const handlePointerDown = (e: React.PointerEvent, action: 'drag' | 'resize' | 'rotate') => {
     e.stopPropagation();
     setSelectedElement(element.id);
     
     initialPointer.current = { x: e.clientX, y: e.clientY };
+    historySnapshot.current = useWhiteboardStore.getState().elements;
+    didTransform.current = false;
     initialTransform.current = {
       x: element.position.x,
       y: element.position.y,
@@ -118,7 +146,7 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
   return (
     <div
       ref={containerRef}
-      className={`absolute group cursor-move ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-zinc-950' : ''}`}
+      className={`absolute group cursor-move ${showSelectionRing ? 'ring-1 ring-[#b7792d]/75 ring-offset-2 ring-offset-[#f7f5f1]' : ''}`}
       style={{
         width: width,
         height: height,
@@ -136,16 +164,16 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
         <>
           {/* Resize Handle (bottom right) */}
           <div
-            className="absolute -bottom-2 -right-2 w-4 h-4 bg-blue-500 rounded-full border-2 border-white cursor-se-resize z-50"
+            className="absolute -bottom-1.5 -right-1.5 z-50 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-[#b7792d]"
             onPointerDown={(e) => handlePointerDown(e, 'resize')}
           />
           
           {/* Rotate Handle (top center) */}
           <div
-            className="absolute -top-8 left-1/2 -translate-x-1/2 w-4 h-4 bg-green-500 rounded-full border-2 border-white cursor-grab z-50 flex flex-col items-center justify-end"
+            className="absolute -top-7 left-1/2 z-50 flex h-3 w-3 -translate-x-1/2 cursor-grab flex-col items-center justify-end rounded-full border-2 border-white bg-[#777168]"
             onPointerDown={(e) => handlePointerDown(e, 'rotate')}
           >
-            <div className="w-px h-4 bg-green-500 absolute top-4" />
+            <div className="absolute top-3 h-4 w-px bg-[#9c958c]" />
           </div>
         </>
       )}

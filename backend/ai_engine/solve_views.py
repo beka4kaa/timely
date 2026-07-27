@@ -1,32 +1,45 @@
 import os
 import logging
 from openai import OpenAI
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from .usage import (
+    provider_from_base_url,
+    record_model_usage,
+)
+
 logger = logging.getLogger(__name__)
 
-# OpenRouter API configuration
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# `:nitro` — OpenRouter's high-throughput routing variant: it sends the
-# request only to the fastest providers for this model (vs. the default
-# "Standard" tier, which load-balances across ALL providers — including slow
-# ones at ~15-25 tok/s). Same paid account/key, same model weights — just a
-# different provider-selection policy. Benchmarked ~6-20x faster in practice
-# (≈300-400 tok/s vs ≈15-25 tok/s on Standard) at a similar/marginally higher
-# per-token price. This is the single biggest lever for "llama is slow".
-OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"
+# ──────────────────────────────────────────────────────────────────────────────
+# Reasoning LLM for /solve and the whiteboard board generation.
+#
+# Switched from the OpenRouter cloud Llama (meta-llama/llama-3.3-70b-instruct)
+# to the local Qwen VLM already running on :8080 (settings.QWEN_*). One model
+# now serves both text and vision, so we don't run/pay for a second model —
+# saves resources. The endpoint is whatever QWEN_API_BASE_URL points at (Mac
+# Studio over Tailscale by default; set it to http://localhost:8080/v1 to use a
+# locally-running Qwen). Override just this LLM with BOARD_LLM_* env vars; to
+# revert to OpenRouter set BOARD_LLM_BASE_URL=https://openrouter.ai/api/v1 +
+# BOARD_LLM_API_KEY=<key> + BOARD_LLM_MODEL=meta-llama/llama-3.3-70b-instruct.
+# ──────────────────────────────────────────────────────────────────────────────
+BOARD_LLM_BASE_URL = os.getenv("BOARD_LLM_BASE_URL", settings.QWEN_API_BASE_URL)
+BOARD_LLM_API_KEY = os.getenv("BOARD_LLM_API_KEY", settings.QWEN_API_KEY)
+BOARD_LLM_MODEL = os.getenv("BOARD_LLM_MODEL", settings.QWEN_MODEL_NAME)
 
-# OpenAI-compatible client pointing at OpenRouter.
-# max_retries=0 → fail fast instead of silently retrying (a single slow
-# generation otherwise balloons past 2-3 minutes and the proxy 500s).
-openrouter_client = OpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url=OPENROUTER_BASE_URL,
+# OpenAI-compatible client. max_retries=0 → fail fast instead of silently
+# retrying (a single slow generation otherwise balloons past 2-3 minutes).
+board_llm_client = OpenAI(
+    api_key=BOARD_LLM_API_KEY,
+    base_url=BOARD_LLM_BASE_URL,
     max_retries=0,
 )
+
+# Backwards-compatible aliases (draw_views imports these names).
+openrouter_client = board_llm_client
+OPENROUTER_MODEL = BOARD_LLM_MODEL
 
 SYSTEM_PROMPT = """Ты — опытный AI-тьютор и репетитор. Твоя задача — помогать ученикам анализировать задачи и генерировать подробные решения.
 
@@ -57,7 +70,6 @@ class SolveTaskView(APIView):
                 {"error": "Пустое сообщение. Напишите задачу."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
         # Build messages for the API
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -72,13 +84,27 @@ class SolveTaskView(APIView):
         messages.append({"role": "user", "content": user_message})
 
         try:
-            logger.info(f"Sending request to OpenRouter ({OPENROUTER_MODEL})")
+            logger.info(f"Sending request to board LLM ({OPENROUTER_MODEL})")
             response = openrouter_client.chat.completions.create(
                 model=OPENROUTER_MODEL,
                 messages=messages,
-                max_tokens=512,
+                max_tokens=1500,
                 temperature=0.7,
-                timeout=60,
+                timeout=120,
+                # GLM-4.6V — thinking-модель: по умолчанию тратит сотни токенов
+                # на внутренний `reasoning` до `content`. Для чат-ответа это
+                # чистые потери — замерено на «2+2»: 144 токена / 3.9с с
+                # reasoning против 30 токенов / 2.0с без него (14x дешевле).
+                # Визуальный путь (draw_views) reasoning сохраняет — там модель
+                # строит структурированный board JSON и думать ей нужно.
+                extra_body={"reasoning": {"enabled": False}},
+            )
+            record_model_usage(
+                response,
+                model=OPENROUTER_MODEL,
+                provider=provider_from_base_url(BOARD_LLM_BASE_URL),
+                feature="solve",
+                input_payload=messages,
             )
 
             reply = response.choices[0].message.content

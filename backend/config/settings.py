@@ -65,6 +65,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "config.middleware.UserEmailMiddleware",  # Extract user email from header
+    "ai_engine.middleware.AIUsageContextMiddleware",
 ]
 
 # CORS settings
@@ -164,12 +165,31 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Adaptive lesson planning intake (existing OpenRouter text client)
+# ──────────────────────────────────────────────────────────────────────────────
+PLANNING_MODEL = os.getenv(
+    "PLANNING_MODEL",
+    os.getenv("TEXT_LLM_MODEL", "deepseek/deepseek-v4-flash"),
+)
+PLANNING_ENABLED = os.getenv("PLANNING_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+PLANNING_MAX_QUESTIONS = int(os.getenv("PLANNING_MAX_QUESTIONS", "4"))
+PLANNING_REASONING_ENABLED = os.getenv(
+    "PLANNING_REASONING_ENABLED", "true"
+).lower() in {"1", "true", "yes", "on"}
+PLANNING_TIMEOUT = int(os.getenv("PLANNING_TIMEOUT", "20"))
+PLANNING_MAX_TOKENS = int(os.getenv("PLANNING_MAX_TOKENS", "700"))
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Image Generation (ai_engine.image_enrichment)
-# Используется для обогащения команд `image_with_labels` от Llama.
-# Провайдер: OpenRouter → Nano Banana 2
-# (google/gemini-3.1-flash-image-preview, standard tier)
+# Используется для обогащения команд `image_with_labels`.
+# Провайдер: OpenRouter → Seedream 4.5 (ByteDance).
 # ──────────────────────────────────────────────────────────────────────────────
 
 # POST endpoint провайдера генерации изображений
@@ -185,15 +205,22 @@ IMAGE_GEN_API_KEY = os.getenv(
     os.getenv("OPENROUTER_API_KEY", ""),
 )
 
-# Идентификатор модели на OpenRouter
-# "Nano Banana 2" / google/gemini-3.1-flash-image-preview — быстрее и дешевле
-# чем BananaPro (gemini-3-pro-image-preview), используем для тестов/прода.
-IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3.1-flash-image-preview")
+# Идентификатор модели на OpenRouter ($0.04 за картинку).
+# Предыдущая модель впечатывала в иллюстрацию псевдо-текст («Porgls»,
+# «Courcta», «Fikicn», «Filek») даже с полным TEXT_FREE-контрактом и коротким
+# терминальным запретом — и тем ломала контракт, по которому подписи
+# накладываются отдельным слоем. Она же добавляла лишние стрелки, второй угол и
+# внешнюю силу вопреки MECHANICS/INCLINED_PLANE-контрактам.
+# NB: Seedream — ЧИСТО image-модель, поэтому она обязана попадать в
+# `_is_image_only_model` (image_enrichment.py), иначе запрос уйдёт с modalities
+# ["image", "text"] и провайдер ответит 404. То же касается любой новой модели.
+IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "bytedance-seed/seedream-4.5")
 
-# Vision-фолбэк для grounding в illustration_pipeline. По умолчанию используем
-# ту же модель, что и для генерации картинки, чтобы не разъезжались режимы и
-# доступность в OpenRouter.
-GROUNDING_FALLBACK_MODEL = os.getenv("GROUNDING_FALLBACK_MODEL", IMAGE_GEN_MODEL)
+# Vision-модель для grounding координат подписей в illustration_pipeline.
+# ВАЖНО: это НЕ IMAGE_GEN_MODEL. Раньше значение наследовалось от него, но
+# генератор картинок vision-chat не умеет, из-за чего грунтинг молча
+# падал на неточные координаты. Нужна именно чат-модель со зрением.
+GROUNDING_FALLBACK_MODEL = os.getenv("GROUNDING_FALLBACK_MODEL", "z-ai/glm-4.6v")
 
 # Таймаут одного запроса к провайдеру (секунды)
 IMAGE_GEN_TIMEOUT = int(os.getenv("IMAGE_GEN_TIMEOUT", "60"))
@@ -207,6 +234,111 @@ IMAGE_GEN_MAX_WORKERS = int(os.getenv("IMAGE_GEN_MAX_WORKERS", "3"))
 
 # Публичный URL сервиса (используется в HTTP-Referer при запросах к OpenRouter)
 SITE_URL = os.getenv("SITE_URL", "https://timelyplan.me")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AI usage ledger and Timely-token limits
+# ──────────────────────────────────────────────────────────────────────────────
+# Text requests are charged by provider token count. Image requests that do not
+# report token usage use a deterministic Timely-token charge per generated image.
+AI_IMAGE_TOKEN_CHARGE = int(os.getenv("AI_IMAGE_TOKEN_CHARGE", "4000"))
+AI_CONTEXT_TOKEN_LIMIT = int(os.getenv("AI_CONTEXT_TOKEN_LIMIT", "128000"))
+AI_TOKEN_5H_LIMIT = int(os.getenv("AI_TOKEN_5H_LIMIT", "250000"))
+AI_TOKEN_WEEKLY_LIMIT = int(os.getenv("AI_TOKEN_WEEKLY_LIMIT", "1000000"))
+# Free is intentionally small. Pro preserves the previous global limits. Max
+# gets 20x the rolling allowance of Pro while still retaining a hard ceiling.
+AI_FREE_CONTEXT_TOKEN_LIMIT = int(
+    os.getenv("AI_FREE_CONTEXT_TOKEN_LIMIT", "32000")
+)
+AI_FREE_TOKEN_5H_LIMIT = int(os.getenv("AI_FREE_TOKEN_5H_LIMIT", "25000"))
+AI_FREE_TOKEN_WEEKLY_LIMIT = int(
+    os.getenv("AI_FREE_TOKEN_WEEKLY_LIMIT", "100000")
+)
+AI_MAX_CONTEXT_TOKEN_LIMIT = int(
+    os.getenv("AI_MAX_CONTEXT_TOKEN_LIMIT", "256000")
+)
+AI_MAX_TOKEN_5H_LIMIT = int(os.getenv("AI_MAX_TOKEN_5H_LIMIT", "5000000"))
+AI_MAX_TOKEN_WEEKLY_LIMIT = int(
+    os.getenv("AI_MAX_TOKEN_WEEKLY_LIMIT", "20000000")
+)
+AI_PRO_PRICE_USD = float(os.getenv("AI_PRO_PRICE_USD", "19.9"))
+AI_MAX_PRICE_USD = float(os.getenv("AI_MAX_PRICE_USD", "199"))
+AI_PLAN_LIMITS = {
+    "free": {
+        "label": "Free",
+        "context": AI_FREE_CONTEXT_TOKEN_LIMIT,
+        "five_hour": AI_FREE_TOKEN_5H_LIMIT,
+        "weekly": AI_FREE_TOKEN_WEEKLY_LIMIT,
+        "price_usd": 0.0,
+        "usage_multiplier": 1,
+    },
+    "pro": {
+        "label": "Pro",
+        "context": AI_CONTEXT_TOKEN_LIMIT,
+        "five_hour": AI_TOKEN_5H_LIMIT,
+        "weekly": AI_TOKEN_WEEKLY_LIMIT,
+        "price_usd": AI_PRO_PRICE_USD,
+        "usage_multiplier": 10,
+    },
+    "max": {
+        "label": "Max",
+        "context": AI_MAX_CONTEXT_TOKEN_LIMIT,
+        "five_hour": AI_MAX_TOKEN_5H_LIMIT,
+        "weekly": AI_MAX_TOKEN_WEEKLY_LIMIT,
+        "price_usd": AI_MAX_PRICE_USD,
+        "usage_multiplier": 200,
+    },
+}
+# Hard limits are enabled by default; set false only for an explicit A/B rollout.
+AI_USAGE_ENFORCE_LIMITS = os.getenv("AI_USAGE_ENFORCE_LIMITS", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Детерминированный путь научных схем (ai_engine.vector_pipeline)
+# ──────────────────────────────────────────────────────────────────────────────
+# Механику рисует не image-модель, а VectorRenderer: LLM отдаёт только семантику
+# (surface/body/vector/angle_arc), геометрию целиком считает бэкенд. Так схема
+# получается одинаковой при повторах, в кадре нет ни одной буквы, а подписи
+# приезжают структурой с ТОЧНЫМИ якорями (середина древка каждой силы) —
+# vision-грунтинг для них не нужен.
+#
+# По умолчанию ВЫКЛЮЧЕНО: путь покрывает пока только наклонную плоскость, всё
+# остальное честно уходит в растр. Включать после проверки на живой доске.
+ILLUSTRATION_VECTOR_PIPELINE = os.getenv("ILLUSTRATION_VECTOR_PIPELINE", "false")
+
+# Новый A/B-переключатель имеет приоритет над прежним boolean-флагом.
+# `legacy` не делает дополнительных Qwen-вызовов и остаётся production default.
+DIAGRAM_PIPELINE_MODE = os.getenv("DIAGRAM_PIPELINE_MODE", "legacy")
+DIAGRAM_PLANNER_MODEL = os.getenv(
+    "DIAGRAM_PLANNER_MODEL",
+    "qwen/qwen3.7-plus",
+)
+DIAGRAM_CRITIC_MODEL = os.getenv(
+    "DIAGRAM_CRITIC_MODEL",
+    "qwen/qwen3.7-plus",
+)
+DIAGRAM_PLANNER_ENABLED = os.getenv("DIAGRAM_PLANNER_ENABLED", "true")
+DIAGRAM_CRITIC_ENABLED = os.getenv("DIAGRAM_CRITIC_ENABLED", "true")
+DIAGRAM_MAX_RETRIES = int(os.getenv("DIAGRAM_MAX_RETRIES", "1"))
+DIAGRAM_PLANNER_TIMEOUT = int(os.getenv("DIAGRAM_PLANNER_TIMEOUT", "45"))
+DIAGRAM_CRITIC_TIMEOUT = int(os.getenv("DIAGRAM_CRITIC_TIMEOUT", "45"))
+DIAGRAM_PLANNER_MAX_TOKENS = int(os.getenv("DIAGRAM_PLANNER_MAX_TOKENS", "2400"))
+DIAGRAM_CRITIC_MAX_TOKENS = int(os.getenv("DIAGRAM_CRITIC_MAX_TOKENS", "1200"))
+
+# Backward-compatible aliases for the first vector prototype. Diagram planning
+# no longer inherits the global DeepSeek text model.
+VECTOR_PLANNER_MODEL = os.getenv(
+    "VECTOR_PLANNER_MODEL",
+    DIAGRAM_PLANNER_MODEL,
+)
+VECTOR_PLANNER_TIMEOUT = int(
+    os.getenv("VECTOR_PLANNER_TIMEOUT", str(DIAGRAM_PLANNER_TIMEOUT))
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
