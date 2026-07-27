@@ -28,4 +28,8 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 8080
 
 # Run the application (Shell form to expand $PORT)
-CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}
+# --timeout must exceed the longest client-side AI call timeout configured in
+# the app (TEXT_LLM_TIMEOUT / skills/board.py both allow up to 180s) — gunicorn's
+# default 30s worker timeout kills the whole worker via SIGABRT mid-request
+# before Django's own try/except fallback logic ever runs.
+CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 200
