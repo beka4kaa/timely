@@ -2,8 +2,7 @@ import { NextAuthOptions } from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
-
-const isProd = process.env.NODE_ENV === 'production'
+import { SESSION_COOKIE_NAME, USE_SECURE_COOKIES } from "./auth-cookies"
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
@@ -93,24 +92,23 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60,
   },
 
-  // Share the session cookie between the apex (timelyplan.me) and the
-  // app subdomain (app.timelyplan.me) so a redirect between them keeps
-  // the user logged in. Only session-token gets a shared domain — csrf
-  // and callback-url cookies stay host-only since the auth forms always
-  // live on app.timelyplan.me.
+  // The cookie name comes from ./auth-cookies so that the Edge middleware
+  // reads back exactly what this (Node) runtime writes — see that file.
+  // No `domain`: the app and the whole auth flow live only on
+  // app.timelyplan.me. The apex is a static landing page that never reads
+  // the session, so a host-only cookie is both sufficient and safer.
   cookies: {
     sessionToken: {
-      name: isProd ? '__Secure-next-auth.session-token' : 'next-auth.session-token',
+      name: SESSION_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: isProd,
-        domain: isProd ? '.timelyplan.me' : undefined,
+        secure: USE_SECURE_COOKIES,
       },
     },
   },
-  useSecureCookies: isProd,
+  useSecureCookies: USE_SECURE_COOKIES,
 
   secret: process.env.NEXTAUTH_SECRET,
 }

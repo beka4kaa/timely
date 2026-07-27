@@ -10,11 +10,15 @@ import {
   resolveHostRouting,
   type HostRoutingConfig,
 } from "@/lib/host-routing"
+import { SESSION_COOKIE_NAME } from "@/lib/auth-cookies"
 
 // ===== TEMPORARY DEV BYPASS — REMOVE BEFORE PRODUCTION =====
+// Gated on NODE_ENV as well as the flag: NEXT_PUBLIC_ vars are inlined into
+// the bundle at build time, so the flag alone must never be enough to switch
+// authentication off in a production build.
 const DEV_BYPASS_AUTH =
-  process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true" ||
-  process.env.NODE_ENV === "development"
+  process.env.NODE_ENV === "development" &&
+  process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true"
 // ============================================================
 
 const HOST_ROUTING_CONFIG: HostRoutingConfig = {
@@ -61,6 +65,17 @@ export default withAuth(
     return NextResponse.next()
   },
   {
+    // Must match what authOptions writes, otherwise getToken guesses the name
+    // from the Edge runtime's view of NEXTAUTH_URL/VERCEL and silently finds
+    // no token — which is exactly what caused the sign-in redirect loop.
+    cookies: {
+      sessionToken: { name: SESSION_COOKIE_NAME },
+    },
+    // Without this, signInPage defaults to /api/auth/signin, adding a pointless
+    // extra redirect hop before the real /auth/signin page.
+    pages: {
+      signIn: '/auth/signin',
+    },
     callbacks: {
       authorized: ({ token, req }) => {
         // ===== TEMPORARY: allow all requests in dev mode =====
