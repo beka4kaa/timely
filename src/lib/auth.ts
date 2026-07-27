@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
 
-
+const isProd = process.env.NODE_ENV === 'production'
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
@@ -66,10 +66,14 @@ export const authOptions: NextAuthOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      if (url.includes('/dashboard')) return url;
+      const ALLOWED_HOSTS = new Set(['app.timelyplan.me', 'timelyplan.me', 'localhost:3000']);
       if (url.startsWith('/')) return new URL(url, baseUrl).toString();
-      if (url === baseUrl || url === `${baseUrl}/`) return `${baseUrl}/dashboard/diary`;
-      if (url.startsWith(baseUrl)) return url;
+      try {
+        const target = new URL(url);
+        if (ALLOWED_HOSTS.has(target.host)) return target.toString();
+      } catch {
+        // ignore invalid URLs, fall through to default
+      }
       return `${baseUrl}/dashboard/diary`;
     },
 
@@ -88,6 +92,25 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60,
   },
+
+  // Share the session cookie between the apex (timelyplan.me) and the
+  // app subdomain (app.timelyplan.me) so a redirect between them keeps
+  // the user logged in. Only session-token gets a shared domain — csrf
+  // and callback-url cookies stay host-only since the auth forms always
+  // live on app.timelyplan.me.
+  cookies: {
+    sessionToken: {
+      name: isProd ? '__Secure-next-auth.session-token' : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: isProd,
+        domain: isProd ? '.timelyplan.me' : undefined,
+      },
+    },
+  },
+  useSecureCookies: isProd,
 
   secret: process.env.NEXTAUTH_SECRET,
 }

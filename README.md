@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://timelyplan.me"><img src="https://img.shields.io/badge/Live_Site-timelyplan.me-brightgreen?style=for-the-badge" alt="Live Site" /></a>
+  <a href="https://app.timelyplan.me"><img src="https://img.shields.io/badge/Live_App-app.timelyplan.me-brightgreen?style=for-the-badge" alt="Live App" /></a>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 
 **TimelyPlan** is a full-stack web application designed for students to manage their school life. It provides an interactive weekly diary, class schedule builder, grade tracker, AI-powered study assistant, and more — all in a modern, mobile-friendly interface with dark/light theme support.
 
-**Live:** [timelyplan.me](https://timelyplan.me)
+**Live:** [timelyplan.me](https://timelyplan.me) (landing) → [app.timelyplan.me](https://app.timelyplan.me) (the app itself)
 
 ---
 
@@ -83,8 +83,8 @@ Additional capabilities:
 
 | Service | Purpose |
 |---------|---------|
-| [Vercel](https://vercel.com) | Frontend hosting |
-| [Railway](https://railway.app) | Backend hosting |
+| [Vercel](https://vercel.com) | Frontend hosting (both `timelyplan.me` and `app.timelyplan.me` on one project) |
+| [Northflank](https://northflank.com) | Backend hosting |
 | [Docker](https://docker.com) | Backend containerization |
 
 ---
@@ -212,18 +212,24 @@ GOOGLE_CLIENT_SECRET=<your-client-secret>
 
 # Backend API URL
 NEXT_PUBLIC_API_URL=http://localhost:8000
+# BACKEND_URL overrides NEXT_PUBLIC_API_URL when set (used on Vercel)
 
-# Gemini AI (optional)
-GEMINI_API_KEY=<your-gemini-api-key>
+# AI features (see backend/.env.example for the full list — vision,
+# board/LLM, nutrition-photo providers, etc.)
+OPENROUTER_API_KEY=<your-openrouter-api-key>
 ```
+
+In production (Vercel), `NEXTAUTH_URL` must be **`https://app.timelyplan.me`**, not the apex domain — the app and all auth routes live on the subdomain, while `timelyplan.me` itself only redirects to it. See [src/lib/auth.ts](src/lib/auth.ts) for how the session cookie is shared across both hosts.
 
 #### Google OAuth Setup
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project and enable the Google+ API
+2. Create a project and configure the OAuth consent screen
 3. Create an **OAuth 2.0 Client ID** (Web application)
-4. Add authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
-5. Copy Client ID and Client Secret to `.env.local`
+4. Add authorized redirect URIs for every host you use:
+   - `http://localhost:3000/api/auth/callback/google` (local dev)
+   - `https://app.timelyplan.me/api/auth/callback/google` (production)
+5. Copy Client ID and Client Secret to `.env.local` (or the Vercel project's env vars)
 
 ---
 
@@ -244,10 +250,11 @@ GEMINI_API_KEY=<your-gemini-api-key>
 ### Frontend (Vercel)
 
 1. Connect the repository to [Vercel](https://vercel.com)
-2. Add all environment variables from `.env.production.example`
-3. Deploy automatically on push to `main`
+2. Add both domains to the project: `timelyplan.me` (apex, landing page) and `app.timelyplan.me` (the app) — one Vercel project serves both
+3. Add all environment variables from `.env.production.example`, setting `NEXTAUTH_URL=https://app.timelyplan.me`
+4. Deploy automatically on push to `main`
 
-### Backend (Railway / Docker)
+### Backend (Northflank / Docker)
 
 ```bash
 # Build Docker image
@@ -257,7 +264,7 @@ docker build -t timelyplan-backend .
 docker run -p 8000:8000 --env-file backend/.env timelyplan-backend
 ```
 
-Or deploy directly to [Railway](https://railway.app) from the repository.
+Or deploy directly to [Northflank](https://northflank.com) from the repository. The frontend's `next.config.js` proxies `/api/*` to the Northflank service URL by default when building on Vercel; override it with `BACKEND_URL` or `NEXT_PUBLIC_API_URL` if your Northflank service URL differs.
 
 ---
 
