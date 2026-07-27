@@ -1,8 +1,8 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline
-from .serializers import LearningProgramSerializer
+from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, ChatSession
+from .serializers import LearningProgramSerializer, ChatSessionSerializer, ChatSessionListSerializer
 from mind.models import Subject, Topic
 from .services import (
     generate_learning_program_content, 
@@ -11,6 +11,7 @@ from .services import (
     modify_program
 )
 from datetime import timedelta, datetime
+from django.db import IntegrityError
 from django.utils import timezone
 import math
 
@@ -1204,6 +1205,52 @@ class LearningProgramViewSet(viewsets.ModelViewSet):
     # Optional: logic to get "current" program easily
     def get_queryset(self):
         return super().get_queryset()
+
+
+class ChatSessionViewSet(viewsets.ModelViewSet):
+    """Saved AI Tutor conversations, isolated per account by user_email
+    (same pattern as diary.WeeklyTemplateViewSet)."""
+    queryset = ChatSession.objects.all()
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ChatSessionListSerializer
+        return ChatSessionSerializer
+
+    def get_queryset(self):
+        user_email = getattr(self.request, 'user_email', None)
+        if not user_email:
+            return ChatSession.objects.none()
+        return ChatSession.objects.filter(user_email=user_email)
+
+    def create(self, request, *args, **kwargs):
+        """Support a client-generated id (same convention as
+        WeeklyTemplateViewSet) so the frontend can create-then-PATCH the same
+        session as a conversation grows, without a round trip for the id."""
+        user_email = getattr(request, 'user_email', None)
+        if not user_email:
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        session_id = request.data.get('id')
+        if not session_id:
+            return Response({'error': 'id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Deliberately the same 409 whether the row is this user's or someone
+        # else's: distinguishing them would turn create into an existence
+        # oracle for other accounts' session ids.
+        if ChatSession.objects.filter(id=session_id).exists():
+            return Response({'error': 'Session already exists'}, status=status.HTTP_409_CONFLICT)
+
+        serializer = ChatSessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            # user_email is read-only on the serializer, so it can only come
+            # from the middleware — never from the request body.
+            session = serializer.save(id=session_id, user_email=user_email)
+        except IntegrityError:
+            # Closes the check-then-insert race between two concurrent creates.
+            return Response({'error': 'Session already exists'}, status=status.HTTP_409_CONFLICT)
+        return Response(ChatSessionSerializer(session).data, status=status.HTTP_201_CREATED)
 
 
 class TopicPlanViewSet(viewsets.ModelViewSet):

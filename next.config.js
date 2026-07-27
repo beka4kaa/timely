@@ -81,6 +81,21 @@ const nextConfig = {
         source: '/api/learning-program/:path*',
         destination: `${apiUrl}/api/ai_engine/learning-program/:path*`,
       },
+      // Two explicit rules instead of one `:path*`: Next always redirects
+      // away trailing slashes before rewrites run, and path-to-regexp
+      // compiles `:path*` to an empty string (no slash) when there are zero
+      // extra segments — so a single `:path*` rule silently drops the
+      // trailing slash DRF's router requires (APPEND_SLASH=False) on the
+      // bare collection endpoint. Frontend calls must never add a trailing
+      // slash themselves; these rules are what add the correct one back.
+      {
+        source: '/api/chat-sessions',
+        destination: `${apiUrl}/api/ai_engine/chat-sessions/`,
+      },
+      {
+        source: '/api/chat-sessions/:path+',
+        destination: `${apiUrl}/api/ai_engine/chat-sessions/:path+/`,
+      },
       // {
       //   source: '/api/subtopics/:path*',
       //   destination: `${apiUrl}/api/mind/subtopics/:path*`,

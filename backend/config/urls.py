@@ -8,7 +8,7 @@ from mind.views import SubjectViewSet, TopicViewSet, SubtopicViewSet, MindSessio
 from ai_engine.views import (
     GenerateProgramView, LearningProgramViewSet, TopicPlanViewSet,
     AnalyzeView, FastTopicsView, ModifyProgramView, GenerateSubtopicsView,
-    DailyTasksView, ScheduleView
+    DailyTasksView, ScheduleView, ChatSessionViewSet
 )
 from accounts.views import (
     RegisterView, LoginView, LeaderboardViewSet, MeView, UserSearchView,
@@ -53,6 +53,7 @@ router.register(r'mind/subtopics', SubtopicViewSet)
 router.register(r'mind/sessions', MindSessionViewSet)
 router.register(r'ai_engine/learning-program', LearningProgramViewSet)
 router.register(r'ai_engine/topic-plans', TopicPlanViewSet)
+router.register(r'ai_engine/chat-sessions', ChatSessionViewSet, basename='chat-session')
 router.register(r'diary/templates', WeeklyTemplateViewSet, basename='diary-template')
 router.register(r'diary/weeks', DiaryWeekViewSet, basename='diary-week')
 router.register(r'leaderboard', LeaderboardViewSet, basename='leaderboard')
