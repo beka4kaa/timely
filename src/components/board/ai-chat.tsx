@@ -1085,23 +1085,14 @@ export function AIChat({
             )}
 
             {isLoading && (
-              <div className="rounded-[14px] border border-[#c9944e] bg-[#f5efe5] p-3.5 text-[#61574c]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#936023]">
-                    Собираю разбор
-                  </span>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#b7792d]" />
-                </div>
-                <div className="mt-3 space-y-2 text-[12px]">
-                  <div className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-[#b7792d]" />
-                    Понял запрос и структуру темы
-                  </div>
-                  <div className="flex items-center gap-2 font-medium text-[#3f3932]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#b7792d]" />
-                    Строю объяснение и схему…
-                  </div>
-                </div>
+              // Honest, single generic status only — the backend picks the
+              // actual skill (plain reply / board / clarifying question)
+              // inside one opaque POST, so nothing about "understood the
+              // topic" or "building a diagram" is knowable yet, and showing
+              // it anyway would just be a fabricated claim.
+              <div className="flex items-center gap-2 rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] text-[#7c746a]">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#b7792d]" />
+                Думаю над ответом…
               </div>
             )}
 
