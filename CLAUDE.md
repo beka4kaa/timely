@@ -131,8 +131,14 @@ Production-интеграция (за фича-флагом):
 
 Растровый путь:
 
-- `IMAGE_GEN_MODEL = bytedance-seed/seedream-4.5` ($0.04 за картинку).
-- Seedream попадает в `_is_image_only_model` → `modalities: ["image"]`.
+- `IMAGE_GEN_MODEL = google/gemini-3-pro-image` (Nano Banana Pro).
+  Прежняя `bytedance-seed/seedream-4.5` УДАЛЕНА с OpenRouter: её нет в
+  `/api/v1/models`, а запрос отвечает 404 «No endpoints found that support the
+  requested output modalities», из-за чего падала любая генерация. Прежде чем
+  ставить сюда модель, проверь, что она есть в `/api/v1/models`.
+- Gemini-image мультимодальная (`output_modalities: ["image","text"]`), поэтому
+  в `_is_image_only_model` она НЕ входит. Туда попадают только чисто
+  image-модели (Seedream был такой) → `modalities: ["image"]`.
 - `TEXT_FREE_TERMINAL` добавляется в конец промпта для любой чистой
   image-модели.
 - FLUX выпилен из репозитория полностью: ни кода, ни веток, ни тестов.
@@ -271,9 +277,10 @@ LLM должна описывать отношения:
 - внешние URL внутри layout;
 - model-generated geometry для стрелок, углов и подписей.
 
-### Роль Seedream
+### Роль image-модели
 
-`IMAGE_GEN_MODEL = bytedance-seed/seedream-4.5`. У Seedream сейчас три роли:
+`IMAGE_GEN_MODEL = google/gemini-3-pro-image` (раньше Seedream 4.5, снята с
+OpenRouter). У image-модели сейчас три роли:
 
 1. Основной генератор для всего, что НЕ покрывает Vector DSL: сцены, биология,
    круговорот воды, процессы.
@@ -382,10 +389,12 @@ leader line только после ручного перемещения; вы�
 формального замера на пяти повторах не было. Сравнивать на одинаковых prompts,
 seed, размере и входном SVG/PNG:
 
-- `bytedance-seed/seedream-4.5` (текущая);
-- `black-forest-labs/flux.2-pro` (прежняя, для контроля);
-- `google/gemini-3-pro-image` (Nano Banana Pro, $0.04/картинка — тот же порядок
-  цены; именно её показывает бейдж у Figure Labs).
+- `google/gemini-3-pro-image` (Nano Banana Pro — текущая; именно её показывает
+  бейдж у Figure Labs);
+- `google/gemini-3.1-flash-image` (дешевле, кандидат);
+- `openai/gpt-5-image` (контроль).
+
+`bytedance-seed/seedream-4.5` из сравнения выбыла: её больше нет на OpenRouter.
 
 Мерить нужно на НЕ-механических сюжетах: механику теперь рисует Vector DSL, и
 там результат от image-модели не зависит.

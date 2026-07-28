@@ -216,10 +216,17 @@ IMAGE_GEN_API_KEY = os.getenv(
 # терминальным запретом — и тем ломала контракт, по которому подписи
 # накладываются отдельным слоем. Она же добавляла лишние стрелки, второй угол и
 # внешнюю силу вопреки MECHANICS/INCLINED_PLANE-контрактам.
-# NB: Seedream — ЧИСТО image-модель, поэтому она обязана попадать в
+# NB: чисто image-модели (например Seedream) обязаны попадать в
 # `_is_image_only_model` (image_enrichment.py), иначе запрос уйдёт с modalities
 # ["image", "text"] и провайдер ответит 404. То же касается любой новой модели.
-IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "bytedance-seed/seedream-4.5")
+#
+# Дефолт сменён с bytedance-seed/seedream-4.5: этой модели БОЛЬШЕ НЕТ на
+# OpenRouter — она пропала из /api/v1/models, а запрос отвечает
+# 404 «No endpoints found that support the requested output modalities».
+# Из-за этого падала ЛЮБАЯ генерация иллюстрации. Gemini-3-pro-image
+# мультимодальная (отдаёт и картинку, и текст), поэтому в
+# `_is_image_only_model` её добавлять НЕ нужно — проверено живым запросом.
+IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3-pro-image")
 
 # Vision-модель для grounding координат подписей в illustration_pipeline.
 # ВАЖНО: это НЕ IMAGE_GEN_MODEL. Раньше значение наследовалось от него, но

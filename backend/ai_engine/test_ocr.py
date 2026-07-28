@@ -48,13 +48,30 @@ def png_base64(*, alpha: bool = False) -> str:
 
 
 class VisionDefaultsTests(TestCase):
-    """The migration is only real if the shipped defaults point at Qwen/OpenRouter."""
+    """The migration is only real if the shipped defaults point at Qwen/OpenRouter.
 
-    def test_defaults_point_at_openrouter_qwen(self) -> None:
+    These assert the FALLBACK — what CI and a fresh deploy get. A developer .env
+    may legitimately override any of them (e.g. to run OCR against a local
+    server), so each check skips when its variable is set. Asserting the
+    resolved value unconditionally made the suite fail on a machine whose .env
+    pinned VISION_MODEL_NAME, which says nothing about the shipped default.
+    """
+
+    def test_default_base_url_is_openrouter(self) -> None:
+        if os.getenv("VISION_API_BASE_URL"):
+            self.skipTest("VISION_API_BASE_URL overridden in this environment")
         self.assertEqual(settings.VISION_API_BASE_URL, "https://openrouter.ai/api/v1")
+
+    def test_default_model_is_qwen_vl(self) -> None:
+        if os.getenv("VISION_MODEL_NAME"):
+            self.skipTest("VISION_MODEL_NAME overridden in this environment")
         self.assertEqual(settings.VISION_MODEL_NAME, "qwen/qwen3-vl-32b-instruct")
-        self.assertEqual(settings.VISION_TIMEOUT, 60)
-        self.assertFalse(settings.VISION_OCR_BINARIZE)
+
+    def test_default_timeout_and_binarize(self) -> None:
+        if not os.getenv("VISION_TIMEOUT"):
+            self.assertEqual(settings.VISION_TIMEOUT, 60)
+        if not os.getenv("VISION_OCR_BINARIZE"):
+            self.assertFalse(settings.VISION_OCR_BINARIZE)
 
     def test_vision_key_falls_back_to_openrouter_key(self) -> None:
         # Without the fallback the request would go out with the old "sk-local"
