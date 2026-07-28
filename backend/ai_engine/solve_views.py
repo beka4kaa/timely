@@ -6,7 +6,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from .help_policy import check_help_allowed, resolve_profile
 from .llm_errors import llm_error_response
+from .tutor_modes import get_mode
 from .usage import (
     provider_from_base_url,
     record_model_usage,
@@ -72,8 +74,15 @@ SYSTEM_PROMPT = """Ты — опытный AI-тьютор и репетитор
 class SolveTaskView(APIView):
     """
     POST /api/ai/solve/
-    Body: { "message": "текст задачи", "history": [...] }
-    Returns: { "reply": "решение от AI" }
+    Body: { "message": "текст задачи", "history": [...],
+            "mode"?: slug, "help_profile"?: slug, "attempts"?: int }
+    Returns: { "reply": "решение от AI" } либо отказ по политике режима.
+
+    Этот эндпоинт по определению выдаёт ГОТОВОЕ решение, поэтому он же —
+    главная дырка в педагогике: до появления политики он отдавал полный разбор
+    всегда и кому угодно, включая режимы, где ученик должен решать сам.
+    Проверку делает backend (`check_help_allowed`), а не промпт: промпт модель
+    может обойти, счётчик попыток — нет.
     """
 
     def post(self, request):
@@ -86,8 +95,35 @@ class SolveTaskView(APIView):
                 {"error": "Пустое сообщение. Напишите задачу."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Build messages for the API
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        mode = get_mode(data.get("mode"))
+        policy = resolve_profile(mode.policy, data.get("help_profile"))
+        try:
+            attempts = int(data.get("attempts") or 0)
+        except (TypeError, ValueError):
+            attempts = 0
+
+        decision = check_help_allowed(policy, attempts=attempts, wants_full_solution=True)
+        if not decision.allowed:
+            # Отказ — это нормальный педагогический ответ, а не ошибка запроса:
+            # 200 с текстом отказа, чтобы чат показал его обычной репликой.
+            # Флаг `policy_blocked` нужен, чтобы отказ не путали с ответом модели.
+            logger.info(
+                "[solve] отказ по политике: mode=%s attempts=%s", mode.slug, attempts
+            )
+            return Response(
+                {
+                    "reply": decision.reason,
+                    "policy_blocked": True,
+                    "mode": mode.slug,
+                    "model": OPENROUTER_MODEL,
+                }
+            )
+
+        # Правила режима действуют и здесь, иначе «Решить задачу» и «Разбор после
+        # контеста» получали бы один и тот же безразличный разбор.
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{mode.prompt}" if mode.prompt else SYSTEM_PROMPT
+        messages = [{"role": "system", "content": system_prompt}]
 
         # Append previous history (if any)
         for msg in history[-10:]:  # Limit to last 10 messages to stay within context
@@ -127,7 +163,9 @@ class SolveTaskView(APIView):
             if not reply:
                 reply = "Не удалось получить ответ от модели. Попробуйте ещё раз."
 
-            return Response({"reply": reply.strip(), "model": OPENROUTER_MODEL})
+            return Response(
+                {"reply": reply.strip(), "model": OPENROUTER_MODEL, "mode": mode.slug}
+            )
 
         except Exception as e:
             logger.error("Solve error: %s", e, exc_info=True)

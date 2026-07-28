@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Subject, Topic, ReviewSet, Subtopic, MindSession
 from .serializers import SubjectSerializer, TopicSerializer, SubtopicSerializer, MindSessionSerializer
+from .srs import next_review
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q
@@ -96,49 +97,27 @@ class TopicViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
-        """Spaced repetition review with GOOD (like) and AGAIN (dislike)"""
+        """Spaced repetition review with GOOD (like) and AGAIN (dislike).
+
+        Сам расчёт живёт в `mind.srs.next_review` — тем же расчётом пользуется
+        инструмент тьютора `schedule_review`, иначе в проекте появились бы два
+        независимых алгоритма повторения.
+        """
         topic = self.get_object()
-        rating = request.data.get('rating', 'GOOD')
-        
-        current_interval = topic.interval_days or 1
-        ease_factor = topic.ease_factor or 2.5
-        
-        if rating == 'AGAIN':  # Dislike - reset progress, set to MEDIUM (orange)
-            interval = 1  # Review tomorrow
-            ease_factor = max(1.3, ease_factor - 0.2)
-            topic.status = 'MEDIUM'
-        elif rating == 'HARD':
-            interval = max(1, int(current_interval * 1.2))
-            ease_factor = max(1.3, ease_factor - 0.15)
-            if topic.status == 'NOT_STARTED':
-                topic.status = 'MEDIUM'
-        elif rating == 'GOOD':  # Like - increase interval
-            if topic.status == 'NOT_STARTED':
-                interval = 1  # First review: 1 day
-                topic.status = 'MEDIUM'
-            elif topic.status == 'MEDIUM':
-                interval = max(2, int(current_interval * ease_factor))
-                if current_interval >= 3:
-                    topic.status = 'SUCCESS'
-            elif topic.status == 'SUCCESS':
-                interval = max(4, int(current_interval * ease_factor))
-                if current_interval >= 7:
-                    topic.status = 'MASTERED'
-            else:  # MASTERED
-                interval = max(7, int(current_interval * ease_factor))
-        elif rating == 'EASY':  # Super like - big interval jump
-            interval = max(7, int(current_interval * ease_factor * 1.5))
-            ease_factor = min(3.0, ease_factor + 0.15)
-            if topic.status in ['NOT_STARTED', 'MEDIUM']:
-                topic.status = 'SUCCESS'
-            elif topic.status == 'SUCCESS':
-                topic.status = 'MASTERED'
-             
-        topic.last_revised_at = timezone.now()
-        topic.next_review_at = timezone.now() + timedelta(days=interval)
-        topic.ease_factor = ease_factor
-        topic.interval_days = interval
-            
+        outcome = next_review(
+            rating=request.data.get('rating', 'GOOD'),
+            status=topic.status,
+            interval_days=topic.interval_days,
+            ease_factor=topic.ease_factor,
+        )
+
+        now = timezone.now()
+        topic.status = outcome.status
+        topic.last_revised_at = now
+        topic.next_review_at = now + timedelta(days=outcome.interval_days)
+        topic.ease_factor = outcome.ease_factor
+        topic.interval_days = outcome.interval_days
+
         topic.save()
         return Response(TopicSerializer(topic).data)
 

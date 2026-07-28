@@ -119,6 +119,15 @@ class StreamingRouterTests(TestCase):
             captured = {}
 
             class FakeBoardSkill:
+                # as_tool() нужен с тех пор, как стриминг стал собирать список
+                # инструментов через tools_for_mode(mode), а не брать готовую
+                # константу ROUTABLE_TOOLS: режим обязан управлять и стримом.
+                def as_tool(self):
+                    return {
+                        "type": "function",
+                        "function": {"name": "draw_board", "description": "", "parameters": {}},
+                    }
+
                 def run(self, **kwargs):
                     captured.update(kwargs)
                     from .skills.base import SkillResult
