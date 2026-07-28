@@ -361,6 +361,16 @@ VECTOR_PLANNER_TIMEOUT = int(
 
 MAC_STUDIO_HOST = os.getenv("MAC_STUDIO_HOST", "100.74.104.27")
 
+# Хост выше живёт в CGNAT-диапазоне Tailscale (100.64.0.0/10) и из облачного
+# контейнера не маршрутизируется вообще: SYN уходит в никуда, и клиент честно
+# ждёт свой таймаут. Именно так прод и «сломался» — /api/ai/chat отдавал 504
+# ровно через 60с (таймаут skills/router), потому что BOARD_LLM_BASE_URL на
+# Northflank не задали и он молча ушёл на этот адрес. Тихий фолбэк допустим
+# только в разработке; в проде отсутствие явного URL должно быть громким.
+AI_ALLOW_LOCAL_LLM_FALLBACK = os.getenv(
+    "AI_ALLOW_LOCAL_LLM_FALLBACK", "True" if DEBUG else "False"
+).lower() in {"1", "true", "yes"}
+
 # Qwen3.6-27B-4bit — универсальная локальная VLM (используется для семантической
 # разметки/подписей объектов в illustration_pipeline; OpenAI-совместимый API).
 QWEN_API_BASE_URL = os.getenv("QWEN_API_BASE_URL", f"http://{MAC_STUDIO_HOST}:8080/v1")

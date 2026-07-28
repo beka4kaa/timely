@@ -57,3 +57,6 @@ next-env.d.ts
 # build logs
 build-out.txt
 .gstack/
+
+# git worktrees, созданные агентом (служебные, не часть репозитория)
+.claude/worktrees/

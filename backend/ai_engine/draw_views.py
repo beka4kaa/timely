@@ -6,6 +6,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from .llm_errors import llm_error_response
+from .solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL
+
 # Генерация доски переехала в ai_engine.skills.board (BoardSkill) — здесь
 # остались DSL-промпт, санитайзеры и legacy-вью, делегирующая в скилл. Вызов
 # модели и обогащение иллюстраций живут в скилле, поэтому клиент OpenRouter и
@@ -596,25 +599,5 @@ class WhiteboardDrawView(APIView):
             return Response(result.as_payload())
 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Whiteboard draw error: {error_msg}", exc_info=True)
-
-            if "429" in error_msg:
-                return Response(
-                    {"error": "Модель перегружена (rate limit). Подождите немного и попробуйте снова."},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
-            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                return Response(
-                    {"error": "Модель не ответила вовремя. Попробуйте ещё раз."},
-                    status=status.HTTP_504_GATEWAY_TIMEOUT,
-                )
-            if "connection" in error_msg.lower():
-                return Response(
-                    {"error": "Не удалось связаться с моделью (сетевая ошибка). Попробуйте ещё раз."},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            return Response(
-                {"error": f"Ошибка AI: {error_msg}"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+            logger.error("Whiteboard draw error: %s", e, exc_info=True)
+            return llm_error_response(e, base_url=BOARD_LLM_BASE_URL, model=OPENROUTER_MODEL)

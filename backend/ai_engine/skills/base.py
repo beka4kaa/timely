@@ -23,6 +23,10 @@ class SkillResult:
     board: dict | None = None
     model: str = ""
     skill: str = ""
+    # Цепочка рассуждений модели. Мы за неё платим в любом случае, поэтому
+    # отдаём её наружу, а не выбрасываем: фронтенд показывает её в блоке
+    # «Думаю…». Пустая строка — модель рассуждений не вернула.
+    reasoning: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
 
     def as_payload(self) -> dict[str, Any]:
@@ -31,6 +35,7 @@ class SkillResult:
             "board": self.board,
             "model": self.model,
             "skill": self.skill,
+            "reasoning": self.reasoning,
             **self.meta,
         }
 

@@ -22,9 +22,9 @@ import {
   RotateCcw,
   Settings2,
   Share2,
-  UserRound,
   X,
 } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import Whiteboard from "@/components/whiteboard/Whiteboard";
 import {
   AIChat,
@@ -609,7 +609,7 @@ export default function WhiteboardPage() {
             title="Профиль"
             className="grid h-9 w-10 place-items-center rounded-[10px] text-[#8f8a81] outline-none transition-colors hover:bg-[#efede8] hover:text-[#34302b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
           >
-            <UserRound className="h-4 w-4" />
+            <UserAvatar size={26} />
           </Link>
         </div>
       </aside>

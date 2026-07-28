@@ -42,6 +42,7 @@ import {
   type LessonPlan,
 } from "./lesson-plan";
 import { authFetch } from "@/lib/auth-fetch";
+import { ReasoningBlock } from "./reasoning-block";
 import {
   AIUsageIndicator,
   type AIUsageSummary,
@@ -79,6 +80,13 @@ export interface ChatMessage {
   clarifyAnswered?: boolean;
   /** Короткая строка intake, а не обычный диалоговый bubble. */
   planningEvent?: boolean;
+  /**
+   * Цепочка рассуждений модели, пришедшая по SSE. Показывается свёрнутой
+   * строкой «Думал N секунд» над ответом и раскрывается по клику.
+   */
+  reasoning?: string;
+  /** Сколько модель думала, мс — для подписи свёрнутого блока. */
+  reasoningMs?: number;
 }
 
 export interface ClarifyOption {
@@ -213,6 +221,11 @@ export function AIChat({
     return "Поздняя сессия? Давай разберём";
   });
   const [isLoading, setIsLoading] = useState(false);
+  // Живое состояние стрима: рассуждение и ответ накапливаются по мере прихода
+  // SSE-дельт и рендерятся ещё до того, как запрос завершился.
+  const [streamingReasoning, setStreamingReasoning] = useState("");
+  const [streamingContent, setStreamingContent] = useState("");
+  const [streamingStage, setStreamingStage] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [generationStyle, setGenerationStyle] = useState("flat");
   const [internalLessonPlan, setInternalLessonPlan] =
@@ -333,7 +346,10 @@ export function AIChat({
       const payload = {
         title: deriveSessionTitle(currentLessonPlan, messages),
         topic: currentLessonPlan?.topic ?? "",
-        messages,
+        // Рассуждение — эфемерная деталь UI и весит порядка килобайта на
+        // сообщение. В сохранённую историю оно не едет: иначе каждый автосейв
+        // тащил бы килобайты, которые всё равно никто не перечитывает.
+        messages: messages.map(({ reasoning, reasoningMs, ...rest }) => rest),
         lesson_plan: currentLessonPlan,
       };
       // Nothing actually changed since the last successful save — skip the
@@ -539,6 +555,10 @@ export function AIChat({
     setMessages((prev) => [...prev, userMsg]);
     setInputValue("");
     setIsLoading(true);
+    setStreamingReasoning("");
+    setStreamingContent("");
+    setStreamingStage("routing");
+    const startedAt = Date.now();
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -572,7 +592,7 @@ export function AIChat({
       // обычный ответ или отрисовка. Раньше здесь был прямой /api/ai/draw, и
       // каждое сообщение тащило board-DSL промпт — простой вопрос отвечался
       // ~137 секунд и рисовал непрошеную доску.
-      const res = await authFetch("/api/ai/chat", {
+      const res = await authFetch("/api/ai/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -591,14 +611,80 @@ export function AIChat({
         }),
       });
 
-      // The body may be non-JSON (e.g. a proxy 500 / "Internal Server Error"
-      // when the model is slow), so parse defensively.
-      const rawBody = await res.text();
+      // Ответ приходит одним из двух способов:
+      //   text/event-stream — нормальный путь, читаем поток и показываем
+      //                       рассуждение и ответ по мере генерации;
+      //   что угодно другое — старый бэкенд без /chat/stream, либо прокси
+      //                       свернул поток в обычный ответ. Тогда парсим
+      //                       тело как JSON и работаем по-старому. Без этого
+      //                       фолбэка любой сбой прокси дал бы пустой чат.
+      const isEventStream = (res.headers.get("Content-Type") || "").includes(
+        "text/event-stream"
+      );
+
       let data: any = {};
-      try {
-        data = rawBody ? JSON.parse(rawBody) : {};
-      } catch {
-        data = {};
+      let streamedReasoning = "";
+
+      if (isEventStream && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamedContent = "";
+        let streamError: string | null = null;
+
+        // SSE-кадры разделены пустой строкой; кусок может оборваться на
+        // середине кадра, поэтому хвост держим в buffer до следующего чтения.
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() ?? "";
+
+          for (const frame of frames) {
+            let event = "message";
+            let raw = "";
+            for (const line of frame.split("\n")) {
+              if (line.startsWith("event: ")) event = line.slice(7).trim();
+              else if (line.startsWith("data: ")) raw += line.slice(6);
+            }
+            if (!raw) continue;
+
+            let payload: any;
+            try {
+              payload = JSON.parse(raw);
+            } catch {
+              continue;
+            }
+
+            if (event === "reasoning") {
+              streamedReasoning += payload.delta ?? "";
+              setStreamingReasoning(streamedReasoning);
+            } else if (event === "content") {
+              streamedContent += payload.delta ?? "";
+              setStreamingContent(streamedContent);
+            } else if (event === "stage") {
+              setStreamingStage(payload.stage ?? null);
+            } else if (event === "done") {
+              data = payload;
+            } else if (event === "error") {
+              streamError = payload.error || "Не удалось получить ответ.";
+            }
+          }
+        }
+
+        if (streamError) throw new Error(streamError);
+        if (!data.reply && streamedContent) data.reply = streamedContent;
+      } else {
+        // The body may be non-JSON (e.g. a proxy 500 / "Internal Server Error"
+        // when the model is slow), so parse defensively.
+        const rawBody = await res.text();
+        try {
+          data = rawBody ? JSON.parse(rawBody) : {};
+        } catch {
+          data = {};
+        }
       }
 
       if (!res.ok) {
@@ -676,12 +762,17 @@ export function AIChat({
           ? (data.clarify as ClarifyPrompt)
           : null;
 
+      const reasoning = (data.reasoning || streamedReasoning || "").trim();
       const assistantMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: data.reply || (board ? "Вот разбор:" : "Готово."),
         board,
         clarify,
+        ...(reasoning && {
+          reasoning,
+          reasoningMs: Date.now() - startedAt,
+        }),
       };
       setMessages((prev) => [...prev, assistantMsg]);
       onUsageChange?.();
@@ -701,6 +792,11 @@ export function AIChat({
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
+      // Живой блок гасим только здесь: рассуждение уже переехало в сообщение,
+      // и если оставить состояние, оно продублируется под ответом.
+      setStreamingReasoning("");
+      setStreamingContent("");
+      setStreamingStage(null);
     }
   };
 
@@ -998,8 +1094,16 @@ export function AIChat({
                   key={msg.id}
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
+                  <div className="flex max-w-[94%] flex-col gap-1.5">
+                    {msg.reasoning && (
+                      <ReasoningBlock
+                        reasoning={msg.reasoning}
+                        streaming={false}
+                        durationMs={msg.reasoningMs}
+                      />
+                    )}
                   <div
-                    className={`flex max-w-[94%] flex-col gap-3 whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.55] ${
+                    className={`flex flex-col gap-3 whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.55] ${
                       msg.role === "assistant"
                         ? "rounded-[16px] border border-[#dedad3] bg-white/62 text-[#514b43]"
                         : "rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
@@ -1063,28 +1167,26 @@ export function AIChat({
                       </div>
                     )}
                   </div>
+                  </div>
                 </div>
               ),
             )}
 
+            {/* Живой ход мысли модели вместо прежнего статичного чеклиста:
+                тот показывал две захардкоженные строки и «понял запрос» с
+                готовой галочкой в ту же миллисекунду, что и отправку. */}
             {isLoading && (
-              <div className="rounded-[14px] border border-[#c9944e] bg-[#f5efe5] p-3.5 text-[#61574c]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#936023]">
-                    Собираю разбор
-                  </span>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#b7792d]" />
-                </div>
-                <div className="mt-3 space-y-2 text-[12px]">
-                  <div className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-[#b7792d]" />
-                    Понял запрос и структуру темы
+              <div className="flex flex-col gap-1.5">
+                <ReasoningBlock
+                  reasoning={streamingReasoning}
+                  streaming
+                  stage={streamingStage}
+                />
+                {streamingContent && (
+                  <div className="max-w-[94%] whitespace-pre-wrap rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]">
+                    {streamingContent}
                   </div>
-                  <div className="flex items-center gap-2 font-medium text-[#3f3932]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#b7792d]" />
-                    Строю объяснение и схему…
-                  </div>
-                </div>
+                )}
               </div>
             )}
 

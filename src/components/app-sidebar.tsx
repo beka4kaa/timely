@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { LogOut, UserRound } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +40,6 @@ export function AppSidebar() {
   });
   const userName = session?.user?.name || "User";
   const userEmail = session?.user?.email || "Профиль Timely";
-  const initials = userName.slice(0, 2).toUpperCase();
 
   return (
     <aside className="fixed bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-[#dedbd4] bg-[#fbfaf7] py-2 md:flex">
@@ -103,15 +102,7 @@ export function AppSidebar() {
                     aria-label="Открыть профиль"
                     className="grid h-10 w-10 place-items-center rounded-[12px] outline-none transition-colors hover:bg-[#efede8] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 data-[state=open]:bg-[#fff7e9]"
                   >
-                    <Avatar className="h-7 w-7 rounded-[9px] border border-[#d9d2c8] bg-white shadow-sm">
-                      <AvatarImage
-                        src={session?.user?.image || "/avatars/user.jpg"}
-                        alt={userName}
-                      />
-                      <AvatarFallback className="rounded-[8px] bg-[#fff7e8] text-[9px] font-semibold text-[#8a5b2b]">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar size={28} />
                   </button>
                 </DropdownMenuTrigger>
               </TooltipTrigger>
@@ -131,15 +122,7 @@ export function AppSidebar() {
               className="w-60 rounded-[18px] border-[#ddd6ca] bg-[#fbfaf7]/95 p-1.5 text-[#39332d] shadow-[0_20px_55px_rgba(63,47,29,0.16)] backdrop-blur-2xl"
             >
               <DropdownMenuLabel className="flex items-center gap-2.5 px-2 py-2 font-normal">
-                <Avatar className="h-9 w-9 rounded-[11px] border border-[#ddd5c8]">
-                  <AvatarImage
-                    src={session?.user?.image || "/avatars/user.jpg"}
-                    alt={userName}
-                  />
-                  <AvatarFallback className="rounded-[10px] bg-[#fff7e8] text-xs font-semibold text-[#8a5b2b]">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar size={36} />
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">
                     {userName}

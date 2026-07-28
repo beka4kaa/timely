@@ -7,9 +7,9 @@ import { createPortal } from "react-dom";
 import {
   ChevronRight,
   Menu,
-  UserRound,
   X,
 } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   useCallback,
   useEffect,
@@ -225,9 +225,7 @@ export function MobileDashboardMenu({
               onClick={(event) => navigate(event, "/dashboard/profile")}
               className="mx-auto flex h-12 w-full max-w-2xl items-center gap-3 rounded-[16px] px-3 text-[#5f574e] outline-none transition-colors hover:bg-[#f0ede7] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
             >
-              <span className="grid h-9 w-9 place-items-center rounded-[12px] bg-[#eeeae3]">
-                <UserRound className="h-4 w-4" />
-              </span>
+              <UserAvatar size={36} />
               <span className="font-serif text-[14px] font-semibold">
                 Профиль
               </span>

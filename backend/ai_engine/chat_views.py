@@ -6,18 +6,23 @@ POST /api/ai/chat/ — единая точка входа для чата на �
 просьбе ученика.
 """
 
+import json
 import logging
 
+from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .llm_errors import llm_error_response
 from .planning_intake import (
     PlanningIntakeValidationError,
     confirm_planning_intake,
     handle_planning_intake,
 )
-from .skills import route_and_run
+from .skills import route_and_run, route_and_run_streaming
+from .solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL
+from .usage import usage_scope
 
 logger = logging.getLogger(__name__)
 
@@ -110,25 +115,7 @@ def build_lesson_instruction(lesson_plan, active_task) -> str:
 
 def error_response(exc: Exception) -> Response:
     """Ошибки провайдера → понятные HTTP-коды и текст для UI."""
-    error_msg = str(exc)
-    lowered = error_msg.lower()
-
-    if "429" in error_msg:
-        return Response(
-            {"error": "Модель перегружена (rate limit). Подождите немного и попробуйте снова."},
-            status=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-    if "timeout" in lowered or "timed out" in lowered:
-        return Response(
-            {"error": "Модель не ответила вовремя. Попробуйте ещё раз."},
-            status=status.HTTP_504_GATEWAY_TIMEOUT,
-        )
-    if "connection" in lowered:
-        return Response(
-            {"error": "Не удалось связаться с моделью (сетевая ошибка). Попробуйте ещё раз."},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-    return Response({"error": f"Ошибка AI: {error_msg}"}, status=status.HTTP_502_BAD_GATEWAY)
+    return llm_error_response(exc, base_url=BOARD_LLM_BASE_URL, model=OPENROUTER_MODEL)
 
 
 class BoardChatView(APIView):
@@ -185,3 +172,88 @@ class BoardChatView(APIView):
         except Exception as exc:  # noqa: BLE001 — маппим на HTTP ниже
             logger.error("Board chat error: %s", exc, exc_info=True)
             return error_response(exc)
+
+
+def _sse(event: str, data: dict) -> str:
+    """Одно Server-Sent Event.
+
+    ensure_ascii=False — иначе кириллица раздувается в \\uXXXX и поток
+    становится втрое тяжелее. separators без пробелов — по той же причине.
+    """
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+class BoardChatStreamView(APIView):
+    """POST /api/ai/chat/stream/ — то же, что BoardChatView, но потоком.
+
+    Отдаёт Server-Sent Events, чтобы фронтенд показывал живой ход мысли модели
+    («Думаю…») и печатал ответ по мере генерации, а не ждал молча 20-60 секунд.
+
+    События: reasoning | content | stage | done | error.
+    Нестримящий /api/ai/chat/ остаётся рабочим — на нём планировщик урока.
+    """
+
+    def post(self, request):
+        data = request.data
+        user_message = (data.get("message") or "").strip()
+        if not user_message:
+            return Response(
+                {"error": "Пустое сообщение. Напишите вопрос или что нарисовать."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reference_labels = data.get("reference_labels")
+        if not (isinstance(reference_labels, list) and reference_labels):
+            reference_labels = None
+
+        kwargs = dict(
+            user_message=user_message,
+            history=data.get("history", []),
+            style=data.get("style"),
+            palette=data.get("palette"),
+            reference_image_url=data.get("reference_image_url") or None,
+            reference_labels=reference_labels,
+            enrich_images=not bool(data.get("defer_images")),
+            lesson_instruction=build_lesson_instruction(
+                data.get("lesson_plan"),
+                data.get("active_lesson_task"),
+            ),
+        )
+
+        # StreamingHttpResponse итерируется УЖЕ ПОСЛЕ того, как middleware
+        # вернуло ответ, поэтому usage_scope из AIUsageContextMiddleware к тому
+        # моменту закрыт, а contextvar сброшен. Без повторного входа в скоуп
+        # внутри генератора record_model_usage не увидит user_email и молча
+        # ничего не запишет. Поэтому забираем email здесь, синхронно.
+        user_email = getattr(request, "user_email", None)
+
+        def event_stream():
+            with usage_scope(user_email=user_email, feature="chat_stream"):
+                try:
+                    for event, payload in route_and_run_streaming(**kwargs):
+                        yield _sse(event, payload)
+                except Exception as exc:  # noqa: BLE001
+                    # Заголовки уже отправлены — HTTP-код не поменять, поэтому
+                    # ошибка приезжает событием, и фронтенд её показывает.
+                    logger.error("Board chat stream error: %s", exc, exc_info=True)
+                    body = error_response(exc).data
+                    yield _sse("error", body)
+
+        response = StreamingHttpResponse(
+            event_stream(), content_type="text/event-stream"
+        )
+        # no-transform — не косметика, а обязательное условие стриминга.
+        # Next.js проксирует /api/ai/* и по умолчанию сжимает ответ gzip'ом.
+        # Компрессор копит данные в своём буфере, поэтому браузер получал ВСЕ
+        # события одним куском в самом конце: замерено — 124 reasoning-фрейма
+        # с firstReasoningMs == totalMs == 6051. Блок «Думаю…» при этом тикал
+        # секундами, но текст рассуждения не появлялся ни разу. Директива
+        # no-transform запрещает промежуточным звеньям пересжимать тело, и
+        # поток снова идёт по мере генерации.
+        response["Cache-Control"] = "no-cache, no-transform"
+        # Northflank проксирует через istio-envoy, а тот (как и nginx) охотно
+        # буферизует ответ и склеивает весь поток в один кусок — стриминг
+        # превращается в обычный долгий запрос. Заголовок это отключает.
+        response["X-Accel-Buffering"] = "no"
+        return response

@@ -20,7 +20,7 @@ from ai_engine.ocr_views import OCRView
 from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
-from ai_engine.chat_views import BoardChatView
+from ai_engine.chat_views import BoardChatStreamView, BoardChatView
 from ai_engine.illustration_views import IllustrationView
 from ai_engine.usage_views import AIUsageSummaryView
 from habits.views import HabitViewSet
@@ -97,6 +97,9 @@ urlpatterns = [
     path('api/ai/draw/', WhiteboardDrawView.as_view(), name='ai-draw'),
     path('api/ai/draw', WhiteboardDrawView.as_view(), name='ai-draw-no-slash'),
     # Роутер скиллов — основная точка входа чата на доске (см. ai_engine.skills).
+    # Стриминг регистрируем ДО 'api/ai/chat/', иначе он бы не совпал первым.
+    path('api/ai/chat/stream/', BoardChatStreamView.as_view(), name='ai-board-chat-stream'),
+    path('api/ai/chat/stream', BoardChatStreamView.as_view(), name='ai-board-chat-stream-no-slash'),
     path('api/ai/chat/', BoardChatView.as_view(), name='ai-board-chat'),
     path('api/ai/chat', BoardChatView.as_view(), name='ai-board-chat-no-slash'),
     # Вторая фаза прогрессивной выдачи: одна иллюстрация за запрос.

@@ -32,4 +32,11 @@ EXPOSE 8080
 # the app (TEXT_LLM_TIMEOUT / skills/board.py both allow up to 180s) — gunicorn's
 # default 30s worker timeout kills the whole worker via SIGABRT mid-request
 # before Django's own try/except fallback logic ever runs.
-CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 200
+#
+# --worker-class gthread + --threads: /api/ai/chat/stream/ держит соединение
+# открытым всё время генерации (SSE). С gunicorn'овским дефолтом в ОДИН
+# синхронный воркер первый же открытый стрим заблокировал бы весь бэкенд —
+# включая логин и загрузку дашборда. Треды дают параллельные стримы, не требуя
+# переписывать синхронные Django-вьюхи и openai SDK на async.
+CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 200 \
+    --worker-class gthread --workers 2 --threads 8

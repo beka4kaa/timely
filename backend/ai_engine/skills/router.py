@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Iterator
 
 from ..draw_views import style_from_message
 from ..solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL, openrouter_client
@@ -133,3 +133,170 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
     if not result.reply and content:
         result.reply = content
     return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Стриминг
+#
+# Нестримящий route_and_run выше остаётся нетронутым: на него завязаны
+# /api/ai/chat, планировщик урока и тесты. Стриминг — отдельная функция рядом,
+# потому что у неё принципиально другой контракт (генератор событий вместо
+# одного SkillResult) и другие параметры модели: здесь reasoning ВКЛЮЧЁН, его
+# и показывает блок «Думаю…».
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Рассуждения стоят токенов и времени (замер в route_and_run: 144 токена/3.9с
+# против 30/2.0с), поэтому effort="low" — нам нужен видимый ход мысли, а не
+# максимальная глубина.
+STREAM_REASONING_EFFORT = "low"
+
+
+def _assemble_tool_calls(buffer: dict[int, dict]) -> list[dict]:
+    """Собрать tool-calls из стрим-дельт.
+
+    В стриме tool-call приезжает по кускам: имя функции обычно в первой дельте,
+    а `arguments` дописываются символ за символом в последующих. Ключ — index,
+    а не id: id приходит только в первой дельте.
+    """
+    calls = []
+    for index in sorted(buffer):
+        item = buffer[index]
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        calls.append({"name": name, "arguments": item.get("arguments") or ""})
+    return calls
+
+
+def route_and_run_streaming(
+    *, user_message: str, history: list | None = None, **ctx: Any
+) -> Iterator[tuple[str, dict]]:
+    """Определить намерение и выполнить скилл, отдавая события по мере готовности.
+
+    Yields кортежи (event, data):
+        ("reasoning", {"delta": str})  — кусок цепочки рассуждений
+        ("content",   {"delta": str})  — кусок текста ответа
+        ("stage",     {"stage": str})  — сменилась стадия (routing/drawing/…)
+        ("done",      payload)         — финальный SkillResult.as_payload()
+    """
+    history = history or []
+
+    # Детерминированная смена стиля — как и в нестримящем пути, модель не
+    # спрашиваем вовсе. Рассуждать здесь не о чем, поэтому сразу стадия+результат.
+    if history and style_from_message(user_message):
+        logger.info("[router] skill=draw_board (команда смены стиля, без вызова модели)")
+        yield "stage", {"stage": "drawing"}
+        result = SKILLS["draw_board"].run(user_message=user_message, history=history, **ctx)
+        yield "done", result.as_payload()
+        return
+
+    lesson_instruction = str(ctx.get("lesson_instruction") or "").strip()
+    system_prompt = CHAT_SYSTEM_PROMPT
+    if lesson_instruction:
+        system_prompt = f"{system_prompt}\n\n{lesson_instruction}"
+
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+    for item in history[-ROUTER_HISTORY_LIMIT:]:
+        role = item.get("role")
+        content_item = item.get("content")
+        if role in ("user", "assistant") and isinstance(content_item, str) and content_item.strip():
+            messages.append({"role": role, "content": content_item})
+    messages.append({"role": "user", "content": user_message})
+
+    yield "stage", {"stage": "routing"}
+
+    stream = openrouter_client.chat.completions.create(
+        model=OPENROUTER_MODEL,
+        messages=messages,
+        tools=ROUTABLE_TOOLS,
+        max_tokens=1500,
+        temperature=0.7,
+        timeout=120,
+        stream=True,
+        # Без include_usage финальный чанк приходит без usage, и весь учёт
+        # токенов для стримящего пути молча обнулился бы.
+        stream_options={"include_usage": True},
+        extra_body={"reasoning": {"enabled": True, "effort": STREAM_REASONING_EFFORT}},
+    )
+
+    reasoning_parts: list[str] = []
+    content_parts: list[str] = []
+    tool_buffer: dict[int, dict] = {}
+    usage_chunk: Any = None
+
+    for chunk in stream:
+        # Чанк с usage приходит последним и НЕ содержит choices.
+        if getattr(chunk, "usage", None):
+            usage_chunk = chunk
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        if delta is None:
+            continue
+
+        reasoning_delta = getattr(delta, "reasoning", None)
+        if reasoning_delta:
+            reasoning_parts.append(reasoning_delta)
+            yield "reasoning", {"delta": reasoning_delta}
+
+        content_delta = getattr(delta, "content", None)
+        if content_delta:
+            content_parts.append(content_delta)
+            yield "content", {"delta": content_delta}
+
+        for tool_delta in getattr(delta, "tool_calls", None) or []:
+            index = getattr(tool_delta, "index", 0) or 0
+            slot = tool_buffer.setdefault(index, {"name": "", "arguments": ""})
+            function = getattr(tool_delta, "function", None)
+            if function is not None:
+                if getattr(function, "name", None):
+                    slot["name"] = function.name
+                if getattr(function, "arguments", None):
+                    slot["arguments"] += function.arguments
+
+    if usage_chunk is not None:
+        record_model_usage(
+            usage_chunk,
+            model=OPENROUTER_MODEL,
+            provider=provider_from_base_url(BOARD_LLM_BASE_URL),
+            feature="board_router_stream",
+            input_payload=messages,
+        )
+
+    content = "".join(content_parts).strip()
+    reasoning = "".join(reasoning_parts).strip()
+    tool_calls = _assemble_tool_calls(tool_buffer)
+
+    if not tool_calls:
+        logger.info("[router] skill=chat (без тулов), стриминг")
+        yield "done", SkillResult(
+            reply=content, board=None, model=OPENROUTER_MODEL, skill="chat", reasoning=reasoning
+        ).as_payload()
+        return
+
+    call = tool_calls[0]
+    skill_name = call["name"]
+    try:
+        args = json.loads(call["arguments"] or "{}")
+    except (TypeError, ValueError):
+        args = {}
+
+    skill = SKILLS.get(skill_name)
+    if skill is None or skill_name == "chat":
+        logger.warning("[router] неизвестный тул %r — отвечаем как чат", skill_name)
+        result = SKILLS["chat"].run(
+            user_message=user_message, history=history, reply=content, model=OPENROUTER_MODEL
+        )
+        result.reasoning = reasoning
+        yield "done", result.as_payload()
+        return
+
+    logger.info("[router] skill=%s args=%s (стриминг)", skill_name, args)
+    yield "stage", {"stage": "drawing" if skill_name == "draw_board" else skill_name}
+    result = skill.run(user_message=user_message, history=history, **{**ctx, **args})
+
+    if not result.reply and content:
+        result.reply = content
+    result.reasoning = reasoning
+    yield "done", result.as_payload()

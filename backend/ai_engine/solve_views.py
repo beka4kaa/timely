@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from .llm_errors import llm_error_response
 from .usage import (
     provider_from_base_url,
     record_model_usage,
@@ -28,6 +29,21 @@ logger = logging.getLogger(__name__)
 BOARD_LLM_BASE_URL = os.getenv("BOARD_LLM_BASE_URL", settings.QWEN_API_BASE_URL)
 BOARD_LLM_API_KEY = os.getenv("BOARD_LLM_API_KEY", settings.QWEN_API_KEY)
 BOARD_LLM_MODEL = os.getenv("BOARD_LLM_MODEL", settings.QWEN_MODEL_NAME)
+
+# Прод однажды молча ушёл на Tailscale-адрес Mac Studio и месяцами отвечал
+# «Модель не ответила вовремя» (504 ровно через 60с — таймаут роутера), потому
+# что BOARD_LLM_BASE_URL забыли задать на Northflank. Ошибка выглядела как
+# «модель сдохла», хотя модель была жива, а запрос просто уходил в никуда.
+# Кричим об этом на импорте — но НЕ бросаем исключение: иначе не поднимется
+# весь Django, а не только чат.
+if not os.getenv("BOARD_LLM_BASE_URL") and not settings.AI_ALLOW_LOCAL_LLM_FALLBACK:
+    logger.error(
+        "BOARD_LLM_BASE_URL не задан — LLM-путь указывает на локальный адрес %s. "
+        "Из облака он недостижим, и любой запрос к чату/доске упадёт по таймауту. "
+        "Задайте BOARD_LLM_BASE_URL=https://openrouter.ai/api/v1, BOARD_LLM_API_KEY "
+        "и BOARD_LLM_MODEL в окружении сервиса.",
+        BOARD_LLM_BASE_URL,
+    )
 
 # OpenAI-compatible client. max_retries=0 → fail fast instead of silently
 # retrying (a single slow generation otherwise balloons past 2-3 minutes).
@@ -114,22 +130,5 @@ class SolveTaskView(APIView):
             return Response({"reply": reply.strip(), "model": OPENROUTER_MODEL})
 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"OpenRouter API error: {error_msg}", exc_info=True)
-
-            if "429" in error_msg:
-                return Response(
-                    {"error": "Модель временно перегружена (rate limit). Подождите 30 сек и попробуйте снова."},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
-
-            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                return Response(
-                    {"error": "Модель не ответила за 60 секунд. Попробуйте ещё раз."},
-                    status=status.HTTP_504_GATEWAY_TIMEOUT,
-                )
-
-            return Response(
-                {"error": f"Ошибка AI: {error_msg}"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+            logger.error("Solve error: %s", e, exc_info=True)
+            return llm_error_response(e, base_url=BOARD_LLM_BASE_URL, model=BOARD_LLM_MODEL)

@@ -736,6 +736,24 @@ export function LessonPlanningForm({
     }
   };
 
+  /** Собрать план по умолчанию и сразу отдать управление чату.
+   *
+   * Никаких сетевых запросов: buildLessonPlan — чистая функция, и она же
+   * используется как локальный фолбэк на обычном пути, поэтому форма плана
+   * получается ровно та же, что после полного визарда. */
+  const skipPlanning = () => {
+    const trimmedTopic = topic.trim();
+    onCreate(
+      buildLessonPlan({
+        topic: trimmedTopic || "Свободный вопрос",
+        goal: "understand",
+        resultType: GOAL_TO_RESULT_TYPE.understand,
+        level: "school",
+        durationMinutes: 20,
+      }),
+    );
+  };
+
   const editAnswers = () => {
     requestCounterRef.current += 1;
     setScreen("topic");
@@ -820,6 +838,17 @@ export function LessonPlanningForm({
             >
               Продолжить
               <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+            {/* Визард обязателен: без плана чат не рендерится вовсе. Но чтобы
+                задать один вопрос, проходить пять экранов не нужно — здесь
+                собирается минимальный план по умолчанию, и чат открывается
+                сразу. Тема берётся из поля, если её успели ввести. */}
+            <button
+              type="button"
+              onClick={skipPlanning}
+              className="mx-auto mt-2.5 block rounded-[8px] px-2 py-1 text-[11px] text-[#9b958c] outline-none transition-colors hover:text-[#61574c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+            >
+              Пропустить и просто спросить
             </button>
           </form>
         )}

@@ -4,7 +4,7 @@ from .base import Skill, SkillResult
 from .board import BoardSkill
 from .chat import ChatSkill
 from .clarify import ClarifySkill
-from .router import SKILLS, route_and_run
+from .router import SKILLS, route_and_run, route_and_run_streaming
 
 __all__ = [
     "Skill",
@@ -14,4 +14,5 @@ __all__ = [
     "ClarifySkill",
     "SKILLS",
     "route_and_run",
+    "route_and_run_streaming",
 ]
