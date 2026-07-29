@@ -134,7 +134,7 @@ class ChatSessionSerializer(serializers.ModelSerializer):
         return value
 
     def validate_canvas(self, value):
-        """Содержимое доски: элементы и камера.
+        """Содержимое доски: элементы, штрихи карандаша и камера.
 
         Проверяем форму и ВЕРХНЮЮ ГРАНИЦУ. Иллюстрации лежат в элементах как
         data-URI по сотне-другой килобайт каждая, и без предела один холст с
@@ -150,6 +150,11 @@ class ChatSessionSerializer(serializers.ModelSerializer):
         elements = value.get('elements')
         if elements is not None and not isinstance(elements, list):
             raise serializers.ValidationError('canvas.elements must be a list')
+        # Штрихи карандаша — отдельный список рядом с элементами. Ключа может не
+        # быть вовсе: сессии, сохранённые до его появления, остаются валидными.
+        strokes = value.get('strokes')
+        if strokes is not None and not isinstance(strokes, list):
+            raise serializers.ValidationError('canvas.strokes must be a list')
         size = len(json.dumps(value, ensure_ascii=False))
         if size > MAX_CANVAS_BYTES:
             raise serializers.ValidationError(

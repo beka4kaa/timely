@@ -6,6 +6,10 @@ import type { ShapeKind } from '@/stores/whiteboard';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/** Пауза в наборе, после которой черновик текста уезжает в стор доски (и,
+ * следом, в автосохранение сессии). */
+const TEXT_DRAFT_COMMIT_MS = 800;
+
 /** Deterministic roughness seed derived from an element id. */
 function hashSeed(id: string): number {
   let seed = 0;
@@ -30,7 +34,15 @@ export interface TextRendererProps {
   color?: string;
   variant?: 'heading' | 'body' | 'formula' | 'table';
   autoFocus?: boolean;
-  onContentChange?: (content: string) => void;
+  /**
+   * @param options.startsNewHistoryStep — правка открывает новый шаг Undo.
+   * Промежуточные коммиты одного сеанса редактирования его не открывают, иначе
+   * каждая пауза при наборе становилась бы отдельным Ctrl+Z.
+   */
+  onContentChange?: (
+    content: string,
+    options?: { startsNewHistoryStep?: boolean },
+  ) => void;
   onEditingComplete?: () => void;
 }
 
@@ -121,10 +133,45 @@ export const TextRenderer: React.FC<TextRendererProps> = ({
     editor.select();
   }, [isEditing]);
 
+  // Был ли в этом сеансе редактирования хотя бы один коммит. Нужен, чтобы шаг
+  // Undo открывал ПЕРВЫЙ коммит: тогда отмена возвращает текст, который был до
+  // начала правки, а не промежуточное состояние набора.
+  const committedDuringEditRef = useRef(false);
+  useEffect(() => {
+    if (isEditing) committedDuringEditRef.current = false;
+  }, [isEditing]);
+
+  const commitContent = (next: string) => {
+    if (next === content) return;
+    onContentChange?.(next, {
+      startsNewHistoryStep: !committedDuringEditRef.current,
+    });
+    committedDuringEditRef.current = true;
+  };
+
+  // Промежуточный коммит черновика по паузе в наборе.
+  //
+  // Без него набранный текст жил только в этом компоненте до потери фокуса:
+  // ученик печатал, перезагружал страницу и терял всё, потому что автосейв
+  // доски подписан на стор и об изменении просто не знал.
+  const commitContentRef = useRef(commitContent);
+  commitContentRef.current = commitContent;
+  useEffect(() => {
+    if (!isEditing) return;
+    const next = draft.trim();
+    // Пустой черновик не коммитим: подставлять за ученика 'Текст' посреди
+    // набора нельзя, это делает только осознанное завершение правки.
+    if (!next) return;
+    const timer = window.setTimeout(
+      () => commitContentRef.current(next),
+      TEXT_DRAFT_COMMIT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [draft, isEditing]);
+
   const finishEditing = (commit: boolean) => {
     if (commit) {
-      const nextContent = draft.trim() || 'Текст';
-      if (nextContent !== content) onContentChange?.(nextContent);
+      commitContent(draft.trim() || 'Текст');
     } else {
       setDraft(content);
     }
