@@ -385,6 +385,26 @@ export function AIChat({
     });
   }, [loadChatSession]);
 
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      setHistoryItems(await listChatSessions());
+    } catch {
+      setHistoryError("Не удалось загрузить историю чатов");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // Список нужен не только внутри поповера: рядом с кнопкой стоит счётчик
+  // сохранённых чатов, и без загрузки на монтировании он показывал бы 0 до
+  // первого открытия истории.
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
+
   // Best-effort autosave: debounced so a burst of streaming updates doesn't
   // fire a request per keystroke-equivalent. Creates the session on the
   // first message, then PATCHes the same row as the conversation grows.
@@ -419,6 +439,9 @@ export function AIChat({
             lastSavedPayloadRef.current = serialized;
             setCurrentSessionId(created.id);
             window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, created.id);
+            // Появился новый чат — счётчик рядом с кнопкой истории должен это
+            // показать сразу, а не после следующего открытия поповера.
+            void refreshHistory();
           })
           .catch(() => {
             // Best-effort: the ref stays put, so the next edit retries.
@@ -438,6 +461,7 @@ export function AIChat({
     }, 1200);
     return () => window.clearTimeout(timer);
   }, [
+    refreshHistory,
     messages,
     currentLessonPlan,
     currentSessionId,
@@ -445,18 +469,6 @@ export function AIChat({
     hintLevel,
     attemptCount,
   ]);
-
-  const refreshHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError("");
-    try {
-      setHistoryItems(await listChatSessions());
-    } catch {
-      setHistoryError("Не удалось загрузить историю чатов");
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
 
   const handleHistoryOpenChange = (open: boolean) => {
     setHistoryOpen(open);
@@ -1036,9 +1048,16 @@ export function AIChat({
           </Popover>
         </div>
         <div className="flex items-center gap-0.5 text-[#918b82]">
-          {messages.length > 0 && (
-            <span className="mr-1 text-[10px] tabular-nums text-[#aaa49b]">
-              {messages.filter((message) => message.role === "user").length}
+          {/* Счётчик стоит вплотную к иконке истории, поэтому и читается как
+              «сколько сохранённых чатов». Раньше он показывал число реплик
+              пользователя в ТЕКУЩЕМ чате — величину, которая рядом с этой
+              кнопкой не значит ничего. Показываем то, чего от него ждут. */}
+          {historyItems.length > 0 && (
+            <span
+              className="mr-1 text-[10px] tabular-nums text-[#aaa49b]"
+              title={`Сохранённых чатов: ${historyItems.length}`}
+            >
+              {historyItems.length}
             </span>
           )}
           <Popover open={historyOpen} onOpenChange={handleHistoryOpenChange}>
