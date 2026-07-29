@@ -4,6 +4,8 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 
+import { LoadingMark } from "@/components/ui/loading-mark"
+
 interface AuthGuardProps {
   children: React.ReactNode
   requireAuth?: boolean
@@ -33,8 +35,8 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   // Показываем загрузчик пока проверяем сессию
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <div className="flex min-h-screen items-center justify-center bg-[#fbfaf7] dark:bg-[#17150f]">
+        <LoadingMark size={46} className="text-[#b98343] dark:text-[#d0a05c]" />
       </div>
     )
   }
