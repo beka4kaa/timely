@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from .chat_title import generate_chat_title
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, ChatSession
 from .serializers import LearningProgramSerializer, ChatSessionSerializer, ChatSessionListSerializer
 from mind.models import Subject, Topic
@@ -1243,10 +1244,17 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         serializer = ChatSessionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        # Имя чата придумывает backend по первой реплике — как в ChatGPT/Claude.
+        # Клиент его больше не присылает: пока присылал, все пропущенные визарды
+        # давали одинаковое «Свободный вопрос», а осмысленное имя всё равно
+        # перезаписывалось следующим автосейвом. Генерация одна, при создании.
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            title = generate_chat_title(serializer.validated_data.get("messages"))
         try:
             # user_email is read-only on the serializer, so it can only come
             # from the middleware — never from the request body.
-            session = serializer.save(id=session_id, user_email=user_email)
+            session = serializer.save(id=session_id, user_email=user_email, title=title)
         except IntegrityError:
             # Closes the check-then-insert race between two concurrent creates.
             return Response({'error': 'Session already exists'}, status=status.HTTP_409_CONFLICT)

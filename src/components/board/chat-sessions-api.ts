@@ -65,7 +65,9 @@ export async function getChatSession(id: string): Promise<ChatSessionDetail> {
 
 export async function createChatSession(input: {
   id: string;
-  title: string;
+  /** Необязателен: если не прислать, backend придумает короткое имя по первой
+   * реплике (chat_title.py). Клиент его не переопределяет. */
+  title?: string;
   topic: string;
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;

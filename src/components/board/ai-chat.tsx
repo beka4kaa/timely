@@ -135,24 +135,9 @@ export interface AIChatProps {
 const ESTIMATED_CONTEXT_TOKEN_LIMIT = 128_000;
 const ACTIVE_SESSION_STORAGE_KEY = "timely:whiteboard-active-chat-session:v1";
 
-/** Falls back to the first user message when there's no lesson topic yet
- * (e.g. autosave firing before the planning wizard finished). */
-function deriveSessionTitle(
-  plan: LessonPlan | null,
-  messages: ChatMessage[],
-): string {
-  if (plan?.topic) return plan.topic;
-  const firstUserMessage = messages.find((m) => m.role === "user")?.content.trim();
-  if (!firstUserMessage) return "Новый чат";
-  return firstUserMessage.length > 60
-    ? `${firstUserMessage.slice(0, 60)}…`
-    : firstUserMessage;
-}
-
 /** Stable serialization of everything autosave writes, used to tell an
  * actual change from a re-render that produced identical content. */
 function serializeSessionPayload(input: {
-  title: string;
   topic: string;
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
@@ -359,7 +344,6 @@ export function AIChat({
       // The server already holds exactly this, so autosave must not PATCH it
       // straight back — see lastSavedPayloadRef.
       lastSavedPayloadRef.current = serializeSessionPayload({
-        title: session.title,
         topic: session.topic,
         messages: session.messages,
         lesson_plan: session.lesson_plan,
@@ -412,7 +396,10 @@ export function AIChat({
     if (messages.length === 0) return;
     const timer = window.setTimeout(() => {
       const payload = {
-        title: deriveSessionTitle(currentLessonPlan, messages),
+        // Заголовок НЕ отправляем: его придумывает backend по первой реплике
+        // (chat_title.py), один раз при создании. Пока его слал клиент, каждый
+        // автосейв перезаписывал осмысленное имя обратно на кусок первой
+        // фразы, и умное название жило до следующего сообщения.
         topic: currentLessonPlan?.topic ?? "",
         // Рассуждение — эфемерная деталь UI и весит порядка килобайта на
         // сообщение. В сохранённую историю оно не едет: иначе каждый автосейв
