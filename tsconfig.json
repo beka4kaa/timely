@@ -6,6 +6,11 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // Позволяет *.logic.test.ts импортировать с явным «.ts». Это нужно,
+    // чтобы тесты реально запускались нативным `node --test
+    // --experimental-strip-types`: без расширения он падает с
+    // ERR_MODULE_NOT_FOUND. Легально только при noEmit — он выше.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

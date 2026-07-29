@@ -58,6 +58,7 @@ import {
   type ChatSessionDetail,
   type ChatSessionSummary,
 } from "./chat-sessions-api";
+import { hasUserAuthoredMessage } from "./chat-session-restore";
 import {
   DEFAULT_TUTOR_MODE,
   PRIMARY_TUTOR_MODES,
@@ -335,7 +336,12 @@ export function AIChat({
       // being slow. A newer load (or clearChat) wins over this one, and a
       // restore never overwrites messages the user typed meanwhile.
       if (epoch !== sessionEpochRef.current) return null;
-      if (skipIfDirty && messagesRef.current.length > 0) return null;
+      // «Грязно» — это то, что НАПИСАЛ пользователь, а не служебные баннеры
+      // интейка плана. Почему не `messages.length > 0` — см. docstring
+      // hasUserAuthoredMessage: та проверка отменяла восстановление всегда.
+      if (skipIfDirty && hasUserAuthoredMessage(messagesRef.current)) {
+        return null;
+      }
       setMessages(session.messages);
       updateLessonPlan(session.lesson_plan);
       updateActiveTask(0);
