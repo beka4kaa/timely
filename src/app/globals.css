@@ -23,6 +23,43 @@
   }
 }
 
+/* ── Индикатор загрузки: искры разгораются по очереди ──────────────────────
+   Поворот берёт лишь четверть оборота: полный оборот у четырёхлучевой искры
+   неотличим от неподвижной, и анимация выглядела бы как подвисание. */
+@keyframes loading-mark-spark {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.62) rotate(-25deg);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1) rotate(65deg);
+  }
+}
+
+.loading-mark-spark {
+  animation: loading-mark-spark 1500ms cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+
+/* Сдвиг по фазе — то, что превращает три отдельные пульсации в одно движение. */
+.loading-mark g:nth-of-type(2) .loading-mark-spark {
+  animation-delay: 230ms;
+}
+
+.loading-mark g:nth-of-type(3) .loading-mark-spark {
+  animation-delay: 460ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Не «выключаем индикатор», а показываем его статичным: пропажа единственного
+     признака работы читалась бы как зависший экран. */
+  .loading-mark-spark {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 /* ── Handwriting font (Caveat), self-hosted ───────────────────────────────── */
 @font-face {
   font-family: 'Caveat';

@@ -28,6 +28,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { LoadingMark } from "@/components/ui/loading-mark";
 import { StyleSelectorDropdown, PaletteSelectorDropdown } from "./style-controls/StyleSelectors";
 import {
   useWhiteboardStore,
@@ -319,6 +320,16 @@ export function AIChat({
   // Автосейв доски живёт вне React-цикла (store.subscribe), поэтому актуальный
   // id сессии он читает из ref, а не из замыкания эффекта.
   const currentSessionIdRef = useRef<string | null>(null);
+  /**
+   * Идёт ли ещё выяснение, есть ли у ученика сохранённая сессия.
+   *
+   * Стартует с `true` намеренно. Пока ответ не пришёл, приложение НЕ ЗНАЕТ, есть
+   * ли у пользователя история — и показывать интейк плана в этот момент нельзя:
+   * ученик видел «расскажи, что хочешь изучить» так, будто он здесь впервые и
+   * все его занятия пропали. Первый кадр честнее провести в загрузке, чем
+   * соврать про пустоту.
+   */
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [canvasSaveError, setCanvasSaveError] = useState("");
   const [canvasSaveStatus, setCanvasSaveStatus] = useState<CanvasSaveStatus>("idle");
   // Mirrors `messages` for the restore race: the mount-restore request must
@@ -424,6 +435,13 @@ export function AIChat({
       setMessages(session.messages);
       updateLessonPlan(session.lesson_plan);
       updateActiveTask(0);
+      // Восстановленный разговор уже идёт — спрашивать про план заново незачем.
+      // Без этого сессия, начатая кнопкой «пропустить план», после перезагрузки
+      // снова показывала форму «расскажи, что хочешь изучить» и прятала за ней
+      // всю переписку: снаружи это выглядело как «мои чаты пропали».
+      if (!session.lesson_plan && hasUserAuthoredMessage(session.messages)) {
+        setPlanningSkipped(true);
+      }
       setCurrentSessionId(session.id);
       // Возобновляем режим и лестницу помощи. Сессии, сохранённые до появления
       // режимов, приходят с пустым `mode` — берём режим по умолчанию, то есть
@@ -462,10 +480,17 @@ export function AIChat({
     if (hasRestoredSessionRef.current) return;
     hasRestoredSessionRef.current = true;
     const savedId = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-    if (!savedId) return;
-    loadChatSession(savedId, { skipIfDirty: true }).catch(() => {
-      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
-    });
+    if (!savedId) {
+      setIsRestoringSession(false);
+      return;
+    }
+    loadChatSession(savedId, { skipIfDirty: true })
+      .catch(() => {
+        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      })
+      // Снимаем статус в любом исходе, включая отменённое восстановление
+      // (`skipIfDirty`): иначе экран навсегда остался бы в загрузке.
+      .finally(() => setIsRestoringSession(false));
   }, [loadChatSession]);
 
   const refreshHistory = useCallback(async () => {
@@ -1487,7 +1512,15 @@ export function AIChat({
 
       {/* ── Messages ── */}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
-        {!hasChatAccess ? (
+        {isRestoringSession ? (
+          <div className="flex h-full min-h-0 items-center justify-center">
+            <LoadingMark
+              size={38}
+              label="Открываем ваши занятия…"
+              className="text-[#b98343]"
+            />
+          </div>
+        ) : !hasChatAccess ? (
           <div className="flex h-full min-h-0 flex-col gap-2">
             {messages
               .filter((message) => message.planningEvent)
