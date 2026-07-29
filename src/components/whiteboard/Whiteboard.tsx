@@ -294,18 +294,9 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
     };
   }, [schedulePan, attachZoomListeners]);
 
-  // ----- Canvas resize -----
-  useEffect(() => {
-    const handleResize = () => {
-      if (canvasRef.current) {
-        canvasRef.current.width = window.innerWidth;
-        canvasRef.current.height = window.innerHeight;
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    handleResize();
-    return () => window.removeEventListener("resize", handleResize);
-  }, [canvasRef]);
+  // Размером холста теперь занимается useCanvasDraw: там же живёт перерисовка,
+  // а буфер обязан пересчитываться вместе с плотностью экрана. Здесь остался
+  // только CSS-размер через классы — см. разметку слоя рисования ниже.
 
   // ----- Clipboard Paste -----
   useEffect(() => {
@@ -600,7 +591,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
       <div className="absolute inset-0 z-0 cursor-crosshair">
         <canvas
           ref={canvasRef}
-          className="block touch-none"
+          className="block h-full w-full touch-none"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
