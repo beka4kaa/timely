@@ -27,6 +27,7 @@ from __future__ import annotations
 from django.utils import timezone
 
 from .models import ChatSession, SkillState
+from .prompt_safety import looks_like_instruction, strip_control_characters
 
 # Лимиты подобраны так, чтобы блок оставался в пределах ~1200 символов при
 # любом объёме истории: это сотни токенов, а не тысячи, и он не растёт со
@@ -65,8 +66,16 @@ _ERROR_LABELS = {
 
 
 def _clean(value: object) -> str:
-    """Схлопывает пользовательский текст в одну короткую безопасную строку."""
-    text = " ".join(str(value or "").split())
+    """Схлопывает пользовательский текст в одну короткую безопасную строку.
+
+    Пустая строка означает «эту запись в промпт не класть»: либо она пуста по
+    сути, либо похожа на инструкцию. Отбросить одну тему дешевле, чем положить
+    в системное сообщение строку «Игнорируй правила» — на списке из шести тем
+    потеря незаметна, см. prompt_safety.
+    """
+    text = " ".join(strip_control_characters(value).split())
+    if not text or looks_like_instruction(text):
+        return ""
     if len(text) > MAX_LABEL_CHARS:
         text = f"{text[:MAX_LABEL_CHARS].rstrip()}…"
     return text

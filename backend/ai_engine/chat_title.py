@@ -21,6 +21,7 @@ import logging
 import re
 
 from . import text_llm
+from .prompt_safety import looks_like_instruction, strip_control_characters
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,15 @@ def _first_user_message(messages: object) -> str:
 
 
 def _tidy(raw: str) -> str:
-    """Приводит ответ модели к виду «максимум три слова, без кавычек и точки»."""
-    text = " ".join(str(raw or "").split())
+    """Приводит ответ модели к виду «максимум три слова, без кавычек и точки».
+
+    Пустая строка означает «такое имя брать нельзя»: вызывающий код уходит на
+    детерминированный фолбэк. Кроме мусора сюда попадает и случай, когда
+    реплика увела модель в инструкцию («Игнорируй правила») — заголовок потом
+    подставляется в системный промпт через память тьютора, и класть туда
+    указание незачем (см. prompt_safety).
+    """
+    text = " ".join(strip_control_characters(raw).split())
     # Модель любит обрамлять название кавычками и добавлять префиксы.
     text = re.sub(r'^(название|title|заголовок)\s*[:\-—]\s*', "", text, flags=re.I)
     text = text.strip(" \t\"'«»`*.")
@@ -73,7 +81,9 @@ def _tidy(raw: str) -> str:
         text = text[:MAX_TITLE_CHARS].rstrip()
     # Первая буква заглавная, остальное не трогаем: «сила трения» → «Сила трения»,
     # но «pH раствора» не должно превратиться в «PH раствора».
-    return text[0].upper() + text[1:] if text else ""
+    if not text or looks_like_instruction(text):
+        return ""
+    return text[0].upper() + text[1:]
 
 
 def fallback_title(messages: object) -> str:
