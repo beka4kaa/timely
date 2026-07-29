@@ -226,6 +226,9 @@ class BoardChatView(APIView):
                 palette=data.get("palette"),
                 reference_image_url=data.get("reference_image_url") or None,
                 reference_labels=reference_labels,
+                # Сюжет предыдущей иллюстрации: позволяет перерисовать её в
+                # другом стиле, не спрашивая модель заново (см. BoardSkill).
+                reference_prompt=data.get("reference_prompt") or "",
                 # defer_images=true → доска возвращается без картинок, фронтенд
                 # догружает их через /api/ai/illustration (прогрессивная выдача).
                 enrich_images=not bool(data.get("defer_images")),
@@ -287,6 +290,7 @@ class BoardChatStreamView(APIView):
             palette=data.get("palette"),
             reference_image_url=data.get("reference_image_url") or None,
             reference_labels=reference_labels,
+            reference_prompt=data.get("reference_prompt") or "",
             enrich_images=not bool(data.get("defer_images")),
             lesson_instruction=build_lesson_instruction(
                 data.get("lesson_plan"),

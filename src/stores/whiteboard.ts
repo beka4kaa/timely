@@ -85,6 +85,13 @@ export type IllustrationElement = {
   /** Стиль генерации (flat/2_5d/3d/sketch) — выбирает типографику подписей. */
   genStyle?: string;
   /**
+   * Сюжет, которым эта картинка была сгенерирована (`image_prompt`).
+   * Хранится, чтобы «сделай в стиле скетч» перерисовало ЭТУ иллюстрацию, не
+   * спрашивая board-модель заново: без сюжета пришлось бы генерировать весь
+   * конспект целиком, и на холст ложилась вторая копия текста.
+   */
+  imagePrompt?: string;
+  /**
    * Картинка ещё генерируется (прогрессивная выдача): доска приходит с
    * текстом и структурой сразу, а растр догружается отдельным запросом
    * (/api/ai/illustration) и подставляется через UPDATE_ELEMENT. Пока флаг
@@ -208,6 +215,7 @@ export type CreateIllustrationAction = {
     masks?: IllustrationMask[] | null;
     alt?: string;
     genStyle?: string;
+    imagePrompt?: string;
     pending?: boolean;
     error?: string;
   };
@@ -235,6 +243,8 @@ export type UpdateElementAction = {
      */
     src?: string;
     labels?: IllustrationLabel[];
+    /** Меняется при рестайле: от стиля зависит типографика подписей. */
+    genStyle?: string;
     masks?: IllustrationMask[] | null;
     pending?: boolean;
     error?: string;
@@ -479,6 +489,7 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               masks: p.masks ?? null,
               alt: p.alt,
               genStyle: p.genStyle,
+              imagePrompt: p.imagePrompt,
               pending: p.pending,
               error: p.error,
             });
@@ -512,6 +523,7 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
               if (newEl.type === 'ILLUSTRATION') {
                 if (action.payload.src !== undefined) newEl.src = action.payload.src;
                 if (action.payload.labels !== undefined) newEl.labels = action.payload.labels;
+                if (action.payload.genStyle !== undefined) newEl.genStyle = action.payload.genStyle;
                 if (action.payload.masks !== undefined) newEl.masks = action.payload.masks;
                 if (action.payload.pending !== undefined) newEl.pending = action.payload.pending;
                 if (action.payload.error !== undefined) newEl.error = action.payload.error;

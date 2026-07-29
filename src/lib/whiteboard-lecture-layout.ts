@@ -286,6 +286,10 @@ export function buildLectureWhiteboardActions({
         masks: Array.isArray(command.masks) ? command.masks : null,
         alt: typeof command.alt === "string" ? command.alt : undefined,
         genStyle: typeof command.gen_style === "string" ? command.gen_style : generationStyle,
+        // Сюжет нужен для последующего рестайла «сделай в стиле скетч»:
+        // по нему картинку перерисовывают, не поднимая board-модель.
+        imagePrompt:
+          typeof command.image_prompt === "string" ? command.image_prompt : undefined,
         pending: pending || undefined,
       },
     });

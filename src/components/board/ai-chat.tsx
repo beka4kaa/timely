@@ -535,7 +535,11 @@ export function AIChat({
    * месте останется плейсхолдер с текстом ошибки.
    */
   const loadPendingIllustrations = useCallback(
-    async (pending: PendingIllustration[], topicHint?: string) => {
+    async (
+      pending: PendingIllustration[],
+      topicHint?: string,
+      referenceImageUrl?: string,
+    ) => {
       const state = useWhiteboardStore.getState();
 
       await Promise.all(
@@ -549,6 +553,11 @@ export function AIChat({
                 topic_hint: topicHint ?? "",
                 style: generationStyle,
                 palette: generationPalette,
+                // При рестайле отдаём прежнюю картинку как основу: i2i
+                // сохраняет композицию, меняя только манеру рисунка.
+                ...(referenceImageUrl
+                  ? { reference_image_url: referenceImageUrl }
+                  : {}),
               }),
             });
             const raw = await res.text();
@@ -681,6 +690,12 @@ export function AIChat({
             currentLessonPlan?.tasks[currentTaskIndex] ?? null,
           ...(referenceImageUrl && { reference_image_url: referenceImageUrl }),
           ...(referenceLabels && { reference_labels: referenceLabels }),
+          // Сюжет предыдущей картинки. С ним «сделай в стиле скетч»
+          // перерисовывает ЕЁ ЖЕ, не поднимая board-модель и не генерируя
+          // заново весь текст конспекта.
+          ...(refEl?.type === "ILLUSTRATION" && refEl.imagePrompt
+            ? { reference_prompt: refEl.imagePrompt }
+            : {}),
         }),
       });
 
@@ -796,6 +811,40 @@ export function AIChat({
         data.board && Array.isArray(data.board.board_steps) && data.board.board_steps.length > 0
           ? (data.board as BoardData)
           : null;
+
+      // Чистая смена стиля: бэкенд вернул доску из ОДНОЙ картинки с флагом
+      // restyle. Раскладывать её как новую нельзя — иначе рядом появится
+      // вторая копия иллюстрации. Перерисовываем ту же самую на месте: ставим
+      // ей pending и догружаем растр в ТОТ ЖЕ элемент существующим механизмом
+      // отложенных иллюстраций.
+      if (board && (board as { restyle?: boolean }).restyle) {
+        const restyleCommand = board.board_steps
+          ?.flatMap((step) => step.commands ?? [])
+          .find((command) => command?.type === "image_with_labels");
+
+        if (refEl && restyleCommand) {
+          const state = useWhiteboardStore.getState();
+          state.executeActions([
+            {
+              type: "UPDATE_ELEMENT",
+              payload: {
+                id: refEl.id,
+                pending: true,
+                error: undefined,
+                genStyle: generationStyle,
+              },
+            },
+          ]);
+          void loadPendingIllustrations(
+            [{ elementId: refEl.id, command: restyleCommand }],
+            board.topic,
+            referenceImageUrl,
+          );
+        }
+        // Дальше по общему пути не идём: текста в такой доске нет, а картинку
+        // мы уже обработали.
+        board = null;
+      }
 
       // Extract visual commands and place them directly on the whiteboard
       if (board) {

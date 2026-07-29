@@ -92,6 +92,47 @@ class BoardSkill(Skill):
         else:
             request = user_message
 
+        # ── Чистая смена стиля: перерисовываем ТОЛЬКО картинку ──────────────
+        # «Сделай в стиле скетч» — это про картинку, а не про урок. Раньше
+        # такой запрос всё равно шёл в board-модель, та возвращала полную доску
+        # заново, и на холст ложилась ВТОРАЯ копия всего конспекта поверх
+        # первой: те же «Суть закона», «Визуальная модель», «Связи». Плюс
+        # лишние 60-70 секунд на генерацию текста, который никто не просил.
+        #
+        # Здесь модель не нужна вовсе: сюжет уже известен (image_prompt
+        # предыдущей иллюстрации), подписи готовы, композицию сохранит i2i по
+        # reference_image_url. Собираем доску из одной команды и выходим.
+        restyle_prompt = str(kwargs.get("reference_prompt") or "").strip()
+        if requested_style and reference_image_url and restyle_prompt:
+            logger.info(
+                "[skill:draw_board] чистый рестайл в %s — без вызова модели, текст не трогаем",
+                requested_style,
+            )
+            return SkillResult(
+                reply="",
+                board={
+                    "subject": "",
+                    "topic": "",
+                    # Флаг для фронтенда: не раскладывать новую доску, а
+                    # перерисовать ТУ ЖЕ иллюстрацию на месте.
+                    "restyle": True,
+                    "board_steps": [
+                        {
+                            "commands": [
+                                {
+                                    "type": "image_with_labels",
+                                    "image_prompt": restyle_prompt,
+                                    "labels": reference_labels or [],
+                                    "gen_style": style,
+                                }
+                            ]
+                        }
+                    ],
+                },
+                model="",
+                skill=self.name,
+            )
+
         lesson_instruction = str(kwargs.get("lesson_instruction") or "").strip()
         if lesson_instruction:
             request = (
