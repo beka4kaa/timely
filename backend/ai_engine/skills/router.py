@@ -25,6 +25,7 @@ from typing import Any, Iterator
 
 from ..draw_views import style_from_message
 from ..solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL, openrouter_client
+from ..student_memory import build_student_memory
 from ..tutor_modes import TutorMode, get_mode
 from ..tutor_tools import (
     MAX_TOOL_ROUNDS,
@@ -92,6 +93,7 @@ def build_router_messages(
     history: list,
     mode: TutorMode,
     lesson_instruction: str = "",
+    student_memory: str = "",
 ) -> list[dict[str, Any]]:
     """Собрать `messages` для роутящего запроса.
 
@@ -102,11 +104,16 @@ def build_router_messages(
     иначе», и причину не найти.
 
     Слои промпта по порядку: общие правила чата (язык, LaTeX, когда рисовать) →
-    правила режима → инструкция текущего урока. Общий слой идёт первым, потому
-    что он про ФОРМАТ ответа, а режим — про поведение; так режим уточняет формат,
-    а не наоборот.
+    правила режима → память об ученике → инструкция текущего урока. Общий слой
+    идёт первым, потому что он про ФОРМАТ ответа, а режим — про поведение; так
+    режим уточняет формат, а не наоборот. Память стоит ПОСЛЕ режима и ДО урока:
+    это справка о прошлом, она не должна перебивать правила режима, но обязана
+    быть известна до конкретной задачи текущего занятия.
     """
     layers = [CHAT_SYSTEM_PROMPT, mode.prompt]
+    memory = str(student_memory or "").strip()
+    if memory:
+        layers.append(memory)
     instruction = str(lesson_instruction or "").strip()
     if instruction:
         layers.append(instruction)
@@ -142,6 +149,9 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
         history=history,
         mode=mode,
         lesson_instruction=str(ctx.get("lesson_instruction") or ""),
+        # Память об ученике собирает backend по user_email, а не модель и не
+        # клиент: иначе её содержимое стало бы управляемым извне.
+        student_memory=build_student_memory(str(ctx.get("user_email") or "")),
     )
     tools = tools_for_mode(mode)
 
@@ -388,6 +398,9 @@ def route_and_run_streaming(
         history=history,
         mode=mode,
         lesson_instruction=str(ctx.get("lesson_instruction") or ""),
+        # Память об ученике собирает backend по user_email, а не модель и не
+        # клиент: иначе её содержимое стало бы управляемым извне.
+        student_memory=build_student_memory(str(ctx.get("user_email") or "")),
     )
     tools = tools_for_mode(mode)
 
