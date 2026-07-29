@@ -58,7 +58,10 @@ import {
   type ChatSessionDetail,
   type ChatSessionSummary,
 } from "./chat-sessions-api";
-import { hasUserAuthoredMessage } from "./chat-session-restore";
+import {
+  boardHasUnsavedWork,
+  hasUserAuthoredMessage,
+} from "./chat-session-restore";
 import {
   DEFAULT_TUTOR_MODE,
   PRIMARY_TUTOR_MODES,
@@ -137,10 +140,30 @@ const ACTIVE_SESSION_STORAGE_KEY = "timely:whiteboard-active-chat-session:v1";
 // Доска сохраняется реже сообщений: она тяжёлая, а рисование порождает поток
 // мелких изменений. 4 секунды простоя — компромисс между «не потерять» и «не
 // гнать мегабайты на каждый штрих».
-const CANVAS_AUTOSAVE_DELAY_MS = 4000;
+const CANVAS_AUTOSAVE_DELAY_MS = 1500;
 // Тот же предел, что и на сервере (serializers.MAX_CANVAS_BYTES). Дублирован
 // осознанно: клиент обязан не отправлять заведомо отвергаемый запрос.
 const MAX_CANVAS_BYTES = 12 * 1024 * 1024;
+// Браузерный бюджет на `keepalive`-запросы — около 64 КБ суммарно. Берём с
+// запасом: превышение не «замедляет», а роняет запрос целиком.
+const KEEPALIVE_MAX_BYTES = 48 * 1024;
+
+/** Статус автосохранения доски. Показывается ученику: молчаливый отказ уже
+ * приводил к потере работы без единого следа на экране. */
+type CanvasSaveStatus = "idle" | "saving" | "saved" | "error";
+
+/** Понятная строка вместо тела ответа Django, в котором лежит либо JSON
+ * сериализатора, либо HTML-страница ошибки. */
+function describeCanvasSaveError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  if (/too large|RequestDataTooBig|413/i.test(raw)) {
+    return "Доска слишком большая для автосохранения — удалите часть иллюстраций";
+  }
+  if (/Failed to fetch|NetworkError|load failed/i.test(raw)) {
+    return "Доска не сохранена: нет связи с сервером";
+  }
+  return "Доска не сохранена — изменения останутся только на этом экране";
+}
 
 /**
  * Снимок доски для сохранения.
@@ -148,16 +171,42 @@ const MAX_CANVAS_BYTES = 12 * 1024 * 1024;
  * Камера входит в снимок намеренно: без неё восстановленная доска открывалась
  * бы в произвольном месте, и ученик не нашёл бы собственные рисунки.
  */
-function canvasSnapshot(): { elements: unknown[]; camera: unknown } {
+function canvasSnapshot(): {
+  elements: unknown[];
+  strokes: unknown[];
+  camera: unknown;
+} {
   const state = useWhiteboardStore.getState();
-  return { elements: state.elements, camera: state.camera };
+  return { elements: state.elements, strokes: state.strokes, camera: state.camera };
 }
 
-/** Для сравнения «изменилось ли»: холст с картинками весит мегабайты, и
- * отправлять его повторно без изменений слишком дорого. */
+/**
+ * Для сравнения «изменилось ли»: холст с картинками весит мегабайты, и
+ * отправлять его повторно без изменений слишком дорого.
+ *
+ * Нормализация обязательна, а не косметика. Снимок приходит из двух источников:
+ * локального стора и ответа сервера, где холст лежит в jsonb и возвращается с
+ * ДРУГИМ порядком ключей. Без приведения к одной форме «пустая доска с сервера»
+ * и «пустая доска в сторе» давали разные строки, и сравнение врало. Правила
+ * приведения совпадают с `restoreCanvas` намеренно: сравниваем то, что реально
+ * окажется на доске после восстановления.
+ */
 function serializeCanvas(snapshot: unknown): string {
-  return JSON.stringify(snapshot ?? { elements: [], camera: null });
+  const raw = (snapshot ?? {}) as {
+    elements?: unknown;
+    strokes?: unknown;
+    camera?: unknown;
+  };
+  const camera = raw.camera as { zoom?: unknown } | undefined;
+  return JSON.stringify({
+    elements: Array.isArray(raw.elements) ? raw.elements : [],
+    strokes: Array.isArray(raw.strokes) ? raw.strokes : [],
+    camera: camera && typeof camera.zoom === "number" ? camera : { x: 0, y: 0, zoom: 1 },
+  });
 }
+
+/** Строка пустой доски — точка отсчёта, когда сессия ещё ни разу не сохранялась. */
+export const EMPTY_CANVAS_SERIALIZED = serializeCanvas(null);
 
 /** Stable serialization of everything autosave writes, used to tell an
  * actual change from a re-render that produced identical content. */
@@ -271,6 +320,7 @@ export function AIChat({
   // id сессии он читает из ref, а не из замыкания эффекта.
   const currentSessionIdRef = useRef<string | null>(null);
   const [canvasSaveError, setCanvasSaveError] = useState("");
+  const [canvasSaveStatus, setCanvasSaveStatus] = useState<CanvasSaveStatus>("idle");
   // Mirrors `messages` for the restore race: the mount-restore request must
   // not overwrite a conversation the user started while it was in flight.
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -356,7 +406,19 @@ export function AIChat({
       // «Грязно» — это то, что НАПИСАЛ пользователь, а не служебные баннеры
       // интейка плана. Почему не `messages.length > 0` — см. docstring
       // hasUserAuthoredMessage: та проверка отменяла восстановление всегда.
-      if (skipIfDirty && hasUserAuthoredMessage(messagesRef.current)) {
+      //
+      // Доска считается наравне с сообщениями: ученик мог ничего не написать, а
+      // просто порисовать, пока летел этот запрос. Восстановление затёрло бы
+      // рисунки и заодно заглушило автосейв, подменив lastSavedCanvasRef.
+      if (
+        skipIfDirty &&
+        (hasUserAuthoredMessage(messagesRef.current) ||
+          boardHasUnsavedWork(
+            serializeCanvas(canvasSnapshot()),
+            lastSavedCanvasRef.current,
+            EMPTY_CANVAS_SERIALIZED,
+          ))
+      ) {
         return null;
       }
       setMessages(session.messages);
@@ -419,81 +481,134 @@ export function AIChat({
   }, []);
 
   // ── Автосейв ДОСКИ ────────────────────────────────────────────────────────
-  // Отдельно от сообщений и заметно реже. Причина в объёме: одна иллюстрация
-  // лежит в элементе как data-URI примерно на 590 КБ, и сохранять доску на том
-  // же 1.2-секундном дебаунсе значило бы гнать мегабайты при каждом штрихе.
+  // Отдельно от сообщений: холст тяжёлый — одна иллюстрация лежит в элементе
+  // как data-URI примерно на 590 КБ, и слать его на каждое движение карандаша
+  // нельзя. Но и прежние четыре секунды оказались слишком долгими: перезагрузка
+  // внутри окна дебаунса теряла работу, не сделав ни одного запроса.
   //
   // Подписка идёт мимо React (store.subscribe): подписать компонент чата на
   // elements означало бы перерисовывать его на каждое движение карандаша.
   useEffect(() => {
     let timer: number | undefined;
 
+    /**
+     * @param leavingPage — вызов из обработчика ухода со страницы. Маленький
+     * холст тогда уезжает с `keepalive` и переживает выгрузку документа;
+     * большой отправляется обычным запросом и долетает не всегда.
+     */
+    const performSave = (leavingPage = false) => {
+      const snapshot = canvasSnapshot();
+      const serialized = serializeCanvas(snapshot);
+      // Ничего не изменилось с прошлого сохранения — не тратим сеть.
+      if (serialized === lastSavedCanvasRef.current) return;
+      // Штрихи считаются содержимым наравне с элементами: ученик, который
+      // только порисовал карандашом, тоже должен получить сессию.
+      const hasContent = snapshot.elements.length > 0 || snapshot.strokes.length > 0;
+
+      // Ученик может рисовать, не написав ни одного сообщения — тогда сессии
+      // ещё нет, и создать её должен именно этот автосейв, иначе рисунки
+      // просто некуда сохранить. Пустую доску не создаём: заход на страницу
+      // не должен заводить пустой чат в истории.
+      if (!currentSessionIdRef.current) {
+        if (!hasContent) return;
+        if (sessionCreateInFlightRef.current) return;
+        sessionCreateInFlightRef.current = true;
+        setCanvasSaveStatus("saving");
+        createChatSession({
+          id: crypto.randomUUID(),
+          topic: "",
+          messages: [],
+          lesson_plan: null,
+          canvas: snapshot,
+        })
+          .then((created) => {
+            lastSavedCanvasRef.current = serialized;
+            setCurrentSessionId(created.id);
+            currentSessionIdRef.current = created.id;
+            window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, created.id);
+            setCanvasSaveError("");
+            setCanvasSaveStatus("saved");
+            void refreshHistory();
+          })
+          .catch((error: unknown) => {
+            // Ref не двигаем: следующая правка повторит попытку.
+            setCanvasSaveError(describeCanvasSaveError(error));
+            setCanvasSaveStatus("error");
+          })
+          .finally(() => {
+            sessionCreateInFlightRef.current = false;
+          });
+        return;
+      }
+
+      if (serialized.length > MAX_CANVAS_BYTES) {
+        // Сервер такой холст отвергнет (см. validate_canvas). Молча резать
+        // рисунки нельзя, поэтому честно говорим и не отправляем.
+        setCanvasSaveError(
+          "Доска слишком большая для автосохранения — удалите часть иллюстраций",
+        );
+        setCanvasSaveStatus("error");
+        return;
+      }
+
+      setCanvasSaveStatus("saving");
+      updateChatSession(
+        currentSessionIdRef.current,
+        { canvas: snapshot },
+        // Бюджет keepalive у браузера — порядка 64 КБ на все запросы разом.
+        // Холст с иллюстрацией в него не влезет, и такой запрос просто упал бы.
+        { keepalive: leavingPage && serialized.length <= KEEPALIVE_MAX_BYTES },
+      )
+        .then(() => {
+          lastSavedCanvasRef.current = serialized;
+          setCanvasSaveError("");
+          setCanvasSaveStatus("saved");
+        })
+        .catch((error: unknown) => {
+          // Best-effort: ref не двигаем, следующая правка повторит попытку.
+          setCanvasSaveError(describeCanvasSaveError(error));
+          setCanvasSaveStatus("error");
+        });
+    };
+
     const schedule = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const snapshot = canvasSnapshot();
-        const serialized = serializeCanvas(snapshot);
-        // Ничего не изменилось с прошлого сохранения — не тратим сеть.
-        if (serialized === lastSavedCanvasRef.current) return;
-        const hasContent = Array.isArray(snapshot.elements) && snapshot.elements.length > 0;
+      timer = window.setTimeout(() => performSave(), CANVAS_AUTOSAVE_DELAY_MS);
+    };
 
-        // Ученик может рисовать, не написав ни одного сообщения — тогда сессии
-        // ещё нет, и создать её должен именно этот автосейв, иначе рисунки
-        // просто некуда сохранить. Пустую доску не создаём: заход на страницу
-        // не должен заводить пустой чат в истории.
-        if (!currentSessionIdRef.current) {
-          if (!hasContent) return;
-          if (sessionCreateInFlightRef.current) return;
-          sessionCreateInFlightRef.current = true;
-          createChatSession({
-            id: crypto.randomUUID(),
-            topic: "",
-            messages: [],
-            lesson_plan: null,
-            canvas: snapshot,
-          })
-            .then((created) => {
-              lastSavedCanvasRef.current = serialized;
-              setCurrentSessionId(created.id);
-              currentSessionIdRef.current = created.id;
-              window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, created.id);
-              void refreshHistory();
-            })
-            .catch(() => {})
-            .finally(() => {
-              sessionCreateInFlightRef.current = false;
-            });
-          return;
-        }
-
-        if (serialized.length > MAX_CANVAS_BYTES) {
-          // Сервер такой холст отвергнет (см. validate_canvas). Молча резать
-          // рисунки нельзя, поэтому честно говорим и не отправляем.
-          setCanvasSaveError(
-            "Доска слишком большая для автосохранения — удалите часть иллюстраций",
-          );
-          return;
-        }
-
-        setCanvasSaveError("");
-        updateChatSession(currentSessionIdRef.current, { canvas: snapshot })
-          .then(() => {
-            lastSavedCanvasRef.current = serialized;
-          })
-          .catch(() => {
-            // Best-effort: ref не двигаем, следующая правка повторит попытку.
-          });
-      }, CANVAS_AUTOSAVE_DELAY_MS);
+    // Уход со страницы — последний момент, когда правку ещё можно спасти.
+    // `visibilitychange` ловит сворачивание вкладки и уход в фон на телефоне,
+    // `pagehide` — закрытие и перезагрузку.
+    const flush = () => {
+      window.clearTimeout(timer);
+      performSave(true);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
     };
 
     const unsubscribe = useWhiteboardStore.subscribe(schedule);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", flush);
     return () => {
       window.clearTimeout(timer);
       unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", flush);
+      // Размонтирование — тоже уход: последняя правка ещё должна успеть уехать.
+      performSave();
     };
     // refreshHistory стабилен (useCallback без зависимостей), подписка
     // ставится один раз на всё время жизни компонента.
   }, [refreshHistory]);
+
+  // «Сохранено» — подтверждение, а не постоянная надпись: висеть в шапке весь
+  // сеанс ему незачем. Ошибка не гаснет: она требует действия ученика.
+  useEffect(() => {
+    if (canvasSaveStatus !== "saved") return;
+    const timer = window.setTimeout(() => setCanvasSaveStatus("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [canvasSaveStatus]);
 
   // Список нужен не только внутри поповера: рядом с кнопкой стоит счётчик
   // сохранённых чатов, и без загрузки на монтировании он показывал бы 0 до
@@ -1075,6 +1190,13 @@ export function AIChat({
     // it as the active one so the next message starts a fresh session.
     setCurrentSessionId(null);
     lastSavedPayloadRef.current = null;
+    // Доска — часть сессии, поэтому «Новый чат» её очищает. Без этого доска
+    // прошлого разговора оставалась на экране, а первая же правка уносила её
+    // в НОВУЮ сессию: рисунки размножались по чатам.
+    useWhiteboardStore.getState().restoreCanvas(null);
+    lastSavedCanvasRef.current = null;
+    setCanvasSaveError("");
+    setCanvasSaveStatus("idle");
     window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
     // Новый разговор — новая лестница и новый счёт попыток. Режим оставляем:
     // ученик только что его выбрал, и сбрасывать этот выбор на «Новый чат»
@@ -1198,6 +1320,23 @@ export function AIChat({
           </Popover>
         </div>
         <div className="flex items-center gap-0.5 text-[#918b82]">
+          {/* Статус автосохранения доски. Раньше отказ был полностью молчалив:
+              ученик рисовал, ничего не сохранялось, и на экране не было ни
+              одного признака проблемы. Показываем состояние, а не празднуем
+              успех: «Сохранено» само гаснет через пару секунд. */}
+          {canvasSaveStatus !== "idle" && (
+            <span
+              role="status"
+              title={canvasSaveError || undefined}
+              className={`mr-1.5 whitespace-nowrap text-[10px] ${
+                canvasSaveStatus === "error" ? "text-[#a9773b]" : "text-[#aaa49b]"
+              }`}
+            >
+              {canvasSaveStatus === "saving" && "Сохраняем…"}
+              {canvasSaveStatus === "saved" && "Сохранено"}
+              {canvasSaveStatus === "error" && "Не сохранено"}
+            </span>
+          )}
           {/* Счётчик стоит вплотную к иконке истории, поэтому и читается как
               «сколько сохранённых чатов». Раньше он показывал число реплик
               пользователя в ТЕКУЩЕМ чате — величину, которая рядом с этой

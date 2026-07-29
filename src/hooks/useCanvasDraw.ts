@@ -13,10 +13,7 @@ import {
   screenToCanvas,
   uid,
 } from "../components/whiteboard/utils";
-import {
-  nextWhiteboardHistorySequence,
-  useWhiteboardStore,
-} from "@/stores/whiteboard";
+import { useWhiteboardStore } from "@/stores/whiteboard";
 
 // ─── Constants ──────────────────────────────────────────
 const DEBOUNCE_MS = 1500;
@@ -100,11 +97,13 @@ export function useCanvasDraw(
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingStrokes = useRef<Stroke[]>([]);
 
-  // Use useState (exactly like old working hook)
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [strokeHistory, setStrokeHistory] = useState<
-    Array<{ strokes: Stroke[]; sequence: number }>
-  >([]);
+  // Завершённые штрихи живут в сторе доски, а не здесь: только так рисование
+  // попадает в снимок сессии и будит автосейв. Незавершённый штрих остаётся
+  // локальным — иначе каждое движение указателя дёргало бы подписчиков стора.
+  const strokes = useWhiteboardStore((s) => s.strokes);
+  const lastStrokeHistorySequence = useWhiteboardStore(
+    (s) => s.lastStrokeHistorySequence,
+  );
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   // Дефолт — «авточернила»: тёмные на светлой теме, светлые на тёмной.
@@ -148,18 +147,12 @@ export function useCanvasDraw(
     redraw(strokes, currentStroke);
   }, [strokes, currentStroke, camera, redraw]);
 
-  const strokesRef = useRef<Stroke[]>([]);
-  const strokeHistoryRef = useRef<Array<{ strokes: Stroke[]; sequence: number }>>([]);
-  useEffect(() => {
-    strokesRef.current = strokes;
-  }, [strokes]);
-
   // ── Debounced crop ──
   const scheduleCrop = useCallback(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(() => {
-      const currentAllStrokes = strokesRef.current;
+      const currentAllStrokes = useWhiteboardStore.getState().strokes;
       if (currentAllStrokes.length === 0) return;
 
       const box = computeBoundingBox(currentAllStrokes);
@@ -182,7 +175,7 @@ export function useCanvasDraw(
 
   // Synchronous crop getter for manual trigger
   const getCrop = useCallback((): string | null => {
-    const currentAllStrokes = strokesRef.current;
+    const currentAllStrokes = useWhiteboardStore.getState().strokes;
     if (currentAllStrokes.length === 0) return null;
     const box = computeBoundingBox(currentAllStrokes);
     if (!box) return null;
@@ -257,21 +250,10 @@ export function useCanvasDraw(
       if (!currentStroke) return;
       e.preventDefault();
 
-      const previousStrokes = strokesRef.current;
-      const nextStrokes = [...previousStrokes, currentStroke];
-      const nextHistory = [
-        ...strokeHistoryRef.current,
-        {
-          strokes: previousStrokes,
-          sequence: nextWhiteboardHistorySequence(),
-        },
-      ].slice(-80);
-
-      strokesRef.current = nextStrokes;
-      strokeHistoryRef.current = nextHistory;
       pendingStrokes.current.push(currentStroke);
-      setStrokes(nextStrokes);
-      setStrokeHistory(nextHistory);
+      // Единственная запись штриха в состояние доски. Именно она взводит
+      // автосейв сессии — до переноса в стор её не было вовсе.
+      useWhiteboardStore.getState().commitStroke(currentStroke);
 
       setCurrentStroke(null);
       setIsDrawing(false);
@@ -321,32 +303,13 @@ export function useCanvasDraw(
   const clearCanvas = useCallback((historySequence?: number) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     pendingStrokes.current = [];
-    const previousStrokes = strokesRef.current;
-    if (previousStrokes.length > 0) {
-      const nextHistory = [
-        ...strokeHistoryRef.current,
-        {
-          strokes: previousStrokes,
-          sequence: historySequence ?? nextWhiteboardHistorySequence(),
-        },
-      ].slice(-80);
-      strokeHistoryRef.current = nextHistory;
-      setStrokeHistory(nextHistory);
-    }
-    strokesRef.current = [];
-    setStrokes([]);
+    useWhiteboardStore.getState().clearStrokes(historySequence);
     setCurrentStroke(null);
     setIsDrawing(false);
   }, []);
 
   const undo = useCallback(() => {
-    const entry = strokeHistoryRef.current.at(-1);
-    if (!entry) return;
-    const nextHistory = strokeHistoryRef.current.slice(0, -1);
-    strokeHistoryRef.current = nextHistory;
-    strokesRef.current = entry.strokes;
-    setStrokeHistory(nextHistory);
-    setStrokes(entry.strokes);
+    useWhiteboardStore.getState().undoStroke();
   }, []);
 
   return {
@@ -354,7 +317,7 @@ export function useCanvasDraw(
     strokes,
     strokeColor,
     lineWidth,
-    lastStrokeHistorySequence: strokeHistory.at(-1)?.sequence ?? 0,
+    lastStrokeHistorySequence,
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,

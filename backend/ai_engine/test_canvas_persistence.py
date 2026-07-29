@@ -18,6 +18,14 @@ CANVAS = {
         {"id": "2", "type": "TEXT", "content": "закон Ома"},
         {"id": "3", "type": "ILLUSTRATION", "src": "data:image/png;base64,AAAA", "labels": []},
     ],
+    "strokes": [
+        {
+            "id": "s1",
+            "color": "#302d2a",
+            "lineWidth": 3,
+            "points": [{"x": 0, "y": 0, "pressure": 0.5}, {"x": 8, "y": 12, "pressure": 0.6}],
+        }
+    ],
     "camera": {"x": 12, "y": 34, "zoom": 1.5},
 }
 
@@ -105,6 +113,52 @@ class CanvasPersistenceTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("canvas", str(response.data).lower())
+
+    def test_pencil_strokes_survive_the_round_trip(self) -> None:
+        # Регрессия: штрихи карандаша жили в React-state хука, вне стора доски.
+        # Рисование не будило автосейв и не попадало в снимок — ученик рисовал,
+        # перезагружал страницу и терял всё, не увидев даже запроса в Network.
+        self.create("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        stored = ChatSession.objects.get(id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").canvas
+
+        self.assertEqual(len(stored["strokes"]), 1)
+        self.assertEqual(stored["strokes"][0]["points"][1], {"x": 8, "y": 12, "pressure": 0.6})
+
+    def test_strokes_must_be_a_list(self) -> None:
+        response = self.client.post(
+            "/api/ai_engine/chat-sessions/",
+            {
+                "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                "messages": [],
+                "canvas": {"elements": [], "strokes": {"nope": True}},
+            },
+            format="json",
+            HTTP_X_USER_EMAIL=EMAIL,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("strokes", str(response.data).lower())
+
+    def test_canvas_without_strokes_key_still_valid(self) -> None:
+        # Сессии, сохранённые до появления штрихов, обязаны открываться.
+        response = self.create(
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            canvas={"elements": [], "camera": {"x": 0, "y": 0, "zoom": 1}},
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_canvas_above_djangos_default_body_limit_is_accepted(self) -> None:
+        # Регрессия: DATA_UPLOAD_MAX_MEMORY_SIZE не был задан, и Django резал
+        # тело на 2.5 МБ раньше, чем сериализатор доходил до своего предела в
+        # 12 МБ. Доска с несколькими иллюстрациями молча переставала
+        # сохраняться, а клиент проглатывал ошибку.
+        big = {"elements": [{"id": "1", "type": "ILLUSTRATION", "src": "x" * (4 * 1024 * 1024)}]}
+        response = self.client.post(
+            "/api/ai_engine/chat-sessions/",
+            {"id": "dddddddd-dddd-dddd-dddd-dddddddddddd", "messages": [], "canvas": big},
+            format="json",
+            HTTP_X_USER_EMAIL=EMAIL,
+        )
+        self.assertEqual(response.status_code, 201)
 
     def test_canvas_must_be_an_object(self) -> None:
         response = self.client.post(

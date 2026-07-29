@@ -38,11 +38,12 @@ export interface ChatSessionSummary {
   updated_at: string;
 }
 
-/** Снимок доски: элементы и камера. Форму задаёт стор whiteboard, поэтому
- * здесь она намеренно нетипизирована — дублировать её значило бы держать две
- * расходящиеся копии одного описания. */
+/** Снимок доски: элементы, штрихи карандаша и камера. Форму задаёт стор
+ * whiteboard, поэтому она намеренно нетипизирована — дублировать её значило бы
+ * держать две расходящиеся копии одного описания. */
 export interface CanvasSnapshot {
   elements?: unknown[];
+  strokes?: unknown[];
   camera?: unknown;
 }
 
@@ -107,10 +108,15 @@ export async function updateChatSession(
     hint_level: number;
     attempt_count: number;
   }>,
+  /** `keepalive` позволяет запросу пережить уход со страницы. Браузер даёт на
+   * такие запросы жёсткий бюджет около 64 КБ, поэтому вызывающий обязан сам
+   * убедиться, что тело маленькое. */
+  options: { keepalive?: boolean } = {},
 ): Promise<ChatSessionDetail> {
   const response = await authFetch(sessionPath(id), {
     method: "PATCH",
     body: JSON.stringify(patch),
+    keepalive: options.keepalive,
   });
   return unwrap<ChatSessionDetail>(response);
 }

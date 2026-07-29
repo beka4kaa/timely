@@ -5,7 +5,21 @@ import { test } from "node:test";
 // и из-за этого не запускаются вообще (ERR_MODULE_NOT_FOUND) — нативному
 // разбору типов в node нужен точный путь. С ним тест реально исполняется:
 //   node --test --experimental-strip-types src/components/board/chat-session-restore.logic.test.ts
-import { hasUserAuthoredMessage } from "./chat-session-restore.ts";
+import {
+  boardHasUnsavedWork,
+  hasUserAuthoredMessage,
+} from "./chat-session-restore.ts";
+
+const EMPTY = JSON.stringify({
+  elements: [],
+  strokes: [],
+  camera: { x: 0, y: 0, zoom: 1 },
+});
+const WITH_STROKE = JSON.stringify({
+  elements: [],
+  strokes: [{ id: "s1", points: [], color: "#000", lineWidth: 3 }],
+  camera: { x: 0, y: 0, zoom: 1 },
+});
 
 test("пустой чат не считается грязным", () => {
   assert.equal(hasUserAuthoredMessage([]), false);
@@ -32,4 +46,24 @@ test("написанное пользователем блокирует вос�
 
 test("сообщение без флага считается пользовательским", () => {
   assert.equal(hasUserAuthoredMessage([{ planningEvent: false }]), true);
+});
+
+test("нетронутая доска не считается несохранённой работой", () => {
+  // Иначе восстановление сессии отменялось бы на каждом заходе — ровно та
+  // ловушка, в которую уже попадала проверка по сообщениям.
+  assert.equal(boardHasUnsavedWork(EMPTY, null, EMPTY), false);
+});
+
+test("регрессия: нарисованное блокирует восстановление", () => {
+  // Медленный mount-restore доезжал после того, как ученик уже порисовал, и
+  // затирал рисунки, попутно заглушая автосейв подменой lastSavedCanvas.
+  assert.equal(boardHasUnsavedWork(WITH_STROKE, null, EMPTY), true);
+});
+
+test("уже сохранённая доска не считается грязной", () => {
+  assert.equal(boardHasUnsavedWork(WITH_STROKE, WITH_STROKE, EMPTY), false);
+});
+
+test("правка поверх сохранённого состояния считается грязной", () => {
+  assert.equal(boardHasUnsavedWork(EMPTY, WITH_STROKE, EMPTY), true);
 });

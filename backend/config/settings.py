@@ -84,6 +84,15 @@ ROOT_URLCONF = "config.urls"
 # This allows DELETE/PUT/PATCH requests without trailing slash to work
 APPEND_SLASH = False
 
+# Содержимое доски (ChatSession.canvas) приезжает одним JSON-телом, и
+# иллюстрации лежат в нём как data-URI по сотне-другой килобайт каждая.
+# Django по умолчанию режет тело на 2.5 МБ и отвечает RequestDataTooBig ДО
+# входа во вью — то есть раньше, чем сериализатор успевает применить свой
+# предел в 12 МБ. Из-за этого доска с несколькими иллюстрациями молча
+# переставала сохраняться. Держим оба предела согласованными; последнее слово
+# и понятная ошибка остаются за ai_engine.serializers.validate_canvas.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",

@@ -30,3 +30,26 @@ export function hasUserAuthoredMessage(
 ): boolean {
   return messages.some((message) => !message.planningEvent);
 }
+
+/**
+ * Есть ли на доске несохранённая работа ученика.
+ *
+ * Второй критерий «грязного» экрана рядом с `hasUserAuthoredMessage`. Раньше
+ * восстановление смотрело только на сообщения, и медленно доехавший
+ * mount-restore бил дважды: `restoreCanvas` затирал уже нарисованное, а
+ * `lastSavedCanvasRef` переставлялся на серверный снимок — из-за чего уже
+ * взведённый автосейв упирался в проверку «ничего не изменилось» и не
+ * отправлял запрос вообще. Работа исчезала бесследно.
+ *
+ * @param serializedNow — снимок доски прямо сейчас (`serializeCanvas`).
+ * @param lastSaved — последний успешно сохранённый снимок; `null`, если сессия
+ * ещё ни разу не сохранялась.
+ * @param emptyCanvas — как выглядит пустая доска в той же сериализации.
+ */
+export function boardHasUnsavedWork(
+  serializedNow: string,
+  lastSaved: string | null,
+  emptyCanvas: string,
+): boolean {
+  return serializedNow !== (lastSaved ?? emptyCanvas);
+}

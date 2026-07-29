@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { Stroke } from '../components/whiteboard/types';
+
 export type Position = { x: number; y: number };
 
 let whiteboardHistorySequence = 0;
@@ -278,13 +280,29 @@ export type ElementHistoryEntry = {
   sequence: number;
 };
 
+export type StrokeHistoryEntry = {
+  strokes: Stroke[];
+  sequence: number;
+};
+
 export interface WhiteboardState {
   elements: WhiteboardElement[];
+  /**
+   * Штрихи карандаша — такая же часть доски, как элементы.
+   *
+   * Раньше они жили в React-state хука `useCanvasDraw`, то есть вне стора. Из-за
+   * этого рисование не будило автосейв (он подписан на стор), не попадало в
+   * снимок доски и не восстанавливалось: ученик рисовал, перезагружал страницу
+   * и терял всё, причём в Network не было даже запроса.
+   */
+  strokes: Stroke[];
   camera: Camera;
   selectedElementId: string | null;
   elementHistoryPast: ElementHistoryEntry[];
   elementHistoryFuture: ElementHistoryEntry[];
   lastElementHistorySequence: number;
+  strokeHistoryPast: StrokeHistoryEntry[];
+  lastStrokeHistorySequence: number;
   executeActions: (
     actionsInput: string | WhiteboardAction[],
     options?: ExecuteActionsOptions,
@@ -292,6 +310,11 @@ export interface WhiteboardState {
   recordElementCheckpoint: (elementsBefore: WhiteboardElement[]) => void;
   undoElementAction: () => void;
   redoElementAction: () => void;
+  /** Завершённый штрих. Ведётся только на pointerup: класть сюда каждое
+   * движение указателя значило бы будить автосейв на каждый пиксель. */
+  commitStroke: (stroke: Stroke) => void;
+  undoStroke: () => void;
+  clearStrokes: (historySequence?: number) => void;
   /**
    * Полностью заменить содержимое доски сохранённым снимком.
    *
@@ -299,7 +322,9 @@ export interface WhiteboardState {
    * которую ученик делал руками, и в историю Undo она попадать не должна,
    * иначе первым же Ctrl+Z пользователь стёр бы всю восстановленную доску.
    */
-  restoreCanvas: (snapshot: { elements?: unknown[]; camera?: unknown } | null) => void;
+  restoreCanvas: (
+    snapshot: { elements?: unknown[]; strokes?: unknown[]; camera?: unknown } | null,
+  ) => void;
   setCamera: (x: number, y: number, zoom?: number) => void;
   panCamera: (dx: number, dy: number) => void;
   setSelectedElement: (id: string | null) => void;
@@ -307,14 +332,17 @@ export interface WhiteboardState {
 
 export const useWhiteboardStore = create<WhiteboardState>((set) => ({
   elements: [],
+  strokes: [],
   camera: { x: 0, y: 0, zoom: 1 },
   selectedElementId: null,
   elementHistoryPast: [],
   elementHistoryFuture: [],
   lastElementHistorySequence: 0,
-  
+  strokeHistoryPast: [],
+  lastStrokeHistorySequence: 0,
+
   setSelectedElement: (id) => set({ selectedElementId: id }),
-  
+
   restoreCanvas: (snapshot) => {
     // Снимок приходит с сервера нетипизированным JSON — это граница доверия,
     // и приведение живёт здесь, а не размазано по вызывающим местам.
@@ -322,6 +350,12 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
     set(() => ({
       elements: Array.isArray(snapshot?.elements)
         ? (snapshot!.elements as WhiteboardElement[])
+        : [],
+      // Штрихи восстанавливаются вместе с элементами: сессии, сохранённые до
+      // появления этого поля, приходят без `strokes` — тогда доска просто
+      // пустая по карандашу, а не сломанная.
+      strokes: Array.isArray(snapshot?.strokes)
+        ? (snapshot!.strokes as Stroke[])
         : [],
       camera:
         rawCamera && typeof rawCamera.zoom === 'number'
@@ -332,7 +366,54 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
       // после подмены содержимого они означали бы возврат к чужому состоянию.
       elementHistoryPast: [],
       elementHistoryFuture: [],
+      strokeHistoryPast: [],
+      lastStrokeHistorySequence: 0,
     }));
+  },
+
+  commitStroke: (stroke) => {
+    set((state) => {
+      const sequence = nextWhiteboardHistorySequence();
+      return {
+        strokes: [...state.strokes, stroke],
+        // Точка отката — состояние ДО штриха, как и в истории элементов.
+        strokeHistoryPast: [
+          ...state.strokeHistoryPast,
+          { strokes: state.strokes, sequence },
+        ].slice(-80),
+        lastStrokeHistorySequence: sequence,
+      };
+    });
+  },
+
+  undoStroke: () => {
+    set((state) => {
+      const entry = state.strokeHistoryPast.at(-1);
+      if (!entry) return state;
+      const nextPast = state.strokeHistoryPast.slice(0, -1);
+      return {
+        strokes: entry.strokes,
+        strokeHistoryPast: nextPast,
+        lastStrokeHistorySequence: nextPast.at(-1)?.sequence ?? 0,
+      };
+    });
+  },
+
+  clearStrokes: (historySequence) => {
+    set((state) => {
+      if (state.strokes.length === 0) return state;
+      // Общий номер с элементами позволяет «Очистить доску» отменяться одним
+      // шагом Ctrl+Z, а не двумя — см. undoLatest в Whiteboard.tsx.
+      const sequence = historySequence ?? nextWhiteboardHistorySequence();
+      return {
+        strokes: [],
+        strokeHistoryPast: [
+          ...state.strokeHistoryPast,
+          { strokes: state.strokes, sequence },
+        ].slice(-80),
+        lastStrokeHistorySequence: sequence,
+      };
+    });
   },
   setCamera: (x, y, zoom) => {
     set((state) => ({

@@ -667,13 +667,18 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
                   color={el.color}
                   variant={el.variant}
                   autoFocus={editingTextId === el.id}
-                  onContentChange={(content) => {
+                  onContentChange={(content, options) => {
                     executeActions(
                       [{
                         type: "UPDATE_ELEMENT",
                         payload: { id: el.id, content },
                       }],
-                      { history: "record" },
+                      // Промежуточные коммиты по паузе в наборе не плодят шаги
+                      // Undo: весь сеанс правки остаётся одним Ctrl+Z.
+                      {
+                        history:
+                          options?.startsNewHistoryStep === false ? "skip" : "record",
+                      },
                     );
                   }}
                   onEditingComplete={() => {
