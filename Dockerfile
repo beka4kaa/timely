@@ -24,6 +24,11 @@ ENV PYTHONUNBUFFERED=1
 # Collect static files
 RUN python manage.py collectstatic --noinput
 
+# Миграции выполняет entrypoint при СТАРТЕ, а не на этапе сборки: во время
+# docker build боевой базы ещё нет (и быть не должно).
+RUN chmod +x /app/docker-entrypoint.sh
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
 # Expose port
 EXPOSE 8080
 
