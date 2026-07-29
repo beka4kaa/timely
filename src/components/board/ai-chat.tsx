@@ -134,6 +134,30 @@ export interface AIChatProps {
 
 const ESTIMATED_CONTEXT_TOKEN_LIMIT = 128_000;
 const ACTIVE_SESSION_STORAGE_KEY = "timely:whiteboard-active-chat-session:v1";
+// Доска сохраняется реже сообщений: она тяжёлая, а рисование порождает поток
+// мелких изменений. 4 секунды простоя — компромисс между «не потерять» и «не
+// гнать мегабайты на каждый штрих».
+const CANVAS_AUTOSAVE_DELAY_MS = 4000;
+// Тот же предел, что и на сервере (serializers.MAX_CANVAS_BYTES). Дублирован
+// осознанно: клиент обязан не отправлять заведомо отвергаемый запрос.
+const MAX_CANVAS_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Снимок доски для сохранения.
+ *
+ * Камера входит в снимок намеренно: без неё восстановленная доска открывалась
+ * бы в произвольном месте, и ученик не нашёл бы собственные рисунки.
+ */
+function canvasSnapshot(): { elements: unknown[]; camera: unknown } {
+  const state = useWhiteboardStore.getState();
+  return { elements: state.elements, camera: state.camera };
+}
+
+/** Для сравнения «изменилось ли»: холст с картинками весит мегабайты, и
+ * отправлять его повторно без изменений слишком дорого. */
+function serializeCanvas(snapshot: unknown): string {
+  return JSON.stringify(snapshot ?? { elements: [], camera: null });
+}
 
 /** Stable serialization of everything autosave writes, used to tell an
  * actual change from a re-render that produced identical content. */
@@ -232,6 +256,9 @@ export function AIChat({
   // Saved-chat-history bookkeeping: null until the first message creates a
   // session, then every later change PATCHes the same row.
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
   const hasRestoredSessionRef = useRef(false);
   const sessionCreateInFlightRef = useRef(false);
   // Serialized copy of what the server already holds. Autosave compares
@@ -239,6 +266,11 @@ export function AIChat({
   // history would immediately PATCH it straight back, and messages carry
   // whole BoardData payloads.
   const lastSavedPayloadRef = useRef<string | null>(null);
+  const lastSavedCanvasRef = useRef<string | null>(null);
+  // Автосейв доски живёт вне React-цикла (store.subscribe), поэтому актуальный
+  // id сессии он читает из ref, а не из замыкания эффекта.
+  const currentSessionIdRef = useRef<string | null>(null);
+  const [canvasSaveError, setCanvasSaveError] = useState("");
   // Mirrors `messages` for the restore race: the mount-restore request must
   // not overwrite a conversation the user started while it was in flight.
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -341,6 +373,11 @@ export function AIChat({
       setHintLevel(session.hint_level ?? 0);
       setAttemptCount(session.attempt_count ?? 0);
       setHelpPolicy(session.policy ?? null);
+      // Доска — часть сессии: открывать сохранённый чат без его рисунков
+      // бессмысленно. Пустой canvas тоже применяем: это «доска была пуста», а
+      // не «не сохраняли», иначе на экране остался бы холст прошлого чата.
+      useWhiteboardStore.getState().restoreCanvas(session.canvas ?? null);
+      lastSavedCanvasRef.current = serializeCanvas(session.canvas ?? null);
       // The server already holds exactly this, so autosave must not PATCH it
       // straight back — see lastSavedPayloadRef.
       lastSavedPayloadRef.current = serializeSessionPayload({
@@ -380,6 +417,83 @@ export function AIChat({
       setHistoryLoading(false);
     }
   }, []);
+
+  // ── Автосейв ДОСКИ ────────────────────────────────────────────────────────
+  // Отдельно от сообщений и заметно реже. Причина в объёме: одна иллюстрация
+  // лежит в элементе как data-URI примерно на 590 КБ, и сохранять доску на том
+  // же 1.2-секундном дебаунсе значило бы гнать мегабайты при каждом штрихе.
+  //
+  // Подписка идёт мимо React (store.subscribe): подписать компонент чата на
+  // elements означало бы перерисовывать его на каждое движение карандаша.
+  useEffect(() => {
+    let timer: number | undefined;
+
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const snapshot = canvasSnapshot();
+        const serialized = serializeCanvas(snapshot);
+        // Ничего не изменилось с прошлого сохранения — не тратим сеть.
+        if (serialized === lastSavedCanvasRef.current) return;
+        const hasContent = Array.isArray(snapshot.elements) && snapshot.elements.length > 0;
+
+        // Ученик может рисовать, не написав ни одного сообщения — тогда сессии
+        // ещё нет, и создать её должен именно этот автосейв, иначе рисунки
+        // просто некуда сохранить. Пустую доску не создаём: заход на страницу
+        // не должен заводить пустой чат в истории.
+        if (!currentSessionIdRef.current) {
+          if (!hasContent) return;
+          if (sessionCreateInFlightRef.current) return;
+          sessionCreateInFlightRef.current = true;
+          createChatSession({
+            id: crypto.randomUUID(),
+            topic: "",
+            messages: [],
+            lesson_plan: null,
+            canvas: snapshot,
+          })
+            .then((created) => {
+              lastSavedCanvasRef.current = serialized;
+              setCurrentSessionId(created.id);
+              currentSessionIdRef.current = created.id;
+              window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, created.id);
+              void refreshHistory();
+            })
+            .catch(() => {})
+            .finally(() => {
+              sessionCreateInFlightRef.current = false;
+            });
+          return;
+        }
+
+        if (serialized.length > MAX_CANVAS_BYTES) {
+          // Сервер такой холст отвергнет (см. validate_canvas). Молча резать
+          // рисунки нельзя, поэтому честно говорим и не отправляем.
+          setCanvasSaveError(
+            "Доска слишком большая для автосохранения — удалите часть иллюстраций",
+          );
+          return;
+        }
+
+        setCanvasSaveError("");
+        updateChatSession(currentSessionIdRef.current, { canvas: snapshot })
+          .then(() => {
+            lastSavedCanvasRef.current = serialized;
+          })
+          .catch(() => {
+            // Best-effort: ref не двигаем, следующая правка повторит попытку.
+          });
+      }, CANVAS_AUTOSAVE_DELAY_MS);
+    };
+
+    const unsubscribe = useWhiteboardStore.subscribe(schedule);
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+    // refreshHistory стабилен (useCallback без зависимостей), подписка
+    // ставится один раз на всё время жизни компонента.
+  }, [refreshHistory]);
 
   // Список нужен не только внутри поповера: рядом с кнопкой стоит счётчик
   // сохранённых чатов, и без загрузки на монтировании он показывал бы 0 до

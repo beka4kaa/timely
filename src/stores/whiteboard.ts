@@ -292,6 +292,14 @@ export interface WhiteboardState {
   recordElementCheckpoint: (elementsBefore: WhiteboardElement[]) => void;
   undoElementAction: () => void;
   redoElementAction: () => void;
+  /**
+   * Полностью заменить содержимое доски сохранённым снимком.
+   *
+   * Отдельный метод, а не набор действий: восстановление — это НЕ правка,
+   * которую ученик делал руками, и в историю Undo она попадать не должна,
+   * иначе первым же Ctrl+Z пользователь стёр бы всю восстановленную доску.
+   */
+  restoreCanvas: (snapshot: { elements?: unknown[]; camera?: unknown } | null) => void;
   setCamera: (x: number, y: number, zoom?: number) => void;
   panCamera: (dx: number, dy: number) => void;
   setSelectedElement: (id: string | null) => void;
@@ -307,6 +315,25 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
   
   setSelectedElement: (id) => set({ selectedElementId: id }),
   
+  restoreCanvas: (snapshot) => {
+    // Снимок приходит с сервера нетипизированным JSON — это граница доверия,
+    // и приведение живёт здесь, а не размазано по вызывающим местам.
+    const rawCamera = snapshot?.camera as Camera | undefined;
+    set(() => ({
+      elements: Array.isArray(snapshot?.elements)
+        ? (snapshot!.elements as WhiteboardElement[])
+        : [],
+      camera:
+        rawCamera && typeof rawCamera.zoom === 'number'
+          ? rawCamera
+          : { x: 0, y: 0, zoom: 1 },
+      selectedElementId: null,
+      // История чистится намеренно: шаги Undo относились к ПРЕЖНЕЙ доске, и
+      // после подмены содержимого они означали бы возврат к чужому состоянию.
+      elementHistoryPast: [],
+      elementHistoryFuture: [],
+    }));
+  },
   setCamera: (x, y, zoom) => {
     set((state) => ({
       camera: {

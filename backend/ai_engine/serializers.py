@@ -1,8 +1,16 @@
+import json
+
 from rest_framework import serializers
 from .help_policy import HELP_PROFILES
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache, ChatSession
 from .tutor_modes import get_mode
 from mind.models import Subject, Topic
+
+# Потолок на сохраняемый холст. Считан по факту: одна иллюстрация приезжает
+# data-URI примерно на 590 КБ, то есть 12 МБ — это порядка двадцати картинок
+# плюс рисунки и тексты. Больше на одной доске не бывает, а предел защищает
+# и запрос, и строку в базе от разрастания без границ.
+MAX_CANVAS_BYTES = 12 * 1024 * 1024
 
 # Try to import StudySession (may not exist if migration not applied)
 try:
@@ -104,7 +112,7 @@ class ChatSessionSerializer(serializers.ModelSerializer):
         model = ChatSession
         fields = [
             'id', 'user_email', 'title', 'topic', 'messages', 'lesson_plan',
-            'mode', 'help_profile', 'policy', 'goal', 'hint_level',
+            'canvas', 'mode', 'help_profile', 'policy', 'goal', 'hint_level',
             'attempt_count', 'status', 'created_at', 'updated_at',
         ]
         # `policy` — вычисленные права, а не пожелание: их выдаёт
@@ -123,6 +131,30 @@ class ChatSessionSerializer(serializers.ModelSerializer):
     def validate_lesson_plan(self, value):
         if value is not None and not isinstance(value, dict):
             raise serializers.ValidationError('lesson_plan must be an object or null')
+        return value
+
+    def validate_canvas(self, value):
+        """Содержимое доски: элементы и камера.
+
+        Проверяем форму и ВЕРХНЮЮ ГРАНИЦУ. Иллюстрации лежат в элементах как
+        data-URI по сотне-другой килобайт каждая, и без предела один холст с
+        десятком картинок положил бы и запрос, и строку в базе. Превышение —
+        это ошибка клиента (он обязан обрезать сам, см. MAX_CANVAS_BYTES во
+        фронтенде), поэтому отвечаем 400, а не молча режем: молчаливая обрезка
+        означала бы потерю рисунков без ведома ученика.
+        """
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('canvas must be an object')
+        elements = value.get('elements')
+        if elements is not None and not isinstance(elements, list):
+            raise serializers.ValidationError('canvas.elements must be a list')
+        size = len(json.dumps(value, ensure_ascii=False))
+        if size > MAX_CANVAS_BYTES:
+            raise serializers.ValidationError(
+                f'canvas too large: {size} bytes (limit {MAX_CANVAS_BYTES})'
+            )
         return value
 
     def validate_mode(self, value):

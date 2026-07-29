@@ -229,8 +229,20 @@ class ChatSession(models.Model):
     the frontend already sends as `history` to /api/ai/chat). `lesson_plan`
     is the LessonPlan object driving the conversation (topic/goal/tasks) —
     resuming a chat without it would leave sendMessage() unusable, since the
-    frontend requires an active plan to send further messages. Whiteboard
-    canvas/illustration content is intentionally out of scope for now.
+    frontend requires an active plan to send further messages.
+
+    `canvas` — содержимое доски: рисунки ученика, тексты, графики и
+    иллюстрации (элементы стора whiteboard как есть). Хранится РЯДОМ с
+    разговором намеренно: сессия чата и есть учебная сессия, а доска — её
+    результат, и открывать сохранённый чат без его доски бессмысленно.
+
+    ВАЖНО про объём. Иллюстрации лежат в элементах как data-URI и весят
+    сотни килобайт каждая, поэтому холст:
+      - сохраняется ОТДЕЛЬНЫМ, более редким автосейвом, а не вместе с
+        каждым сообщением;
+      - не отдаётся в списке истории (см. ChatSessionListSerializer).
+    Следующий шаг, когда появится объектное хранилище (PRODUCT.md §15.5), —
+    вынести растры в S3 и держать здесь ссылки, а не base64.
     """
     id = models.CharField(primary_key=True, max_length=36)
     user_email = models.EmailField(db_index=True)
@@ -238,6 +250,9 @@ class ChatSession(models.Model):
     topic = models.CharField(max_length=255, blank=True, default="")
     messages = models.JSONField(default=list)
     lesson_plan = models.JSONField(null=True, blank=True)
+    # Элементы доски + камера. Пустой словарь = доска пуста; None не
+    # используем, чтобы «не сохраняли» и «сохранили пустую» не сливались.
+    canvas = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

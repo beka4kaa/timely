@@ -2,10 +2,12 @@
  * Client for the saved-chat-history API (`/api/chat-sessions/...`, rewritten
  * by next.config.js to the Django `ai_engine/chat-sessions` ViewSet).
  *
- * Persists AI Tutor conversations per account: messages + the LessonPlan
- * driving them (topic/goal/tasks). Whiteboard canvas/illustration content is
- * intentionally out of scope — see ChatSession's model docstring on the
- * backend.
+ * Persists AI Tutor conversations per account: messages, the LessonPlan
+ * driving them (topic/goal/tasks) и содержимое доски — рисунки ученика,
+ * тексты и иллюстрации. Доска сохраняется ОТДЕЛЬНЫМ, более редким автосейвом:
+ * иллюстрации лежат в элементах как data-URI и весят сотни килобайт, гонять их
+ * вместе с каждым сообщением слишком дорого. Подробности — в docstring модели
+ * ChatSession на бэкенде.
  */
 import { authFetch } from "@/lib/auth-fetch";
 import type { ChatMessage } from "./ai-chat";
@@ -36,9 +38,19 @@ export interface ChatSessionSummary {
   updated_at: string;
 }
 
+/** Снимок доски: элементы и камера. Форму задаёт стор whiteboard, поэтому
+ * здесь она намеренно нетипизирована — дублировать её значило бы держать две
+ * расходящиеся копии одного описания. */
+export interface CanvasSnapshot {
+  elements?: unknown[];
+  camera?: unknown;
+}
+
 export interface ChatSessionDetail extends ChatSessionSummary {
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
+  /** Рисунки, тексты и иллюстрации доски этой сессии. */
+  canvas: CanvasSnapshot | null;
   /** Права выдаёт сервер (read-only), клиент их только читает. */
   policy: import("./tutor-modes").HelpPolicySnapshot | null;
   hint_level: number;
@@ -71,6 +83,7 @@ export async function createChatSession(input: {
   topic: string;
   messages: ChatMessage[];
   lesson_plan: LessonPlan | null;
+  canvas?: CanvasSnapshot;
   mode?: string;
   hint_level?: number;
   attempt_count?: number;
@@ -89,6 +102,7 @@ export async function updateChatSession(
     topic: string;
     messages: ChatMessage[];
     lesson_plan: LessonPlan | null;
+    canvas: CanvasSnapshot;
     mode: string;
     hint_level: number;
     attempt_count: number;
