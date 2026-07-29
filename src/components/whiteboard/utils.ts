@@ -1,6 +1,50 @@
 import type { Stroke, BoundingBox, Point } from "./types";
 import type { Camera } from "@/stores/whiteboard";
 
+// ----- Canvas resolution -----
+
+/** Потолок буфера холста. Плотность экрана умножается на масштаб страницы, и на
+ * телефоне при пинч-зуме произведение легко доходит до 9: буфер в 81 раз больше
+ * уронил бы вкладку раньше, чем помог бы качеству. */
+export const MAX_CANVAS_PIXELS = 12_000_000;
+export const MAX_PIXEL_RATIO = 3;
+
+/**
+ * Сколько физических пикселей рисовать на один CSS-пиксель холста.
+ *
+ * Раньше буфер задавался прямо в CSS-пикселях (`canvas.width =
+ * window.innerWidth`), поэтому на экране с плотностью 3 каждый нарисованный
+ * пиксель растягивался втрое — это и видно на телефоне как «доска в пикселях».
+ * Сами штрихи хранятся точками, то есть картинка векторная по сути: не хватало
+ * только разрешения растеризации.
+ *
+ * Функция чистая и принимает измерения явно: обращение к `window` внутри
+ * сделало бы её непроверяемой.
+ *
+ * @param pageScale масштаб пинч-зума браузера (`visualViewport.scale`). Учтён
+ * потому, что пинч-зум сам по себе перерисовку НЕ вызывает и просто растягивает
+ * готовый растр.
+ */
+export function canvasPixelRatio({
+  cssWidth,
+  cssHeight,
+  density,
+  pageScale = 1,
+}: {
+  cssWidth: number;
+  cssHeight: number;
+  density: number;
+  pageScale?: number;
+}): number {
+  const desired = Math.min(MAX_PIXEL_RATIO, Math.max(1, density * pageScale));
+  const area = Math.max(1, cssWidth * cssHeight);
+  // Ограничение по площади, а не только по множителю: широкий монитор и
+  // маленький телефон упираются в разные пределы, и общий множитель был бы либо
+  // расточительным, либо недостаточным.
+  const areaCapped = Math.sqrt(MAX_CANVAS_PIXELS / area);
+  return Math.max(1, Math.min(desired, areaCapped));
+}
+
 // ----- Coordinate Transform Helpers -----
 
 /**

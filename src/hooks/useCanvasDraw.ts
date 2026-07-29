@@ -8,6 +8,7 @@ import type {
 } from "../components/whiteboard/types";
 import {
   AUTO_INK,
+  canvasPixelRatio,
   drawStroke,
   resolveInk,
   screenToCanvas,
@@ -119,6 +120,11 @@ export function useCanvasDraw(
   const { resolvedTheme } = useTheme();
   const ink = resolveInk(forceLightCanvas ? false : resolvedTheme === "dark");
 
+  // Множитель плотности держим в ref: он меняется вне React (ресайз, пинч-зум,
+  // перенос окна на другой монитор), а перерисовка обязана видеть свежее
+  // значение, не дожидаясь рендера.
+  const pixelRatioRef = useRef(1);
+
   // ── Canvas rendering ──
   const redraw = useCallback(
     (allStrokes: Stroke[], active: Stroke | null) => {
@@ -127,8 +133,14 @@ export function useCanvasDraw(
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      // Чистим в координатах буфера, рисуем в CSS-координатах. Камера и
+      // позиции DOM-элементов доски живут в CSS-пикселях, поэтому масштаб
+      // плотности обязан жить ТОЛЬКО внутри холста: иначе штрихи разъехались бы
+      // с подписями и иллюстрациями ровно в devicePixelRatio раз.
+      const ratio = pixelRatioRef.current;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save();
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
       // Apply camera transform (pan + zoom)
       ctx.translate(-camera.x, -camera.y);
@@ -137,7 +149,7 @@ export function useCanvasDraw(
       for (const s of allStrokes) drawStroke(ctx, s, ink);
       if (active) drawStroke(ctx, active, ink);
 
-      ctx.restore();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     },
     [camera, ink]
   );
@@ -146,6 +158,81 @@ export function useCanvasDraw(
   useEffect(() => {
     redraw(strokes, currentStroke);
   }, [strokes, currentStroke, camera, redraw]);
+
+  // Свежая перерисовка для обработчиков вне React (ResizeObserver, пинч-зум).
+  const redrawLatestRef = useRef<() => void>(() => undefined);
+  redrawLatestRef.current = () => redraw(strokes, currentStroke);
+
+  /**
+   * Размер холста: буфер — в физических пикселях, CSS-размер — по контейнеру.
+   *
+   * Прежний код брал `window.innerWidth/innerHeight` и не задавал CSS-размер
+   * вовсе. Отсюда три беды разом: буфер в CSS-пикселях (пикселизация на
+   * телефоне), холст шире своего контейнера (лишние мегабайты под панелью
+   * тьютора) и полное отсутствие реакции на перетаскивание границы панели.
+   */
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = canvas?.parentElement;
+    if (!canvas || !container) return;
+
+    const applySize = () => {
+      const rect = container.getBoundingClientRect();
+      const cssWidth = Math.max(1, Math.round(rect.width));
+      const cssHeight = Math.max(1, Math.round(rect.height));
+      const ratio = canvasPixelRatio({
+        cssWidth,
+        cssHeight,
+        density: window.devicePixelRatio || 1,
+        pageScale: window.visualViewport?.scale ?? 1,
+      });
+      const bufferWidth = Math.round(cssWidth * ratio);
+      const bufferHeight = Math.round(cssHeight * ratio);
+
+      // `visualViewport.scroll` на телефоне срабатывает потоком событий, и
+      // почти всегда ничего не меняется. Выходим сразу: пересчитывать геометрию
+      // и перерисовывать доску на каждый тик прокрутки — верный способ получить
+      // рывки ровно там, где мы чинили качество.
+      if (
+        canvas.width === bufferWidth &&
+        canvas.height === bufferHeight &&
+        pixelRatioRef.current === ratio
+      ) {
+        return;
+      }
+
+      // Присваивание width/height ОЧИЩАЕТ холст даже тем же значением, поэтому
+      // трогаем его только при реальном изменении размера.
+      if (canvas.width !== bufferWidth || canvas.height !== bufferHeight) {
+        canvas.width = bufferWidth;
+        canvas.height = bufferHeight;
+      }
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      pixelRatioRef.current = ratio;
+      // Смена размера буфера сбрасывает содержимое холста — рисуем заново.
+      redrawLatestRef.current();
+    };
+
+    applySize();
+
+    const observer = new ResizeObserver(applySize);
+    observer.observe(container);
+    window.addEventListener("resize", applySize);
+    // Пинч-зум браузера меняет только масштаб показа готового растра; без
+    // этого слушателя доска на телефоне «в приближении» так и осталась бы
+    // мыльной, сколько ни увеличивай плотность в покое.
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", applySize);
+    viewport?.addEventListener("scroll", applySize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", applySize);
+      viewport?.removeEventListener("resize", applySize);
+      viewport?.removeEventListener("scroll", applySize);
+    };
+  }, []);
 
   // ── Debounced crop ──
   const scheduleCrop = useCallback(() => {
@@ -187,11 +274,12 @@ export function useCanvasDraw(
     (e: React.PointerEvent<HTMLCanvasElement>): Point => {
       const canvas = canvasRef.current;
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
 
-      const sx = (e.clientX - rect.left) * scaleX;
-      const sy = (e.clientY - rect.top) * scaleY;
+      // Координаты берём в CSS-пикселях: в них же живут камера и позиции
+      // элементов доски. Пересчёт в пиксели буфера здесь был бы ошибкой —
+      // плотность экрана применяется один раз, внутри redraw.
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
 
       const canvasPos = screenToCanvas(sx, sy, camera);
 
