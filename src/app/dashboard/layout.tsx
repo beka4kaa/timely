@@ -3,6 +3,7 @@ import type { CSSProperties } from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
+import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 
 export const metadata: Metadata = {
@@ -57,6 +58,9 @@ export default function DashboardLayout({
           } as CSSProperties
         }
       >
+          {/* Секундный тик помодоро и отправка завершённых сессий.
+              Живёт в layout, чтобы таймер шёл на всех страницах дашборда. */}
+          <PomodoroSync />
           <SiteHeader />
           <AppSidebar />
           <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-[95] overflow-auto md:left-[58px]">
