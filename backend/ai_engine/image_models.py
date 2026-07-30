@@ -35,18 +35,19 @@ _FALLBACK_QUALITY = "medium"
 
 # Метаданные моделей. `id` обязан совпадать с идентификатором на OpenRouter.
 #
-# ВАЖНО про `bytedance-seed/seedream-4.5`: на 2026-07-29 этой модели НЕТ в
-# каталоге OpenRouter (`GET /api/v1/models`) — у ByteDance Seed там только
-# текстовые модели. Запрос к ней отвечает 404 «No endpoints found that support
-# the requested output modalities». Она оставлена дефолтом по прямому решению
-# владельца продукта; когда/если генерация начнёт падать, лечится ОДНОЙ
-# переменной окружения, без правки кода:
-#
-#     IMAGE_GEN_DEFAULT_MODEL=google/gemini-3-pro-image
-#     IMAGE_GEN_ALLOWED_MODELS=google/gemini-3-pro-image,openai/gpt-5.4-image-2
+# Проверять доступность модели нужно ТОЧЕЧНЫМ запросом
+# `GET /api/v1/models/<id>/endpoints`, а не поиском по листингу
+# `/api/v1/models`: листинг отдаёт не весь каталог. `seedream-4.5` в листинге
+# отсутствует, но живёт (endpoint `bytedance-seed/seedream-4.5-20251203`,
+# `output_modalities: ["image"]`, ~$0.0000096 за картинку — на порядок дешевле
+# gemini-3-pro-image).
 #
 # `openai/gpt-5.4-image-2` — это и есть «GPT Image 2»: голого
 # `openai/gpt-image-2` в каталоге не существует.
+#
+# `supports_quality` отражает реальный `supported_parameters` провайдера: у
+# Seedream там только frequency_penalty / max_tokens / temperature / top_p,
+# качества нет.
 IMAGE_MODELS: dict[str, dict[str, Any]] = {
     "bytedance-seed/seedream-4.5": {
         "id": "bytedance-seed/seedream-4.5",
