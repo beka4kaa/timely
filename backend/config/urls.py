@@ -24,6 +24,7 @@ from ai_engine.chat_views import BoardChatStreamView, BoardChatView
 from ai_engine.illustration_views import IllustrationView, ImageModelsView
 from ai_engine.usage_views import AIUsageSummaryView
 from habits.views import HabitViewSet
+from pomodoro.views import FocusSessionViewSet
 from nutrition.views import (
     FoodSearchView,
     BarcodeLookupView,
@@ -64,6 +65,7 @@ router.register(r'private-leaderboards', PrivateLeaderboardViewSet, basename='pr
 router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 router.register(r'habits', HabitViewSet, basename='habits')
 router.register(r'nutrition/entries', NutritionEntryViewSet, basename='nutrition-entries')
+router.register(r'pomodoro/sessions', FocusSessionViewSet, basename='pomodoro-sessions')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

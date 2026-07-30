@@ -13,6 +13,7 @@ import {
   ShieldCheckIcon,
   SwordsIcon,
   TargetIcon,
+  TimerIcon,
   TrophyIcon,
   ZapIcon,
 } from "lucide-react";
@@ -68,6 +69,10 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   "/dashboard/tasks": {
     title: "Задачи",
     subtitle: "Фокус и ближайшие действия",
+  },
+  "/dashboard/pomodoro": {
+    title: "Помодоро",
+    subtitle: "Фокус-сессии и время учёбы",
   },
   "/dashboard/habits": {
     title: "Привычки",
@@ -161,6 +166,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
     items: [
       { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
       { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
+      { title: "Помодоро", url: "/dashboard/pomodoro", icon: TimerIcon },
       { title: "Задачи", url: "/dashboard/tasks", icon: CheckSquareIcon },
     ],
   },
@@ -212,6 +218,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
 const visibleNavigationRoutes = new Set([
   "/dashboard/diary",
   "/dashboard/whiteboard",
+  "/dashboard/pomodoro",
   "/dashboard/arena/solve",
   "/dashboard/arena/review",
   "/dashboard/leaderboard",
