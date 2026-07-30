@@ -1,0 +1,158 @@
+"""Контракты обмена с моделью-планировщиком курса.
+
+Ключевое разделение (§«Архитектурный принцип»): модель возвращает ТОЛЬКО
+семантику — темы, зависимости, приблизительные длительности и ссылки на уже
+переданные ей chunk_id. Календарные даты, права, порядок публикации и итоговый
+расчёт нагрузки остаются за backend'ом.
+
+Все структуры — обычные dataclass'ы без Django: провайдер должен быть
+тестируемым без БД, а benchmark — уметь гонять один и тот же вход через разные
+модели, не поднимая приложение.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field
+
+PROMPT_VERSION = "course-planner-1.0.0"
+REVIEW_PROMPT_VERSION = "course-reviewer-1.0.0"
+
+
+@dataclass(frozen=True)
+class BookMetadata:
+    title: str
+    authors: tuple[str, ...] = ()
+    language: str = "ru"
+    year: int | None = None
+    document_id: str = ""
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    """Нормализованная строка оглавления, переданная модели."""
+
+    path: str
+    title: str
+    page_start: int
+    page_end: int
+
+
+@dataclass(frozen=True)
+class PlanningConstraints:
+    """Жёсткие рамки, которые модель не имеет права нарушать."""
+
+    max_modules: int = 12
+    max_topics_per_module: int = 10
+    min_topic_minutes: int = 10
+    max_topic_minutes: int = 240
+    max_total_minutes: int = 100_000
+    required_language: str = "ru"
+
+
+@dataclass(frozen=True)
+class CoursePlanningRequest:
+    """Полный вход планировщика. Один и тот же для всех моделей в benchmark."""
+
+    goal_text: str
+    normalized_subject: str
+    normalized_direction: str
+    current_level: str
+    target_level: str
+    language: str
+    theory_practice_balance: str
+    desired_finish_date: str | None
+    book: BookMetadata
+    toc: tuple[TocEntry, ...]
+    # chunk_id, на которые модели РАЗРЕШЕНО ссылаться. Всё остальное —
+    # галлюцинация, и валидатор это отловит.
+    available_chunk_ids: tuple[str, ...]
+    source_excerpts: str = ""
+    constraints: PlanningConstraints = field(default_factory=PlanningConstraints)
+    schema_version: str = "1.0.0"
+    prompt_version: str = PROMPT_VERSION
+
+    def input_hash(self) -> str:
+        """Стабильный хеш входа.
+
+        Benchmark обязан доказать, что все модели получили идентичный вход;
+        сравнение хешей — единственный способ это гарантировать после того, как
+        данные прошли через сериализацию.
+        """
+        payload = json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+# ───────────────────────────── Ответ модели ──────────────────────────────────
+
+
+@dataclass
+class ProposedTopic:
+    external_id: str
+    title: str
+    objective: str
+    estimated_minutes: int
+    difficulty: str = "medium"
+    suggested_lesson_count: int = 1
+    theory_practice_balance: str = "balanced"
+    mastery_criteria: str = ""
+    review_strategy: str = ""
+    prerequisites: list[str] = field(default_factory=list)
+    source_chunk_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ProposedModule:
+    external_id: str
+    title: str
+    objective: str
+    estimated_minutes: int = 0
+    completion_criteria: str = ""
+    milestone: str = ""
+    topics: list[ProposedTopic] = field(default_factory=list)
+
+
+@dataclass
+class CoursePlanningResult:
+    """Сырое предложение модели ДО валидации. Не сохранять напрямую."""
+
+    title: str
+    objective: str
+    modules: list[ProposedModule] = field(default_factory=list)
+    rationale: str = ""
+    model: str = ""
+    prompt_version: str = PROMPT_VERSION
+    schema_version: str = "1.0.0"
+    raw_json: str = ""
+    # Поля, которых нет в схеме. Не игнорируются: их наличие — сигнал, что
+    # модель отвечает не по контракту, и это отдельная метрика benchmark.
+    unknown_fields: list[str] = field(default_factory=list)
+
+    def all_topics(self) -> list[ProposedTopic]:
+        return [topic for module in self.modules for topic in module.topics]
+
+    def total_minutes(self) -> int:
+        return sum(t.estimated_minutes for t in self.all_topics())
+
+
+@dataclass
+class ReviewFinding:
+    kind: str  # missing_topic | wrong_prerequisite | goal_mismatch | ...
+    message: str
+    topic_external_id: str = ""
+    severity: str = "warning"  # info | warning | blocker
+
+
+@dataclass
+class CourseReviewResult:
+    """Заключение рецензента. Публиковать курс он не может."""
+
+    findings: list[ReviewFinding] = field(default_factory=list)
+    approved: bool = True
+    model: str = ""
+    prompt_version: str = REVIEW_PROMPT_VERSION
+
+    @property
+    def blockers(self) -> list[ReviewFinding]:
+        return [f for f in self.findings if f.severity == "blocker"]

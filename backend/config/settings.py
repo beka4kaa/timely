@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "diary",
     "habits",
     "nutrition",
+    "curriculum",
     "pomodoro",
     "django_filters",
 ]
