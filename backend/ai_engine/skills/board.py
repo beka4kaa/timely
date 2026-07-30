@@ -274,6 +274,9 @@ class BoardSkill(Skill):
                 palette=palette,
                 reference_image_url=reference_image_url if is_restyle else None,
                 skip_grounding=is_restyle,
+                # Выбранная пользователем image-модель. Валидация уже прошла во
+                # вьюхе — сюда приезжает готовый ImageGenOptions либо None.
+                options=kwargs.get("image_options"),
             )
 
         return SkillResult(

@@ -21,7 +21,7 @@ from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from ai_engine.chat_views import BoardChatStreamView, BoardChatView
-from ai_engine.illustration_views import IllustrationView
+from ai_engine.illustration_views import IllustrationView, ImageModelsView
 from ai_engine.usage_views import AIUsageSummaryView
 from habits.views import HabitViewSet
 from nutrition.views import (
@@ -105,6 +105,9 @@ urlpatterns = [
     # Вторая фаза прогрессивной выдачи: одна иллюстрация за запрос.
     path('api/ai/illustration/', IllustrationView.as_view(), name='ai-illustration'),
     path('api/ai/illustration', IllustrationView.as_view(), name='ai-illustration-no-slash'),
+    # Allowlist image-моделей для селектора на доске.
+    path('api/ai/image-models/', ImageModelsView.as_view(), name='ai-image-models'),
+    path('api/ai/image-models', ImageModelsView.as_view(), name='ai-image-models-no-slash'),
     path('api/ai/usage/', AIUsageSummaryView.as_view(), name='ai-usage-summary'),
     path('api/ai/usage', AIUsageSummaryView.as_view(), name='ai-usage-summary-no-slash'),
 

@@ -85,6 +85,15 @@ export type IllustrationElement = {
   /** Стиль генерации (flat/2_5d/3d/sketch) — выбирает типографику подписей. */
   genStyle?: string;
   /**
+   * Чем именно нарисована эта картинка. Нужно для A/B-сравнения моделей:
+   * пользователь переключает модель вручную и повторяет запрос, а сравнивать
+   * результаты можно только зная, что откуда. `undefined` означает, что растр
+   * рисовала не image-модель (детерминированный Vector DSL) либо картинка
+   * пришла до появления селектора.
+   */
+  imageModel?: string;
+  imageQuality?: string;
+  /**
    * Сюжет, которым эта картинка была сгенерирована (`image_prompt`).
    * Хранится, чтобы «сделай в стиле скетч» перерисовало ЭТУ иллюстрацию, не
    * спрашивая board-модель заново: без сюжета пришлось бы генерировать весь
@@ -215,6 +224,8 @@ export type CreateIllustrationAction = {
     masks?: IllustrationMask[] | null;
     alt?: string;
     genStyle?: string;
+    imageModel?: string;
+    imageQuality?: string;
     imagePrompt?: string;
     pending?: boolean;
     error?: string;
@@ -245,6 +256,9 @@ export type UpdateElementAction = {
     labels?: IllustrationLabel[];
     /** Меняется при рестайле: от стиля зависит типографика подписей. */
     genStyle?: string;
+    /** Проставляется, когда растр догрузился: чем его нарисовали. */
+    imageModel?: string;
+    imageQuality?: string;
     masks?: IllustrationMask[] | null;
     pending?: boolean;
     error?: string;
@@ -551,6 +565,8 @@ export const useWhiteboardStore = create<WhiteboardState>((set) => ({
                 if (action.payload.src !== undefined) newEl.src = action.payload.src;
                 if (action.payload.labels !== undefined) newEl.labels = action.payload.labels;
                 if (action.payload.genStyle !== undefined) newEl.genStyle = action.payload.genStyle;
+                if (action.payload.imageModel !== undefined) newEl.imageModel = action.payload.imageModel;
+                if (action.payload.imageQuality !== undefined) newEl.imageQuality = action.payload.imageQuality;
                 if (action.payload.masks !== undefined) newEl.masks = action.payload.masks;
                 if (action.payload.pending !== undefined) newEl.pending = action.payload.pending;
                 if (action.payload.error !== undefined) newEl.error = action.payload.error;

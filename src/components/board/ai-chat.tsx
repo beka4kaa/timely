@@ -30,6 +30,25 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StyleSelectorDropdown, PaletteSelectorDropdown } from "./style-controls/StyleSelectors";
 import {
+  ImageModelSelectorDropdown,
+  QualitySelectorDropdown,
+} from "./style-controls/ModelSelectors";
+import {
+  DEFAULT_IMAGE_QUALITY,
+  FALLBACK_IMAGE_MODELS,
+  IMAGE_MODEL_STORAGE_KEY,
+  IMAGE_QUALITY_STORAGE_KEY,
+  type ImageModelInfo,
+  type ImageModelsResponse,
+  type ImageQuality,
+  buildImageRequestFields,
+  defaultImageModelId,
+  imageModelErrorMessage,
+  imageModelLabel,
+  resolveStoredModel,
+  resolveStoredQuality,
+} from "@/lib/image-model-selection";
+import {
   useWhiteboardStore,
   type IllustrationLabel,
   type Position,
@@ -290,6 +309,126 @@ export function AIChat({
   // Раньше дефолт был he_inspired (медицинский H&E), из-за чего гео-схемы
   // генерились в красно-«мясных» оттенках.
   const [generationPalette, setGenerationPalette] = useState("natural-earth");
+
+  // ── Выбор image-модели ────────────────────────────────────────────────────
+  // Выбор персональный: живёт в localStorage этого браузера и НЕ меняет модель
+  // для других пользователей — глобальный дефолт задаётся только на backend
+  // через IMAGE_GEN_DEFAULT_MODEL.
+  const [availableImageModels, setAvailableImageModels] =
+    useState<ImageModelInfo[]>(FALLBACK_IMAGE_MODELS);
+  const [imageModel, setImageModel] = useState(() =>
+    defaultImageModelId(FALLBACK_IMAGE_MODELS)
+  );
+  const [imageQuality, setImageQuality] = useState<ImageQuality>(DEFAULT_IMAGE_QUALITY);
+  // Актуальная модель вне React-цикла. Нужна асинхронной сверке с allowlist:
+  // к моменту ответа сервера пользователь мог уже переключить модель сам, и
+  // затирать его выбор значением из замыкания нельзя.
+  const imageModelRef = useRef(imageModel);
+  const imageQualityRef = useRef(imageQuality);
+
+  // Модель и качество меняются ВМЕСТЕ и только в трёх местах: гидрация,
+  // сверка с allowlist сервера и выбор пользователя. Отдельного эффекта-
+  // нормализатора здесь намеренно нет: он срабатывал на монтировании со
+  // значением первого рендера (Seedream, качества нет) и понижал прочитанное
+  // из localStorage `high` до `medium`.
+  const applyImageChoice = useCallback(
+    (model: string, quality: string | null | undefined, models: ImageModelInfo[]) => {
+      const nextQuality = resolveStoredQuality(quality, model, models);
+      imageModelRef.current = model;
+      imageQualityRef.current = nextQuality;
+      setImageModel(model);
+      setImageQuality(nextQuality);
+      return nextQuality;
+    },
+    []
+  );
+
+  // Первая загрузка: сначала localStorage (мгновенно), затем сверка с реальным
+  // allowlist сервера. Модель, выпавшая из allowlist, обязана сброситься —
+  // иначе она уедет в запрос и вернётся 400 на каждой генерации.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedModel = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY);
+    const storedQuality = window.localStorage.getItem(IMAGE_QUALITY_STORAGE_KEY);
+    applyImageChoice(
+      resolveStoredModel(storedModel, FALLBACK_IMAGE_MODELS),
+      storedQuality,
+      FALLBACK_IMAGE_MODELS
+    );
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await authFetch("/api/ai/image-models");
+        if (!res.ok) return;
+        const data = (await res.json()) as ImageModelsResponse;
+        if (cancelled || !Array.isArray(data?.models) || data.models.length === 0) return;
+        setAvailableImageModels(data.models);
+        // Сверяем ТЕКУЩИЙ выбор (из ref, а не из замыкания): пока запрос летел,
+        // пользователь мог переключить модель сам.
+        applyImageChoice(
+          resolveStoredModel(imageModelRef.current, data.models, data.default_model),
+          imageQualityRef.current,
+          data.models
+        );
+      } catch {
+        // Список моделей — не критичный запрос: без него остаётся статический
+        // fallback, и доска продолжает работать.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyImageChoice]);
+
+  /**
+   * Сохранение — в обработчиках выбора, а НЕ в эффекте на [imageModel].
+   *
+   * Эффект здесь уже ломался: состояние стартует с дефолта, прочитанное из
+   * localStorage значение приезжает эффектом, и эффект-запись успевал
+   * сохранить дефолт первого рендера раньше — выбор не переживал перезагрузку.
+   * Запись по действию пользователя от порядка эффектов не зависит вовсе.
+   */
+  const persistImageChoice = useCallback(
+    (model: string, quality: ImageQuality) => {
+      if (typeof window === "undefined") return;
+      window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, model);
+      window.localStorage.setItem(IMAGE_QUALITY_STORAGE_KEY, quality);
+    },
+    []
+  );
+
+  const handleImageModelChange = useCallback(
+    (next: string) => {
+      const nextQuality = applyImageChoice(
+        next,
+        imageQualityRef.current,
+        availableImageModels
+      );
+      persistImageChoice(next, nextQuality);
+    },
+    [availableImageModels, applyImageChoice, persistImageChoice]
+  );
+
+  const handleImageQualityChange = useCallback(
+    (next: ImageQuality) => {
+      const nextQuality = applyImageChoice(
+        imageModelRef.current,
+        next,
+        availableImageModels
+      );
+      persistImageChoice(imageModelRef.current, nextQuality);
+    },
+    [availableImageModels, applyImageChoice, persistImageChoice]
+  );
+
+  // Поля модели для ЛЮБОГО запроса генерации: обычной, отложенной догрузки,
+  // рестайла и повтора. Одна точка сборки — чтобы выбор не потерялся ровно на
+  // одном из путей.
+  const imageRequestFields = useMemo(
+    () => buildImageRequestFields(imageModel, imageQuality, availableImageModels),
+    [imageModel, imageQuality, availableImageModels]
+  );
 
   // ── Режим тьютора (PRODUCT.md §5.2) ────────────────────────────────────────
   // Клиент хранит ВЫБОР режима и достигнутую ступень подсказок, но не правила:
@@ -667,6 +806,7 @@ export function AIChat({
                 topic_hint: topicHint ?? "",
                 style: generationStyle,
                 palette: generationPalette,
+                ...imageRequestFields,
                 // При рестайле отдаём прежнюю картинку как основу: i2i
                 // сохраняет композицию, меняя только манеру рисунка.
                 ...(referenceImageUrl
@@ -681,10 +821,13 @@ export function AIChat({
             const enriched = data.command ?? {};
             const src: string | undefined = enriched.base_image_url || enriched.image_url;
             if (!src) {
+              // Модель не отдала картинку. Называем ЕЁ и предлагаем вторую, но
+              // не переключаем сами: пользователь сравнивает модели вручную, и
+              // молчаливая подмена сделала бы сравнение бессмысленным.
               throw new Error(
                 typeof enriched.image_error === "string"
                   ? enriched.image_error
-                  : "Не удалось сгенерировать иллюстрацию"
+                  : imageModelErrorMessage(imageModel, availableImageModels)
               );
             }
 
@@ -700,6 +843,17 @@ export function AIChat({
                   ),
                   masks: Array.isArray(enriched.masks) ? enriched.masks : null,
                   pending: false,
+                  // A/B-метаданные: чем именно нарисована ЭТА картинка. Берём
+                  // ответ сервера — векторный путь мог вернуть чистый
+                  // детерминированный PNG и не звать image-модель вовсе.
+                  imageModel:
+                    typeof enriched.image_model === "string"
+                      ? enriched.image_model
+                      : undefined,
+                  imageQuality:
+                    typeof enriched.image_quality === "string"
+                      ? enriched.image_quality
+                      : undefined,
                 },
               },
             ]);
@@ -719,7 +873,17 @@ export function AIChat({
         })
       );
     },
-    [generationStyle, generationPalette, onUsageChange]
+    // imageRequestFields/imageModel обязаны быть в зависимостях: без них
+    // замыкание удержит модель, выбранную на момент прошлого рендера, и
+    // отложенная догрузка нарисует не тем, что показано в селекторе.
+    [
+      generationStyle,
+      generationPalette,
+      imageRequestFields,
+      imageModel,
+      availableImageModels,
+      onUsageChange,
+    ]
   );
 
   // `overrideText` — ответ, выбранный кликом по варианту уточняющего вопроса:
@@ -796,6 +960,7 @@ export function AIChat({
           ...(requestHint && { request_hint: true }),
           style: generationStyle,
           palette: generationPalette,
+          ...imageRequestFields,
           // Картинки не ждём: доска с текстом и подписями приходит за ~18с,
           // а растры догружаются отдельными запросами (loadPendingIllustrations).
           defer_images: true,
@@ -946,6 +1111,9 @@ export function AIChat({
                 pending: true,
                 error: undefined,
                 genStyle: generationStyle,
+                // Рестайл идёт выбранной моделью — плейсхолдер должен назвать
+                // именно её, а не ту, которой картинка была нарисована раньше.
+                imageModel,
               },
             },
           ]);
@@ -976,6 +1144,7 @@ export function AIChat({
             baseY,
             maxColumnHeight,
             generationStyle,
+            imageModel,
           });
 
         if (actionsToExecute.length > 0) {
@@ -1606,15 +1775,35 @@ export function AIChat({
                 className="mb-2 min-h-[30px] max-h-[160px] w-full resize-none bg-transparent px-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
               />
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
+              {/* Настройки генерации собраны в одну группу и умеют переноситься:
+                  панель AI Tutor узкая (~370px), и четыре пилюли в один ряд не
+                  влезают — без wrap они наезжали друг на друга. */}
+              <div className="flex flex-wrap items-center gap-1 gap-y-2">
+                <>
                   <PaletteSelectorDropdown
                     value={generationPalette}
                     onChange={setGenerationPalette}
                   />
-                </div>
+                  <StyleSelectorDropdown
+                    value={generationStyle}
+                    onChange={setGenerationStyle}
+                  />
+                  <ImageModelSelectorDropdown
+                    value={imageModel}
+                    models={availableImageModels}
+                    onChange={handleImageModelChange}
+                  />
+                  <QualitySelectorDropdown
+                    value={imageQuality}
+                    modelId={imageModel}
+                    models={availableImageModels}
+                    onChange={handleImageQualityChange}
+                  />
+                </>
 
-                <div className="flex items-center gap-1">
+                {/* ml-auto прижимает отправку вправо на ТОЙ строке, куда она
+                    попала после переноса настроек. */}
+                <div className="ml-auto flex shrink-0 items-center gap-1">
                   <AIUsageIndicator
                     summary={usageSummary}
                     isLoading={usageLoading}
@@ -1623,11 +1812,6 @@ export function AIChat({
                       limitTokens: contextSnapshot.limitTokens,
                       percent: contextSnapshot.contextPercent,
                     }}
-                  />
-
-                  <StyleSelectorDropdown
-                    value={generationStyle}
-                    onChange={setGenerationStyle}
                   />
 
                   <TooltipProvider delayDuration={300}>

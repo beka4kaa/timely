@@ -13,6 +13,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test:planning-intake": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/components/board/lesson-plan.logic.test.ts",
+    "test:image-model-selection": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/image-model-selection.test.ts",
     "production": "npm run db:push && npm run build && npm run start"
   },
   "dependencies": {

@@ -92,6 +92,7 @@ from typing import Any
 import requests
 from django.conf import settings
 
+from .image_models import ImageGenOptions, resolve_options, supports_quality
 from .usage import provider_from_base_url, record_model_usage
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,11 @@ _API_KEY: str = getattr(
     "IMAGE_GEN_API_KEY",
     os.getenv("OPENROUTER_API_KEY", ""),
 )
+# Дефолт ПОСЛЕДНЕЙ инстанции: используется только вызовами, которые не
+# передали `options`. Модель выбирает пользователь на доске, и её значение
+# приезжает per-request через ImageGenOptions (см. ai_engine.image_models).
+# Читать эту константу внутри _call_image_api напрямую НЕЛЬЗЯ: она
+# фиксируется на импорте, и per-request выбор был бы молча проигнорирован.
 _MODEL: str = getattr(
     settings,
     "IMAGE_GEN_MODEL",
@@ -731,6 +737,8 @@ def _build_final_prompt(
     task_diagram: bool = False,
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
+    model: str | None = None,
+    aspect_ratio: str | None = None,
 ) -> str:
     """
     Единая точка сборки ИТОГОВОЙ текстовой строки запроса к генератору
@@ -789,7 +797,8 @@ def _build_final_prompt(
 
     text = (
         f"{prefix}{core} "
-        f"Image aspect ratio: {IMAGE_ASPECT_RATIO} (landscape orientation). "
+        f"Image aspect ratio: {aspect_ratio or IMAGE_ASPECT_RATIO} "
+        "(landscape orientation). "
         f"{style_pos}"
     )
     if scientific_diagram:
@@ -811,7 +820,7 @@ def _build_final_prompt(
     # директива стоит буквально последней. На полном промпте раньше хвостом был
     # только длинный общий guard, и модель всё равно печатала FRiction / 30°G /
     # псевдо-буквы вроде «Fikicn».
-    if _is_image_only_model(_MODEL):
+    if _is_image_only_model(model or _MODEL):
         text += f" {TEXT_FREE_TERMINAL}"
     return text
 
@@ -834,12 +843,15 @@ def _call_image_api(
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
     compact_prompt: bool = False,
+    options: ImageGenOptions | None = None,
 ) -> str:
     """
-    Отправляет запрос к OpenRouter (модель из IMAGE_GEN_MODEL, standard tier).
+    Отправляет запрос к OpenRouter (модель из `options`, standard tier).
 
     Args:
         prompt:              СОДЕРЖАНИЕ картинки (что изобразить).
+        options:             провалидированный выбор пользователя (модель,
+                             качество, аспект). None → дефолт инсталляции.
         style:               id стиля с фронтенда (flat/2_5d/3d/sketch) → STYLE_PRESETS.
         palette:             id палитры с фронтенда (he_inspired/…) → COLOR_PALETTES.
         reference_image_url: URL или Data URL существующей картинки на доске.
@@ -867,6 +879,13 @@ def _call_image_api(
     """
     prompt = prompt.strip() if compact_prompt else _sanitize_image_prompt(prompt)
 
+    # Модель берём ТОЛЬКО отсюда: `_MODEL` зафиксирован на импорте, и обращение
+    # к нему ниже по телу функции потеряло бы выбор пользователя.
+    if options is None:
+        options = resolve_options()
+    model = options.model
+    aspect_ratio = options.aspect_ratio
+
     if not _API_KEY:
         raise ValueError(
             "IMAGE_GEN_API_KEY не задан. "
@@ -890,7 +909,7 @@ def _call_image_api(
         # text guard remains because Seedream follows it reliably.
         compact_text = prompt
         if (
-            _is_image_only_model(_MODEL)
+            _is_image_only_model(model)
             and TEXT_FREE_TERMINAL.lower() not in compact_text.lower()
         ):
             compact_text = f"{compact_text} {TEXT_FREE_TERMINAL}"
@@ -906,7 +925,7 @@ def _call_image_api(
         logger.info(
             "[ImageGen] POST %s | model=%s | style=%s | mode=%s | prompt=%.100s…",
             _API_URL,
-            _MODEL,
+            model,
             style or DEFAULT_STYLE,
             compact_mode,
             prompt,
@@ -952,6 +971,8 @@ def _call_image_api(
             task_diagram=task_diagram,
             scientific_diagram=scientific_diagram,
             explicit_style_override=explicit_style_override,
+            model=model,
+            aspect_ratio=aspect_ratio,
         )
         message_content: Any = [
             {"type": "image_url", "image_url": {"url": reference_image_url}},
@@ -959,7 +980,7 @@ def _call_image_api(
         ]
         logger.info(
             "[ImageGen] POST %s | model=%s | style=%s→%s | palette=%s | task_diagram=%s | scientific=%s | mode=edit(i2i) | prompt=%.70s…",
-            _API_URL, _MODEL, (style or DEFAULT_STYLE),
+            _API_URL, model, (style or DEFAULT_STYLE),
             _effective_style_key(style, scientific_diagram, explicit_style_override),
             (_task_diagram_palette(palette, task_diagram) or "—"), task_diagram,
             scientific_diagram, prompt,
@@ -980,20 +1001,30 @@ def _call_image_api(
             task_diagram=task_diagram,
             scientific_diagram=scientific_diagram,
             explicit_style_override=explicit_style_override,
+            model=model,
+            aspect_ratio=aspect_ratio,
         )
         logger.info(
             "[ImageGen] POST %s | model=%s | style=%s→%s | palette=%s | task_diagram=%s | scientific=%s | mode=t2i | prompt=%.70s…",
-            _API_URL, _MODEL, (style or DEFAULT_STYLE),
+            _API_URL, model, (style or DEFAULT_STYLE),
             _effective_style_key(style, scientific_diagram, explicit_style_override),
             (_task_diagram_palette(palette, task_diagram) or "—"), task_diagram,
             scientific_diagram, prompt,
         )
 
+    image_config: dict[str, Any] = {"aspect_ratio": aspect_ratio}
+    # Качество отправляем ТОЛЬКО модели, которая его заявляет. Ни у одной
+    # image-модели OpenRouter `quality` не значится в supported_parameters,
+    # поэтому это best-effort: провайдер вправе его проигнорировать. Слать его
+    # модели без поддержки нельзя — «не отправляй неподдерживаемые параметры».
+    if options.quality and supports_quality(model):
+        image_config["quality"] = options.quality
+
     payload: dict[str, Any] = {
-        "model": _MODEL,
-        "modalities": _modalities_for(_MODEL),
-        "aspect_ratio": IMAGE_ASPECT_RATIO,
-        "image_config": {"aspect_ratio": IMAGE_ASPECT_RATIO},
+        "model": model,
+        "modalities": _modalities_for(model),
+        "aspect_ratio": aspect_ratio,
+        "image_config": image_config,
         "messages": [{"role": "user", "content": message_content}],
     }
 
@@ -1010,7 +1041,7 @@ def _call_image_api(
     image_url = _extract_image_url(data, prompt)
     record_model_usage(
         data,
-        model=_MODEL,
+        model=model,
         provider=provider_from_base_url(_API_URL),
         feature="image_generation",
         input_payload=payload,
@@ -1018,6 +1049,9 @@ def _call_image_api(
         metadata={
             "style": style or DEFAULT_STYLE,
             "mode": "image_to_image" if reference_image_url else "text_to_image",
+            # Модель и качество в metadata — то, по чему потом сравнивается
+            # качество и стоимость двух моделей на одинаковых сюжетах.
+            **options.meta,
         },
     )
     return image_url
@@ -1033,6 +1067,7 @@ def generate_raster_image(
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
     compact_prompt: bool = False,
+    options: ImageGenOptions | None = None,
 ) -> str:
     """
     Публичная обёртка над _call_image_api — генерирует растровое изображение
@@ -1069,6 +1104,35 @@ def generate_raster_image(
         scientific_diagram=scientific_diagram,
         explicit_style_override=explicit_style_override,
         compact_prompt=compact_prompt,
+        options=options,
+    )
+
+
+def generate_image(
+    prompt: str,
+    *,
+    model: str | None = None,
+    quality: str | None = None,
+    aspect_ratio: str | None = None,
+    reference_image_url: str | None = None,
+) -> str:
+    """
+    Минимальный публичный вход в генерацию картинки по «сырым» параметрам.
+
+    В отличие от `generate_raster_image`, здесь не нужно знать про
+    style/palette/scientific-флаги: функция сама валидирует model/quality по
+    allowlist и собирает `ImageGenOptions`. Используется там, где параметры
+    приходят снаружи как строки.
+
+    Raises:
+        UnsupportedImageModel: модели нет в allowlist.
+        Плюс те же исключения, что и у `_call_image_api` (ValueError,
+        requests.HTTPError, requests.Timeout).
+    """
+    return _call_image_api(
+        prompt,
+        reference_image_url=reference_image_url,
+        options=resolve_options(model, quality, aspect_ratio),
     )
 
 
@@ -1212,6 +1276,7 @@ def _enrich_command(
     palette: str | None = None,
     reference_image_url: str | None = None,
     skip_grounding: bool = False,
+    options: ImageGenOptions | None = None,
 ) -> dict:
     """
     Принимает команду `image_with_labels` с полем `image_prompt`, прогоняет
@@ -1243,6 +1308,9 @@ def _enrich_command(
     if not prompt:
         # Нет промпта — ничего не делаем (может быть уже обогащена)
         return cmd
+
+    if options is None:
+        options = resolve_options()
 
     # Подписи от Llama: содержат и текст (`content`), и координаты объектов
     # (`x`/`y`, `arrow_to`) в процентах — они же seed points для SAM2.
@@ -1332,6 +1400,7 @@ def _enrich_command(
             task_diagram=task_diagram,
             scientific_diagram=scientific_diagram,
             explicit_style_override=explicit_non_textbook_style,
+            options=options,
         )
         base_image_url = result.get("base_image_url")
 
@@ -1340,6 +1409,11 @@ def _enrich_command(
             # независимо от того, вызывался SAM2 или нет. masks — опционально.
             enriched["base_image_url"] = base_image_url
             enriched["masks"] = result.get("masks")  # list | None
+            # A/B-метаданные: чем именно нарисована ЭТА картинка. Берём то, что
+            # сообщил пайплайн (он мог уйти в детерминированный SVG и не звать
+            # image-модель вовсе), и только при молчании — заявленный выбор.
+            enriched["image_model"] = result.get("image_model", options.model)
+            enriched["image_quality"] = result.get("image_quality", options.quality)
             # Подписи: если пайплайн вернул ГРУНТНУТЫЕ по картинке координаты —
             # отдаём их (точнее, чем догадка Llama). Иначе оставляем исходные.
             grounded_labels = result.get("labels")
@@ -1397,6 +1471,7 @@ def enrich_board_steps(
     palette: str | None = None,
     reference_image_url: str | None = None,
     skip_grounding: bool = False,
+    options: ImageGenOptions | None = None,
 ) -> list[dict]:
     """
     Перехватывает `board_steps` от Llama и обогащает все команды типа
@@ -1460,7 +1535,7 @@ def enrich_board_steps(
         for si, ci, cmd in tasks:
             future = pool.submit(
                 _enrich_command, cmd, topic_hint, style, palette,
-                reference_image_url, skip_grounding,
+                reference_image_url, skip_grounding, options,
             )
             future_to_position[future] = (si, ci)
 

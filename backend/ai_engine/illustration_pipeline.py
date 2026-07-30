@@ -79,6 +79,7 @@ import requests
 from django.conf import settings
 
 from .image_enrichment import generate_raster_image
+from .image_models import ImageGenOptions, resolve_options
 from .label_layout import layout_labels_on_margins
 from .usage import provider_from_base_url, record_model_usage
 
@@ -1133,6 +1134,7 @@ def build_vector_illustration(
     task_diagram: bool = False,
     scientific_diagram: bool = False,
     explicit_style_override: bool = False,
+    options: ImageGenOptions | None = None,
 ) -> dict[str, Any]:
     """
     Пайплайн генерации иллюстрации с НАПРАВЛЯЕМОЙ (prompted) сегментацией —
@@ -1176,6 +1178,9 @@ def build_vector_illustration(
         explicit_style_override:
                                пользователь/фронт явно выбрал другой стиль —
                                textbook-автомаппинг не применяется.
+        options:               выбранная пользователем image-модель и качество
+                               (уже провалидированы по allowlist). None →
+                               дефолт инсталляции.
 
     Returns:
         {
@@ -1197,7 +1202,15 @@ def build_vector_illustration(
     если SAM2 не сработал, всё равно возвращается base_image_url (masks=None).
     Полный сбой возможен только на этапе [1] (генерация растра).
     """
-    result: dict[str, Any] = {"base_image_url": None, "masks": None}
+    if options is None:
+        options = resolve_options()
+    # Чем реально рисовали — нужно фронтенду и A/B-сравнению. Ставим ДО
+    # генерации, чтобы поле было и в ответе с `pipeline_error`.
+    result: dict[str, Any] = {
+        "base_image_url": None,
+        "masks": None,
+        **options.meta,
+    }
 
     # ── [1] Растр через Banana — ВСЕГДА, это основа ответа ──
     # scene = not requires_segmentation: СЦЕНЫ/процессы (круговорот воды,
@@ -1219,6 +1232,7 @@ def build_vector_illustration(
             task_diagram=task_diagram,
             scientific_diagram=scientific_diagram,
             explicit_style_override=explicit_style_override,
+            options=options,
         )
         result["base_image_url"] = image_url
         logger.info("[Illustration][timing] генерация растра: %.1fс", time.monotonic() - t_stage)
