@@ -935,6 +935,56 @@ def _parse_grounding_json(
     ]
 
 
+def infer_label_target_kind(label: dict) -> str:
+    """Семантический тип цели подписи: object / vector / angle / region.
+
+    Вынесено из `_ground_labels_with_vision` на уровень модуля, потому что от
+    `target_kind` зависит РАСКЛАДКА (`label_layout.py` не трогает подписи с
+    kind=vector/angle, чтобы они остались у своей стрелки). Пока эвристика жила
+    внутри грунтинга, при рестайле — где грунтинг пропускается
+    (`skip_grounding=True`) — подписи сил считались `object` и уезжали на поля.
+
+    Явный `target_kind` от модели уважаем как есть.
+    """
+    explicit = str(label.get("target_kind") or "").strip().lower()
+    if explicit in {"object", "vector", "angle", "region"}:
+        return explicit
+
+    content = str(label.get("content") or label.get("text") or "").strip().lower()
+    if re.search(r"(?:θ|theta|угол|градус|°)", content):
+        return "angle"
+    if (
+        content in {"n", "t", "mg", "f", "v", "a", "g"}
+        or re.search(
+            r"(?:сил|force|gravity|weight|тяжест|нормал|friction|трени|"
+            r"натяж|tension|скорост|velocity|ускор|acceleration|"
+            r"электрическ\w*\s+пол|magnetic\s+field|f[_\s]?[a-zа-я])",
+            content,
+        )
+    ):
+        return "vector"
+    return "object"
+
+
+def apply_label_target_kinds(labels: list[dict] | None) -> list[dict] | None:
+    """Проставляет `target_kind` каждой подписи, не мутируя вход.
+
+    Вызывается в растровом пути ДО раскладки — в том числе когда грунтинг
+    пропущен, иначе `layout_labels_on_margins` примет силу за объект.
+    """
+    if not labels:
+        return labels
+    result: list[dict] = []
+    for label in labels:
+        if not isinstance(label, dict):
+            result.append(label)
+            continue
+        enriched = dict(label)
+        enriched["target_kind"] = infer_label_target_kind(label)
+        result.append(enriched)
+    return result
+
+
 def _ground_labels_with_vision(
     img_bgr: np.ndarray,
     labels: list[dict],
@@ -960,27 +1010,7 @@ def _ground_labels_with_vision(
     if not names:
         return labels
 
-    def target_kind(label: dict) -> str:
-        explicit = str(label.get("target_kind") or "").strip().lower()
-        if explicit in {"object", "vector", "angle", "region"}:
-            return explicit
-
-        content = str(label.get("content") or label.get("text") or "").strip().lower()
-        if re.search(r"(?:θ|theta|угол|градус|°)", content):
-            return "angle"
-        if (
-            content in {"n", "t", "mg", "f", "v", "a", "g"}
-            or re.search(
-                r"(?:сил|force|gravity|weight|тяжест|нормал|friction|трени|"
-                r"натяж|tension|скорост|velocity|ускор|acceleration|"
-                r"электрическ\w*\s+пол|magnetic\s+field|f[_\s]?[a-zа-я])",
-                content,
-            )
-        ):
-            return "vector"
-        return "object"
-
-    target_kinds = [target_kind(label) for label in labels]
+    target_kinds = [infer_label_target_kind(label) for label in labels]
     grounding_items = "; ".join(
         f'{i + 1}. «{name}» (target_kind={kind})'
         for i, (name, kind) in enumerate(zip(names, target_kinds))
@@ -1271,6 +1301,11 @@ def build_vector_illustration(
         # можно вынести в спокойное поле; vector/angle остаются локальными,
         # иначе длинная выноска сама начинает выглядеть как лишняя сила.
         # Требуется декодированная картинка — при restyle её ещё нет.
+        #
+        # target_kind проставляем ЗДЕСЬ, а не только внутри грунтинга: при
+        # рестайле грунтинг пропущен (skip_grounding), и без этого шага подписи
+        # сил ушли бы в раскладку как `object` и улетели на поля.
+        seed_labels = apply_label_target_kinds(seed_labels) or seed_labels
         if _LABEL_MARGIN_LAYOUT and seed_labels:
             try:
                 if img_bgr is None:

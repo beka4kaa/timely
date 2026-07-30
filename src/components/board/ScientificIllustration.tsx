@@ -52,12 +52,17 @@
  * ──────────────────────────────────────────────────────────────────
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Latex from "react-latex-next";
 import { motion, AnimatePresence } from "framer-motion";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
-import { useSmartLabels, contrastStylesFor, type BackdropSample } from "@/lib/illustration-contrast";
+import {
+  useSmartLabels,
+  contrastStylesFor,
+  shouldShowLeaderLine,
+  type BackdropSample,
+} from "@/lib/illustration-contrast";
 import { IllustrationLeaderLines } from "@/components/whiteboard/IllustrationLeaderLines";
 
 /* ============================================================
@@ -536,6 +541,19 @@ function Illustration({
   // offscreen-сэмплирования на загрузку картинки, см. useSmartLabels).
   const placements = useSmartLabels(image_url, labels);
 
+  // То же правило видимости выноски, что в IllustrationRenderer: рядом стоящей
+  // подписи линия не нужна. Раньше здесь выноски рисовались ВСЕГДА, и два
+  // рендерера расходились в поведении на одной и той же раскладке.
+  const leaderPlacements = useMemo(
+    () =>
+      placements.map((placement, index) =>
+        shouldShowLeaderLine(placement, labels[index]?.arrow_to)
+          ? placement
+          : { ...placement, connector: null },
+      ),
+    [placements, labels],
+  );
+
   const handwritten = command.gen_style === "sketch";
 
   return (
@@ -567,7 +585,7 @@ function Illustration({
         />
 
         {/* ── Слой 2: выноски из внешней границы bbox к объекту ── */}
-        <IllustrationLeaderLines placements={placements} animate={animate} />
+        <IllustrationLeaderLines placements={leaderPlacements} animate={animate} />
 
         {/* ── Слой 3: KaTeX лейблы с динамическим контрастом (z-index: 20) ── */}
         {labels.map((label, i) => (
