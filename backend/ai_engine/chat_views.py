@@ -21,6 +21,8 @@ from .planning_intake import (
     handle_planning_intake,
 )
 from .help_policy import check_help_allowed, resolve_profile
+from .image_models import UnsupportedImageModel
+from .image_models import resolve_options as resolve_image_options
 from .skills import route_and_run, route_and_run_streaming
 from .solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL
 from .tutor_modes import get_mode
@@ -168,6 +170,17 @@ class BoardChatView(APIView):
         if not (isinstance(reference_labels, list) and reference_labels):
             reference_labels = None
 
+        try:
+            image_options = resolve_image_options(
+                data.get("image_model"),
+                data.get("image_quality"),
+            )
+        except UnsupportedImageModel:
+            return Response(
+                {"error": "Unsupported image model"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Режим и права разрешает СЕРВЕР. Клиент присылает только пожелание —
         # slug режима и профиль помощи, — а `get_mode` и `resolve_profile`
         # приводят их к допустимым значениям: неизвестный slug молча становится
@@ -224,6 +237,7 @@ class BoardChatView(APIView):
                 ),
                 style=data.get("style"),
                 palette=data.get("palette"),
+                image_options=image_options,
                 reference_image_url=data.get("reference_image_url") or None,
                 reference_labels=reference_labels,
                 # Сюжет предыдущей иллюстрации: позволяет перерисовать её в
@@ -283,11 +297,23 @@ class BoardChatStreamView(APIView):
         if not (isinstance(reference_labels, list) and reference_labels):
             reference_labels = None
 
+        try:
+            image_options = resolve_image_options(
+                data.get("image_model"),
+                data.get("image_quality"),
+            )
+        except UnsupportedImageModel:
+            return Response(
+                {"error": "Unsupported image model"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         kwargs = dict(
             user_message=user_message,
             history=data.get("history", []),
             style=data.get("style"),
             palette=data.get("palette"),
+            image_options=image_options,
             reference_image_url=data.get("reference_image_url") or None,
             reference_labels=reference_labels,
             reference_prompt=data.get("reference_prompt") or "",

@@ -14,6 +14,12 @@ type BuildLectureActionsInput = {
   baseY: number;
   maxColumnHeight: number;
   generationStyle: string;
+  /**
+   * Модель, которой ЗАПРОШЕНА генерация. Ставится сразу на плейсхолдер, чтобы
+   * во время ожидания было видно «Генерирую через …»; после ответа сервер
+   * может уточнить значение (векторный путь мог не звать image-модель вовсе).
+   */
+  imageModel?: string;
   now?: number;
 };
 
@@ -198,6 +204,7 @@ export function buildLectureWhiteboardActions({
   baseY,
   maxColumnHeight,
   generationStyle,
+  imageModel,
   now = Date.now(),
 }: BuildLectureActionsInput): BuildLectureActionsResult {
   const actions: WhiteboardAction[] = [];
@@ -286,6 +293,8 @@ export function buildLectureWhiteboardActions({
         masks: Array.isArray(command.masks) ? command.masks : null,
         alt: typeof command.alt === "string" ? command.alt : undefined,
         genStyle: typeof command.gen_style === "string" ? command.gen_style : generationStyle,
+        imageModel:
+          typeof command.image_model === "string" ? command.image_model : imageModel,
         // Сюжет нужен для последующего рестайла «сделай в стиле скетч»:
         // по нему картинку перерисовывают, не поднимая board-модель.
         imagePrompt:

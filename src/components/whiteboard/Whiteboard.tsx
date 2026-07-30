@@ -23,6 +23,7 @@ import { AUTO_INK, canvasToScreen, screenToCanvas } from "./utils";
 import { TextRenderer, GraphRenderer, ImageRenderer, ShapeRenderer } from "./renderers";
 import { IllustrationRenderer } from "./IllustrationRenderer";
 import { IllustrationPlaceholder } from "./IllustrationPlaceholder";
+import { FALLBACK_IMAGE_MODELS, imageModelLabel } from "@/lib/image-model-selection";
 import { DraggableBoardNode } from "./DraggableBoardNode";
 import { InteractiveElement } from "./InteractiveElement";
 import { authFetch } from "@/lib/auth-fetch";
@@ -615,6 +616,11 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
                   width={el.width}
                   height={el.height}
                   error={el.error}
+                  modelLabel={
+                    el.imageModel
+                      ? imageModelLabel(el.imageModel, FALLBACK_IMAGE_MODELS)
+                      : undefined
+                  }
                 />
               ) : (
                 <IllustrationRenderer

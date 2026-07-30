@@ -21,15 +21,32 @@ from rest_framework.views import APIView
 
 from .chat_views import error_response
 from .image_enrichment import _enrich_command
+from .image_models import (
+    UnsupportedImageModel,
+    list_models_payload,
+    resolve_options,
+)
 from .vector_pipeline import try_build_vector_illustration
 
 logger = logging.getLogger(__name__)
 
 
+class ImageModelsView(APIView):
+    """GET /api/ai/image-models/ — модели, доступные для выбора на доске.
+
+    Фронтенд рисует селектор по этому списку и сверяет с ним значение из
+    localStorage: модель, выпавшая из allowlist, должна сброситься на дефолт,
+    а не уйти в запрос и получить 400.
+    """
+
+    def get(self, request):  # noqa: ARG002 — DRF передаёт request всегда
+        return Response(list_models_payload())
+
+
 class IllustrationView(APIView):
     """
     Body: { command: {...image_with_labels...}, topic_hint?, style?, palette?,
-            reference_image_url?, skip_grounding? }
+            reference_image_url?, skip_grounding?, image_model?, image_quality? }
     Returns: обогащённая команда — {type, base_image_url, labels, masks} либо
              {image_prompt, image_error} при сбое генерации.
     """
@@ -48,6 +65,22 @@ class IllustrationView(APIView):
                 {"error": "У команды пустой image_prompt — генерировать нечего."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Model ID приходит с клиента, поэтому проверяется по allowlist ДО
+        # любой генерации. Молча подставить дефолт нельзя: пользователь увидел
+        # бы «выбрал GPT Image 2, а нарисовало другим» и сравнивал бы модели по
+        # неверным данным.
+        try:
+            options = resolve_options(
+                data.get("image_model"),
+                data.get("image_quality"),
+            )
+        except UnsupportedImageModel:
+            return Response(
+                {"error": "Unsupported image model"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             # Сначала детерминированный путь: для механики он даёт точную
             # геометрию, кадр без единой буквы и ТОЧНЫЕ якоря подписей (середина
@@ -62,6 +95,7 @@ class IllustrationView(APIView):
                     topic_hint=data.get("topic_hint") or "",
                     style=data.get("style"),
                     palette=data.get("palette"),
+                    options=options,
                 )
                 if vector_result:
                     return Response({"command": {**command, **vector_result}})
@@ -76,6 +110,7 @@ class IllustrationView(APIView):
                 palette=data.get("palette"),
                 reference_image_url=data.get("reference_image_url") or None,
                 skip_grounding=bool(data.get("skip_grounding")),
+                options=options,
             )
             return Response({"command": enriched})
         except Exception as exc:  # noqa: BLE001 — маппим на HTTP

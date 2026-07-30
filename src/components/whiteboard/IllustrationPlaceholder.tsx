@@ -16,14 +16,24 @@ export interface IllustrationPlaceholderProps {
   height: number;
   /** Текст ошибки, если генерация не удалась. */
   error?: string;
+  /**
+   * Человеческое имя модели («GPT Image 2»). Когда известно, ожидание
+   * называет модель — пользователь сравнивает их вручную, и без этого
+   * непонятно, чей результат сейчас едет. Технический prompt не показываем.
+   */
+  modelLabel?: string;
 }
 
 export function IllustrationPlaceholder({
   width,
   height,
   error,
+  modelLabel,
 }: IllustrationPlaceholderProps) {
   const failed = Boolean(error);
+  const loadingText = modelLabel
+    ? `Генерирую через ${modelLabel}…`
+    : "Рисую иллюстрацию…";
 
   return (
     <div
@@ -34,7 +44,7 @@ export function IllustrationPlaceholder({
           : "animate-pulse border-[#d8d3cb] bg-[#f2eee7]"
       }`}
       role="img"
-      aria-label={failed ? `Иллюстрация не сгенерирована: ${error}` : "Иллюстрация генерируется"}
+      aria-label={failed ? `Иллюстрация не сгенерирована: ${error}` : loadingText}
     >
       {failed ? (
         <>
@@ -47,7 +57,7 @@ export function IllustrationPlaceholder({
         <>
           <Loader2 className="h-5 w-5 animate-spin text-[#a66d28]" />
           <span className="text-[11px] text-[#827b72]">
-            Рисую иллюстрацию…
+            {loadingText}
           </span>
         </>
       )}

@@ -237,6 +237,42 @@ IMAGE_GEN_API_KEY = os.getenv(
 # `_is_image_only_model` её добавлять НЕ нужно — проверено живым запросом.
 IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3-pro-image")
 
+# ── Выбор модели пользователем (ai_engine.image_models) ──────────────────────
+# Пользователь переключает модель прямо на доске, поэтому `IMAGE_GEN_MODEL`
+# перестал быть единственным источником истины: он остался дефолтом последней
+# инстанции для вызовов, которые ничего не выбрали явно.
+#
+# ALLOWED — жёсткий allowlist. Model ID приходит с фронтенда, и доверять ему
+# нельзя: без этого списка пользователь смог бы направить наш OpenRouter-ключ
+# в любую модель каталога. Всё, чего нет в `ai_engine.image_models.IMAGE_MODELS`,
+# игнорируется, поэтому опечатка в env не выдаст наружу нерабочий id.
+IMAGE_GEN_ALLOWED_MODELS = os.getenv(
+    "IMAGE_GEN_ALLOWED_MODELS",
+    "bytedance-seed/seedream-4.5,openai/gpt-5.4-image-2",
+)
+
+# Дефолт для UI и для запросов без явного выбора. Приоритет выше, чем у
+# IMAGE_GEN_MODEL, но значение обязано входить в allowlist — иначе берётся
+# модель с флагом default из реестра.
+#
+# NB: см. предупреждение выше про Seedream — на 2026-07-29 её нет в каталоге
+# OpenRouter. Дефолт задан по прямому решению владельца продукта; откат на
+# рабочую модель делается этой же переменной, без правки кода.
+IMAGE_GEN_DEFAULT_MODEL = os.getenv(
+    "IMAGE_GEN_DEFAULT_MODEL",
+    "bytedance-seed/seedream-4.5",
+)
+
+# Качество по умолчанию: low / medium / high. Намеренно НЕ "high" — оно молча
+# удорожает каждую генерацию. Модели без поддержки качества параметр не
+# получают вовсе.
+IMAGE_GEN_QUALITY = os.getenv("IMAGE_GEN_QUALITY", "medium")
+
+# Соотношение сторон генерации. Читалось в image_enrichment через
+# getattr(settings, ...), но в settings отсутствовало — значение жило только
+# во фолбэке и не настраивалось через env. Заведено явно.
+IMAGE_GEN_ASPECT_RATIO = os.getenv("IMAGE_GEN_ASPECT_RATIO", "16:9")
+
 # Vision-модель для grounding координат подписей в illustration_pipeline.
 # ВАЖНО: это НЕ IMAGE_GEN_MODEL. Раньше значение наследовалось от него, но
 # генератор картинок vision-chat не умеет, из-за чего грунтинг молча

@@ -44,6 +44,7 @@ from typing import Any
 
 from django.conf import settings
 
+from .image_models import ImageGenOptions, resolve_options
 from .vector_renderer import (
     VectorRenderError,
     VectorRenderer,
@@ -2124,6 +2125,7 @@ def try_build_vector_illustration(
     topic_hint: str = "",
     style: str | None = None,
     palette: str | None = None,
+    options: ImageGenOptions | None = None,
 ) -> dict[str, Any] | None:
     """Run the feature-flagged planner/critic pipeline or decline to legacy.
 
@@ -2133,6 +2135,8 @@ def try_build_vector_illustration(
     """
     style = style if isinstance(style, str) else None
     palette = palette if isinstance(palette, str) else None
+    if options is None:
+        options = resolve_options()
     if not _enabled():
         return None
     mode = _pipeline_mode()
@@ -2173,12 +2177,19 @@ def try_build_vector_illustration(
         attempts: int,
         fallback: str | None,
     ) -> dict[str, Any]:
+        # Чем реально нарисована картинка. Этот путь регулярно отдаёт ЧИСТЫЙ
+        # детерминированный PNG (режим deterministic, отказ критика, сбой
+        # overlay) — тогда image-модель не вызывалась вообще, и приписывать ей
+        # результат нельзя: A/B-сравнение сравнило бы её с самой собой.
+        styled_by_model = layers is None or base_image_url != layers["deterministic_png"]
         result: dict[str, Any] = {
             "base_image_url": base_image_url,
             "labels": copy.deepcopy(
                 layers["labels"] if layers is not None else (seed_labels or [])
             ),
             "masks": None,
+            "image_model": options.model if styled_by_model else None,
+            "image_quality": options.quality if styled_by_model else None,
             "gen_style": style or VECTOR_GEN_STYLE,
             "semantic_plan": copy.deepcopy(plan),
             "diagram_pipeline": _pipeline_metadata(
@@ -2237,6 +2248,7 @@ def try_build_vector_illustration(
                     in {"sketch", "2_5d", "3d"}
                 ),
                 compact_prompt=True,
+                options=options,
             )
         except Exception as exc:  # noqa: BLE001 — deterministic/legacy fallback
             logger.warning("[DiagramPipeline] Seedream failed: %s", exc)
