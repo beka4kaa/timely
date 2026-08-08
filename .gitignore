@@ -60,3 +60,9 @@ build-out.txt
 
 # git worktrees, созданные агентом (служебные, не часть репозитория)
 .claude/worktrees/
+
+# Загруженные учебники (curriculum.storage.LocalFileStorage). Это чужой
+# защищённый авторским правом контент и персональные данные ученика: в репозиторий
+# такие файлы попадать не должны ни при каких обстоятельствах.
+backend/.curriculum-storage/
+.curriculum-storage/
