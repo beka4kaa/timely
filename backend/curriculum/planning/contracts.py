@@ -16,7 +16,11 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 
-PROMPT_VERSION = "course-planner-1.0.0"
+# 1.1.0: в SYSTEM_PROMPT добавлены допустимые значения перечислений
+# (difficulty / theory_practice_balance / review_strategy). До этого промпт
+# перечислял только ИМЕНА полей, а валидатор блокировал план за любое чужое
+# значение — модель не могла выполнить контракт, которого ей не сообщили.
+PROMPT_VERSION = "course-planner-1.1.0"
 REVIEW_PROMPT_VERSION = "course-reviewer-1.0.0"
 
 

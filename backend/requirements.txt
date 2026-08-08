@@ -13,3 +13,4 @@ django-filter==25.2
 opencv-python-headless==4.10.0.84
 openai==2.41.0
 requests==2.34.2
+pypdfium2==4.30.0

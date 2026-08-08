@@ -33,6 +33,12 @@ from nutrition.views import (
     NutritionProfileView,
 )
 from nutrition.photo_views import AnalyzePhotoView
+from curriculum.views import (
+    CourseEnrollmentViewSet,
+    CoursePlanViewSet,
+    DocumentViewSet,
+    LearningGoalViewSet,
+)
 
 
 
@@ -66,6 +72,13 @@ router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 router.register(r'habits', HabitViewSet, basename='habits')
 router.register(r'nutrition/entries', NutritionEntryViewSet, basename='nutrition-entries')
 router.register(r'pomodoro/sessions', FocusSessionViewSet, basename='pomodoro-sessions')
+# Curriculum: цель ученика → загруженный PDF → программа курса.
+router.register(r'curriculum/goals', LearningGoalViewSet, basename='curriculum-goals')
+router.register(r'curriculum/documents', DocumentViewSet, basename='curriculum-documents')
+router.register(r'curriculum/plans', CoursePlanViewSet, basename='curriculum-plans')
+router.register(
+    r'curriculum/enrollments', CourseEnrollmentViewSet, basename='curriculum-enrollments'
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 # Роли. Значения — префиксы переменных окружения.
 ROLE_BOOK_RESEARCH = "BOOK_RESEARCH"
+ROLE_GOAL_NORMALIZATION = "GOAL_NORMALIZATION"
 ROLE_COURSE_PLANNING = "COURSE_PLANNING"
 ROLE_COURSE_REVIEW = "COURSE_REVIEW"
 ROLE_LESSON_GENERATION = "LESSON_GENERATION"
@@ -31,6 +32,7 @@ ROLE_OCR = "OCR"
 
 ALL_ROLES = (
     ROLE_BOOK_RESEARCH,
+    ROLE_GOAL_NORMALIZATION,
     ROLE_COURSE_PLANNING,
     ROLE_COURSE_REVIEW,
     ROLE_LESSON_GENERATION,
@@ -44,6 +46,11 @@ ALL_ROLES = (
 _TEXT_FALLBACK_ROLES = frozenset(
     {
         ROLE_BOOK_RESEARCH,
+        # Нормализация цели — отдельная роль, а не часть COURSE_PLANNING:
+        # ученик правит формулировку цели много раз, а курс планируется редко.
+        # Одна переменная на двоих заставила бы гонять дорогую planner-модель на
+        # каждое нажатие «уточнить цель».
+        ROLE_GOAL_NORMALIZATION,
         ROLE_COURSE_PLANNING,
         ROLE_COURSE_REVIEW,
         ROLE_LESSON_GENERATION,

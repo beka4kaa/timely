@@ -261,6 +261,59 @@ class ModelRegistryTests(TestCase):
         finally:
             os.environ.pop("TEXT_LLM_MODEL", None)
 
+    def test_ocr_role_does_not_fall_back_to_chat_model(self):
+        import os
+
+        from curriculum.model_registry import ROLE_OCR
+
+        os.environ["TEXT_LLM_MODEL"] = "vendor/cheap-chat"
+        try:
+            binding = resolve_model(ROLE_OCR)
+            # Чат-модель не распознаёт страницу — откат был бы багом.
+            self.assertEqual(binding.model, "")
+            self.assertEqual(binding.source, "unset")
+        finally:
+            os.environ.pop("TEXT_LLM_MODEL", None)
+
+    def test_goal_normalization_is_its_own_role(self):
+        """Нормализация цели не должна тянуть за собой planner-модель.
+
+        Ученик правит формулировку часто, а курс планируется редко. Общая
+        переменная на две роли означала бы, что дорогая planner-модель
+        вызывается на каждое уточнение цели.
+        """
+        import os
+
+        from curriculum.model_registry import ROLE_GOAL_NORMALIZATION
+
+        os.environ["GOAL_NORMALIZATION_MODEL"] = "vendor/cheap-normalizer"
+        os.environ["COURSE_PLANNING_MODEL"] = "vendor/strong-planner"
+        try:
+            self.assertEqual(
+                resolve_model(ROLE_GOAL_NORMALIZATION).model,
+                "vendor/cheap-normalizer",
+            )
+            self.assertEqual(
+                resolve_model(ROLE_COURSE_PLANNING).model, "vendor/strong-planner"
+            )
+        finally:
+            os.environ.pop("GOAL_NORMALIZATION_MODEL", None)
+            os.environ.pop("COURSE_PLANNING_MODEL", None)
+
+    def test_goal_normalization_falls_back_to_shared_text_model(self):
+        import os
+
+        from curriculum.model_registry import ROLE_GOAL_NORMALIZATION
+
+        os.environ.pop("GOAL_NORMALIZATION_MODEL", None)
+        os.environ["TEXT_LLM_MODEL"] = "some/shared-model"
+        try:
+            binding = resolve_model(ROLE_GOAL_NORMALIZATION)
+            self.assertEqual(binding.model, "some/shared-model")
+            self.assertEqual(binding.source, "text_llm_fallback")
+        finally:
+            os.environ.pop("TEXT_LLM_MODEL", None)
+
     def test_unknown_role_is_rejected(self):
         with self.assertRaises(ValueError):
             resolve_model("NOT_A_ROLE")
@@ -269,6 +322,10 @@ class ModelRegistryTests(TestCase):
         snapshot = registry_snapshot()
         self.assertIn(ROLE_COURSE_PLANNING, snapshot)
         self.assertIn(ROLE_EMBEDDING, snapshot)
+        from curriculum.model_registry import ALL_ROLES
+
+        for role in ALL_ROLES:
+            self.assertIn(role, snapshot)
 
     def test_candidates_come_from_configuration(self):
         import os
