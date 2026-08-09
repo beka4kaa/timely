@@ -14,6 +14,7 @@ import {
   formatMinutes,
   formatSource,
   ingestionErrorMessage,
+  ingestionFailureTitle,
   ingestionWarningMessage,
   isTerminal,
   phaseIndexFor,
@@ -25,15 +26,16 @@ import {
 
 // ─────────────────────────────── Фазы ────────────────────────────────────────
 
-test("одиннадцать шагов пайплайна укладываются ровно в четыре фазы", () => {
+test("очередь и одиннадцать шагов пайплайна укладываются в четыре фазы", () => {
   assert.equal(PHASES.length, 4);
   const covered = PHASES.flatMap((p) => p.statuses);
-  assert.equal(covered.length, 11);
-  assert.equal(new Set(covered).size, 11, "статус не должен попадать в две фазы");
+  assert.equal(covered.length, 12);
+  assert.equal(new Set(covered).size, 12, "статус не должен попадать в две фазы");
 });
 
 test("статус переводится в свою фазу", () => {
   assert.equal(phaseIndexFor("uploaded"), 0);
+  assert.equal(phaseIndexFor("queued"), 0);
   assert.equal(phaseIndexFor("ocr"), 1);
   assert.equal(phaseIndexFor("chunking"), 2);
   assert.equal(phaseIndexFor("ready"), 3);
@@ -103,6 +105,13 @@ test("неизвестный код не оставляет пользовате
   );
 });
 
+test("зависшая обработка получает честный заголовок и безопасное сообщение", () => {
+  assert.equal(ingestionFailureTitle(true), "Обработка прервалась");
+  assert.equal(ingestionFailureTitle(false), "Обработать учебник не удалось");
+  assert.match(ingestionErrorMessage("stalled"), /файл сохранён/i);
+  assert.doesNotMatch(ingestionErrorMessage("stalled"), /памят/i);
+});
+
 test("параметрические предупреждения разбираются по шаблону", () => {
   assert.match(
     ingestionWarningMessage("ocr_limited_to_3_of_40_pages"),
@@ -120,12 +129,15 @@ test("незнакомое предупреждение показывается
 
 // ───────────────────────── Проверка файла ────────────────────────────────────
 
-test("принимается только PDF", () => {
+test("принимаются PDF и EPUB", () => {
   assert.ok(checkFileBeforeUpload({ name: "book.pdf", size: 1000, type: "" }).ok);
   assert.ok(checkFileBeforeUpload({ name: "BOOK.PDF", size: 1000, type: "" }).ok);
-  const epub = checkFileBeforeUpload({ name: "book.epub", size: 1000, type: "" });
-  assert.ok(!epub.ok);
-  assert.match(epub.error ?? "", /PDF/);
+  assert.ok(checkFileBeforeUpload({ name: "book.epub", size: 1000, type: "" }).ok);
+  assert.ok(checkFileBeforeUpload({ name: "BOOK.EPUB", size: 1000, type: "" }).ok);
+
+  const docx = checkFileBeforeUpload({ name: "book.docx", size: 1000, type: "" });
+  assert.ok(!docx.ok);
+  assert.match(docx.error ?? "", /PDF и EPUB/);
 });
 
 test("пустой и слишком большой файл отклоняются с понятной причиной", () => {

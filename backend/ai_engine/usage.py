@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import logging
 import math
+import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 from typing import Any, Iterator
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Sum
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 
-from .models import AIUsageEvent
+from .models import AIUsageEvent, AIUsageQuotaState
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,17 @@ class UsageNumbers:
     total_tokens: int = 0
     cost_usd: Decimal | None = None
     estimated: bool = False
+
+
+@dataclass(frozen=True)
+class UsageReservation:
+    """Handle for one worker's temporary quota claim."""
+
+    user_email: str = ""
+    key: str = ""
+    reserved_tokens: int = 0
+    kind: str = "capacity"
+    active: bool = False
 
 
 class AIUsageLimitExceeded(RuntimeError):
@@ -142,6 +156,64 @@ def estimate_tokens(value: Any) -> int:
         return 0
     # Conservative provider-independent fallback for Cyrillic and Latin text.
     return max(1, math.ceil(len(text) / 3.5))
+
+
+@lru_cache(maxsize=1)
+def _reservation_tokenizer():
+    """Load the pinned local tokenizer, with a fail-closed fallback."""
+
+    try:
+        import tiktoken
+
+        return tiktoken.get_encoding("cl100k_base")
+    except Exception as exc:  # noqa: BLE001 - fallback below remains safe
+        logger.warning("[usage] reservation tokenizer unavailable: %s", exc)
+        return None
+
+
+def _provider_input_token_bound(value: Any) -> int:
+    text = _text_for_estimate(value)
+    if not text:
+        return 0
+
+    tokenizer = _reservation_tokenizer()
+    if tokenizer is None:
+        # A byte-level tokenizer cannot produce more text tokens than there
+        # are UTF-8 bytes. This path is conservative by design.
+        estimated = len(text.encode("utf-8"))
+    else:
+        # Exact for the configured embedding model and a close local proxy for
+        # the OpenAI-compatible chat roles. The margin covers message framing
+        # and small provider-specific tokenizer differences.
+        estimated = math.ceil(len(tokenizer.encode(text)) * 1.25)
+    return estimated + 256
+
+
+def provider_call_token_upper_bound(
+    input_payload: Any,
+    *,
+    max_output_tokens: int = 0,
+    image_count: int = 0,
+) -> int:
+    """Conservative reservation aligned with the ledger's billing formula.
+
+    Text input is counted locally, output uses the request ceiling, and images
+    use the deterministic charge. The ledger bills the greater of provider
+    tokens and that image charge, so summing both would reject valid OCR calls.
+    """
+
+    input_upper_bound = _provider_input_token_bound(input_payload)
+    output_upper_bound = max(0, int(max_output_tokens or 0))
+    images = max(0, int(image_count or 0))
+    image_upper_bound = images * max(
+        0,
+        int(getattr(settings, "AI_IMAGE_TOKEN_CHARGE", 4000)),
+    )
+    return max(
+        1,
+        input_upper_bound + output_upper_bound,
+        image_upper_bound,
+    )
 
 
 def _response_output(response: Any) -> Any:
@@ -552,3 +624,222 @@ def ensure_usage_available(user_email: str | None) -> None:
         window = summary["windows"][key]
         if window["used"] >= window["limit"]:
             raise AIUsageLimitExceeded(window=key, reset_at=window["reset_at"])
+
+
+def _active_reservations(
+    raw: Any,
+    *,
+    now_timestamp: float,
+) -> dict[str, dict[str, Any]]:
+    """Return only well-formed, unexpired reservations from persisted JSON."""
+
+    if not isinstance(raw, dict):
+        return {}
+    active: dict[str, dict[str, Any]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        try:
+            tokens = int(value.get("tokens", 0))
+            expires_at = float(value.get("expires_at", 0))
+        except (TypeError, ValueError):
+            continue
+        if tokens <= 0 or not math.isfinite(expires_at) or expires_at <= now_timestamp:
+            continue
+        reservation_kind = str(value.get("kind", "capacity"))
+        if reservation_kind not in {"admission", "capacity"}:
+            reservation_kind = "capacity"
+        active[key] = {
+            "tokens": tokens,
+            "expires_at": expires_at,
+            "feature": str(value.get("feature", "unknown"))[:80],
+            "kind": reservation_kind,
+        }
+    return active
+
+
+def reserve_usage_capacity(
+    user_email: str | None,
+    *,
+    reserved_tokens: int,
+    feature: str = "unknown",
+    reservation_kind: str = "capacity",
+    ttl_seconds: int | None = None,
+    now=None,
+) -> UsageReservation:
+    """Atomically check quota and reserve capacity for deferred worker work.
+
+    The per-user state row is the serialization point.  Reservations are
+    deliberately separate from ``AIUsageEvent`` because the latter is an
+    immutable ledger of provider calls which actually happened.  The fixed
+    amount is an admission/concurrency lease, not a usage prediction or a
+    charge; only provider events contribute to reported actual usage.
+
+    As with the existing usage ledger, a missing table during a rolling deploy
+    is fail-open.  Once migrations are present, concurrent PostgreSQL workers
+    cannot over-admit based on the same usage snapshot.
+    """
+
+    if not getattr(settings, "AI_USAGE_ENFORCE_LIMITS", False):
+        return UsageReservation()
+    email = (user_email or "").strip().lower()
+    if not email:
+        return UsageReservation()
+
+    tokens = max(1, int(reserved_tokens))
+    kind = (
+        reservation_kind
+        if reservation_kind in {"admission", "capacity"}
+        else "capacity"
+    )
+    ttl = max(
+        60,
+        int(
+            ttl_seconds
+            if ttl_seconds is not None
+            else getattr(settings, "AI_USAGE_RESERVATION_TTL_SECONDS", 3900)
+        ),
+    )
+    current = now or timezone.now()
+    now_timestamp = current.timestamp()
+    key = uuid.uuid4().hex
+    denied: AIUsageLimitExceeded | None = None
+
+    try:
+        with transaction.atomic():
+            # Keep the empty row after release: deleting the serialization
+            # point would reintroduce a first-reservation race.
+            # ``get_or_create`` performs its insert in a savepoint; the unique
+            # email PK makes a concurrent first insert block, then the loser
+            # catches that uniqueness collision and fetches the winning row.
+            AIUsageQuotaState.objects.get_or_create(user_email=email)
+            state = AIUsageQuotaState.objects.select_for_update().get(
+                user_email=email
+            )
+            reservations = _active_reservations(
+                state.reservations,
+                now_timestamp=now_timestamp,
+            )
+            # Admission leases gate concurrent jobs against all live work, but
+            # do not consume their own provider-call budget a second time.
+            # Capacity reservations therefore count only other capacity calls.
+            already_reserved = sum(
+                int(item["tokens"])
+                for item in reservations.values()
+                if kind == "admission" or item["kind"] == "capacity"
+            )
+            summary = build_usage_summary(email, now=current)
+            for window_name in ("five_hour", "weekly"):
+                window = summary["windows"][window_name]
+                if int(window["used"]) + already_reserved + tokens > int(
+                    window["limit"]
+                ):
+                    denied = AIUsageLimitExceeded(
+                        window=window_name,
+                        reset_at=window["reset_at"],
+                    )
+                    break
+
+            if denied is None:
+                reservations[key] = {
+                    "tokens": tokens,
+                    "expires_at": (current + timedelta(seconds=ttl)).timestamp(),
+                    "feature": (feature or "unknown")[:80],
+                    "kind": kind,
+                }
+            if reservations != state.reservations:
+                state.reservations = reservations
+                state.save(update_fields=["reservations", "updated_at"])
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("[usage] quota reservation unavailable; failing open: %s", exc)
+        return UsageReservation()
+
+    if denied is not None:
+        raise denied
+    return UsageReservation(
+        user_email=email,
+        key=key,
+        reserved_tokens=tokens,
+        kind=kind,
+        active=True,
+    )
+
+
+def release_usage_reservation(reservation: UsageReservation) -> None:
+    """Release one claim; stale claims are also pruned opportunistically."""
+
+    if not reservation.active:
+        return
+    try:
+        with transaction.atomic():
+            state = (
+                AIUsageQuotaState.objects.select_for_update()
+                .filter(user_email=reservation.user_email)
+                .first()
+            )
+            if state is None:
+                return
+            reservations = _active_reservations(
+                state.reservations,
+                now_timestamp=timezone.now().timestamp(),
+            )
+            reservations.pop(reservation.key, None)
+            if reservations != state.reservations:
+                state.reservations = reservations
+                state.save(update_fields=["reservations", "updated_at"])
+    except (OperationalError, ProgrammingError) as exc:
+        # The TTL is the crash/rolling-deploy cleanup path; accounting must not
+        # turn a completed ingestion into a failed one.
+        logger.warning("[usage] quota reservation cleanup unavailable: %s", exc)
+
+
+@contextmanager
+def usage_reservation(
+    user_email: str | None,
+    *,
+    reserved_tokens: int,
+    feature: str = "unknown",
+    reservation_kind: str = "capacity",
+    ttl_seconds: int | None = None,
+) -> Iterator[UsageReservation]:
+    """Reserve worker capacity and always release it on normal/error exits."""
+
+    reservation = reserve_usage_capacity(
+        user_email,
+        reserved_tokens=reserved_tokens,
+        feature=feature,
+        reservation_kind=reservation_kind,
+        ttl_seconds=ttl_seconds,
+    )
+    try:
+        yield reservation
+    finally:
+        release_usage_reservation(reservation)
+
+
+@contextmanager
+def provider_call_reservation(
+    *,
+    input_payload: Any,
+    max_output_tokens: int = 0,
+    image_count: int = 0,
+    feature: str = "unknown",
+) -> Iterator[UsageReservation]:
+    """Reserve a model call until its caller has persisted ``AIUsageEvent``.
+
+    Callers must keep both the network request and ``record_model_usage`` inside
+    this context. Quota denial happens before the provider can spend anything.
+    """
+
+    upper_bound = provider_call_token_upper_bound(
+        input_payload,
+        max_output_tokens=max_output_tokens,
+        image_count=image_count,
+    )
+    with usage_reservation(
+        current_usage_context().user_email,
+        reserved_tokens=upper_bound,
+        feature=feature,
+        reservation_kind="capacity",
+    ) as reservation:
+        yield reservation

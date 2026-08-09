@@ -18,6 +18,7 @@ from ..retrieval import (
     KnowledgeRetrievalService,
     RetrievalBundle,
     RetrievalPolicy,
+    get_lexical_retriever,
 )
 from .chunk_view import as_retrievable
 
@@ -59,7 +60,7 @@ def search_chunks(request: SearchRequest) -> RetrievalBundle:
         return RetrievalBundle(policy_mode=request.mode)
 
     policy = RetrievalPolicy(mode=request.mode, max_chunks=request.limit)
-    return KnowledgeRetrievalService().retrieve(
+    return KnowledgeRetrievalService(lexical=get_lexical_retriever()).retrieve(
         user_email=request.user_email,
         query=request.query,
         chunks=chunks,

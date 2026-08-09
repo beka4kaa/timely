@@ -100,7 +100,8 @@ class FakeProviderTests(SimpleTestCase):
 
     def test_default_provider_is_fake_without_configured_role(self):
         # Роли не настроены в тестовом окружении — платный путь выбираться не должен.
-        provider = get_planning_provider()
+        with mock.patch.dict("os.environ", {}, clear=True):
+            provider = get_planning_provider()
         self.assertIsInstance(provider, FakeCoursePlanningProvider)
 
     def test_reviewer_flags_unsourced_topic(self):

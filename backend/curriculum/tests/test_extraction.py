@@ -108,6 +108,14 @@ class PageRenderTests(SimpleTestCase):
         large = render_page_png(pdf, 1, scale=2.0)
         self.assertGreater(len(large), len(small))
 
+    def test_rejects_huge_media_box_before_render_allocation(self):
+        hostile = build_text_pdf([""], page_size=(100_000, 100_000))
+
+        with self.assertRaises(PdfExtractionError):
+            render_page_png(hostile, 1)
+        with self.assertRaises(PdfExtractionError):
+            extract_pages(hostile)
+
 
 class BlockClassificationTests(SimpleTestCase):
     """Разметка русского текста — прямыми вызовами, без PDF.

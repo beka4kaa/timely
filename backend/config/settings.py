@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import sys
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -95,6 +96,9 @@ APPEND_SLASH = False
 # переставала сохраняться. Держим оба предела согласованными; последнее слово
 # и понятная ошибка остаются за ai_engine.serializers.validate_canvas.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024
+# Multipart-учебники могут весить до 60 МБ. Всё крупнее 1 МБ Django спуливает
+# во временный файл, чтобы web-процесс не держал по полной копии на каждый thread.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
 
 TEMPLATES = [
     {
@@ -224,10 +228,12 @@ CURRICULUM_S3_SIGNED_URL_TTL = int(os.getenv("CURRICULUM_S3_SIGNED_URL_TTL", "30
 CURRICULUM_S3_SSE = os.getenv("CURRICULUM_S3_SSE", "")
 
 # Как запускается обработка документа: "auto" | "inline" | "celery".
-# "auto" смотрит на наличие CELERY_BROKER_URL. Пока брокера нет, это "inline" —
-# осознанный дефолт: забытая переменная окружения должна приводить к работающей
-# обработке, а не к документу, навсегда зависшему в статусе «загружен».
-CURRICULUM_INGEST_MODE = os.getenv("CURRICULUM_INGEST_MODE", "auto")
+# Test runner по умолчанию использует `auto`; локальный inline можно
+# включить явно. Во всех остальных средах дефолт fail-closed через
+# `celery`: если Redis-секрет пропадёт, большая книга не уйдёт в малый
+# web-контейнер. `.env.example` явно ставит `auto` для local development.
+_default_ingest_mode = "auto" if "test" in sys.argv else "celery"
+CURRICULUM_INGEST_MODE = os.getenv("CURRICULUM_INGEST_MODE", _default_ingest_mode)
 
 # Через сколько секунд без смены статуса джоб считается зависшим и документ можно
 # ставить в обработку заново. Контейнер эфемерный: воркер может быть убит в любой
@@ -275,15 +281,52 @@ CURRICULUM_MAX_EMBEDDED_CHUNKS = int(
     os.getenv("CURRICULUM_MAX_EMBEDDED_CHUNKS", "4000")
 )
 
-# Брокер очереди. Пусто = очереди нет, обработка идёт внутри HTTP-запроса.
+# Брокер очереди. Пустой URL даёт inline только в явном `auto`;
+# дефолтный celery-режим fail-closed отвечает `queue_unavailable`.
 # ВНИМАНИЕ: Redis-аддон Northflank выдаёт схему `rediss://` (TLS), и kombu на ней
 # требует `ssl_cert_reqs` — без него Celery падает при СТАРТЕ, а не на первой
 # задаче. Подключать вместе с воркером в отдельной фазе.
-CELERY_BROKER_URL = (
-    os.getenv("CELERY_BROKER_URL", "")
-    or os.getenv("REDIS_URL", "")
-    or os.getenv("REDIS_MASTER_URL", "")  # так эту переменную называет Northflank
-)
+def _redis_url_from_env() -> str:
+    """Адрес брокера из окружения, включая переменные аддона Northflank.
+
+    Northflank подставляет переменные подключённого аддона С ПРЕФИКСОМ:
+    `redis-cache` превращается в `NF_REDIS_CACHE_REDIS_MASTER_URL`. Ровно на это
+    мы наступили в проде: переменная была на месте, но ни одно из ожидаемых имён
+    не совпало, `resolve_mode()` вернул `inline`, обработка 513-страничного
+    учебника пошла в веб-контейнере на 256 МБ и легла по OOM. Воркер при этом
+    был поднят и молча слушал пустоту.
+
+    Поэтому кроме явных имён подхватывается единственный
+    `NF_*_REDIS_MASTER_URL`. Если Redis-аддонов несколько, нужен явный
+    `CELERY_BROKER_URL`: выбирать брокер по алфавиту опасно.
+    """
+    for name in (
+        "CELERY_BROKER_URL",
+        "REDIS_URL",
+        "REDIS_MASTER_URL",
+    ):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    northflank_urls = [
+        (name, value.strip())
+        for name, value in sorted(os.environ.items())
+        if name.startswith("NF_")
+        and name.endswith("_REDIS_MASTER_URL")
+        and value.strip()
+    ]
+    if len(northflank_urls) == 1:
+        return northflank_urls[0][1]
+    if len(northflank_urls) > 1:
+        names = ", ".join(name for name, _ in northflank_urls)
+        raise ImproperlyConfigured(
+            "Найдено несколько Redis-аддонов Northflank "
+            f"({names}); задайте CELERY_BROKER_URL явно."
+        )
+    return ""
+
+
+CELERY_BROKER_URL = _redis_url_from_env()
 
 # Под тест-раннером брокера нет НИКОГДА — третий рубильник того же рода, что
 # `CURRICULUM_EMBEDDINGS_ENABLED` и `CURRICULUM_S3_ENABLED`. Как только боевой
@@ -294,14 +337,17 @@ if "test" in sys.argv:
     CELERY_BROKER_URL = ""
 
 # TLS у брокера. Redis-аддон Northflank выдаёт схему `rediss://`, и без явного
-# `ssl_cert_reqs` kombu падает при СТАРТЕ воркера, а не на первой задаче —
-# отладить это по логам тяжело, потому что процесс не доживает до полезной
-# работы. Проверка сертификата остаётся включённой: отключать её ради тишины в
-# логах значит выбросить смысл TLS.
-if CELERY_BROKER_URL.startswith("rediss://"):
+# `ssl_cert_reqs` kombu падает при СТАРТЕ воркера, а не на первой задаче. Проверку
+# сертификата не отключаем: иначе TLS теряет смысл.
+def _broker_ssl_options(url: str) -> dict[str, int] | bool:
+    if not url.startswith("rediss://"):
+        return False
     import ssl as _ssl
 
-    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": _ssl.CERT_REQUIRED}
+    return {"ssl_cert_reqs": _ssl.CERT_REQUIRED}
+
+
+CELERY_BROKER_USE_SSL = _broker_ssl_options(CELERY_BROKER_URL)
 
 # Результатов у задач нет: хранилище результата — строка `IngestionJob`, её и
 # опрашивает фронтенд. Отдельный result backend означал бы вторую копию статуса,
@@ -309,8 +355,10 @@ if CELERY_BROKER_URL.startswith("rediss://"):
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 
-# Подтверждение задачи ПОСЛЕ выполнения: контейнер эфемерный, воркера могут убить
-# посреди обработки книги, и сообщение должно вернуться в очередь.
+# Подтверждение задачи ПОСЛЕ выполнения. При потере дочернего процесса сообщение
+# намеренно НЕ возвращается в очередь (`REJECT_ON_WORKER_LOST=False`), иначе один
+# OOM-документ зациклит воркер. Зависший job обнаруживается по heartbeat и может
+# быть безопасно перезапущен пользователем.
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = False
 
@@ -509,6 +557,20 @@ AI_USAGE_ENFORCE_LIMITS = os.getenv("AI_USAGE_ENFORCE_LIMITS", "true").lower() i
     "yes",
     "on",
 }
+# Fixed admission/concurrency lease for a curriculum worker. It is deliberately
+# not a cost prediction or charge: actual usage stays in AIUsageEvent.
+CURRICULUM_INGESTION_AI_RESERVATION_TOKENS = int(
+    os.getenv("CURRICULUM_INGESTION_AI_RESERVATION_TOKENS", "8000")
+)
+AI_USAGE_RESERVATION_TTL_SECONDS = max(
+    CELERY_TASK_TIME_LIMIT + 300,
+    int(
+        os.getenv(
+            "AI_USAGE_RESERVATION_TTL_SECONDS",
+            str(CELERY_TASK_TIME_LIMIT + 300),
+        )
+    ),
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -674,5 +736,10 @@ LOGGING = {
     "loggers": {
         "ai_engine": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "nutrition": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "curriculum.ingestion.events": {
+            "handlers": ["console"],
+            "level": "WARNING" if "test" in sys.argv else "INFO",
+            "propagate": False,
+        },
     },
 }

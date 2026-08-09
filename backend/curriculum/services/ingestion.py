@@ -4,11 +4,10 @@
 тестов: `upload_validation`, `storage`, `extraction`, `blocks`, `ocr` и
 `chunking`.
 
-Про синхронность. Очереди задач в проекте нет (ни Celery, ни RQ), хотя
-`IngestionJob`/`IngestionAttempt` её явно предполагают. Поэтому обработка
-идёт в вызывающем потоке, а от учебника на 1500 страниц защищают два лимита:
-`MAX_PAGES_PER_RUN` на извлечение и `ocr.MAX_OCR_PAGES_PER_RUN` на платный OCR.
-Полную книгу гоняем management-командой, а не запросом веб-сервера.
+Про исполнение. В production тяжёлый пайплайн запускает Celery-воркер,
+а прямой вызов остаётся для management-команды и тестов. От учебника на 1500
+страниц оба пути защищают два лимита: `MAX_PAGES_PER_RUN` на извлечение
+и `ocr.MAX_OCR_PAGES_PER_RUN` на платный OCR.
 
 Идемпотентность по паре (документ, `processing_version`) — требование
 docstring'а `IngestionJob`: контейнер эфемерный, воркер может быть убит в любой
@@ -21,10 +20,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+
+from ai_engine.usage import AIUsageLimitExceeded
 
 from .. import extraction
 from ..blocks import PageText, SectionNode, classify_pages
@@ -46,6 +48,7 @@ from ..models import (
     IngestionJob,
     KnowledgeChunk,
 )
+from ..observability import log_ingestion_event
 from ..epub_extraction import EpubExtractionError
 from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
 from ..parsers import UnsupportedDocumentType, resolve_parser
@@ -68,6 +71,10 @@ class IngestionError(RuntimeError):
         self.message = message
 
 
+class SupersededIngestion(RuntimeError):
+    """Запуск заменён более новым поколением Celery-задачи."""
+
+
 @dataclass
 class IngestionOutcome:
     """Итог прогона — то, что показываем пользователю и логируем."""
@@ -82,6 +89,10 @@ class IngestionOutcome:
     solutions: int = 0
     chunks: int = 0
     warnings: list[str] = None  # type: ignore[assignment]
+    # False означает, что Celery-запуск не захватил job: его уже
+    # заменило другое поколение. Задача не должна ретраить чужую
+    # ошибку из просто перечитанного outcome.
+    claimed: bool = True
 
     def __post_init__(self) -> None:
         if self.warnings is None:
@@ -95,54 +106,98 @@ class IngestionOutcome:
 class _Recorder:
     """Пишет каждый переход в `IngestionAttempt` с длительностью."""
 
-    def __init__(self, job: IngestionJob) -> None:
+    def __init__(self, job: IngestionJob, *, run_token: str = "") -> None:
         self.job = job
+        self._run_token = run_token
         self._previous = job.status
         self._started = time.monotonic()
 
+    def _jobs(self):
+        jobs = IngestionJob.objects.filter(pk=self.job.pk)
+        if self._run_token:
+            jobs = jobs.filter(celery_task_id=self._run_token)
+        return jobs
+
     def advance(self, to_status: str) -> None:
         elapsed_ms = int((time.monotonic() - self._started) * 1000)
-        IngestionAttempt.objects.create(
-            job=self.job,
-            from_status=self._previous,
-            to_status=to_status,
-            succeeded=True,
-            duration_ms=elapsed_ms,
-        )
+        attempt_from = self._previous
+        now = timezone.now()
+        with transaction.atomic():
+            # Везде берём блокировки в одном порядке: document → job.
+            # Dispatch делает так же, поэтому retry не создаёт deadlock.
+            Document.objects.select_for_update().get(pk=self.job.document_id)
+            changed = self._jobs().update(status=to_status, updated_at=now)
+            if not changed:
+                raise SupersededIngestion
+            IngestionAttempt.objects.create(
+                job=self.job,
+                from_status=self._previous,
+                to_status=to_status,
+                succeeded=True,
+                duration_ms=elapsed_ms,
+            )
+            Document.objects.filter(pk=self.job.document_id).update(
+                ingestion_status=to_status,
+                updated_at=now,
+            )
         self.job.status = to_status
-        self.job.save(update_fields=["status", "updated_at"])
-        Document.objects.filter(pk=self.job.document_id).update(
-            ingestion_status=to_status
-        )
+        self.job.updated_at = now
         self._previous = to_status
         self._started = time.monotonic()
+        log_ingestion_event(
+            "transition",
+            document_id=self.job.document_id,
+            job_id=self.job.pk,
+            processing_version=self.job.processing_version,
+            from_status=attempt_from,
+            to_status=to_status,
+            duration_ms=elapsed_ms,
+            retry_count=self.job.retry_count,
+        )
 
     def fail(self, code: str, message: str) -> None:
         elapsed_ms = int((time.monotonic() - self._started) * 1000)
-        IngestionAttempt.objects.create(
-            job=self.job,
-            from_status=self._previous,
-            to_status=Document.Status.FAILED,
-            succeeded=False,
-            error_code=code,
-            error_message=message[:400],
-            duration_ms=elapsed_ms,
-        )
+        message = message[:400]
+        now = timezone.now()
+        with transaction.atomic():
+            Document.objects.select_for_update().get(pk=self.job.document_id)
+            changed = self._jobs().update(
+                status=Document.Status.FAILED,
+                error_code=code,
+                error_message=message,
+                finished_at=now,
+                updated_at=now,
+            )
+            if not changed:
+                raise SupersededIngestion
+            IngestionAttempt.objects.create(
+                job=self.job,
+                from_status=self._previous,
+                to_status=Document.Status.FAILED,
+                succeeded=False,
+                error_code=code,
+                error_message=message,
+                duration_ms=elapsed_ms,
+            )
+            Document.objects.filter(pk=self.job.document_id).update(
+                ingestion_status=Document.Status.FAILED,
+                updated_at=now,
+            )
         self.job.status = Document.Status.FAILED
         self.job.error_code = code
-        self.job.error_message = message[:400]
-        self.job.finished_at = timezone.now()
-        self.job.save(
-            update_fields=[
-                "status",
-                "error_code",
-                "error_message",
-                "finished_at",
-                "updated_at",
-            ]
-        )
-        Document.objects.filter(pk=self.job.document_id).update(
-            ingestion_status=Document.Status.FAILED
+        self.job.error_message = message
+        self.job.finished_at = now
+        self.job.updated_at = now
+        log_ingestion_event(
+            "failed",
+            document_id=self.job.document_id,
+            job_id=self.job.pk,
+            processing_version=self.job.processing_version,
+            from_status=self._previous,
+            to_status=Document.Status.FAILED,
+            duration_ms=elapsed_ms,
+            retry_count=self.job.retry_count,
+            error_code=code,
         )
 
 
@@ -153,6 +208,7 @@ def ingest_document(
     max_pages: int = MAX_PAGES_PER_RUN,
     max_ocr_pages: int = MAX_OCR_PAGES_PER_RUN,
     ocr_provider=None,
+    run_token: str = "",
 ) -> IngestionOutcome:
     """Главная точка входа. Наружу исключения не выпускает.
 
@@ -167,18 +223,79 @@ def ingest_document(
             "status": Document.Status.UPLOADED,
         },
     )
-    if job.status == Document.Status.FAILED:
-        # Повторный запуск после ошибки: считаем это retry, а не новым джобом.
-        job.retry_count += 1
-        job.error_code = ""
-        job.error_message = ""
-        job.status = Document.Status.UPLOADED
-    job.started_at = timezone.now()
-    job.finished_at = None
-    job.save()
-
-    recorder = _Recorder(job)
     outcome = IngestionOutcome(job=job, document=document)
+    now = timezone.now()
+
+    if run_token:
+        # Celery task id — поколение запуска. После ручного повтора
+        # старый воркер может ожить после OCR. Он не имеет права
+        # менять статусы или производные строки нового запуска.
+        with transaction.atomic():
+            Document.objects.select_for_update().get(pk=document.pk)
+            started = IngestionJob.objects.filter(
+                pk=job.pk,
+                celery_task_id=run_token,
+                status=Document.Status.QUEUED,
+            ).update(
+                status=Document.Status.VALIDATING,
+                started_at=now,
+                finished_at=None,
+                updated_at=now,
+            )
+            if started:
+                IngestionAttempt.objects.create(
+                    job=job,
+                    from_status=Document.Status.QUEUED,
+                    to_status=Document.Status.VALIDATING,
+                    succeeded=True,
+                    duration_ms=0,
+                )
+                Document.objects.filter(pk=document.pk).update(
+                    ingestion_status=Document.Status.VALIDATING,
+                    updated_at=now,
+                )
+        if not started:
+            logger.info(
+                "Ingestion %s пропущен: Celery-запуск %s уже заменён",
+                document.pk,
+                run_token,
+            )
+            return _refresh_outcome(outcome, claimed=False)
+        job.status = Document.Status.VALIDATING
+        job.started_at = now
+        job.finished_at = None
+        job.updated_at = now
+        log_ingestion_event(
+            "claimed",
+            document_id=document.pk,
+            job_id=job.pk,
+            processing_version=processing_version,
+            from_status=Document.Status.QUEUED,
+            to_status=Document.Status.VALIDATING,
+            retry_count=job.retry_count,
+        )
+    else:
+        previous_status = job.status
+        if job.status == Document.Status.FAILED:
+            # Повторный прямой запуск: retry, а не новый job.
+            job.retry_count += 1
+            job.error_code = ""
+            job.error_message = ""
+            job.status = Document.Status.UPLOADED
+        job.started_at = now
+        job.finished_at = None
+        job.save()
+        log_ingestion_event(
+            "claimed",
+            document_id=document.pk,
+            job_id=job.pk,
+            processing_version=processing_version,
+            from_status=previous_status,
+            to_status=job.status,
+            retry_count=job.retry_count,
+        )
+
+    recorder = _Recorder(job, run_token=run_token)
 
     try:
         _run_pipeline(
@@ -190,7 +307,15 @@ def ingest_document(
             max_pages=max_pages,
             max_ocr_pages=max_ocr_pages,
             ocr_provider=ocr_provider or get_ocr_provider(),
+            run_token=run_token,
         )
+    except SupersededIngestion:
+        logger.info(
+            "Ingestion %s остановлен: запуск %s уже заменён",
+            document.pk,
+            run_token,
+        )
+        return _refresh_outcome(outcome, claimed=False)
     except IngestionError as exc:
         logger.warning(
             "Ingestion документа %s провалилась: %s (%s)",
@@ -198,18 +323,62 @@ def ingest_document(
             exc.code,
             exc.message,
         )
-        recorder.fail(exc.code, exc.message)
+        try:
+            recorder.fail(exc.code, exc.message)
+        except SupersededIngestion:
+            return _refresh_outcome(outcome, claimed=False)
+    except AIUsageLimitExceeded:
+        # Worker wrapper owns the fenced terminal quota transition. Turning
+        # this into internal_error here would hide a deterministic 429 reason.
+        raise
     except Exception as exc:  # noqa: BLE001 — наружу не отдаём ничего сырого
         logger.exception("Непредвиденная ошибка ingestion документа %s", document.pk)
-        recorder.fail("internal_error", str(exc))
+        try:
+            recorder.fail("internal_error", str(exc))
+        except SupersededIngestion:
+            return _refresh_outcome(outcome, claimed=False)
 
     # Предупреждения переживают запрос: при асинхронном запуске ответ на POST уходит
     # раньше, чем они появятся, и опрос статуса — единственный способ их показать.
-    job.warnings = list(outcome.warnings)
-    job.save(update_fields=["warnings", "updated_at"])
+    warnings = list(outcome.warnings)
+    jobs = IngestionJob.objects.filter(pk=job.pk)
+    if run_token:
+        jobs = jobs.filter(celery_task_id=run_token)
+    now = timezone.now()
+    if not jobs.update(warnings=warnings, updated_at=now):
+        return _refresh_outcome(outcome, claimed=False)
+    job.warnings = warnings
+    job.updated_at = now
 
-    document.refresh_from_db()
-    outcome.document = document
+    if job.status == Document.Status.READY:
+        log_ingestion_event(
+            "completed",
+            document_id=document.pk,
+            job_id=job.pk,
+            processing_version=processing_version,
+            to_status=Document.Status.READY,
+            retry_count=job.retry_count,
+            pages=outcome.pages,
+            ocr_pages=outcome.ocr_pages,
+            sections=outcome.sections,
+            blocks=outcome.blocks,
+            tasks=outcome.tasks,
+            solutions=outcome.solutions,
+            chunks=outcome.chunks,
+        )
+
+    return _refresh_outcome(outcome)
+
+
+def _refresh_outcome(
+    outcome: IngestionOutcome,
+    *,
+    claimed: bool | None = None,
+) -> IngestionOutcome:
+    if claimed is not None:
+        outcome.claimed = claimed
+    outcome.job.refresh_from_db()
+    outcome.document.refresh_from_db()
     return outcome
 
 
@@ -223,9 +392,13 @@ def _run_pipeline(
     max_pages: int,
     max_ocr_pages: int,
     ocr_provider,
+    run_token: str,
 ) -> None:
     # 1. validating — файл на месте и читается.
-    recorder.advance(Document.Status.VALIDATING)
+    # Celery-запуск атомарно захватил этот статус ещё до входа
+    # сюда: так дубль того же task id не запустит второй пайплайн.
+    if not run_token:
+        recorder.advance(Document.Status.VALIDATING)
     pdf_bytes = _read_file(document)
 
     # 2. extracting_native_text — формат определяется по СОДЕРЖИМОМУ.
@@ -263,20 +436,33 @@ def _run_pipeline(
     # 4. ocr — только для сканов и только под лимитом стоимости.
     recorder.advance(Document.Status.OCR)
     ocr_texts: dict[int, tuple[str, str]] = {}
-    if scanned:
-        if len(scanned) > max_ocr_pages:
-            outcome.warnings.append(
-                f"ocr_limited_to_{max_ocr_pages}_of_{len(scanned)}_pages"
-            )
-        for page in scanned[:max_ocr_pages]:
-            png = extraction.render_page_png(pdf_bytes, page.page_number)
-            result = ocr_provider.transcribe_page(png)
-            if result.succeeded and not result.is_empty:
-                ocr_texts[page.page_number] = (result.text, result.model)
-            elif result.error == "ocr_not_configured":
-                # Один раз на документ, а не на каждую страницу.
-                if "ocr_not_configured" not in outcome.warnings:
-                    outcome.warnings.append("ocr_not_configured")
+    try:
+        if scanned:
+            if len(scanned) > max_ocr_pages:
+                outcome.warnings.append(
+                    f"ocr_limited_to_{max_ocr_pages}_of_{len(scanned)}_pages"
+                )
+            for page in scanned[:max_ocr_pages]:
+                png = extraction.render_page_png(pdf_bytes, page.page_number)
+                try:
+                    result = ocr_provider.transcribe_page(png)
+                finally:
+                    # Растр страницы может быть мегабайтным; между OCR-вызовами
+                    # держать предыдущую страницу незачем.
+                    del png
+                if result.succeeded and not result.is_empty:
+                    ocr_texts[page.page_number] = (result.text, result.model)
+                elif result.error == "ocr_not_configured":
+                    # Один раз на документ, а не на каждую страницу.
+                    if "ocr_not_configured" not in outcome.warnings:
+                        outcome.warnings.append("ocr_not_configured")
+                _touch_job(job, run_token=run_token)
+                del result
+    finally:
+        # После последнего возможного render_page_png исходный файл больше не
+        # нужен. Не держим PDF одновременно со страницами, блоками и чанками.
+        del pdf_bytes
+        del scanned
     outcome.ocr_pages = len(ocr_texts)
 
     # 5. reconstructing_structure — разделы и блоки.
@@ -299,6 +485,8 @@ def _run_pipeline(
         source_blocks, sections = classify_pages(
             page_texts, document_id=str(document.pk)
         )
+        del page_texts
+    del parsed
 
     # 6. extracting_blocks / chunking — считаем ДО транзакции, чтобы в ней были
     # только записи в БД.
@@ -324,6 +512,14 @@ def _run_pipeline(
     # 7. indexing — единственная транзакция на всю запись.
     recorder.advance(Document.Status.INDEXING)
     with transaction.atomic():
+        # Сериализуем перезапуск с удалением/перезаписью строк.
+        # После смены token старое поколение сюда не проходит.
+        Document.objects.select_for_update().get(pk=document.pk)
+        if run_token and not IngestionJob.objects.select_for_update().filter(
+            pk=job.pk,
+            celery_task_id=run_token,
+        ).exists():
+            raise SupersededIngestion
         _replace_derived_rows(document)
         page_rows = _write_pages(document, pages, ocr_texts, true_total)
         section_rows = _write_sections(document, sections)
@@ -333,7 +529,7 @@ def _run_pipeline(
         task_rows, solution_count = _write_tasks_and_solutions(
             document, pairs, block_rows, section_rows
         )
-        chunk_count = _write_chunks(
+        chunk_count, written_chunk_ids = _write_chunks(
             document, chunks, section_rows, task_rows, processing_version
         )
 
@@ -344,6 +540,20 @@ def _run_pipeline(
     outcome.solutions = solution_count
     outcome.chunks = chunk_count
 
+    # Производные строки уже в БД. Перед сетевой индексацией освобождаем крупные
+    # промежуточные графы, чтобы воркер не держал весь учебник в нескольких
+    # представлениях одновременно.
+    del pages
+    del ocr_texts
+    del source_blocks
+    del sections
+    del pairs
+    del chunks
+    del page_rows
+    del section_rows
+    del block_rows
+    del task_rows
+
     # 7b. Векторы фрагментов. Строго ПОСЛЕ закрытия `transaction.atomic()`:
     # это сетевой вызов, и держать им открытую транзакцию — значит блокировать
     # строки на всё время работы внешнего провайдера.
@@ -351,7 +561,12 @@ def _run_pipeline(
     # `index_document_chunks` не бросает ни при каких обстоятельствах: провал
     # эмбеддингов не превращает разобранную книгу в проваленную загрузку. Он
     # возвращает предупреждения, и они видны в диагностике.
-    index_outcome = index_document_chunks(document)
+    index_outcome = index_document_chunks(
+        document,
+        heartbeat=lambda: _touch_job(job, run_token=run_token),
+        chunk_ids=written_chunk_ids,
+    )
+    del written_chunk_ids
     for warning in index_outcome.warnings:
         if warning not in outcome.warnings:
             outcome.warnings.append(warning)
@@ -366,11 +581,21 @@ def _run_pipeline(
         )
 
     recorder.advance(Document.Status.READY)
-    job.finished_at = timezone.now()
-    job.save(update_fields=["finished_at", "updated_at"])
-    Document.objects.filter(pk=document.pk).update(
-        page_count=true_total, processing_version=processing_version
-    )
+    finished_at = timezone.now()
+    with transaction.atomic():
+        Document.objects.select_for_update().get(pk=document.pk)
+        jobs = IngestionJob.objects.filter(pk=job.pk)
+        if run_token:
+            jobs = jobs.filter(celery_task_id=run_token)
+        if not jobs.update(finished_at=finished_at, updated_at=finished_at):
+            raise SupersededIngestion
+        Document.objects.filter(pk=document.pk).update(
+            page_count=true_total,
+            processing_version=processing_version,
+            updated_at=finished_at,
+        )
+    job.finished_at = finished_at
+    job.updated_at = finished_at
 
 
 def _read_file(document: Document) -> bytes:
@@ -382,6 +607,18 @@ def _read_file(document: Document) -> bytes:
         return get_storage().open(file_row.storage_key)
     except Exception as exc:  # noqa: BLE001
         raise IngestionError("storage_unavailable", str(exc)) from exc
+
+
+def _touch_job(job: IngestionJob, *, run_token: str = "") -> None:
+    """Heartbeat долгой OCR/embedding-фазы для корректного stale-таймаута."""
+
+    now = timezone.now()
+    jobs = IngestionJob.objects.filter(pk=job.pk)
+    if run_token:
+        jobs = jobs.filter(celery_task_id=run_token)
+    if not jobs.update(updated_at=now):
+        raise SupersededIngestion
+    job.updated_at = now
 
 
 def _replace_derived_rows(document: Document) -> None:
@@ -547,7 +784,7 @@ def _write_chunks(
     section_rows: dict[str, DocumentSection],
     task_rows: dict[str, ExtractedTask],
     processing_version: str,
-) -> int:
+) -> tuple[int, tuple[UUID, ...]]:
     created: list[KnowledgeChunk] = []
     for chunk in chunks:
         # У чанка-решения `task_block_id` указывает на блок задачи. У самого
@@ -595,4 +832,4 @@ def _write_chunks(
             updates.append("next")
         if updates:
             row.save(update_fields=updates)
-    return len(created)
+    return len(created), tuple(row.pk for row in created)

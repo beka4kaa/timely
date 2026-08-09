@@ -55,6 +55,19 @@ class StubS3Client:
         self.objects[kwargs["Key"]] = kwargs["Body"]
         return {}
 
+    def upload_fileobj(self, source, bucket, key, ExtraArgs=None, Config=None):
+        self._maybe_raise("upload_fileobj")
+        payload = bytearray()
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            payload.extend(chunk)
+        call = {"Bucket": bucket, "Key": key, **(ExtraArgs or {})}
+        self.put_calls.append(call)
+        self.objects[key] = bytes(payload)
+        return None
+
     def get_object(self, **kwargs):
         self._maybe_raise("get_object")
         key = kwargs["Key"]
@@ -101,6 +114,19 @@ class S3StorageContractTests(TestCase):
         storage.delete(KEY)
         self.assertFalse(storage.exists(KEY))
         self.assertEqual(client.objects, {})
+
+    def test_потоковая_загрузка_не_требует_полного_read(self):
+        import io
+
+        class Bounded(io.BytesIO):
+            def read(self, size=-1):
+                if size < 0:
+                    raise AssertionError("unbounded read запрещён")
+                return super().read(size)
+
+        storage, client = make_storage()
+        storage.save_stream(KEY, Bounded(b"streamed"))
+        self.assertEqual(client.objects[KEY], b"streamed")
 
     def test_отсутствующий_файл_даёт_понятную_ошибку(self):
         storage, _ = make_storage()

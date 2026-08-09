@@ -6,8 +6,9 @@
 
 from unittest import mock
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
+from ai_engine.usage import AIUsageLimitExceeded, usage_scope
 from curriculum.model_registry import ROLE_OCR, resolve_model
 from curriculum.ocr import (
     NullOcrProvider,
@@ -68,6 +69,28 @@ class OcrProviderSelectionTests(SimpleTestCase):
     def test_vision_provider_requires_model(self):
         with self.assertRaises(ValueError):
             VisionOcrProvider(model="")
+
+    @mock.patch("ai_engine.glm_client.glm_chat_image", return_value="текст")
+    def test_curriculum_ocr_feature_reaches_usage_ledger(self, call):
+        result = VisionOcrProvider(model="vendor/vision").transcribe_page(b"png")
+
+        self.assertTrue(result.succeeded)
+        self.assertEqual(call.call_args.kwargs["feature"], "curriculum_ocr")
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True)
+    @mock.patch("ai_engine.glm_client.glm_chat_image")
+    @mock.patch("ai_engine.usage.reserve_usage_capacity")
+    def test_quota_denial_is_not_converted_to_ocr_fallback(self, reserve, call):
+        reserve.side_effect = AIUsageLimitExceeded(
+            window="five_hour",
+            reset_at="2026-08-09T12:00:00Z",
+        )
+
+        with usage_scope(user_email="student@example.com"):
+            with self.assertRaises(AIUsageLimitExceeded):
+                VisionOcrProvider(model="vendor/vision").transcribe_page(b"png")
+
+        call.assert_not_called()
 
 
 class CodeFenceTests(SimpleTestCase):

@@ -12,6 +12,7 @@
 /** Статусы пайплайна из `Document.Status` на бэкенде. */
 export type IngestionStatusCode =
   | "uploaded"
+  | "queued"
   | "validating"
   | "extracting_native_text"
   | "classifying_pages"
@@ -34,7 +35,11 @@ export interface PhaseDescriptor {
 
 /** Четыре фазы для человека. Порядок совпадает с `curriculum/progress.py`. */
 export const PHASES: readonly PhaseDescriptor[] = [
-  { key: "checking", label: "Проверяем файл", statuses: ["uploaded", "validating"] },
+  {
+    key: "checking",
+    label: "Проверяем файл",
+    statuses: ["uploaded", "queued", "validating"],
+  },
   {
     key: "reading",
     label: "Читаем страницы",
@@ -118,8 +123,14 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Не удалось извлечь текст. Похоже, это скан страниц, а распознавание пока не подключено.",
   no_file: "Файл документа не найден в хранилище. Попробуйте загрузить его заново.",
   pdf_unreadable: "Файл повреждён или это не PDF — открыть его не удалось.",
+  epub_unreadable: "EPUB повреждён или не содержит читаемого текста.",
+  unsupported_document_type: "Формат файла не поддерживается. Загрузите PDF или EPUB.",
   no_pages: "В документе не нашлось ни одной страницы с текстом.",
   storage_unavailable: "Хранилище файлов сейчас недоступно. Попробуйте позже.",
+  queue_unavailable:
+    "Очередь обработки сейчас недоступна. Файл сохранён — попробуйте позже.",
+  stalled:
+    "Обработка прервалась: задача давно не обновляла состояние. Файл сохранён — попробуйте запустить обработку заново.",
   ingest_timeout: "Обработка заняла слишком много времени и была остановлена.",
   internal_error: "Во время обработки произошла ошибка. Мы уже знаем о ней.",
 };
@@ -127,6 +138,10 @@ const ERROR_MESSAGES: Record<string, string> = {
 export function ingestionErrorMessage(code: string, fallback = ""): string {
   if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
   return fallback || "Обработать документ не удалось.";
+}
+
+export function ingestionFailureTitle(stalled: boolean): string {
+  return stalled ? "Обработка прервалась" : "Обработать учебник не удалось";
 }
 
 const WARNING_MESSAGES: Record<string, string> = {
@@ -166,7 +181,7 @@ export function ingestionWarningMessage(code: string): string {
 // ──────────────────────────── Загрузка файла ─────────────────────────────────
 
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
-export const ACCEPTED_EXTENSIONS = [".pdf"] as const;
+export const ACCEPTED_EXTENSIONS = [".pdf", ".epub"] as const;
 
 export interface FileCheck {
   ok: boolean;
@@ -185,7 +200,7 @@ export function checkFileBeforeUpload(file: {
   const name = file.name.toLowerCase();
   const hasAllowedExtension = ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
   if (!hasAllowedExtension) {
-    return { ok: false, error: "Пока поддерживаются только файлы PDF." };
+    return { ok: false, error: "Поддерживаются только файлы PDF и EPUB." };
   }
   if (file.size === 0) {
     return { ok: false, error: "Файл пустой." };

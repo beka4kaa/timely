@@ -354,6 +354,54 @@ class SimpleLexicalRetriever:
         return scored[:limit]
 
 
+class PgRussianLexicalRetriever:
+    """PostgreSQL FTS с русской морфологией и границей доступа до rank.
+
+    В SQL попадают только UUID из `candidates`: этот список уже прошёл owner,
+    document, language и solution policy. `plain` не интерпретирует пользовательский
+    ввод как tsquery-синтаксис, а конфигурация `russian` приводит словоформы к основе.
+    """
+
+    name = "postgres-russian-fts"
+
+    def search(
+        self, query: str, candidates: Sequence[RetrievableChunk], *, limit: int
+    ) -> list[tuple[RetrievableChunk, float]]:
+        if not query.strip() or not candidates or limit <= 0:
+            return []
+
+        from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
+
+        from .models import KnowledgeChunk
+
+        by_id = {chunk.chunk_id: chunk for chunk in candidates}
+        vector = SearchVector("normalized_text", config="russian")
+        search_query = SearchQuery(query, config="russian", search_type="plain")
+        rank = SearchRank(vector, search_query, normalization=32)
+        rows = (
+            KnowledgeChunk.objects.filter(pk__in=list(by_id))
+            .annotate(search_vector=vector)
+            .filter(search_vector=search_query)
+            .annotate(search_rank=rank)
+            .order_by("-search_rank", "id")
+            .values_list("id", "search_rank")[:limit]
+        )
+        return [
+            (by_id[str(chunk_id)], float(score))
+            for chunk_id, score in rows
+            if str(chunk_id) in by_id
+        ]
+
+
+def get_lexical_retriever() -> LexicalRetriever:
+    """Русский FTS на PostgreSQL, детерминированный fallback на SQLite."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        return SimpleLexicalRetriever()
+    return PgRussianLexicalRetriever()
+
+
 class InMemoryDenseRetriever:
     """Заглушка плотного поиска на пересечении множеств термов.
 
@@ -402,7 +450,7 @@ class PgVectorDenseRetriever:
     def __init__(self, *, provider=None) -> None:
         self._provider = provider
 
-    def _embed_query(self, query: str) -> list[float] | None:
+    def _embed_query(self, query: str) -> tuple[list[float], str] | None:
         from .embeddings import get_embedding_provider
 
         provider = self._provider or get_embedding_provider()
@@ -411,7 +459,12 @@ class PgVectorDenseRetriever:
         result = provider.embed([query])
         if not result.matches([query]):
             return None
-        return result.vectors[0]
+        # Тот же стабильный идентификатор пишет embedding_index: настроенная
+        # model, а для минимального Protocol-провайдера — его name. Поле model
+        # в API-ответе может быть alias/revision и не должно разъединять query
+        # с уже сохранёнными векторами.
+        model = str(getattr(provider, "model", "") or provider.name)
+        return result.vectors[0], model
 
     def search(
         self, query: str, candidates: Sequence[RetrievableChunk], *, limit: int
@@ -419,9 +472,10 @@ class PgVectorDenseRetriever:
         if not query.strip() or not candidates:
             return []
 
-        vector = self._embed_query(query)
-        if vector is None:
+        embedded = self._embed_query(query)
+        if embedded is None:
             return []
+        vector, embedding_model = embedded
 
         from pgvector.django import CosineDistance
 
@@ -432,6 +486,7 @@ class PgVectorDenseRetriever:
             KnowledgeChunk.objects.filter(
                 pk__in=list(by_id),
                 embedding_status=KnowledgeChunk.EmbeddingStatus.READY,
+                embedding_model=embedding_model,
             )
             .exclude(embedding=None)
             .annotate(distance=CosineDistance("embedding", vector))
@@ -575,7 +630,7 @@ class KnowledgeRetrievalService:
         reranker: Reranker | None = None,
         assembler: ContextAssembler | None = None,
     ) -> None:
-        self.lexical = lexical or SimpleLexicalRetriever()
+        self.lexical = lexical or get_lexical_retriever()
         # По умолчанию — тот ретривер, который умеет текущая БД: pgvector на
         # Postgres, прежняя заглушка на SQLite.
         self.dense = dense or get_dense_retriever()

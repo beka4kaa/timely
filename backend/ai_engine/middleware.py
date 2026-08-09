@@ -23,6 +23,29 @@ def _feature_from_path(path: str) -> str:
     return parts[-1] or "unknown"
 
 
+def _is_metered_request(method: str, path: str) -> bool:
+    """Quota guard только для действий, которые реально могут вызвать модель."""
+    if method.upper() in {"GET", "HEAD", "OPTIONS"}:
+        return False
+    normalized = "/" + path.strip("/")
+    if normalized.startswith("/api/ai/"):
+        return True
+    if normalized == "/api/nutrition/analyze-photo":
+        return True
+
+    parts = normalized.strip("/").split("/")
+    if parts[:2] != ["api", "curriculum"]:
+        return False
+    tail = parts[2:]
+    if tail in (["search"], ["plans", "generate"]):
+        return True
+    if len(tail) == 3 and tail[0] == "goals" and tail[2] == "normalize":
+        return True
+    if len(tail) == 3 and tail[0] == "documents" and tail[2] == "ingest":
+        return True
+    return False
+
+
 class AIUsageContextMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -33,16 +56,12 @@ class AIUsageContextMiddleware:
             user_email=user_email,
             feature=_feature_from_path(request.path),
         ):
-            is_metered_request = (
-                request.method not in {"GET", "HEAD", "OPTIONS"}
-                and (
-                    request.path.startswith("/api/ai/")
-                    or request.path.rstrip("/") == "/api/nutrition/analyze-photo"
-                )
-            )
-            if is_metered_request:
-                try:
+            try:
+                if _is_metered_request(request.method, request.path):
                     ensure_usage_available(user_email)
-                except AIUsageLimitExceeded as exc:
-                    return JsonResponse(exc.as_payload(), status=429)
-            return self.get_response(request)
+                return self.get_response(request)
+            except AIUsageLimitExceeded as exc:
+                # A per-provider-call reservation can be denied after the
+                # cheap request-level precheck. It is still the same 429, not
+                # a provider failure or a generic 500.
+                return JsonResponse(exc.as_payload(), status=429)

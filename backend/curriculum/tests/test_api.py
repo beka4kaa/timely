@@ -1,10 +1,12 @@
 """HTTP-слой: изоляция пользователей и запрет на выдачу решений."""
 
 import tempfile
+from datetime import timedelta
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from curriculum import storage as storage_module
 from curriculum.models import (
@@ -12,6 +14,7 @@ from curriculum.models import (
     Document,
     DocumentFile,
     ExtractedSolution,
+    IngestionJob,
     KnowledgeChunk,
     LearningGoal,
 )
@@ -205,14 +208,25 @@ class GoalEndpointTests(_ApiBase):
 
 
 class UploadEndpointTests(_ApiBase):
-    def _upload(self, content: bytes, name: str = "book.pdf", email: str = OWNER):
+    def _upload(
+        self,
+        content: bytes,
+        name: str = "book.pdf",
+        email: str = OWNER,
+        content_type: str | None = None,
+    ):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
+        declared_type = content_type or (
+            "application/epub+zip"
+            if name.lower().endswith(".epub")
+            else "application/pdf"
+        )
         return self.client.post(
             "/api/curriculum/documents/upload/",
             {
                 "file": SimpleUploadedFile(
-                    name, content, content_type="application/pdf"
+                    name, content, content_type=declared_type
                 )
             },
             **_auth(email),
@@ -226,6 +240,21 @@ class UploadEndpointTests(_ApiBase):
             body["document"]["ingestion_status"], Document.Status.UPLOADED
         )
         self.assertEqual(body["document"]["file"]["mime_type"], "application/pdf")
+
+    def test_accepts_valid_epub(self):
+        from curriculum.tests.test_epub import SIMPLE
+
+        response = self._upload(SIMPLE, name="Механика.epub")
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(
+            body["document"]["ingestion_status"], Document.Status.UPLOADED
+        )
+        self.assertEqual(
+            body["document"]["file"]["mime_type"], "application/epub+zip"
+        )
+        self.assertEqual(body["document"]["page_count"], 0)
 
     def test_rejects_non_pdf(self):
         response = self._upload(b"just some text, definitely not a pdf", "notes.txt")
@@ -319,6 +348,91 @@ class UploadEndpointTests(_ApiBase):
         self.assertTrue(body["step_label"])
         self.assertGreater(len(body["attempts"]), 0)
         self.assertTrue(all(a["succeeded"] for a in body["attempts"]))
+
+    @override_settings(CURRICULUM_INGEST_STALE_AFTER_SECONDS=60)
+    def test_stale_status_is_terminal_consistent_and_read_only(self):
+        document = Document.objects.create(
+            user_email=OWNER,
+            title="Зависший учебник",
+            ingestion_status=Document.Status.RECONSTRUCTING,
+        )
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=OWNER,
+            status=Document.Status.RECONSTRUCTING,
+            started_at=timezone.now() - timedelta(hours=2),
+        )
+        IngestionJob.objects.filter(pk=job.pk).update(
+            updated_at=timezone.now() - timedelta(hours=2)
+        )
+
+        url = f"/api/curriculum/documents/{document.pk}/status/"
+        first = self.client.get(url, **_auth(OWNER)).json()
+        second = self.client.get(url, **_auth(OWNER)).json()
+
+        for body in (first, second):
+            self.assertTrue(body["stalled"])
+            self.assertTrue(body["is_terminal"])
+            self.assertEqual(body["ingestion_status"], Document.Status.FAILED)
+            self.assertEqual(body["job"]["status"], Document.Status.FAILED)
+            self.assertEqual(body["job"]["error_code"], "stalled")
+            self.assertNotIn("памят", body["job"]["error_message"].lower())
+
+        # GET не перезаписывает состояние: воркер мог ожить между чтением и
+        # ответом. Повторный POST сам проверит stale и поставит job заново.
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.RECONSTRUCTING)
+        self.assertEqual(document.ingestion_status, Document.Status.RECONSTRUCTING)
+
+    @override_settings(CURRICULUM_INGEST_STALE_AFTER_SECONDS=60)
+    def test_fresh_queued_status_remains_nonterminal(self):
+        document = Document.objects.create(
+            user_email=OWNER,
+            title="Учебник в очереди",
+            ingestion_status=Document.Status.QUEUED,
+        )
+        IngestionJob.objects.create(
+            document=document,
+            user_email=OWNER,
+            status=Document.Status.QUEUED,
+        )
+
+        body = self.client.get(
+            f"/api/curriculum/documents/{document.pk}/status/", **_auth(OWNER)
+        ).json()
+
+        self.assertFalse(body["stalled"])
+        self.assertFalse(body["is_terminal"])
+        self.assertEqual(body["ingestion_status"], Document.Status.QUEUED)
+        self.assertEqual(body["job"]["status"], Document.Status.QUEUED)
+        self.assertEqual(body["step_index"], 1)
+
+    def test_heartbeat_between_stale_checks_keeps_status_nonterminal(self):
+        document = Document.objects.create(
+            user_email=OWNER,
+            title="Оживший воркер",
+            ingestion_status=Document.Status.OCR,
+        )
+        IngestionJob.objects.create(
+            document=document,
+            user_email=OWNER,
+            status=Document.Status.OCR,
+        )
+
+        with mock.patch(
+            "curriculum.views.dispatch.is_stale",
+            side_effect=(True, False),
+        ):
+            body = self.client.get(
+                f"/api/curriculum/documents/{document.pk}/status/",
+                **_auth(OWNER),
+            ).json()
+
+        self.assertFalse(body["stalled"])
+        self.assertFalse(body["is_terminal"])
+        self.assertEqual(body["ingestion_status"], Document.Status.OCR)
+        self.assertEqual(body["job"]["status"], Document.Status.OCR)
 
     def test_status_requires_ownership(self):
         upload = self._upload(textbook_pdf())
@@ -471,9 +585,27 @@ class PlanEndpointTests(_ApiBase):
         body = self._generate().json()
         self.assertEqual(body["planner_model"], "fake-planner")
         self.assertIsNotNone(body["coverage_ratio"])
+        self.assertEqual(
+            body["coverage_ratio"], body["provenance_coverage"]["ratio"]
+        )
+        self.assertEqual(
+            body["plan"]["coverage_ratio"], body["coverage_ratio"]
+        )
         topic = body["plan"]["modules"][0]["topics"][0]
         self.assertIn("sources", topic)
         self.assertIn("prerequisites", topic)
+
+    def test_provenance_coverage_survives_cold_plan_get(self):
+        generated = self._generate().json()
+        response = self.client.get(
+            f"/api/curriculum/plans/{generated['plan']['id']}/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["provenance_coverage"],
+            generated["provenance_coverage"],
+        )
 
     def test_generate_rejects_foreign_goal(self):
         response = self._generate(email=INTRUDER)

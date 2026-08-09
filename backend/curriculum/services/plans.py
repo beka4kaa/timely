@@ -24,6 +24,8 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
+from ai_engine.usage import AIUsageLimitExceeded
+
 from ..forecast import (
     ForecastInput,
     ForecastNotPossible,
@@ -60,6 +62,7 @@ from ..retrieval import (
     RetrievalBundle,
     RetrievalPolicy,
     apply_access_policy,
+    get_lexical_retriever,
 )
 from .chunk_view import as_retrievable
 
@@ -82,6 +85,17 @@ class PlanRejected(RuntimeError):
         self.message = message
 
 
+class PlanSourceChanged(PlanRejected):
+    """Документ изменился после формирования контекста планировщика."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            None,
+            "Документ был переобработан во время генерации плана. "
+            "Запустите генерацию заново.",
+        )
+
+
 @dataclass
 class PlanGenerationOutcome:
     """Итог генерации: план, отчёт валидатора и находки рецензента."""
@@ -92,6 +106,67 @@ class PlanGenerationOutcome:
     planner_model: str = ""
     reviewer_model: str = ""
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ProvenanceCoverage:
+    covered_sections: int
+    total_sections: int
+    ratio: float | None
+    stale: bool = False
+
+    def to_payload(self) -> dict:
+        return {
+            "covered_sections": self.covered_sections,
+            "total_sections": self.total_sections,
+            "ratio": self.ratio,
+            "stale": self.stale,
+        }
+
+
+def provenance_coverage(plan: CoursePlan) -> ProvenanceCoverage:
+    """Покрытие подтверждённых разделов по snapshot `section_path`.
+
+    Один раздел может дать несколько чанков и несколько тем — в числителе он
+    всё равно один. Неизвестные/пустые path не раздувают метрику. После новой
+    обработки книги старые bindings нельзя делить на новое оглавление.
+    """
+
+    if plan.document_id is None:
+        return ProvenanceCoverage(0, 0, None)
+    # `plan.document` может быть закэширован сериализатором ещё до завершения
+    # concurrent ingestion. Для stale-флага нужна текущая версия из БД.
+    document = Document.objects.filter(pk=plan.document_id).only(
+        "id", "processing_version"
+    ).first()
+    if document is None:
+        return ProvenanceCoverage(0, 0, None)
+    if plan.source_processing_version != document.processing_version:
+        return ProvenanceCoverage(0, 0, None, stale=True)
+
+    section_paths = set(
+        DocumentSection.objects.filter(document=document)
+        .exclude(path="")
+        .values_list("path", flat=True)
+        .distinct()
+    )
+    if not section_paths:
+        return ProvenanceCoverage(0, 0, None)
+    bound_paths = set(
+        CourseSourceBinding.objects.filter(
+            topic__module__plan=plan,
+            document=document,
+        )
+        .exclude(section_path="")
+        .values_list("section_path", flat=True)
+        .distinct()
+    )
+    covered = len(section_paths & bound_paths)
+    return ProvenanceCoverage(
+        covered_sections=covered,
+        total_sections=len(section_paths),
+        ratio=covered / len(section_paths),
+    )
 
 
 # ───────────────────────── Подготовка входа модели ───────────────────────────
@@ -134,13 +209,16 @@ def retrieve_planning_context(
     )
     chunks = [
         as_retrievable(chunk, document)
-        for chunk in KnowledgeChunk.objects.filter(document=document)
+        for chunk in KnowledgeChunk.objects.filter(
+            document=document,
+            processing_version=document.processing_version,
+        )
         .select_related("task")
         .order_by("page_start", "id")
     ]
     document_ids = [str(document.pk)]
 
-    relevant = KnowledgeRetrievalService().retrieve(
+    relevant = KnowledgeRetrievalService(lexical=get_lexical_retriever()).retrieve(
         user_email=goal.user_email,
         query=query,
         chunks=chunks,
@@ -350,6 +428,8 @@ def _call_planner(planner, request: CoursePlanningRequest, bundle, *, goal):
     """Один вызов планировщика с нормализацией enum'ов и валидацией."""
     try:
         result = planner.generate_plan(request, bundle)
+    except AIUsageLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Планировщик отказал для цели %s: %s", goal.pk, exc)
         raise PlanRejected(None, f"Планировщик недоступен: {exc}") from exc
@@ -407,11 +487,16 @@ def generate_plan(
     start_date: date | None = None,
 ) -> PlanGenerationOutcome:
     """Полный цикл генерации. Кидает `PlanRejected`, если план непригоден."""
+    # Объект мог ждать во view, пока другой запрос уже запустил ingestion.
+    # Снимок берём из БД непосредственно перед retrieval/LLM и повторно сверяем
+    # под row lock перед первой записью плана.
+    document.refresh_from_db(fields=["ingestion_status", "processing_version"])
     if document.ingestion_status != Document.Status.READY:
         raise PlanRejected(
             None,
             "Документ ещё не обработан: дождитесь статуса «готов».",
         )
+    source_processing_version = document.processing_version
 
     bundle = retrieve_planning_context(goal, document)
     if not bundle.chunk_ids:
@@ -435,6 +520,8 @@ def generate_plan(
     review = None
     try:
         review = reviewer.review_plan(result, request)
+    except AIUsageLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Рецензент недоступен для цели %s: %s", goal.pk, exc)
 
@@ -449,13 +536,21 @@ def generate_plan(
     ]
 
     with transaction.atomic():
+        locked_document = Document.objects.select_for_update().get(pk=document.pk)
+        source_chunks = _lock_planning_source_snapshot(
+            locked_document,
+            processing_version=source_processing_version,
+            chunk_ids=request.available_chunk_ids,
+        )
         plan = _persist_plan(
             goal=goal,
-            document=document,
+            document=locked_document,
             result=result,
             report=report,
             review=review,
             request=request,
+            source_processing_version=source_processing_version,
+            source_chunks=source_chunks,
         )
         blockers = review.blockers if review else []
         if blockers:
@@ -486,6 +581,44 @@ def generate_plan(
     )
 
 
+def _lock_planning_source_snapshot(
+    document: Document,
+    *,
+    processing_version: str,
+    chunk_ids,
+) -> dict[str, KnowledgeChunk]:
+    """Финальный CAS для результата долгих LLM-вызовов.
+
+    Вызывается только с уже захваченной `Document` row lock. Ingestion берёт ту
+    же блокировку перед заменой производных строк, поэтому проверка и сохранение
+    плана образуют одну атомарную критическую секцию. Chunk rows тоже блокируем:
+    это сохраняет инвариант даже для кода, который удаляет их напрямую.
+    """
+
+    if (
+        document.ingestion_status != Document.Status.READY
+        or document.processing_version != processing_version
+    ):
+        raise PlanSourceChanged()
+
+    expected_ids = {str(value) for value in chunk_ids}
+    valid_ids = set(_uuid_like(expected_ids))
+    if valid_ids != expected_ids:
+        raise PlanSourceChanged()
+
+    chunks = {
+        str(chunk.pk): chunk
+        for chunk in KnowledgeChunk.objects.select_for_update().filter(
+            document=document,
+            processing_version=processing_version,
+            pk__in=valid_ids,
+        )
+    }
+    if set(chunks) != expected_ids:
+        raise PlanSourceChanged()
+    return chunks
+
+
 def _persist_plan(
     *,
     goal: LearningGoal,
@@ -494,6 +627,8 @@ def _persist_plan(
     report: ValidationReport,
     review,
     request: CoursePlanningRequest,
+    source_processing_version: str,
+    source_chunks: dict[str, KnowledgeChunk],
 ) -> CoursePlan:
     plan = CoursePlan.objects.create(
         user_email=goal.user_email,
@@ -510,7 +645,7 @@ def _persist_plan(
         reviewer_model=(getattr(review, "model", "") or "")[:160],
         generation_prompt_version=result.prompt_version[:32],
         review_prompt_version=(getattr(review, "prompt_version", "") or "")[:32],
-        source_processing_version=document.processing_version,
+        source_processing_version=source_processing_version,
         schema_version=request.schema_version,
         current_version=1,
     )
@@ -563,30 +698,41 @@ def _persist_plan(
                 plan=plan, topic=topic, depends_on=depends_on
             )
 
-        _bind_sources(plan, topic, proposed_topic, document)
+        _bind_sources(
+            plan,
+            topic,
+            proposed_topic,
+            document,
+            source_processing_version=source_processing_version,
+            source_chunks=source_chunks,
+        )
 
     return plan
 
 
 def _bind_sources(
-    plan: CoursePlan, topic: CourseTopic, proposed_topic, document: Document
+    plan: CoursePlan,
+    topic: CourseTopic,
+    proposed_topic,
+    document: Document,
+    *,
+    source_processing_version: str,
+    source_chunks: dict[str, KnowledgeChunk],
 ) -> None:
     """Привязывает тему к фрагментам книги.
 
-    Отсутствие привязки означает «тема не подтверждена источником» (см.
-    docstring `CourseSourceBinding`), поэтому невалидные chunk_id просто
-    пропускаются — валидатор уже отсёк галлюцинации на предыдущем шаге.
+    Валидатор уже отсёк галлюцинации, а финальный CAS зафиксировал существование
+    строк. Поэтому отсутствие id здесь означает нарушение snapshot-инварианта,
+    а не допустимый повод молча сохранить тему без provenance.
     """
-    chunks = {
-        str(chunk.pk): chunk
-        for chunk in KnowledgeChunk.objects.filter(
-            document=document, pk__in=_uuid_like(proposed_topic.source_chunk_ids)
-        )
-    }
     for chunk_id in proposed_topic.source_chunk_ids:
-        chunk = chunks.get(str(chunk_id))
-        if chunk is None:
-            continue
+        chunk = source_chunks.get(str(chunk_id))
+        if (
+            chunk is None
+            or chunk.document_id != document.pk
+            or chunk.processing_version != source_processing_version
+        ):
+            raise PlanSourceChanged()
         CourseSourceBinding.objects.get_or_create(
             topic=topic,
             document=document,

@@ -69,6 +69,7 @@ def glm_chat_image(
     model: str | None = None,
     max_tokens: int = 4000,
     timeout: int | None = None,
+    feature: str = "vision_analysis",
 ) -> str:
     """Send one image+text chat request to the existing GLM backend."""
     messages: list[dict] = []
@@ -97,7 +98,8 @@ def glm_chat_image(
         response,
         model=model or GLM_ANALYZER_MODEL_NAME,
         provider=provider_from_base_url(VISION_API_BASE_URL),
-        feature="vision_analysis",
+        feature=feature,
         input_payload=messages,
+        image_count=1,
     )
     return (response.choices[0].message.content or "").strip()

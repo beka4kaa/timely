@@ -8,6 +8,7 @@ import tempfile
 from datetime import timedelta
 from unittest import mock
 
+from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -113,6 +114,18 @@ class DoubleClickGuardTests(_DispatchBase):
         run.assert_not_called()
         self.assertEqual(returned.pk, job.pk)
 
+    def test_fresh_queued_job_is_not_redispatched(self):
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+        )
+        with mock.patch.object(dispatch, "ingest_document") as run:
+            returned = dispatch.enqueue_ingestion(document)
+        run.assert_not_called()
+        self.assertEqual(returned.pk, job.pk)
+
     def test_fresh_job_without_start_is_dispatched(self):
         """Строка есть, но обработка ещё не запускалась — запустить надо."""
         document = self._document()
@@ -186,3 +199,12 @@ class ModeSelectionTests(TestCase):
         self.assertEqual(
             dispatch.resolve_mode(dispatch.MODE_INLINE), dispatch.MODE_INLINE
         )
+
+    @override_settings(CURRICULUM_INGEST_MODE="  CeLeRy  ")
+    def test_mode_is_normalized(self):
+        self.assertEqual(dispatch.resolve_mode(), dispatch.MODE_CELERY)
+
+    @override_settings(CURRICULUM_INGEST_MODE="celrey")
+    def test_invalid_mode_fails_loudly_instead_of_running_inline(self):
+        with self.assertRaises(ImproperlyConfigured):
+            dispatch.resolve_mode()

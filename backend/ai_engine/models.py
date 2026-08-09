@@ -218,6 +218,19 @@ class AIUsageEvent(models.Model):
         ]
 
 
+class AIUsageQuotaState(models.Model):
+    """Short-lived quota reservations serialized by one row per user.
+
+    Actual provider usage remains immutable in :class:`AIUsageEvent`.  This
+    row only coordinates work which has been admitted but has not finished
+    yet, so concurrent workers cannot all pass the same stale quota check.
+    """
+
+    user_email = models.EmailField(primary_key=True)
+    reservations = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class ChatSession(models.Model):
     """
     A saved AI Tutor conversation for the whiteboard.

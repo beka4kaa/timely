@@ -236,6 +236,10 @@ class Document(TimestampedModel):
 
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Загружен"
+        # Задача отдана воркеру, но он её ещё не взял. Без этого состояния
+        # «стоит в очереди» неотличимо от «ничего не происходит»: документ
+        # висел бы в `uploaded`, и человек не понимал бы, началось ли что-то.
+        QUEUED = "queued", "В очереди"
         VALIDATING = "validating", "Проверка"
         EXTRACTING = "extracting_native_text", "Извлечение текста"
         CLASSIFYING = "classifying_pages", "Классификация страниц"

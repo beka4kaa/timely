@@ -5,11 +5,17 @@
 """
 
 import io
+import struct
+import tempfile
 import zipfile
+from unittest import mock
 
 from django.test import SimpleTestCase, TestCase
 
+from curriculum import storage as storage_module
 from curriculum.epub_extraction import EpubExtractionError, extract_epub
+from curriculum.models import Document, DocumentFile
+from curriculum.ocr import NullOcrProvider
 from curriculum.parsers import (
     FORMAT_EPUB,
     FORMAT_PDF,
@@ -21,9 +27,15 @@ from curriculum.retrieval import Citation
 from curriculum.tests.pdf_fixtures import textbook_pdf
 from curriculum.upload_validation import (
     UploadRejected,
+    _MAX_EPUB_ENTRIES,
+    _MAX_EPUB_ENTRY_BYTES,
+    _MAX_EPUB_UNPACKED_BYTES,
+    _inspect_epub_stream,
+    _validate_epub_sizes,
     looks_like_epub,
     validate_upload,
 )
+from curriculum.services.ingestion import ingest_document
 
 
 def build_epub(chapters: list[tuple[str, str]], *, with_nav: bool = True) -> bytes:
@@ -212,6 +224,92 @@ class EpubUploadValidationTests(TestCase):
             validate_upload(data=buffer.getvalue(), filename="a.epub")
         self.assertEqual(ctx.exception.code, "suspicious_compression")
 
+    def test_eocd_rejects_unsafe_archives_before_zipfile(self):
+        def changed_eocd(*changes: tuple[int, str, int]) -> bytes:
+            data = bytearray(SIMPLE)
+            eocd = data.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(eocd, 0)
+            for offset, field_format, value in changes:
+                struct.pack_into("<" + field_format, data, eocd + offset, value)
+            return bytes(data)
+
+        cases = (
+            ("multi_disk", ((4, "H", 1),), "bad_archive"),
+            (
+                "zip64",
+                ((8, "H", 0xFFFF), (10, "H", 0xFFFF)),
+                "bad_archive",
+            ),
+            (
+                "too_many_entries",
+                (
+                    (8, "H", _MAX_EPUB_ENTRIES + 1),
+                    (10, "H", _MAX_EPUB_ENTRIES + 1),
+                ),
+                "suspicious_compression",
+            ),
+            ("invalid_central_offset", ((16, "L", 0),), "bad_archive"),
+            # Заниженный count не должен обойти лимит: структура central
+            # directory обязана закончиться ровно после заявленного числа rows.
+            (
+                "forged_low_entry_count",
+                ((8, "H", 1), (10, "H", 1)),
+                "bad_archive",
+            ),
+        )
+
+        for name, changes, expected_code in cases:
+            with self.subTest(name=name):
+                data = changed_eocd(*changes)
+                with mock.patch(
+                    "curriculum.upload_validation.zipfile.ZipFile"
+                ) as zip_file:
+                    with self.assertRaises(UploadRejected) as ctx:
+                        _inspect_epub_stream(
+                            io.BytesIO(data),
+                            archive_size=len(data),
+                        )
+                self.assertEqual(ctx.exception.code, expected_code)
+                zip_file.assert_not_called()
+
+    def test_oversized_mimetype_is_rejected_before_entry_read(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "mimetype",
+                b"application/epub+zip" + b"x" * (1024 * 1024),
+                zipfile.ZIP_STORED,
+            )
+        data = buffer.getvalue()
+
+        with mock.patch(
+            "curriculum.upload_validation.zipfile.ZipFile.open",
+            side_effect=AssertionError("oversized mimetype must not be read"),
+        ) as open_entry:
+            with self.assertRaises(UploadRejected) as ctx:
+                _inspect_epub_stream(io.BytesIO(data), archive_size=len(data))
+
+        self.assertEqual(ctx.exception.code, "bad_archive")
+        open_entry.assert_not_called()
+
+    def test_unpacked_size_has_per_entry_and_absolute_caps(self):
+        per_entry = zipfile.ZipInfo("huge.xhtml")
+        per_entry.file_size = _MAX_EPUB_ENTRY_BYTES + 1
+        with self.assertRaises(UploadRejected) as entry_error:
+            _validate_epub_sizes([per_entry], archive_size=2 * 1024 * 1024)
+        self.assertEqual(entry_error.exception.code, "suspicious_compression")
+
+        # Архив достаточно велик, чтобы ratio 100× сам по себе разрешал этот
+        # объём. Отклонить его обязан именно абсолютный cap.
+        entries = []
+        for index in range(5):
+            info = zipfile.ZipInfo(f"chapter-{index}.xhtml")
+            info.file_size = _MAX_EPUB_UNPACKED_BYTES // 5 + 1
+            entries.append(info)
+        with self.assertRaises(UploadRejected) as total_error:
+            _validate_epub_sizes(entries, archive_size=2 * 1024 * 1024)
+        self.assertEqual(total_error.exception.code, "suspicious_compression")
+
     def test_pdf_по_прежнему_принимается(self):
         result = validate_upload(data=textbook_pdf(), filename="книга.pdf")
         self.assertEqual(result.mime_type, "application/pdf")
@@ -233,3 +331,43 @@ class CitationWithoutPagesTests(SimpleTestCase):
             section_path="2.1", page_start=34, page_end=37,
         )
         self.assertIn("стр. 34–37", citation.render())
+
+
+class EpubEndToEndIngestionTests(TestCase):
+    def setUp(self):
+        self.storage_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.storage_dir.cleanup)
+        storage_module.set_storage(
+            storage_module.LocalFileStorage(self.storage_dir.name)
+        )
+        self.addCleanup(lambda: storage_module.set_storage(None))
+
+    def test_epub_reaches_ready_with_sections_chunks_and_no_fake_pages(self):
+        document = Document.objects.create(user_email="a@b.c", title="EPUB")
+        key = storage_module.build_storage_key(
+            user_email=document.user_email,
+            document_id=str(document.pk),
+            filename="book.epub",
+        )
+        storage_module.get_storage().save(key, SIMPLE)
+        DocumentFile.objects.create(
+            document=document,
+            original_filename="book.epub",
+            sanitized_filename="book.epub",
+            storage_key=key,
+            mime_type="application/epub+zip",
+            byte_size=len(SIMPLE),
+            content_hash=storage_module.content_hash(SIMPLE),
+        )
+
+        outcome = ingest_document(document, ocr_provider=NullOcrProvider())
+
+        self.assertTrue(outcome.succeeded)
+        document.refresh_from_db()
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertEqual(document.page_count, 0)
+        self.assertGreater(document.sections.count(), 0)
+        self.assertGreater(document.chunks.count(), 0)
+        self.assertTrue(
+            all(chunk.page_start == 0 and chunk.page_end == 0 for chunk in document.chunks.all())
+        )

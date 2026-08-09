@@ -19,8 +19,10 @@ WinAnsi, и кириллических глифов у него нет. Поэт
 from __future__ import annotations
 
 
-def build_text_pdf(pages: list[str]) -> bytes:
-    """Собирает PDF со страницами 612x792 и текстом Helvetica 12pt.
+def build_text_pdf(
+    pages: list[str], *, page_size: tuple[float, float] = (612, 792)
+) -> bytes:
+    """Собирает PDF с заданным MediaBox и текстом Helvetica 12pt.
 
     Каждая строка входа рисуется отдельным `Td`-смещением, поэтому pdfium
     возвращает её отдельной строкой — как и настоящий вёрстанный учебник.
@@ -28,6 +30,7 @@ def build_text_pdf(pages: list[str]) -> bytes:
     if not pages:
         raise ValueError("Нужна хотя бы одна страница")
 
+    width, height = page_size
     objects: dict[int, bytes] = {}
     kids = " ".join(f"{4 + index * 2} 0 R" for index in range(len(pages)))
     objects[1] = b"<</Type/Catalog/Pages 2 0 R>>"
@@ -46,7 +49,7 @@ def build_text_pdf(pages: list[str]) -> bytes:
             y -= 16
         stream = "\n".join(commands).encode("latin-1", errors="replace")
         objects[page_number] = (
-            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+            f"<</Type/Page/Parent 2 0 R/MediaBox[0 0 {width:g} {height:g}]"
             "/Resources<</Font<</F1 3 0 R>>>>"
             f"/Contents {page_number + 1} 0 R>>"
         ).encode()

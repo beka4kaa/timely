@@ -47,7 +47,11 @@ PHASES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "checking",
         "Проверяем файл",
-        (Document.Status.UPLOADED, Document.Status.VALIDATING),
+        (
+            Document.Status.UPLOADED,
+            Document.Status.QUEUED,
+            Document.Status.VALIDATING,
+        ),
     ),
     (
         "reading",
@@ -87,6 +91,10 @@ _STATUS_TO_PHASE: dict[str, tuple[str, str, int]] = {
 _STEP_INDEX: dict[str, int] = {
     status: index for index, status in enumerate(INGESTION_STEPS)
 }
+# Очередь — состояние до первого шага пайплайна, а не отдельная операция над
+# документом. В API она поэтому показывает тот же первый шаг, что и `uploaded`,
+# не увеличивая исторический счётчик 11 шагов.
+_STEP_INDEX[Document.Status.QUEUED] = _STEP_INDEX[Document.Status.UPLOADED]
 
 
 def is_terminal(status: str) -> bool:
@@ -119,11 +127,29 @@ def phase_for(status: str) -> tuple[str, str, int]:
     return _STATUS_TO_PHASE.get(status, ("checking", PHASES[0][1], 0))
 
 
-def describe(status: str) -> dict:
-    """Готовый блок прогресса для ответа API."""
+# Сообщение о зависшей обработке. Одно место на весь проект: код `stalled`
+# приходит и в `error_code` джоба, и в ответ `/status/`.
+STALLED_ERROR_CODE = "stalled"
+STALLED_MESSAGE = (
+    "Обработка прервалась: задача давно не обновляла состояние. "
+    "Файл сохранён — попробуйте запустить обработку заново."
+)
+
+
+def describe(status: str, *, stale: bool = False) -> dict:
+    """Готовый блок прогресса для ответа API.
+
+    `stale` — это job, который не менял статус дольше допустимого. Причину по
+    одному таймауту не угадываем, но продолжать показывать «идёт работа» значит
+    обрекать интерфейс на вечный спиннер. Признак вычисляет
+    `services.dispatch.is_stale`, здесь он только переводится в ответ.
+    """
+    if stale:
+        status = Document.Status.FAILED
     step_index, step_total, ratio = progress_for(status)
     phase_key, phase_title, phase_index = phase_for(status)
     return {
+        "stalled": bool(stale),
         "ingestion_status": status,
         "step_index": step_index,
         "step_total": step_total,

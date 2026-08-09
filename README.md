@@ -222,6 +222,66 @@ OPENROUTER_API_KEY=<your-openrouter-api-key>
 
 In production (Vercel), `NEXTAUTH_URL` must be **`https://app.timelyplan.me`**, not the apex domain — the app and all auth routes live on the subdomain, while `timelyplan.me` itself only redirects to it. See [src/lib/auth.ts](src/lib/auth.ts) for how the session cookie is shared across both hosts.
 
+### Curriculum / book ingestion API
+
+The Django API accepts PDF and EPUB textbooks, processes them asynchronously,
+and exposes source-backed search. Run migrations before using it:
+
+```bash
+cd backend
+python manage.py migrate
+python manage.py runserver
+```
+
+The examples below are for local development. `X-User-Email` is currently a
+trusted header supplied by the application gateway; do not expose this contract
+directly to untrusted clients. Keep the trailing `/` in every URL because the
+backend does not append it automatically.
+
+```bash
+export API_URL=http://localhost:8000
+export USER_EMAIL=student@example.com
+
+curl -fsS -X POST "$API_URL/api/curriculum/documents/upload/" \
+  -H "X-User-Email: $USER_EMAIL" \
+  -F "file=@/absolute/path/book.pdf;type=application/pdf" \
+  -F "language=ru" \
+  -F "document_type=textbook"
+```
+
+Use `application/epub+zip` for an EPUB. Do not set the multipart
+`Content-Type` header manually: `curl -F` generates the required boundary.
+The upload response is `201` and contains `document.id`; processing starts with
+`202`, then the client polls the status endpoint:
+
+```bash
+export DOCUMENT_ID=<DOCUMENT_ID_FROM_UPLOAD>
+
+curl -fsS -X POST \
+  "$API_URL/api/curriculum/documents/$DOCUMENT_ID/ingest/" \
+  -H "X-User-Email: $USER_EMAIL"
+
+curl -fsS \
+  "$API_URL/api/curriculum/documents/$DOCUMENT_ID/status/" \
+  -H "X-User-Email: $USER_EMAIL"
+```
+
+Once the document is ready, search its source chunks:
+
+```bash
+curl -fsS -X POST "$API_URL/api/curriculum/search/" \
+  -H "X-User-Email: $USER_EMAIL" \
+  -H "Content-Type: application/json" \
+  --data "{\"query\":\"второй закон Ньютона\",\"document_ids\":[\"$DOCUMENT_ID\"],\"limit\":5}"
+```
+
+Production requires shared private S3/R2 storage plus a separate Celery worker
+and Redis broker. Set `CURRICULUM_INGEST_MODE=celery`; the web service then
+fails closed if the queue is unavailable and never processes a large book in
+the request container. Embeddings additionally require `EMBEDDING_MODEL`,
+`EMBEDDING_BASE_URL`, and an API key (`EMBEDDING_API_KEY` or the existing
+`OPENROUTER_API_KEY`).
+
 #### Google OAuth Setup
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)

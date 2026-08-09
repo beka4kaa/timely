@@ -1,6 +1,9 @@
 """Загрузка документов: валидация содержимого и безопасность storage."""
 
+import io
 import tempfile
+import tracemalloc
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -13,11 +16,13 @@ from curriculum.storage import (
 )
 from curriculum.upload_validation import (
     UploadRejected,
+    _inspect_stream,
     estimate_page_count,
     is_encrypted_pdf,
     looks_like_pdf,
     looks_like_zip_bomb,
     validate_pdf_upload,
+    validate_upload_stream,
 )
 
 
@@ -81,6 +86,16 @@ class StorageKeyTests(SimpleTestCase):
         )
         self.assertEqual(first, second)
 
+    def test_key_never_contains_cyrillic_display_filename(self):
+        key = build_storage_key(
+            user_email="a@b.me",
+            document_id="d1",
+            filename="Механика 10 класс.epub",
+        )
+
+        self.assertTrue(key.endswith("/source.epub"))
+        self.assertTrue(key.isascii())
+
 
 class LocalStorageTests(SimpleTestCase):
     def setUp(self):
@@ -93,6 +108,17 @@ class LocalStorageTests(SimpleTestCase):
         self.storage.save(key, b"payload")
         self.assertTrue(self.storage.exists(key))
         self.assertEqual(self.storage.open(key), b"payload")
+
+    def test_stream_round_trip_uses_bounded_reads(self):
+        class Bounded(io.BytesIO):
+            def read(self, size=-1):
+                if size < 0:
+                    raise AssertionError("unbounded read запрещён")
+                return super().read(size)
+
+        key = "documents/abc/doc1/stream.pdf"
+        self.storage.save_stream(key, Bounded(b"stream payload"))
+        self.assertEqual(self.storage.open(key), b"stream payload")
 
     def test_delete_removes_file(self):
         key = "documents/abc/doc1/book.pdf"
@@ -134,6 +160,66 @@ class PdfDetectionTests(SimpleTestCase):
 
 
 class UploadValidationTests(SimpleTestCase):
+    def test_stream_validation_never_reads_whole_file_at_once(self):
+        class Bounded(io.BytesIO):
+            def read(self, size=-1):
+                if size < 0:
+                    raise AssertionError("unbounded read запрещён")
+                return super().read(size)
+
+        data = minimal_pdf(pages=3)
+        result = validate_upload_stream(
+            stream=Bounded(data), filename="book.pdf", declared_mime="application/pdf"
+        )
+        self.assertEqual(result.byte_size, len(data))
+        self.assertEqual(result.page_count, 3)
+
+    def test_stream_detects_marker_split_between_chunks(self):
+        data = minimal_pdf(extra=b"prefix/Encrypt 9 0 R\n")
+        with mock.patch("curriculum.upload_validation._STREAM_CHUNK_BYTES", 7):
+            with self.assertRaises(UploadRejected) as ctx:
+                validate_upload_stream(stream=io.BytesIO(data), filename="book.pdf")
+        self.assertEqual(ctx.exception.code, "encrypted_pdf")
+
+    def test_dense_pdf_markers_keep_constant_scanner_memory(self):
+        marker_count = 50_000
+        marker = b"/Type/Page /Count 7 /Length 11\n"
+        data = b"%PDF-1.7\n" + marker * marker_count + b"%%EOF\n"
+
+        tracemalloc.start()
+        try:
+            inspected = _inspect_stream(
+                io.BytesIO(data),
+                max_bytes=len(data) + 1,
+            )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        self.assertEqual(inspected.page_count, marker_count)
+        self.assertEqual(inspected.declared_stream_bytes, marker_count * 11)
+        # `data` создан до tracemalloc. Здесь учитывается только рабочее состояние
+        # сканера; set/dict на каждое совпадение превысили бы лимит многократно.
+        self.assertLess(peak, 4 * 1024 * 1024)
+
+    def test_numeric_marker_split_at_chunk_edge_is_not_undercounted(self):
+        chunk_size = 512
+        header = b"%PDF-1.7\n"
+        partial = b"/Length 1"
+        prefix = header + b"x" * (chunk_size - len(header) - len(partial))
+        declared = 123_456_789_012
+        data = prefix + f"/Length {declared}\n%%EOF\n".encode()
+
+        with mock.patch(
+            "curriculum.upload_validation._STREAM_CHUNK_BYTES", chunk_size
+        ):
+            inspected = _inspect_stream(
+                io.BytesIO(data),
+                max_bytes=len(data) + 1,
+            )
+
+        self.assertEqual(inspected.declared_stream_bytes, declared)
+
     def test_valid_pdf_is_accepted(self):
         result = validate_pdf_upload(
             data=minimal_pdf(pages=3),

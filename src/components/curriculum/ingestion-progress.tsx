@@ -23,6 +23,7 @@ import {
   PHASES,
   formatElapsed,
   ingestionErrorMessage,
+  ingestionFailureTitle,
   ingestionWarningMessage,
   phaseIndexFor,
   phaseState,
@@ -41,6 +42,9 @@ export function IngestionProgress() {
   const status = ingestion?.ingestion_status ?? document?.ingestion_status ?? "uploaded";
   const failed = status === "failed";
   const done = status === "ready";
+  const stalled = Boolean(
+    ingestion?.stalled || ingestion?.job?.error_code === "stalled",
+  );
 
   const { elapsedMs, disconnected } = useIngestionPolling({
     enabled: !failed && !done,
@@ -58,7 +62,9 @@ export function IngestionProgress() {
         <header className="space-y-2">
           <div className="flex items-center gap-2 text-red-500">
             <AlertTriangle className="h-5 w-5" />
-            <h2 className="text-lg font-semibold">Обработать учебник не удалось</h2>
+            <h2 className="text-lg font-semibold">
+              {ingestionFailureTitle(stalled)}
+            </h2>
           </div>
           <p className="text-sm text-muted-foreground">
             {ingestionErrorMessage(job?.error_code ?? "", job?.error_message ?? "")}

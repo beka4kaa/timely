@@ -108,19 +108,35 @@ class VisionOcrProvider:
         # настройки и создаёт клиент, а `curriculum.ocr` должен импортироваться
         # в тестах без сети и без ключей.
         from ai_engine.glm_client import glm_chat_image
-        from ai_engine.usage import usage_scope
+        from ai_engine.usage import (
+            AIUsageLimitExceeded,
+            provider_call_reservation,
+            usage_scope,
+        )
 
         encoded = base64.b64encode(png_bytes).decode("ascii")
         try:
             with usage_scope(feature="curriculum_ocr"):
-                text = glm_chat_image(
-                    image_base64=encoded,
-                    system_prompt=OCR_SYSTEM_PROMPT,
-                    user_prompt=OCR_USER_PROMPT,
-                    model=self.model,
-                    max_tokens=self.max_tokens,
-                    timeout=self.timeout_seconds,
-                )
+                with provider_call_reservation(
+                    input_payload={
+                        "system_prompt": OCR_SYSTEM_PROMPT,
+                        "user_prompt": OCR_USER_PROMPT,
+                    },
+                    max_output_tokens=self.max_tokens,
+                    image_count=1,
+                    feature="curriculum_ocr",
+                ):
+                    text = glm_chat_image(
+                        image_base64=encoded,
+                        system_prompt=OCR_SYSTEM_PROMPT,
+                        user_prompt=OCR_USER_PROMPT,
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        timeout=self.timeout_seconds,
+                        feature="curriculum_ocr",
+                    )
+        except AIUsageLimitExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001 — наружу OCR не роняем
             logger.warning("OCR страницы не удался (%s): %s", self.model, exc)
             return OcrResult(text="", model=self.model, succeeded=False, error=str(exc))
