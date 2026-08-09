@@ -20,7 +20,11 @@ from dataclasses import asdict, dataclass, field
 # (difficulty / theory_practice_balance / review_strategy). До этого промпт
 # перечислял только ИМЕНА полей, а валидатор блокировал план за любое чужое
 # значение — модель не могла выполнить контракт, которого ей не сообщили.
-PROMPT_VERSION = "course-planner-1.1.0"
+#
+# 1.2.0: форма ответа переехала из прозы в JSON Schema (`planning/schema.py`),
+# и промпт похудел ровно на неё. Дублировать контракт в двух местах — способ
+# однажды их разъехать; в промпте осталось то, чего схема выразить не может.
+PROMPT_VERSION = "course-planner-1.2.0"
 REVIEW_PROMPT_VERSION = "course-reviewer-1.0.0"
 
 

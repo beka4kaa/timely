@@ -3,7 +3,7 @@
 import tempfile
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from ai_engine.usage import AIUsageLimitExceeded
 
@@ -728,6 +728,90 @@ class PlanRepairTests(_PlanBase):
         )
         repaired = replace(request, repair_issues=("missing_objective: нет цели",))
         self.assertEqual(request.input_hash(), repaired.input_hash())
+
+
+class PlanDeadlineTests(_PlanBase):
+    """Деградация по общему дедлайну вместо падения.
+
+    Генерация идёт внутри HTTP-запроса и делает до трёх последовательных вызовов
+    модели. Сумма их таймаутов не влезает в `gunicorn --timeout`, а убитый по
+    SIGABRT воркер не оставляет ученику ничего. Поэтому необязательные шаги
+    пропускаются — заметно, с записью в `warnings`.
+    """
+
+    @staticmethod
+    def _expired():
+        """Дедлайн, истёкший к первой же проверке."""
+        return mock.patch.object(plans_service, "_plan_deadline_seconds", lambda: 0)
+
+    def test_deadline_skips_review_and_reports_it(self):
+        class Counting(FakeCourseReviewProvider):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def review_plan(self, plan, request):
+                self.calls += 1
+                return super().review_plan(plan, request)
+
+        reviewer = Counting()
+        with self._expired():
+            outcome = plans_service.generate_plan(
+                self.goal,
+                self.document,
+                planning_provider=FakeCoursePlanningProvider(),
+                review_provider=reviewer,
+            )
+
+        self.assertEqual(reviewer.calls, 0)
+        self.assertIn("plan_review_skipped_deadline", outcome.warnings)
+        # План всё равно есть и ждёт подтверждения — это и есть деградация.
+        self.assertEqual(outcome.plan.status, CoursePlan.Status.AWAITING_APPROVAL)
+        # Имя непроработавшего рецензента читалось бы как «план проверен».
+        self.assertEqual(outcome.reviewer_model, "")
+
+    def test_deadline_skips_repair_and_explains_the_refusal(self):
+        planner = PlanRepairTests._FirstAttemptBroken()
+        with self._expired():
+            with self.assertRaises(plans_service.PlanRejected) as ctx:
+                plans_service.generate_plan(
+                    self.goal,
+                    self.document,
+                    planning_provider=planner,
+                    review_provider=FakeCourseReviewProvider(),
+                )
+
+        # Ровно один вызов: второй — это и есть починка, на которую нет времени.
+        self.assertEqual(len(planner.calls), 1)
+        self.assertIn("повторную попытку", ctx.exception.message)
+        self.assertEqual(CoursePlan.objects.count(), 0)
+
+    def test_broken_reviewer_is_no_longer_silent(self):
+        """Раньше падение рецензента не оставляло следа нигде, кроме лога."""
+
+        class Broken(FakeCourseReviewProvider):
+            def review_plan(self, plan, request):
+                raise RuntimeError("рецензент недоступен")
+
+        outcome = plans_service.generate_plan(
+            self.goal,
+            self.document,
+            planning_provider=FakeCoursePlanningProvider(),
+            review_provider=Broken(),
+        )
+        self.assertIn("plan_review_unavailable", outcome.warnings)
+        self.assertEqual(outcome.reviewer_model, "")
+        self.assertEqual(outcome.plan.status, CoursePlan.Status.AWAITING_APPROVAL)
+
+    def test_ample_deadline_skips_nothing(self):
+        outcome = self._generate()
+        self.assertNotIn("plan_review_skipped_deadline", outcome.warnings)
+        self.assertNotIn("plan_review_unavailable", outcome.warnings)
+        self.assertEqual(outcome.reviewer_model, "fake-reviewer")
+
+    @override_settings(CURRICULUM_PLAN_DEADLINE_SECONDS=42)
+    def test_deadline_is_configurable(self):
+        self.assertEqual(plans_service._plan_deadline_seconds(), 42)
 
 
 class PlanApprovalTests(_PlanBase):

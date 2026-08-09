@@ -45,15 +45,20 @@ ENTRYPOINT ["/app/docker-entrypoint.sh"]
 EXPOSE 8080
 
 # Run the application (Shell form to expand $PORT)
-# --timeout must exceed the longest client-side AI call timeout configured in
-# the app (TEXT_LLM_TIMEOUT / skills/board.py both allow up to 180s) — gunicorn's
-# default 30s worker timeout kills the whole worker via SIGABRT mid-request
-# before Django's own try/except fallback logic ever runs.
+# --timeout must exceed the longest server-side work configured in the app —
+# gunicorn's default 30s worker timeout kills the whole worker via SIGABRT
+# mid-request before Django's own try/except fallback logic ever runs.
+#
+# 360s, not 200s: course-plan generation runs inside a single request and makes
+# up to three sequential model calls (planner → repair → reviewer). It caps
+# itself at CURRICULUM_PLAN_DEADLINE_SECONDS (300s) and degrades by skipping
+# steps, so this is the outer boundary that must never be the one to fire.
+# Ordering that must hold: model timeout < plan deadline < gunicorn < client.
 #
 # --worker-class gthread + --threads: /api/ai/chat/stream/ держит соединение
 # открытым всё время генерации (SSE). С gunicorn'овским дефолтом в ОДИН
 # синхронный воркер первый же открытый стрим заблокировал бы весь бэкенд —
 # включая логин и загрузку дашборда. Треды дают параллельные стримы, не требуя
 # переписывать синхронные Django-вьюхи и openai SDK на async.
-CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 200 \
+CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --timeout 360 \
     --worker-class gthread --workers 2 --threads 8
