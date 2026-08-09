@@ -95,15 +95,22 @@ class Citation:
     page_end: int
 
     def render(self) -> str:
-        pages = (
-            f"стр. {self.page_start}"
-            if self.page_start == self.page_end
-            else f"стр. {self.page_start}–{self.page_end}"
-        )
+        """Ссылка на источник.
+
+        Страницы появляются, только если они ЕСТЬ. У EPUB их нет вовсе (текст
+        перетекает под размер экрана), и «стр. 0» в цитате была бы хуже, чем её
+        отсутствие: она выглядит проверяемой, но ведёт в никуда. Носителем
+        локации там служит раздел.
+        """
         parts = [self.document_title or "Источник"]
         if self.section_path:
             parts.append(f"§{self.section_path}")
-        parts.append(pages)
+        if self.page_start > 0:
+            parts.append(
+                f"стр. {self.page_start}"
+                if self.page_start == self.page_end
+                else f"стр. {self.page_start}–{self.page_end}"
+            )
         return ", ".join(parts)
 
 
