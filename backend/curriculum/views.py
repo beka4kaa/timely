@@ -54,7 +54,7 @@ from .services import goals as goals_service
 from .services import plans as plans_service
 from .services import search as search_service
 from .services.dispatch import enqueue_ingestion
-from .upload_validation import UploadRejected, validate_pdf_upload
+from .upload_validation import UploadRejected, validate_upload
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,9 @@ class DocumentViewSet(_UserScopedViewSet):
         data = upload.read()
 
         try:
-            validated = validate_pdf_upload(
+            # Формат определяется по содержимому: расширение приходит от
+            # пользователя, и `книга.pdf` с ZIP внутри — обычное дело.
+            validated = validate_upload(
                 data=data,
                 filename=upload.name,
                 declared_mime=getattr(upload, "content_type", "") or "",

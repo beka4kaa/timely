@@ -227,6 +227,17 @@ class _State:
     sections: list[SectionNode] = field(default_factory=list)
 
 
+def classify_text_run(text: str) -> list[tuple[str, str, str]]:
+    """Разметка произвольного куска текста: `(kind, number_label, body)`.
+
+    Публичная обёртка над построчной группировкой. Нужна EPUB-извлекателю:
+    структуру разделов там даёт HTML, а вот маркеры внутри абзаца («Задача 5.»,
+    «Решение.», «Определение.») ровно те же, что в PDF, и заводить для них
+    вторую реализацию значило бы гарантированно получить две разные.
+    """
+    return _group_lines(text)
+
+
 def classify_pages(
     pages: list[PageText], *, document_id: str = "doc"
 ) -> tuple[list[SourceBlock], list[SectionNode]]:

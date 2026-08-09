@@ -411,8 +411,17 @@ class DocumentBlock(models.Model):
     document = models.ForeignKey(
         Document, on_delete=models.CASCADE, related_name="blocks"
     )
+    # Nullable, потому что страница есть не у всякого формата. У EPUB её нет
+    # вовсе: текст перетекает под размер экрана. Без null такой блок было
+    # невозможно записать, и фрагменты ссылались бы в `block_ids` на строки,
+    # которых не существует, — тот самый висячий провенанс, против которого
+    # существует весь раздел.
     page = models.ForeignKey(
-        DocumentPage, on_delete=models.CASCADE, related_name="blocks"
+        DocumentPage,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="blocks",
     )
     section = models.ForeignKey(
         DocumentSection,

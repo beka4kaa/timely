@@ -36,3 +36,9 @@ opencv-python-headless==4.10.0.84
 openai==2.41.0
 requests==2.34.2
 pypdfium2==4.30.0
+
+# EPUB (Фаза 6). `lxml` — парсер для BeautifulSoup: встроенный html.parser на
+# реальных книгах спотыкается о незакрытые теги, которых в EPUB хватает.
+ebooklib==0.18
+beautifulsoup4==4.12.3
+lxml==6.1.1

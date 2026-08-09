@@ -46,7 +46,9 @@ from ..models import (
     IngestionJob,
     KnowledgeChunk,
 )
+from ..epub_extraction import EpubExtractionError
 from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
+from ..parsers import UnsupportedDocumentType, resolve_parser
 from ..storage import get_storage
 from ..tokenizer import get_tokenizer
 from .embedding_index import index_document_chunks
@@ -226,20 +228,33 @@ def _run_pipeline(
     recorder.advance(Document.Status.VALIDATING)
     pdf_bytes = _read_file(document)
 
-    # 2. extracting_native_text
+    # 2. extracting_native_text — формат определяется по СОДЕРЖИМОМУ.
     recorder.advance(Document.Status.EXTRACTING)
     try:
-        pages = extraction.extract_pages(pdf_bytes, max_pages=max_pages)
+        parser = resolve_parser(pdf_bytes)
+    except UnsupportedDocumentType as exc:
+        raise IngestionError(exc.code, exc.message) from exc
+
+    try:
+        parsed = parser.parse(
+            pdf_bytes, document_id=str(document.pk), limit=max_pages
+        )
     except extraction.PdfExtractionError as exc:
         raise IngestionError("pdf_unreadable", str(exc)) from exc
-    if not pages:
+    except EpubExtractionError as exc:
+        raise IngestionError("epub_unreadable", str(exc)) from exc
+
+    pages = parsed.pages
+    if not parsed.has_structure and not pages:
         raise IngestionError("no_pages", "В PDF не найдено ни одной страницы")
 
-    true_total = extraction.real_page_count(pdf_bytes)
-    if len(pages) < true_total:
-        outcome.warnings.append(
-            f"processed_only_{len(pages)}_of_{true_total}_pages"
-        )
+    true_total = len(pages)
+    if parsed.has_pages:
+        true_total = extraction.real_page_count(pdf_bytes)
+        if len(pages) < true_total:
+            outcome.warnings.append(
+                f"processed_only_{len(pages)}_of_{true_total}_pages"
+            )
 
     # 3. classifying_pages — какие страницы уходят в OCR.
     recorder.advance(Document.Status.CLASSIFYING)
@@ -264,16 +279,26 @@ def _run_pipeline(
                     outcome.warnings.append("ocr_not_configured")
     outcome.ocr_pages = len(ocr_texts)
 
-    # 5. reconstructing_structure — разделы и блоки из текста страниц.
+    # 5. reconstructing_structure — разделы и блоки.
+    #
+    # Ветка ровно одна: дал ли формат готовую структуру. EPUB даёт — заголовки
+    # там размечены автором книги, и угадывать их регулярками значило бы
+    # выбросить достоверные данные ради догадки. PDF не даёт, и структуру
+    # приходится восстанавливать из текста.
     recorder.advance(Document.Status.RECONSTRUCTING)
-    page_texts = [
-        PageText(
-            page_number=p.page_number,
-            text=ocr_texts.get(p.page_number, (p.native_text, ""))[0],
+    if parsed.has_structure:
+        source_blocks, sections = parsed.blocks, parsed.sections
+    else:
+        page_texts = [
+            PageText(
+                page_number=p.page_number,
+                text=ocr_texts.get(p.page_number, (p.native_text, ""))[0],
+            )
+            for p in pages
+        ]
+        source_blocks, sections = classify_pages(
+            page_texts, document_id=str(document.pk)
         )
-        for p in pages
-    ]
-    source_blocks, sections = classify_pages(page_texts, document_id=str(document.pk))
 
     # 6. extracting_blocks / chunking — считаем ДО транзакции, чтобы в ней были
     # только записи в БД.
@@ -439,7 +464,12 @@ def _write_blocks(
     pairs: list[tuple[str, DocumentBlock]] = []
     for block in source_blocks:
         page_row = page_rows.get(block.page)
-        if page_row is None:
+        # `page == 0` — это «страницы нет», а не «страница потерялась». Так
+        # приходят форматы без страниц (EPUB), и такой блок обязан записаться:
+        # иначе фрагменты сошлются в `block_ids` на несуществующие строки.
+        # Ненулевая страница без строки — другое дело: она за лимитом
+        # `max_pages`, и блок пропускается намеренно.
+        if page_row is None and block.page != 0:
             continue
         normalized = normalize_text(block.text)
         pairs.append(
@@ -453,7 +483,9 @@ def _write_blocks(
                     reading_order=block.reading_order,
                     raw_text=block.text,
                     normalized_text=normalized,
-                    extraction_method=page_row.extraction_method,
+                    extraction_method=(
+                        page_row.extraction_method if page_row else "structured"
+                    ),
                     content_hash=compute_content_hash(
                         chunk_type=block.kind,
                         normalized_text=normalized,
