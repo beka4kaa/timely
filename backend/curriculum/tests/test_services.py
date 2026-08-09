@@ -5,6 +5,8 @@ from unittest import mock
 
 from django.test import TestCase
 
+from ai_engine.usage import AIUsageLimitExceeded
+
 from curriculum import storage as storage_module
 from curriculum.models import (
     CourseDependency,
@@ -15,6 +17,8 @@ from curriculum.models import (
     CourseTopic,
     Document,
     DocumentFile,
+    DocumentSection,
+    KnowledgeChunk,
     LearningGoal,
 )
 from curriculum.ocr import NullOcrProvider
@@ -91,6 +95,20 @@ class GoalNormalizationTests(TestCase):
         goal.refresh_from_db()
         self.assertEqual(goal.status, LearningGoal.Status.DRAFT)
         self.assertEqual(goal.original_text, "физика")
+
+    def test_quota_denial_is_not_hidden_as_goal_provider_fallback(self):
+        class Denied:
+            name = "denied"
+
+            def normalize(self, text):
+                raise AIUsageLimitExceeded(
+                    window="five_hour",
+                    reset_at="2026-08-09T12:00:00Z",
+                )
+
+        goal = goals_service.create_goal(user_email=EMAIL, original_text="физика")
+        with self.assertRaises(AIUsageLimitExceeded):
+            goals_service.normalize_goal(goal, provider=Denied())
 
     def test_confirm_accepts_student_edits(self):
         goal = goals_service.create_goal(user_email=EMAIL, original_text="физика")
@@ -304,6 +322,48 @@ class PlanGenerationTests(_PlanBase):
             0,
         )
 
+    def test_provenance_coverage_counts_unique_known_section_paths(self):
+        plan = self._generate().plan
+        before = plans_service.provenance_coverage(plan)
+        binding = CourseSourceBinding.objects.filter(
+            topic__module__plan=plan
+        ).first()
+        CourseSourceBinding.objects.create(
+            topic=binding.topic,
+            document=self.document,
+            section_path=binding.section_path,
+        )
+        CourseSourceBinding.objects.create(
+            topic=binding.topic,
+            document=self.document,
+            section_path="unknown.section",
+        )
+
+        after = plans_service.provenance_coverage(plan)
+
+        self.assertGreater(after.total_sections, 0)
+        self.assertEqual(after.covered_sections, before.covered_sections)
+        self.assertEqual(after.ratio, before.ratio)
+
+    def test_provenance_coverage_is_stale_after_document_reprocessing(self):
+        plan = self._generate().plan
+        self.document.processing_version = "future"
+        self.document.save(update_fields=["processing_version"])
+
+        coverage = plans_service.provenance_coverage(plan)
+
+        self.assertTrue(coverage.stale)
+        self.assertIsNone(coverage.ratio)
+
+    def test_provenance_coverage_without_toc_is_unknown_not_zero(self):
+        plan = self._generate().plan
+        DocumentSection.objects.filter(document=self.document).delete()
+
+        coverage = plans_service.provenance_coverage(plan)
+
+        self.assertEqual(coverage.total_sections, 0)
+        self.assertIsNone(coverage.ratio)
+
     def test_computes_forecast_on_backend(self):
         outcome = self._generate()
         plan = outcome.plan
@@ -333,6 +393,48 @@ class PlanGenerationTests(_PlanBase):
             plans_service.generate_plan(
                 self.goal, raw, planning_provider=FakeCoursePlanningProvider()
             )
+
+    def test_reingestion_completed_during_llm_calls_persists_nothing(self):
+        document = self.document
+
+        class ReingestingReviewer(FakeCourseReviewProvider):
+            def review_plan(self, plan, context):
+                # Между validation и финальной транзакцией ingestion уже успел
+                # заменить строки и опубликовать новую processing version.
+                KnowledgeChunk.objects.filter(document=document).delete()
+                Document.objects.filter(pk=document.pk).update(
+                    ingestion_status=Document.Status.READY,
+                    processing_version="future",
+                )
+                return super().review_plan(plan, context)
+
+        before_plans = CoursePlan.objects.count()
+        before_bindings = CourseSourceBinding.objects.count()
+
+        with self.assertRaises(plans_service.PlanSourceChanged) as ctx:
+            self._generate(review_provider=ReingestingReviewer())
+
+        self.assertIn("переобработан", ctx.exception.message.lower())
+        self.assertEqual(CoursePlan.objects.count(), before_plans)
+        self.assertEqual(CourseSourceBinding.objects.count(), before_bindings)
+
+    def test_disappeared_validated_chunks_with_same_version_persist_nothing(self):
+        document = self.document
+
+        class DeletingReviewer(FakeCourseReviewProvider):
+            def review_plan(self, plan, context):
+                # Даже если внешний код не сменил status/version, исчезновение
+                # любого chunk из validated allowlist обязано разорвать CAS.
+                KnowledgeChunk.objects.filter(document=document).delete()
+                return super().review_plan(plan, context)
+
+        before_plans = CoursePlan.objects.count()
+
+        with self.assertRaises(plans_service.PlanSourceChanged):
+            self._generate(review_provider=DeletingReviewer())
+
+        self.assertEqual(CoursePlan.objects.count(), before_plans)
+        self.assertFalse(CourseSourceBinding.objects.exists())
 
     def test_validator_blocker_persists_nothing(self):
         """Ключевое: план с галлюцинированным источником в БД не попадает."""
@@ -382,6 +484,34 @@ class PlanGenerationTests(_PlanBase):
             plans_service.generate_plan(
                 self.goal, self.document, planning_provider=Broken()
             )
+        self.assertEqual(CoursePlan.objects.count(), 0)
+
+    def test_planner_quota_denial_is_not_converted_to_plan_rejected(self):
+        class Denied:
+            name = "denied"
+
+            def generate_plan(self, request, context):
+                raise AIUsageLimitExceeded(
+                    window="five_hour",
+                    reset_at="2026-08-09T12:00:00Z",
+                )
+
+        with self.assertRaises(AIUsageLimitExceeded):
+            self._generate(planning_provider=Denied())
+        self.assertEqual(CoursePlan.objects.count(), 0)
+
+    def test_reviewer_quota_denial_is_not_hidden_as_optional_review_failure(self):
+        class Denied:
+            name = "denied"
+
+            def review_plan(self, plan, request):
+                raise AIUsageLimitExceeded(
+                    window="weekly",
+                    reset_at="2026-08-10T00:00:00Z",
+                )
+
+        with self.assertRaises(AIUsageLimitExceeded):
+            self._generate(review_provider=Denied())
         self.assertEqual(CoursePlan.objects.count(), 0)
 
 

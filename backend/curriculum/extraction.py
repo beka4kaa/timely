@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import cv2
@@ -38,6 +39,12 @@ NATIVE_TEXT_MIN_CHARS = 60
 # Масштаб рендера для OCR. 2.0 к 72 dpi даёт ~144 dpi — этого хватает VLM и это
 # вдвое дешевле по числу пикселей, чем «полиграфические» 300 dpi.
 OCR_RENDER_SCALE = 2.0
+# `page.render()` выделяет растровый буфер ДО того, как OpenCV сожмёт его в
+# PNG. MediaBox 100000×100000 из PDF в несколько сотен байт иначе потребовал бы
+# десятки гигабайт. 10 Мп заметно выше обычной страницы учебника при 144 dpi,
+# но оставляет worker запас под PDF bytes, RGB/BGR и PNG одновременно.
+MAX_OCR_RENDER_PIXELS = 10_000_000
+MAX_PAGE_DIMENSION_POINTS = 10_000.0
 
 EXTRACTION_NATIVE = "native_pdf"
 EXTRACTION_OCR = "ocr"
@@ -71,6 +78,22 @@ class ExtractedPage:
 def _normalize_newlines(text: str) -> str:
     """pdfium отдаёт `\\r\\n`; хеши блоков не должны зависеть от этого."""
     return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _validate_render_geometry(width: float, height: float, *, scale: float) -> None:
+    """Отклоняет страницу до выделения bitmap, если геометрия небезопасна."""
+
+    width, height, scale = float(width), float(height), float(scale)
+    if not all(
+        math.isfinite(value) and value > 0 for value in (width, height, scale)
+    ):
+        raise PdfExtractionError("У страницы некорректный размер")
+    if width > MAX_PAGE_DIMENSION_POINTS or height > MAX_PAGE_DIMENSION_POINTS:
+        raise PdfExtractionError("Размер страницы превышает безопасный предел")
+    pixel_width = math.ceil(width * scale)
+    pixel_height = math.ceil(height * scale)
+    if pixel_width * pixel_height > MAX_OCR_RENDER_PIXELS:
+        raise PdfExtractionError("Растр страницы превышает безопасный предел")
 
 
 def _open(pdf_bytes: bytes) -> pdfium.PdfDocument:
@@ -125,6 +148,13 @@ def extract_pages(
 
             text = _normalize_newlines(raw)
             length = len(text.strip())
+            needs_ocr = length < min_chars
+            if needs_ocr:
+                _validate_render_geometry(
+                    float(width),
+                    float(height),
+                    scale=OCR_RENDER_SCALE,
+                )
             pages.append(
                 ExtractedPage(
                     page_number=index + 1,
@@ -132,7 +162,7 @@ def extract_pages(
                     height=float(height),
                     native_text=text,
                     native_text_length=length,
-                    needs_ocr=length < min_chars,
+                    needs_ocr=needs_ocr,
                     extraction_method=EXTRACTION_NATIVE,
                 )
             )
@@ -156,19 +186,26 @@ def render_page_png(
             )
         page = doc[page_number - 1]
         try:
+            width, height = page.get_size()
+            _validate_render_geometry(float(width), float(height), scale=scale)
             # to_numpy(), а не to_pil(): Pillow есть в venv, но её НЕТ в
             # requirements.txt, а opencv-python-headless есть. Опираться на
             # неявную зависимость — это ровно грабли cairosvg/libcairo из
             # CLAUDE.md: локально работает, в production модуль не найден.
-            rgb = page.render(scale=scale).to_numpy()
+            bitmap = page.render(scale=scale)
+            try:
+                rgb = bitmap.to_numpy()
+                # pdfium отдаёт RGB, cv2.imencode ждёт BGR. Преобразуем, пока
+                # bitmap ещё жив: numpy-массив может ссылаться на его память.
+                bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                ok, buffer = cv2.imencode(".png", bgr)
+            finally:
+                bitmap.close()
         finally:
             page.close()
     finally:
         doc.close()
 
-    # pdfium отдаёт RGB, cv2.imencode ждёт BGR.
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    ok, buffer = cv2.imencode(".png", bgr)
     if not ok:
         raise PdfExtractionError(f"Страница {page_number} не кодируется в PNG")
     return buffer.tobytes()

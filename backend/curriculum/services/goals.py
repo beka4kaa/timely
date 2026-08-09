@@ -15,6 +15,8 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
+from ai_engine.usage import AIUsageLimitExceeded
+
 from ..model_registry import ROLE_GOAL_NORMALIZATION, resolve_model
 from ..models import LearningGoal
 
@@ -99,22 +101,30 @@ class OpenRouterGoalNormalizationProvider:
         # Импорты внутри метода: `ai_engine.text_llm` при импорте читает ключи,
         # а модуль должен импортироваться в тестах без сети.
         from ai_engine.text_llm import TextModel
-        from ai_engine.usage import usage_scope
+        from ai_engine.usage import provider_call_reservation, usage_scope
 
         from ..planning.providers import _extract_json
 
         with usage_scope(feature="goal_normalization"):
-            response = TextModel(self.model, temperature=0.1).generate_json_content(
-                system_prompt=SYSTEM_PROMPT,
-                # Текст цели уезжает значением в payload, а не склейкой в
-                # промпт: так инструкция внутри формулировки ученика остаётся
-                # данными (см. последнюю строку SYSTEM_PROMPT).
-                payload={"goal_text": text},
-                timeout=self.binding.timeout_seconds,
-                max_tokens=self.binding.max_tokens,
-                reasoning_effort=self.binding.reasoning_effort,
+            payload = {"goal_text": text}
+            with provider_call_reservation(
+                input_payload={"system_prompt": SYSTEM_PROMPT, "payload": payload},
+                max_output_tokens=self.binding.max_tokens,
                 feature="goal_normalization",
-            )
+            ):
+                response = TextModel(
+                    self.model,
+                    temperature=0.1,
+                ).generate_json_content(
+                    system_prompt=SYSTEM_PROMPT,
+                    # Текст цели уезжает значением в payload, а не склейкой в
+                    # промпт: инструкция внутри формулировки остаётся данными.
+                    payload=payload,
+                    timeout=self.binding.timeout_seconds,
+                    max_tokens=self.binding.max_tokens,
+                    reasoning_effort=self.binding.reasoning_effort,
+                    feature="goal_normalization",
+                )
         data = _extract_json(response.text)
 
         goal_type = str(data.get("goal_type", "")).strip()
@@ -170,6 +180,8 @@ def normalize_goal(
     provider = provider or get_normalization_provider()
     try:
         suggestion = provider.normalize(goal.original_text)
+    except AIUsageLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Нормализация цели %s не удалась: %s", goal.pk, exc)
         return goal

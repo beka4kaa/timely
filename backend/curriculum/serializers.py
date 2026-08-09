@@ -138,7 +138,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 class DocumentUploadSerializer(serializers.Serializer):
-    """Загрузка PDF. Проверку содержимого делает `upload_validation`."""
+    """Загрузка PDF/EPUB. Проверку содержимого делает `upload_validation`."""
 
     file = serializers.FileField()
     title = serializers.CharField(max_length=400, required=False, allow_blank=True)
@@ -297,6 +297,8 @@ class CourseMilestoneSerializer(serializers.ModelSerializer):
 class CoursePlanSerializer(serializers.ModelSerializer):
     modules = CourseModuleSerializer(many=True, read_only=True)
     milestones = CourseMilestoneSerializer(many=True, read_only=True)
+    coverage_ratio = serializers.SerializerMethodField()
+    provenance_coverage = serializers.SerializerMethodField()
 
     class Meta:
         model = CoursePlan
@@ -325,10 +327,28 @@ class CoursePlanSerializer(serializers.ModelSerializer):
             "current_version",
             "modules",
             "milestones",
+            "coverage_ratio",
+            "provenance_coverage",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    def _coverage(self, plan: CoursePlan):
+        from .services.plans import provenance_coverage
+
+        cache = getattr(self, "_provenance_coverage_cache", {})
+        key = str(plan.pk)
+        if key not in cache:
+            cache[key] = provenance_coverage(plan)
+            self._provenance_coverage_cache = cache
+        return cache[key]
+
+    def get_coverage_ratio(self, plan: CoursePlan) -> float | None:
+        return self._coverage(plan).ratio
+
+    def get_provenance_coverage(self, plan: CoursePlan) -> dict:
+        return self._coverage(plan).to_payload()
 
 
 class CoursePlanListSerializer(serializers.ModelSerializer):

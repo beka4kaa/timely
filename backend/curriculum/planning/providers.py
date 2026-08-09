@@ -403,7 +403,7 @@ class OpenRouterCoursePlanningProvider:
         self, request: CoursePlanningRequest, context: RetrievalBundle
     ) -> CoursePlanningResult:
         from ai_engine.text_llm import TextModel
-        from ai_engine.usage import usage_scope
+        from ai_engine.usage import provider_call_reservation, usage_scope
 
         payload = {
             "goal": request.goal_text,
@@ -436,14 +436,22 @@ class OpenRouterCoursePlanningProvider:
             payload["fix_these_issues"] = list(request.repair_issues)
 
         with usage_scope(feature=self.feature):
-            response = TextModel(self.model, temperature=0.2).generate_json_content(
-                system_prompt=SYSTEM_PROMPT,
-                payload=payload,
-                timeout=self.binding.timeout_seconds,
-                max_tokens=self.binding.max_tokens,
-                reasoning_effort=self.binding.reasoning_effort,
+            with provider_call_reservation(
+                input_payload={"system_prompt": SYSTEM_PROMPT, "payload": payload},
+                max_output_tokens=self.binding.max_tokens,
                 feature=self.feature,
-            )
+            ):
+                response = TextModel(
+                    self.model,
+                    temperature=0.2,
+                ).generate_json_content(
+                    system_prompt=SYSTEM_PROMPT,
+                    payload=payload,
+                    timeout=self.binding.timeout_seconds,
+                    max_tokens=self.binding.max_tokens,
+                    reasoning_effort=self.binding.reasoning_effort,
+                    feature=self.feature,
+                )
 
         return parse_planning_response(
             response.text, model=self.model, prompt_version=request.prompt_version
@@ -538,7 +546,7 @@ class OpenRouterCourseReviewProvider:
         self, plan: CoursePlanningResult, context: RetrievalBundle
     ) -> CourseReviewResult:
         from ai_engine.text_llm import TextModel
-        from ai_engine.usage import usage_scope
+        from ai_engine.usage import provider_call_reservation, usage_scope
 
         payload = {
             "plan": {
@@ -570,14 +578,25 @@ class OpenRouterCourseReviewProvider:
         }
 
         with usage_scope(feature=self.feature):
-            response = TextModel(self.model, temperature=0.0).generate_json_content(
-                system_prompt=REVIEW_SYSTEM_PROMPT,
-                payload=payload,
-                timeout=self.binding.timeout_seconds,
-                max_tokens=self.binding.max_tokens,
-                reasoning_effort=self.binding.reasoning_effort,
+            with provider_call_reservation(
+                input_payload={
+                    "system_prompt": REVIEW_SYSTEM_PROMPT,
+                    "payload": payload,
+                },
+                max_output_tokens=self.binding.max_tokens,
                 feature=self.feature,
-            )
+            ):
+                response = TextModel(
+                    self.model,
+                    temperature=0.0,
+                ).generate_json_content(
+                    system_prompt=REVIEW_SYSTEM_PROMPT,
+                    payload=payload,
+                    timeout=self.binding.timeout_seconds,
+                    max_tokens=self.binding.max_tokens,
+                    reasoning_effort=self.binding.reasoning_effort,
+                    feature=self.feature,
+                )
 
         return parse_review_response(
             response.text, model=self.model, prompt_version=REVIEW_PROMPT_VERSION

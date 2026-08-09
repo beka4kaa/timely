@@ -5,7 +5,7 @@
  * разделы приложения (`components/nutrition/lib.ts`, `lib/contest-api.ts`).
  * У этого есть две причины помимо единообразия:
  *
- *  1. Загрузка PDF — multipart, а `lib/backend-helpers.ts` умеет только JSON
+ *  1. Загрузка PDF/EPUB — multipart, а `lib/backend-helpers.ts` умеет только JSON
  *     (он хардкодит `Content-Type: application/json`);
  *  2. Генерация плана — это вызов модели на 30–90 секунд, и прямой путь убирает
  *     из него потолок Next-прокси.
@@ -111,6 +111,7 @@ export interface IngestionStats {
 
 export interface IngestionState {
   document_id: string;
+  stalled: boolean;
   ingestion_status: IngestionStatusCode;
   step_index: number;
   step_total: number;
@@ -374,7 +375,7 @@ export interface UploadResult {
 }
 
 /**
- * Загрузка PDF с прогрессом.
+ * Загрузка PDF или EPUB с прогрессом.
  *
  * Здесь XHR, а не fetch, по одной причине: у fetch нет события прогресса
  * ОТПРАВКИ. Учебник может весить десятки мегабайт, и полоса «сколько улетело» —

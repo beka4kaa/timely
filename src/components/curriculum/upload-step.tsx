@@ -46,7 +46,7 @@ export function UploadStep() {
       <header className="space-y-1">
         <h2 className="text-lg font-semibold">Загрузите учебник</h2>
         <p className="text-sm text-muted-foreground">
-          PDF до 60 МБ. По нему построим программу и будем ссылаться на страницы.
+          PDF или EPUB до 60 МБ. В программе будут ссылки на страницы или разделы.
         </p>
       </header>
 
@@ -113,7 +113,9 @@ export function UploadStep() {
       )}
 
       <Button
-        onClick={() => file && void upload(file, file.name.replace(/\.pdf$/i, ""))}
+        onClick={() =>
+          file && void upload(file, file.name.replace(/\.(?:pdf|epub)$/i, ""))
+        }
         disabled={!file || busy}
       >
         {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

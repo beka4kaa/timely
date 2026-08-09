@@ -50,11 +50,12 @@ from .serializers import (
     KnowledgeChunkSerializer,
     LearningGoalSerializer,
 )
+from .services import dispatch
 from .services import goals as goals_service
 from .services import plans as plans_service
 from .services import search as search_service
 from .services.dispatch import enqueue_ingestion
-from .upload_validation import UploadRejected, validate_upload
+from .upload_validation import UploadRejected, validate_upload_stream
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ class LearningGoalViewSet(_UserScopedViewSet):
 
 
 class DocumentViewSet(_UserScopedViewSet):
-    """Документы ученика: загрузка PDF и его обработка."""
+    """Документы ученика: загрузка PDF/EPUB и обработка."""
 
     serializer_class = DocumentSerializer
 
@@ -146,7 +147,7 @@ class DocumentViewSet(_UserScopedViewSet):
         parser_classes=[MultiPartParser, FormParser],
     )
     def upload(self, request):
-        """Принимает PDF: валидация содержимого → storage → Document."""
+        """Принимает PDF/EPUB: валидация содержимого → storage → Document."""
         email = self._user_email()
         if not email:
             return _no_user()
@@ -154,13 +155,12 @@ class DocumentViewSet(_UserScopedViewSet):
         payload = DocumentUploadSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
-        data = upload.read()
 
         try:
             # Формат определяется по содержимому: расширение приходит от
             # пользователя, и `книга.pdf` с ZIP внутри — обычное дело.
-            validated = validate_upload(
-                data=data,
+            validated = validate_upload_stream(
+                stream=upload,
                 filename=upload.name,
                 declared_mime=getattr(upload, "content_type", "") or "",
             )
@@ -192,7 +192,7 @@ class DocumentViewSet(_UserScopedViewSet):
             filename=validated.sanitized_filename,
         )
         try:
-            store.save(key, data)
+            store.save_stream(key, upload)
         except storage_module.StorageError as exc:
             document.delete()
             return Response(
@@ -200,16 +200,25 @@ class DocumentViewSet(_UserScopedViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        DocumentFile.objects.create(
-            document=document,
-            original_filename=upload.name[:400],
-            sanitized_filename=validated.sanitized_filename,
-            storage_backend=store.backend_name,
-            storage_key=key,
-            mime_type=validated.mime_type,
-            byte_size=validated.byte_size,
-            content_hash=validated.sha256,
-        )
+        try:
+            DocumentFile.objects.create(
+                document=document,
+                original_filename=upload.name[:400],
+                sanitized_filename=validated.sanitized_filename,
+                storage_backend=store.backend_name,
+                storage_key=key,
+                mime_type=validated.mime_type,
+                byte_size=validated.byte_size,
+                content_hash=validated.sha256,
+            )
+        except Exception:
+            # Storage и БД — разные системы, общей транзакции у них нет.
+            # Если метаданные не записались, не оставляем бесхозный объект.
+            try:
+                store.delete(key)
+            finally:
+                document.delete()
+            raise
 
         return Response(
             {
@@ -258,9 +267,41 @@ class DocumentViewSet(_UserScopedViewSet):
             .order_by("-created_at")
             .first()
         )
-        body = dict(progress.describe(document.ingestion_status))
+        # Зависший джоб — это мёртвый процесс, а не «идёт работа». Признак
+        # считает существующий `dispatch.is_stale` (одна реализация на проект),
+        # а `describe` переводит его в терминальный статус для интерфейса.
+        # Без этого фронтенд опрашивает статус бесконечно: ровно так пользователь
+        # просидел двадцать минут со спиннером, пока воркера убивали по памяти.
+        stale = bool(
+            job
+            and (
+                dispatch.is_stale(job)
+                or job.error_code == progress.STALLED_ERROR_CODE
+            )
+        )
+        if stale and job and job.error_code != progress.STALLED_ERROR_CODE:
+            # Закрываем обычную гонку SELECT ↔ heartbeat: перед терминальным
+            # ответом перечитываем обе строки и ещё раз проверяем свежесть.
+            job.refresh_from_db()
+            document.refresh_from_db(fields=["ingestion_status"])
+            stale = (
+                dispatch.is_stale(job)
+                or job.error_code == progress.STALLED_ERROR_CODE
+            )
+        body = dict(progress.describe(document.ingestion_status, stale=stale))
         body["document_id"] = str(document.pk)
-        body["job"] = IngestionJobSerializer(job).data if job else None
+        serialized_job = IngestionJobSerializer(job).data if job else None
+        if stale and serialized_job:
+            # GET остаётся read-only: живой воркер мог обновиться между SELECT и
+            # ответом. Для клиента при этом контракт согласован — и верхний
+            # статус, и вложенный job терминальны, поэтому polling остановится.
+            serialized_job = dict(serialized_job)
+            serialized_job.update(
+                status=Document.Status.FAILED,
+                error_code=progress.STALLED_ERROR_CODE,
+                error_message=progress.STALLED_MESSAGE,
+            )
+        body["job"] = serialized_job
         body["attempts"] = (
             IngestionAttemptSerializer(
                 job.attempts.all().order_by("created_at"), many=True
@@ -372,6 +413,7 @@ class CoursePlanViewSet(_UserScopedViewSet):
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
 
+        coverage = plans_service.provenance_coverage(outcome.plan)
         return Response(
             {
                 "plan": CoursePlanSerializer(outcome.plan).data,
@@ -379,9 +421,8 @@ class CoursePlanViewSet(_UserScopedViewSet):
                 "review_findings": outcome.review_findings,
                 "planner_model": outcome.planner_model,
                 "reviewer_model": outcome.reviewer_model,
-                "coverage_ratio": (
-                    outcome.report.coverage_ratio if outcome.report else None
-                ),
+                "coverage_ratio": coverage.ratio,
+                "provenance_coverage": coverage.to_payload(),
             },
             status=status.HTTP_201_CREATED,
         )

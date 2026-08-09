@@ -14,13 +14,15 @@ backend, заготовка которого описана в `S3StorageSetting
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import re
 import shutil
+import tempfile
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 
 # Ключи в storage строим сами и никогда не берём из имени файла пользователя:
 # иначе «../../etc/passwd» уедет за пределы каталога.
@@ -66,15 +68,18 @@ def content_hash(data: bytes) -> str:
 
 
 def build_storage_key(*, user_email: str, document_id: str, filename: str) -> str:
-    """Детерминированный ключ вида `documents/<хеш почты>/<id>/<имя>`.
+    """Детерминированный ключ вида `documents/<хеш почты>/<id>/source.ext`.
 
     Почта хешируется, а не кладётся в путь: ключ может попасть в логи и в
     подписанную ссылку, а адрес несовершеннолетнего пользователя — персональные
-    данные.
+    данные. Исходное имя тоже не входит в ключ: оно хранится отдельно для UI,
+    может содержать кириллицу и не должно влиять на безопасный storage path.
     """
     owner = hashlib.sha256(user_email.strip().lower().encode()).hexdigest()[:16]
     safe_name = sanitize_filename(filename)
-    return f"documents/{owner}/{document_id}/{safe_name}"
+    suffix = Path(safe_name).suffix.lower()
+    safe_suffix = suffix if re.fullmatch(r"\.[a-z0-9]{1,16}", suffix) else ""
+    return f"documents/{owner}/{document_id}/source{safe_suffix}"
 
 
 class FileStorage(Protocol):
@@ -83,6 +88,8 @@ class FileStorage(Protocol):
     backend_name: str
 
     def save(self, key: str, data: bytes) -> str: ...
+
+    def save_stream(self, key: str, source: BinaryIO) -> str: ...
 
     def open(self, key: str) -> bytes: ...
 
@@ -117,9 +124,29 @@ class LocalFileStorage:
         return path
 
     def save(self, key: str, data: bytes) -> str:
+        return self.save_stream(key, io.BytesIO(data))
+
+    def save_stream(self, key: str, source: BinaryIO) -> str:
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".upload",
+                delete=False,
+            ) as target:
+                temporary_path = Path(target.name)
+                shutil.copyfileobj(source, target, length=1024 * 1024)
+                target.flush()
+                os.fsync(target.fileno())
+            os.replace(temporary_path, path)
+        except Exception as exc:  # noqa: BLE001 — наружу только StorageError
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            raise StorageError("Не удалось сохранить файл в хранилище.") from exc
         return key
 
     def open(self, key: str) -> bytes:
@@ -228,13 +255,25 @@ class S3FileStorage:
         return {"ServerSideEncryption": self.settings.server_side_encryption}
 
     def save(self, key: str, data: bytes) -> str:
+        return self.save_stream(key, io.BytesIO(data))
+
+    def save_stream(self, key: str, source: BinaryIO) -> str:
         _validate_key(key)
         try:
-            self.client.put_object(
-                Bucket=self.settings.bucket,
-                Key=key,
-                Body=data,
-                **self._extra_put_args(),
+            from boto3.s3.transfer import TransferConfig
+
+            extra_args = self._extra_put_args() or None
+            self.client.upload_fileobj(
+                source,
+                self.settings.bucket,
+                key,
+                ExtraArgs=extra_args,
+                Config=TransferConfig(
+                    multipart_threshold=8 * 1024 * 1024,
+                    multipart_chunksize=8 * 1024 * 1024,
+                    max_concurrency=1,
+                    use_threads=False,
+                ),
             )
         except Exception as exc:  # noqa: BLE001 — наружу только StorageError
             raise StorageError("Не удалось сохранить файл в хранилище.") from exc

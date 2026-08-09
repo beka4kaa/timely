@@ -1,8 +1,11 @@
 """Машина состояний ingestion: переходы, идемпотентность, отказы."""
 
 import tempfile
+from unittest import mock
 
 from django.test import TestCase
+
+from ai_engine.usage import AIUsageLimitExceeded
 
 from curriculum import storage as storage_module
 from curriculum.models import (
@@ -18,6 +21,7 @@ from curriculum.models import (
     KnowledgeChunk,
 )
 from curriculum.ocr import NullOcrProvider, OcrResult
+from curriculum.services.embedding_index import IndexOutcome
 from curriculum.services.ingestion import ingest_document
 from curriculum.tests.pdf_fixtures import scanned_pdf, textbook_pdf
 
@@ -204,6 +208,55 @@ class IdempotencyTests(_IngestionBase):
         self.assertEqual(IngestionJob.objects.filter(document=document).count(), 2)
 
 
+class RunFencingTests(_IngestionBase):
+    def test_embedding_index_is_scoped_to_chunks_created_by_this_run(self):
+        document = self._make_document(textbook_pdf())
+
+        with mock.patch(
+            "curriculum.services.ingestion.index_document_chunks",
+            return_value=IndexOutcome(),
+        ) as index_chunks:
+            outcome = ingest_document(
+                document,
+                ocr_provider=NullOcrProvider(),
+            )
+
+        self.assertTrue(outcome.succeeded)
+        scoped_ids = set(index_chunks.call_args.kwargs["chunk_ids"])
+        current_ids = set(
+            KnowledgeChunk.objects.filter(document=document).values_list(
+                "pk", flat=True
+            )
+        )
+        self.assertEqual(scoped_ids, current_ids)
+
+    def test_superseded_celery_run_does_not_touch_pipeline(self):
+        document = self._make_document(
+            textbook_pdf(), ingestion_status=Document.Status.QUEUED
+        )
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="new-generation",
+        )
+
+        outcome = ingest_document(
+            document,
+            run_token="old-generation",
+            ocr_provider=NullOcrProvider(),
+        )
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(outcome.job.pk, job.pk)
+        self.assertEqual(job.status, Document.Status.QUEUED)
+        self.assertEqual(job.celery_task_id, "new-generation")
+        self.assertEqual(document.ingestion_status, Document.Status.QUEUED)
+        self.assertFalse(IngestionAttempt.objects.filter(job=job).exists())
+        self.assertFalse(DocumentPage.objects.filter(document=document).exists())
+
+
 class OcrPathTests(_IngestionBase):
     def test_ocr_runs_only_on_scanned_pages(self):
         document = self._make_document(scanned_pdf())
@@ -246,6 +299,20 @@ class OcrPathTests(_IngestionBase):
             any(w.startswith("ocr_limited_to_0") for w in outcome.warnings),
             outcome.warnings,
         )
+
+    def test_quota_denial_escapes_ingestion_for_worker_terminal_handling(self):
+        class DeniedOcr:
+            name = "denied"
+
+            def transcribe_page(self, png_bytes):
+                raise AIUsageLimitExceeded(
+                    window="five_hour",
+                    reset_at="2026-08-09T12:00:00Z",
+                )
+
+        document = self._make_document(scanned_pdf())
+        with self.assertRaises(AIUsageLimitExceeded):
+            ingest_document(document, ocr_provider=DeniedOcr())
 
 
 class FailurePathTests(_IngestionBase):

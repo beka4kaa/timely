@@ -134,7 +134,12 @@ class OpenAICompatibleEmbeddingProvider:
         # и без ключей.
         from openai import OpenAI
 
-        from ai_engine.usage import provider_from_base_url, record_model_usage
+        from ai_engine.usage import (
+            AIUsageLimitExceeded,
+            provider_call_reservation,
+            provider_from_base_url,
+            record_model_usage,
+        )
 
         payload = [(text or "")[:MAX_INPUT_CHARS] for text in texts]
         client = OpenAI(
@@ -144,9 +149,24 @@ class OpenAICompatibleEmbeddingProvider:
         last_error = ""
         for attempt in range(MAX_ATTEMPTS):
             try:
-                response = client.embeddings.create(
-                    model=self.model, input=payload, timeout=self.timeout_seconds
-                )
+                with provider_call_reservation(
+                    input_payload=payload,
+                    feature="curriculum_embedding",
+                ):
+                    response = client.embeddings.create(
+                        model=self.model,
+                        input=payload,
+                        timeout=self.timeout_seconds,
+                    )
+                    record_model_usage(
+                        response,
+                        model=self.model,
+                        provider=provider_from_base_url(self.base_url),
+                        feature="curriculum_embedding",
+                        input_payload=payload,
+                    )
+            except AIUsageLimitExceeded:
+                raise
             except Exception as exc:  # noqa: BLE001 — наружу не роняем
                 last_error = str(exc)
                 logger.warning(
@@ -160,17 +180,17 @@ class OpenAICompatibleEmbeddingProvider:
                     time.sleep(BACKOFF_SECONDS[attempt])
                 continue
 
-            record_model_usage(
-                response,
-                model=self.model,
-                provider=provider_from_base_url(self.base_url),
-                feature="curriculum_embedding",
-            )
-
             # Порядок ответа гарантируется полем `index`, а не позицией в
             # списке: сортировка по нему стоит дёшево и снимает целый класс
             # тихих ошибок сопоставления вектора не с тем текстом.
             items = sorted(response.data, key=lambda item: item.index)
+            indices = [int(item.index) for item in items]
+            if indices != list(range(len(payload))):
+                return EmbeddingResult(
+                    model=self.model,
+                    succeeded=False,
+                    error="embedding_index_mismatch",
+                )
             vectors = [list(item.embedding) for item in items]
 
             if len(vectors) != len(payload):

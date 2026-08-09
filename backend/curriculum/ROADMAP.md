@@ -5,7 +5,7 @@
 
 ## Что строим
 
-Ученик говорит, что хочет выучить → загружает свой учебник (PDF, позже EPUB) →
+Ученик говорит, что хочет выучить → загружает свой учебник (PDF или EPUB) →
 система его разбирает, индексирует и векторизует → LLM строит программу, где
 **каждая тема подтверждена ссылкой на источник** (`§2.1, стр. 34–37`) → ученик
 утверждает план и учится по нему.
@@ -17,36 +17,25 @@
 
 ## Текущее состояние
 
-**Фазы 0–3 готовы, поверх них редизайн программы (3b) и код фаз 4a, 4b и 7.
-Фича работает сквозным сценарием.**
+**Фазы 0–8 реализованы локально; PDF и EPUB проходят сквозной сценарий.**
 
-- `curriculum`: **425 тестов OK** (базлайн 296 на коммите `2bf2231`, +129)
-- `ai_engine`: 416 OK, 3 внешних пропущены — не задет
-- фронтенд: `npm run test:curriculum` — **72 теста** (23 прогресс + 26 корешок +
-  11 уровни + 12 прогноз), `tsc` и `lint` чисты
-- Изменения НЕ закоммичены
+- scoped backend: **536 тестов OK**, один настоящий PostgreSQL concurrency-test
+  пропускается на SQLite
+- фронтенд: `npm run test:curriculum` — **73 теста**; `tsc` и `lint` проходят
+  (остались четыре старых warning вне curriculum)
+- `makemigrations --check`, Django system check и `git diff --check` чисты
+- изменения НЕ закоммичены; Phase-8 код и `ai_engine/0009` требуют обычного
+  deploy/migrate перед тем, как считать их активными в production
 
 Фронтенд есть: `/dashboard/curriculum` и `/dashboard/curriculum/plan/[planId]`.
-Обработка синхронная (контракт при этом уже асинхронный — Фаза 4b поменяет
-исполнителя без правок фронтенда).
+Тяжёлая обработка асинхронная: production web и отдельный Celery worker работают
+через TLS Redis addon; production mode fail-closed и не возвращается к обработке
+книги внутри web-запроса при потере брокера.
 
-RAG больше не заглушка **в коде**, но на живой базе не развёрнут: нужны миграции
-на Postgres и настройка провайдера эмбеддингов — см. Фазу 7. Пока их нет,
-`get_dense_retriever()` честно отдаёт прежний `InMemoryDenseRetriever`.
-
-Код фаз 4a, 4b, 5 и 7 написан и покрыт тестами. Инфраструктура готова:
-бакет R2 подключён и проверен, pgvector установлен на боевой базе, переменные
-эмбеддингов лежат в секрет-группе. **Всё это включится при мерже ветки в `main`
-и деплое** — сейчас прод крутит код без них.
-
-Брокер тоже подключён: `REDIS_MASTER_URL` лежит в проде и локально, соединение
-с аддоном `redis-cache` проверено вживую — TLS-рукопожатие, отправка задачи в
-очередь, `llen celery = 1`, очередь после проверки прибрана.
-
-Единственное, что ещё не сделано, — сервис `timely-worker` (Фаза 4b). **Создавать
-его до мержа нельзя**: воркер собирается из того же образа, а на `main` пока нет
-ни `config/celery.py`, ни `celery` в requirements, и контейнер уйдёт в цикл
-перезапуска. Без воркера обработка остаётся внутри HTTP-запроса — рабочий режим.
+Phase-7 data path проверен на живой Northflank PostgreSQL: pgvector 0.8.3,
+`vector(1536)`, HNSW `vector_cosine_ops`, русский GIN FTS и 10 READY-векторов
+canary-документа. Dense/hybrid benchmark выполнен на этой базе. Локальный SQLite
+по-прежнему намеренно использует детерминированные fallback-retrievers.
 
 ### Как проверить вживую
 
@@ -191,8 +180,9 @@ GET  /api/curriculum/documents/{id}/status/ 200 см. ниже
 - [x] `services/dispatch.py` — `enqueue_ingestion(document, *, processing_version, mode)`.
       Job-строка создаётся **до** возврата. Незавершённый job свежее `STALE_AFTER` не
       переставляется — защита от двойного клика. `resolve_mode()`: `auto` → celery при
-      наличии брокера, иначе inline. Если `tasks` ещё нет — откат на inline с записью
-      в лог: выставленный раньше времени `CELERY_BROKER_URL` не должен вешать документ.
+      наличии брокера, иначе inline. Если в celery-режиме нет модуля задач
+      или publish в Redis падает, job завершается с `queue_unavailable`: тяжёлого
+      inline-fallback нет, чтобы не повторить OOM web-контейнера.
 - [x] `progress.py` — источник правды о шагах: `INGESTION_STEPS`, `STEP_LABELS` (берутся
       у самих `TextChoices`, чтобы не разъехаться с моделью), `progress_for`,
       `is_terminal`, `PHASES` (11 шагов → 4 фазы для человека), `describe()`
@@ -225,7 +215,7 @@ GET  /api/curriculum/documents/{id}/status/ 200 см. ниже
 шаги, страница, навигация. `tsc` и `lint` чисты.
 
 **Сценарий пройден целиком в живом браузере на реальных моделях:**
-цель → нормализация → подтверждение → загрузка PDF → обработка → генерация →
+цель → нормализация → подтверждение → загрузка учебника → обработка → генерация →
 утверждение. Нормализация: «Хочу научиться решать задачи по механике за 10 класс»
 → «Физика / Механика, 10 класс». План: 2 модуля, 5 тем, 8 привязок к источникам,
 прогноз финиша. После утверждения — статус `active` и запись на курс в базе.
@@ -404,9 +394,9 @@ Northflank `timely`. Работающий контейнер их пока не 
 - [x] `tests/test_tasks.py` — 10 тестов с `CELERY_TASK_ALWAYS_EAGER`
 - [ ] Northflank: сервис `timely-worker` (действие в панели, см. ниже)
 
-`services/dispatch.py` был написан под это заранее и не потребовал ни одной
-правки: он уже импортировал `curriculum.tasks`, слал задачу через
-`transaction.on_commit` и откатывался на inline при отсутствии модуля.
+`services/dispatch.py` публикует задачу через `transaction.on_commit`, заранее пишет
+её id в job и не откатывается на inline при ошибке брокера. Id также работает
+как fencing-token: запоздавший старый воркер не может затереть новый запуск.
 
 Решения, которые стоит помнить:
 
@@ -417,14 +407,19 @@ Northflank `timely`. Работающий контейнер их пока не 
   `CELERY_BROKER_USE_SSL` для схемы `rediss://`, проверку сертификата НЕ
   отключая. Проверено: `redis://` → `broker_use_ssl: False`, `rediss://` →
   `{'ssl_cert_reqs': CERT_REQUIRED}`.
-- **`REDIS_MASTER_URL` читается наравне с `REDIS_URL`**: именно так переменную
-  называет Northflank, и без этого брокер молча не подхватился бы.
+- **Northflank-префикс обязателен к учёту**: аддон `redis-cache` публикует
+  `NF_REDIS_CACHE_REDIS_MASTER_URL`, а не голый `REDIS_MASTER_URL`. Настройки
+  читают явный `CELERY_BROKER_URL` первым, затем стандартные имена и этот
+  предсказуемый `NF_*_REDIS_MASTER_URL` fallback.
 - **Только JSON, никакого pickle**: сообщение из скомпрометированного Redis
   иначе означает исполнение произвольного кода в воркере.
-- **Ретраев у задачи нет намеренно.** Повторная обработка — осознанное действие
-  пользователя через `POST /documents/{id}/ingest/`, у которого своя защита от
-  гонок. Автоматический ретрай платного пайплайна (OCR — это vision-вызовы)
-  удваивал бы счёт на каждом сетевом сбое.
+- **Ретраи только по типизированным временным кодам.** Ошибки файла, парсера и
+  неизвестный `internal_error` не повторяются автоматически: после платного OCR
+  это могло бы удвоить счёт. Временный отказ storage/provider получает не более
+  трёх повторов с backoff; ошибка публикации в Redis фиксируется отдельно как
+  `queue_unavailable` и никогда не запускает тяжёлый inline-fallback. Сейчас
+  такой task-retry нужен только для `storage_unavailable`; OCR и embeddings
+  имеют собственную локальную политику деградации и не перезапускают всю книгу.
 - **`prefetch_multiplier=1`** не про справедливость, а про память: PDF целиком в
   RAM плюс растры страниц, и набранная впрок очередь означает OOM-kill на
   середине второй книги.
@@ -432,12 +427,13 @@ Northflank `timely`. Работающий контейнер их пока не 
 Что сделать в панели Northflank, чтобы это заработало:
 
 1. В секрет-группу `timely` добавить `CELERY_BROKER_URL` = значение
-   `REDIS_MASTER_URL` аддона `redis-cache` (он уже поднят, версия 8.8.0).
-2. Создать сервис `timely-worker` из того же репозитория и `Dockerfile`:
+   `REDIS_MASTER_URL` аддона `redis-cache` и `CURRICULUM_INGEST_MODE=celery`.
+   Явный mode остаётся fail-closed, даже если связь с аддоном пропадёт.
+2. Проверить worker-сервис из того же репозитория и `Dockerfile`:
    команда `celery -A config worker --loglevel=info --concurrency=1`,
    переменная `RUN_MIGRATIONS=0`, портов не открывать, память ≥ 1 ГБ.
-3. После появления брокера `resolve_mode()` сам переключится с `inline` на
-   `celery` — правок кода не требуется.
+3. Поднять web с 256 МБ (`nf-compute-10`) до 512 МБ (`nf-compute-20`):
+   PDF больше не обрабатывается в web, но запас нужен для загрузки и API.
 
 **Порядок важен: сначала Фаза 4a в проде (бакет), потом воркер.** Воркер в
 отдельном контейнере не видит диск web-контейнера, и до переезда на S3 каждая
@@ -542,18 +538,19 @@ Nullable сделано ровно там, где без него данные �
 
 ---
 
-### Фаза 7 — pgvector + эмбеддинги 🔄
+### Фаза 7 — pgvector + эмбеддинги ✅
 
-**Состояние: код написан и покрыт тестами, на живой базе НЕ развёрнут.**
+**Состояние на 2026-08-09: схема, canary-индексация и live smoke-benchmark
+проверены на Northflank.**
 
 **pgvector установлен на БОЕВОЙ базе Northflank** (`timely-data`,
 PostgreSQL 18.4, расширение `vector` 0.8.3). Ставилось админской ролью аддона
 (`EXTERNAL_POSTGRES_URI_ADMIN` из `northflank get addon credentials`), несмотря
 на то что у `vector` стоит `trusted = false`, а роль не суперюзер, — Northflank
 это разрешает. Рабочая роль Django расширение видит, `vector(1536)` пишет и
-HNSW-индекс с `vector_cosine_ops` создаёт (проверено на временной таблице).
-Поэтому миграция `0003` пройдёт на проде при ближайшем деплое, и
-`docker-compose.yml` с образом pgvector из исходного чеклиста не нужен.
+HNSW-индекс с `vector_cosine_ops` создаёт. Миграции `0003` и `0006` применены
+на production; `docker-compose.yml` с образом pgvector из исходного чеклиста
+не нужен.
 
 Второй сервер, `100.105.19.20:5432/appdb` (PostgreSQL 16.14, pgvector 0.8.6,
 домашний ПК `beka4ka-pc` в tailnet), боевой базой НЕ становится. Замер из самого
@@ -601,79 +598,89 @@ TUN-режиме, настроенный на уровне платформы. �
   не выбирает себе политику доступа), векторы в ответе не возвращаются.
 - `management/commands/curriculum_embed.py` с `--dry-run`, `--reset-failed` и
   оценкой стоимости до траты.
-- `curriculum/tests/test_embeddings.py` — 23 теста.
+- `curriculum/tests/test_embeddings.py` покрывает provider, индексацию,
+  model mismatch, бюджетные предохранители команды и выбор retriever.
 - `CURRICULUM_EMBEDDINGS_ENABLED` в `config/settings.py`: под тест-раннером
   выключается всегда. Появился не из осторожности — как только
   `EMBEDDING_MODEL` попал в `.env`, прогон curriculum вырос с 1.3 до 70
   секунд и упал: пайплайн пошёл в сеть на ретраях.
 
-Осталось для запуска:
+Production activation выполнен безопасным canary:
 
-1. В корневой `.env` уже добавлено (нового ключа не потребовалось):
-   `EMBEDDING_MODEL=openai/text-embedding-3-small`,
-   `EMBEDDING_BASE_URL=https://openrouter.ai/api/v1`. `EMBEDDING_API_KEY`
-   намеренно пуст — он падает обратно на `OPENROUTER_API_KEY`. Те же две
-   переменные надо продублировать в секрет-группу Northflank `timely`.
-   Проверено вживую через сам класс провайдера: батч из двух текстов, 1536
-   измерений, косинусная близость двух разных тем 0.27.
-2. Смёржить ветку в `main`. `docker-entrypoint.sh` прогонит `migrate` при старте
-   контейнера, расширение на месте, миграция `0003` применится.
-3. `curriculum_embed --user <email> --dry-run`, затем без него. Для книг,
-   загруженных раньше, добавить `--reset-failed`: их чанки помечены `skipped`.
-4. Замерить качество плотного поиска против лексического — до этого момента
-   утверждать, что RAG стал лучше, нельзя.
+- в web и worker заданы `EMBEDDING_MODEL=openai/text-embedding-3-small`,
+  `EMBEDDING_BASE_URL=https://openrouter.ai/api/v1`; ключ берётся из
+  `OPENROUTER_API_KEY`;
+- live SQL подтвердил `vector` 0.8.3, `vector(1536)`, HNSW с
+  `vector_cosine_ops` и миграции `0003`/`0006`;
+- dry-run показал 10 фрагментов / 118 токенов / менее $0.0001, после budget gate
+  все 10 получили READY-векторы, ошибок и пропусков нет;
+- `curriculum_retrieval_eval` на трёх TOC-запросах: Recall@10/MRR@10 lexical
+  0.333/0.333, dense 0.667/0.667, hybrid 0.667/0.667; утечка решений 0.
+  Это smoke-set, а не замена размеченному benchmark на нескольких книгах.
 
-**Порядок пунктов 1 и 2 не важен, но деплоить без установленного расширения
-было нельзя**: `docker-entrypoint.sh` выполняет `migrate` при каждом старте, и
-миграция `0003` уронила бы контейнер. Сейчас расширение стоит, так что путь
-свободен.
+Команды теперь fail-closed: `curriculum_embed` и `curriculum_retrieval_eval`
+по умолчанию делают только dry-run; платный вызов требует `--execute` и проходит
+через `--max-usd`. Смена модели автоматически выбирает READY-векторы другой
+модели, а dense retrieval фильтрует строки по текущему `embedding_model`.
 
----
+### Фаза 7 — проверенный чеклист ✅
 
-### Фаза 7 — исходный чеклист ⬜
-
-- [ ] Миграция: `VectorField(1536)`, HNSW-индекс и `CREATE EXTENSION` **под гейтом**
+- [x] Миграция: `VectorField(1536)`, HNSW-индекс и `CREATE EXTENSION` **под гейтом**
       `schema_editor.connection.vendor == "postgresql"` (тесты идут на SQLite).
       Оживить мёртвое `embedding_status` (choices + `db_index`), добавить
       `embedding_model`, `embedded_at`
-- [ ] `docker-compose.yml` — `pgvector/pgvector:pg16` (локально сейчас SQLite,
-      pgvector на нём не проверить)
-- [ ] `curriculum/embeddings.py` — зеркало `ocr.py`: Protocol / Null / Real / factory.
+- [x] Локальный fallback остаётся SQLite; реальный PostgreSQL/pgvector проверен
+      на canary-базе Northflank, отдельный `docker-compose.yml` не нужен
+- [x] `curriculum/embeddings.py` — зеркало `ocr.py`: Protocol / Null / Real / factory.
       `get_embedding_provider()` — первый реальный потребитель `ROLE_EMBEDDING`.
       Batch 64, ограниченный exponential backoff, без бесконечных ретраев
-- [ ] `services/embedding_index.py` — `index_document_chunks`, **никогда не бросает**.
+- [x] `services/embedding_index.py` — `index_document_chunks`, **никогда не бросает**.
       Переиспользование по `content_hash` (повторная загрузка книги = $0), потолок
       `CURRICULUM_MAX_EMBEDDED_CHUNKS`, упавший батч помечает `failed` только свои
-- [ ] Врезка в `_run_pipeline`: статус `INDEXING` уже существует. **После** закрытия
+- [x] Врезка в `_run_pipeline`: статус `INDEXING` уже существует. **После** закрытия
       `transaction.atomic()`, до `QUALITY_CHECK` — сетевой вызов не должен держать
       транзакцию
-- [ ] `PgVectorDenseRetriever` под существующим Protocol + `get_dense_retriever()`,
+- [x] `PgVectorDenseRetriever` под существующим Protocol + `get_dense_retriever()`,
       который на SQLite отдаёт старый `InMemoryDenseRetriever` → `test_retrieval.py`
       не требует правок
-- [ ] `POST /api/curriculum/search/` — **векторы в ответе не возвращать**, политика
+- [x] `POST /api/curriculum/search/` — **векторы в ответе не возвращать**, политика
       доступа через существующий `apply_access_policy`, режим `solve`
-- [ ] `management/commands/curriculum_embed.py` с `--dry-run` (стоимость **до** траты)
+- [x] `management/commands/curriculum_embed.py`: dry-run по умолчанию, явный
+      `--execute`, `--max-usd`, смена модели и принудительный `--reindex-all`
 
 Стоимость: учебник 400 страниц ≈ 200k токенов ⇒ **~$0.004**. Потолки нужны не для
 экономии, а чтобы ограничить патологический документ.
 
 ---
 
-### Фаза 8 — Хвосты ⬜
+### Фаза 8 — Хвосты ✅
 
-- [ ] Structured logging событий ingestion (не логировать текст книги и векторы)
-- [ ] Покрытие из provenance: уникальные `section_path` в `CourseSourceBinding`
-- [ ] Лексический retriever на `to_tsvector('russian')` — **для русского учебника
-      морфология важнее эмбеддингов**, и это меньшая работа чем Фаза 7
-- [ ] Метрика расхода для `/api/curriculum/*` (сейчас `AIUsageContextMiddleware`
-      сторожит только `/api/ai/*`)
-- [ ] Стриминг загрузки вместо `upload.read()` (60 МБ в RAM × 8 тредов)
-- [ ] README + curl-примеры
+- [x] Structured NDJSON logging событий ingestion через allowlist: без текста,
+      email, filename/storage key, exception message и векторов
+- [x] Покрытие из provenance: distinct непустые `section_path` в
+      `CourseSourceBinding` против актуального TOC; дубли/unknown не раздувают
+      метрику, смена processing version помечает её stale
+- [x] Production lexical retriever на `to_tsvector('russian') @@ plainto_tsquery(...)`:
+      endpoint выбирает его на PostgreSQL, а выражение совпадает с функциональным
+      GIN-индексом; **для русского учебника морфология важнее exact-token fallback**
+- [x] Метрика и quota guard для AI-backed curriculum actions; Celery восстанавливает
+      `usage_scope`, поэтому OCR/embedding записываются на владельца документа.
+      Worker admission дополнительно сериализован через короткую per-user reservation
+      (`AIUsageQuotaState`, миграция `ai_engine/0009`), а отказ становится fenced
+      terminal `ai_usage_limit_exceeded`. Каждый OCR/embedding/planning/provider-call
+      также получает атомарный capacity lease до сетевого запроса; токены считаются
+      локально с запасом, а lease снимается только после записи usage-event
+- [x] Стриминг загрузки вместо `upload.read()`: Django спуливает >1 МБ на диск,
+      валидатор читает bounded chunks, Local storage пишет атомарно, S3/R2 —
+      через bounded `upload_fileobj`; PDF marker scan держит O(1) state, а EPUB
+      проверяет EOCD/central directory и absolute/per-entry unpacked caps до того,
+      как `ZipFile` создаст все `ZipInfo`; OCR-рендер ограничен по размеру страницы
+- [x] README + curl-примеры upload → ingest → status → search
 
-**Явно не делаем:** OCR-распознавание сканов, multimodal-таблицы, reranker как фича,
-Pinecone/Qdrant, hosted vector stores. Архитектура к ним готова: `ROLE_RERANKER` и
-`NoopReranker` на месте, будущий OCR встраивается в `parsers.py` и дальше идёт по тому
-же чанкеру, эмбеддеру и базе.
+**Явно не делаем:** multimodal-таблицы, reranker как отдельную фичу,
+Pinecone/Qdrant и hosted vector stores. OCR сканированных страниц уже встроен в
+общий пайплайн; `ROLE_RERANKER` и `NoopReranker` оставляют расширение ранжирования
+изолированным.
 
 ---
 

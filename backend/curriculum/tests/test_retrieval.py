@@ -1,9 +1,12 @@
 """Retrieval: изоляция пользователей, утечка решений, цитаты, injection."""
 
+from unittest import mock
+
 from django.test import SimpleTestCase
 
 from curriculum.retrieval import (
     KnowledgeRetrievalService,
+    PgRussianLexicalRetriever,
     RetrievableChunk,
     RetrievalPolicy,
     apply_access_policy,
@@ -260,3 +263,38 @@ class RetrievalServiceTests(SimpleTestCase):
         first = service.retrieve(user_email=OWNER, query="закон Ньютона", chunks=corpus)
         second = service.retrieve(user_email=OWNER, query="закон Ньютона", chunks=corpus)
         self.assertEqual(first.chunk_ids, second.chunk_ids)
+
+
+class PostgresLexicalRetrieverContractTests(SimpleTestCase):
+    def test_sql_is_limited_to_pre_authorized_candidates(self):
+        allowed = chunk("11111111-1111-1111-1111-111111111111", "закон Ньютона")
+        queryset = mock.MagicMock()
+        first_annotation = queryset.annotate.return_value
+        filtered_candidates = first_annotation.filter.return_value
+        ranked = filtered_candidates.annotate.return_value
+        ranked.order_by.return_value.values_list.return_value.__getitem__.return_value = [
+            (allowed.chunk_id, 0.7)
+        ]
+
+        from curriculum.models import KnowledgeChunk
+
+        with mock.patch.object(
+            KnowledgeChunk.objects, "filter", return_value=queryset
+        ) as filtered:
+            rows = PgRussianLexicalRetriever().search("Ньютон", [allowed], limit=5)
+
+        self.assertEqual(filtered.call_args.kwargs["pk__in"], [allowed.chunk_id])
+        self.assertIn("search_vector", queryset.annotate.call_args.kwargs)
+        self.assertIn("search_vector", first_annotation.filter.call_args.kwargs)
+        self.assertEqual(rows, [(allowed, 0.7)])
+
+    def test_default_service_uses_backend_specific_lexical_factory(self):
+        selected = mock.Mock()
+        with mock.patch(
+            "curriculum.retrieval.get_lexical_retriever",
+            return_value=selected,
+        ) as factory:
+            service = KnowledgeRetrievalService()
+
+        factory.assert_called_once_with()
+        self.assertIs(service.lexical, selected)
