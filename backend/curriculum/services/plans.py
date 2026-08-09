@@ -210,10 +210,11 @@ def retrieve_planning_context(
     chunks = [
         as_retrievable(chunk, document)
         for chunk in KnowledgeChunk.objects.filter(
-            document=document,
+            document_id=document.pk,
             processing_version=document.processing_version,
         )
-        .select_related("task")
+        # select_related("task") убран: задача в основной базе,
+        # а JOIN между базами невозможен — task_id лежит в самом чанке.
         .order_by("page_start", "id")
     ]
     document_ids = [str(document.pk)]
@@ -609,7 +610,7 @@ def _lock_planning_source_snapshot(
     chunks = {
         str(chunk.pk): chunk
         for chunk in KnowledgeChunk.objects.select_for_update().filter(
-            document=document,
+            document_id=document.pk,
             processing_version=processing_version,
             pk__in=valid_ids,
         )

@@ -16,6 +16,7 @@ from curriculum import storage as storage_module
 from curriculum.epub_extraction import EpubExtractionError, extract_epub
 from curriculum.models import Document, DocumentFile
 from curriculum.ocr import NullOcrProvider
+from curriculum.models import KnowledgeChunk
 from curriculum.parsers import (
     FORMAT_EPUB,
     FORMAT_PDF,
@@ -367,7 +368,7 @@ class EpubEndToEndIngestionTests(TestCase):
         self.assertEqual(document.ingestion_status, Document.Status.READY)
         self.assertEqual(document.page_count, 0)
         self.assertGreater(document.sections.count(), 0)
-        self.assertGreater(document.chunks.count(), 0)
+        self.assertGreater(KnowledgeChunk.objects.filter(document_id=document.pk).count(), 0)
         self.assertTrue(
-            all(chunk.page_start == 0 and chunk.page_end == 0 for chunk in document.chunks.all())
+            all(chunk.page_start == 0 and chunk.page_end == 0 for chunk in KnowledgeChunk.objects.filter(document_id=document.pk))
         )

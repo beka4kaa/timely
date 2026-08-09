@@ -52,8 +52,10 @@ def search_chunks(request: SearchRequest) -> RetrievalBundle:
 
     chunks = [
         as_retrievable(chunk, document_map[str(chunk.document_id)])
+        # `select_related("task")` убран: задача осталась в основной базе,
+        # а JOIN между базами невозможен. `task_id` и так лежит в самом
+        # чанке, и политике доступа этого достаточно.
         for chunk in KnowledgeChunk.objects.filter(document_id__in=document_map)
-        .select_related("task")
         .order_by("page_start", "id")
     ]
     if not chunks:

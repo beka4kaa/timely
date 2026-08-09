@@ -540,7 +540,7 @@ class SolutionLeakageTests(_ApiBase):
     def test_restricted_chunks_exist_but_are_filtered(self):
         """Проверяем, что фильтр реально работает, а не что данных нет."""
         restricted = KnowledgeChunk.objects.filter(
-            document=self.document,
+            document_id=self.document.pk,
             solution_visibility=KnowledgeChunk.SolutionVisibility.RESTRICTED,
         )
         self.assertGreater(restricted.count(), 0)

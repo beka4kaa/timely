@@ -90,7 +90,7 @@ class HappyPathTests(_IngestionBase):
             DocumentBlock.objects.filter(document=self.document).count(), 0
         )
         self.assertGreater(
-            KnowledgeChunk.objects.filter(document=self.document).count(), 0
+            KnowledgeChunk.objects.filter(document_id=self.document.pk).count(), 0
         )
 
     def test_page_count_reconciled_from_pdfium(self):
@@ -108,7 +108,7 @@ class HappyPathTests(_IngestionBase):
 
     def test_solution_chunks_are_restricted(self):
         restricted = KnowledgeChunk.objects.filter(
-            document=self.document,
+            document_id=self.document.pk,
             solution_visibility=KnowledgeChunk.SolutionVisibility.RESTRICTED,
         )
         self.assertEqual(restricted.count(), 2)
@@ -118,7 +118,7 @@ class HappyPathTests(_IngestionBase):
     def test_no_always_visible_chunk_contains_solution_text(self):
         """Ключевая гарантия безопасности на уровне БД."""
         visible = KnowledgeChunk.objects.filter(
-            document=self.document,
+            document_id=self.document.pk,
             solution_visibility=KnowledgeChunk.SolutionVisibility.ALWAYS,
         )
         for chunk in visible:
@@ -147,7 +147,7 @@ class HappyPathTests(_IngestionBase):
         )
 
     def test_chunk_links_are_set(self):
-        chunks = KnowledgeChunk.objects.filter(document=self.document).order_by(
+        chunks = KnowledgeChunk.objects.filter(document_id=self.document.pk).order_by(
             "page_start", "id"
         )
         self.assertTrue(any(c.next_id for c in chunks))
@@ -155,7 +155,7 @@ class HappyPathTests(_IngestionBase):
 
     def test_task_chunks_linked_to_extracted_task(self):
         task_chunks = KnowledgeChunk.objects.filter(
-            document=self.document, chunk_type="task"
+            document_id=self.document.pk, chunk_type="task"
         )
         self.assertGreater(task_chunks.count(), 0)
         for chunk in task_chunks:
@@ -169,7 +169,7 @@ class IdempotencyTests(_IngestionBase):
         counts = (
             DocumentPage.objects.filter(document=document).count(),
             DocumentBlock.objects.filter(document=document).count(),
-            KnowledgeChunk.objects.filter(document=document).count(),
+            KnowledgeChunk.objects.filter(document_id=document.pk).count(),
             ExtractedTask.objects.filter(document=document).count(),
         )
         second = ingest_document(document, ocr_provider=NullOcrProvider())
@@ -179,7 +179,7 @@ class IdempotencyTests(_IngestionBase):
             (
                 DocumentPage.objects.filter(document=document).count(),
                 DocumentBlock.objects.filter(document=document).count(),
-                KnowledgeChunk.objects.filter(document=document).count(),
+                KnowledgeChunk.objects.filter(document_id=document.pk).count(),
                 ExtractedTask.objects.filter(document=document).count(),
             ),
         )
@@ -224,7 +224,7 @@ class RunFencingTests(_IngestionBase):
         self.assertTrue(outcome.succeeded)
         scoped_ids = set(index_chunks.call_args.kwargs["chunk_ids"])
         current_ids = set(
-            KnowledgeChunk.objects.filter(document=document).values_list(
+            KnowledgeChunk.objects.filter(document_id=document.pk).values_list(
                 "pk", flat=True
             )
         )
