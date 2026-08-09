@@ -154,7 +154,7 @@ def _index(
 ) -> IndexOutcome:
     model = getattr(provider, "model", "") or provider.name
     outcome.model = model
-    pending_query = KnowledgeChunk.objects.filter(document=document)
+    pending_query = KnowledgeChunk.objects.filter(document_id=document.pk)
     if chunk_ids is not None:
         pending_query = pending_query.filter(pk__in=chunk_ids)
     if force_reindex:
@@ -319,7 +319,7 @@ def estimate_document_index(
 
     Нужна `--dry-run` команде: стоимость показывается ДО того, как потрачена.
     """
-    pending_query = KnowledgeChunk.objects.filter(document=document)
+    pending_query = KnowledgeChunk.objects.filter(document_id=document.pk)
     if not include_ready:
         if model:
             pending_query = pending_query.filter(

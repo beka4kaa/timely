@@ -72,7 +72,7 @@ def make_document(email="a@b.c") -> Document:
 
 def make_chunk(document, text, *, content_hash=None) -> KnowledgeChunk:
     return KnowledgeChunk.objects.create(
-        document=document,
+        document_id=document.pk,
         normalized_text=text,
         content_hash=content_hash or (text * 64)[:64],
     )
@@ -209,7 +209,7 @@ class IndexDocumentChunksTests(TestCase):
 
         self.assertEqual(outcome.embedded, 2)
         self.assertEqual(outcome.failed, 0)
-        rows = KnowledgeChunk.objects.filter(document=document)
+        rows = KnowledgeChunk.objects.filter(document_id=document.pk)
         self.assertTrue(all(r.embedding_status == "ready" for r in rows))
         self.assertTrue(all(r.embedded_at is not None for r in rows))
         self.assertTrue(all(r.embedding_model == "fake-model" for r in rows))
@@ -224,7 +224,7 @@ class IndexDocumentChunksTests(TestCase):
         self.assertEqual(outcome.failed, 0)
         self.assertIn("embedding_not_configured", outcome.warnings)
         self.assertEqual(
-            KnowledgeChunk.objects.get(document=document).embedding_status, "skipped"
+            KnowledgeChunk.objects.get(document_id=document.pk).embedding_status, "skipped"
         )
 
     @override_settings(CURRICULUM_MAX_EMBEDDED_CHUNKS=1)
@@ -334,7 +334,7 @@ class IndexDocumentChunksTests(TestCase):
         self.assertEqual(outcome.failed, 1)
         self.assertEqual(outcome.embedded, 0)
         self.assertEqual(
-            KnowledgeChunk.objects.get(document=document).embedding_status, "failed"
+            KnowledgeChunk.objects.get(document_id=document.pk).embedding_status, "failed"
         )
 
     def test_индексация_никогда_не_бросает(self):
@@ -411,7 +411,7 @@ class IndexDocumentChunksTests(TestCase):
         )
 
         self.assertIsNotNone(provider.replacement)
-        replacement = KnowledgeChunk.objects.get(document=document)
+        replacement = KnowledgeChunk.objects.get(document_id=document.pk)
         self.assertEqual(
             replacement.embedding_status,
             KnowledgeChunk.EmbeddingStatus.PENDING,
@@ -434,7 +434,7 @@ class EstimateTests(TestCase):
         self.assertTrue(
             all(
                 row.embedding_status == "pending"
-                for row in KnowledgeChunk.objects.filter(document=document)
+                for row in KnowledgeChunk.objects.filter(document_id=document.pk)
             )
         )
 
@@ -508,7 +508,7 @@ class EmbeddingCommandSafetyTests(TestCase):
         self.assertIn("dry-run", output.getvalue())
 
     def test_execute_уважает_жёсткий_бюджет(self):
-        chunk = self.document.chunks.get()
+        chunk = KnowledgeChunk.objects.get(document_id=self.document.pk)
         chunk.token_count = 1_000_000
         chunk.save(update_fields=["token_count"])
         with mock.patch(
@@ -546,7 +546,7 @@ class EmbeddingCommandSafetyTests(TestCase):
         self.assertEqual(index.call_args.args[0], self.document)
 
     def test_reindex_all_не_очищает_строки_до_вызова_провайдера(self):
-        chunk = self.document.chunks.get()
+        chunk = KnowledgeChunk.objects.get(document_id=self.document.pk)
         chunk.embedding = [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
         chunk.embedding_model = "old-model"
         chunk.embedding_status = KnowledgeChunk.EmbeddingStatus.READY
@@ -703,7 +703,7 @@ class SearchEndpointTests(TestCase):
     def test_решения_задач_поиском_не_отдаются(self):
         document = make_document("a@b.c")
         KnowledgeChunk.objects.create(
-            document=document,
+            document_id=document.pk,
             normalized_text="Решение задачи про движение",
             content_hash="s" * 64,
             chunk_type=KnowledgeChunk.ChunkType.SOLUTION,

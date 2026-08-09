@@ -628,7 +628,7 @@ def _replace_derived_rows(document: Document) -> None:
     удаляются первыми. Это и есть механизм идемпотентности — повторный прогон
     той же версии не плодит дубли.
     """
-    KnowledgeChunk.objects.filter(document=document).delete()
+    KnowledgeChunk.objects.filter(document_id=document.pk).delete()
     ExtractedSolution.objects.filter(document=document).delete()
     ExtractedTask.objects.filter(document=document).delete()
     DocumentBlock.objects.filter(document=document).delete()
@@ -778,6 +778,16 @@ def _write_tasks_and_solutions(
     return tasks, solutions
 
 
+def _row_pk(row):
+    """Первичный ключ строки или `None`.
+
+    Нужен там, где раньше присваивался объект: у чанков больше нет внешних
+    ключей на раздел и задачу — они живут в другой базе (см. `routers.py`), и
+    хранится только UUID.
+    """
+    return row.pk if row is not None else None
+
+
 def _write_chunks(
     document: Document,
     chunks,
@@ -796,8 +806,8 @@ def _write_chunks(
             task_row = task_rows.get(chunk.block_ids[0])
         created.append(
             KnowledgeChunk.objects.create(
-                document=document,
-                section=section_rows.get(chunk.section_path),
+                document_id=document.pk,
+                section_id=_row_pk(section_rows.get(chunk.section_path)),
                 chunk_type=chunk.chunk_type,
                 section_path=chunk.section_path,
                 page_start=chunk.page_start,
@@ -813,7 +823,7 @@ def _write_chunks(
                     else KnowledgeChunk.AccessScope.OWNER
                 ),
                 solution_visibility=chunk.solution_visibility,
-                task=task_row,
+                task_id=_row_pk(task_row),
             )
         )
 

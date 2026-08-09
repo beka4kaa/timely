@@ -128,6 +128,44 @@ DATABASES = {
     )
 }
 
+# Отдельная база под векторы (`curriculum.KnowledgeChunk`).
+#
+# Зачем: рост базы идёт почти целиком в чанках — 897 штук это 23 МБ таблицы плюс
+# 7 МБ HNSW и 5 МБ русского FTS, около 40 МБ на учебник. Управляемый аддон
+# Northflank отдаёт 6 ГБ, и на сотне книг место кончится, а расширение стоит
+# денег. Векторы уезжают на своё железо.
+#
+# ПУСТАЯ переменная — это не «сломано», а однобазовый режим: `vector_db`
+# становится копией `default`, роутер молчит, и всё работает как раньше. Иначе
+# каждый прогон тестов и любая локальная разработка требовали бы включённого
+# домашнего ПК. Тот же приём в проекте уже применён для S3 и эмбеддингов.
+VECTOR_DB_URL = os.getenv("VECTOR_DB_URL", "").strip()
+VECTOR_DB_ALIAS = "vector_db"
+VECTOR_DB_CONFIGURED = bool(VECTOR_DB_URL)
+
+# Под тест-раннером вторая база выключается ВСЕГДА — четвёртый рубильник того же
+# рода, что `CURRICULUM_EMBEDDINGS_ENABLED`, `CURRICULUM_S3_ENABLED` и обнуление
+# `CELERY_BROKER_URL`. Иначе прогон тестов уходит в боевую векторную базу на
+# домашнем ПК: медленно, по сети через DERP-релей и с записью мусора в реальные
+# данные. Тесты роутера включают флаг обратно через `@override_settings`.
+if "test" in sys.argv:
+    VECTOR_DB_CONFIGURED = False
+
+if VECTOR_DB_CONFIGURED:
+    DATABASES[VECTOR_DB_ALIAS] = dj_database_url.parse(
+        VECTOR_DB_URL, conn_max_age=600
+    )
+else:
+    # Ссылка на ту же конфигурацию, а не на тот же объект: Django дописывает в
+    # словарь свои ключи (`TEST`, `AUTOCOMMIT`, `TIME_ZONE`), и общий объект
+    # означал бы, что настройки двух алиасов молча меняют друг друга.
+    DATABASES[VECTOR_DB_ALIAS] = dict(DATABASES["default"])
+    # Тестовый раннер иначе создаёт ВТОРУЮ тестовую базу и гоняет миграции
+    # дважды. `MIRROR` говорит Django, что это то же самое соединение.
+    DATABASES[VECTOR_DB_ALIAS]["TEST"] = {**DATABASES["default"].get("TEST", {}), "MIRROR": "default"}
+
+DATABASE_ROUTERS = ["curriculum.routers.VectorDatabaseRouter"]
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

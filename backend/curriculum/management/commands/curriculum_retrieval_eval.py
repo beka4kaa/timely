@@ -63,8 +63,9 @@ class Command(BaseCommand):
 
         chunks = [
             as_retrievable(chunk, document)
-            for chunk in KnowledgeChunk.objects.filter(document=document)
-            .select_related("task")
+            for chunk in KnowledgeChunk.objects.filter(document_id=document.pk)
+            # select_related("task") убран: задача в основной базе,
+            # а JOIN между базами невозможен — task_id лежит в самом чанке.
             .order_by("page_start", "id")
         ]
         candidates = apply_access_policy(

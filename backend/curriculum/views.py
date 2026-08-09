@@ -315,7 +315,9 @@ class DocumentViewSet(_UserScopedViewSet):
             "sections": document.sections.count(),
             "blocks": document.blocks.count(),
             "tasks": document.tasks.count(),
-            "chunks": document.chunks.count(),
+            # Обратной связи `document.chunks` больше нет: чанки в другой
+            # базе. Считаем явным запросом.
+            "chunks": KnowledgeChunk.objects.filter(document_id=document.pk).count(),
         }
         return Response(body)
 
@@ -343,7 +345,7 @@ class DocumentViewSet(_UserScopedViewSet):
         """Фрагменты документа с учётом политики доступа к решениям."""
         document = self.get_object()
         policy = RetrievalPolicy(mode=STUDENT_READ_MODE)
-        rows = KnowledgeChunk.objects.filter(document=document)
+        rows = KnowledgeChunk.objects.filter(document_id=document.pk)
         if not policy.allows_solutions:
             rows = rows.exclude(
                 solution_visibility=KnowledgeChunk.SolutionVisibility.RESTRICTED

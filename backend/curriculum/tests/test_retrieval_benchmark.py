@@ -68,8 +68,8 @@ class RetrievalBenchmarkTests(TestCase):
             order_index=0,
         )
         KnowledgeChunk.objects.create(
-            document=document,
-            section=section,
+            document_id=document.pk,
+            section_id=section.pk,
             section_path="1",
             normalized_text="Второй закон Ньютона",
             content_hash="h" * 64,

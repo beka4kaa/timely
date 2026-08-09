@@ -618,16 +618,24 @@ class KnowledgeChunk(models.Model):
         FAILED = "failed", "Не удалось"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="chunks"
-    )
-    section = models.ForeignKey(
-        DocumentSection,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="chunks",
-    )
+
+    # ── Ссылки в ДРУГУЮ базу ─────────────────────────────────────────────────
+    #
+    # Это UUID без внешнего ключа, и не по небрежности: таблица чанков живёт в
+    # отдельной базе на своём железе (см. `curriculum/routers.py`), а Django не
+    # поддерживает связи между базами. Внешний ключ здесь означал бы, что
+    # `chunk.document` идёт искать таблицу документов в векторной базе, где её
+    # нет.
+    #
+    # Имена полей оставлены такими же, какие Django давал колонкам FK
+    # (`document_id`), поэтому запросы вида `filter(document_id__in=...)`
+    # продолжают работать без правок.
+    #
+    # Целостность теперь держит не база, а сигнал в `curriculum/signals.py`:
+    # удаление документа уносит его чанки. Раньше это делал каскад.
+    document_id = models.UUIDField(db_index=True)
+    section_id = models.UUIDField(null=True, blank=True, db_index=True)
+
     chunk_type = models.CharField(
         max_length=16, choices=ChunkType.choices, default=ChunkType.PROSE
     )
@@ -649,13 +657,8 @@ class KnowledgeChunk(models.Model):
     )
 
     # Связь с задачей/решением — чтобы политика могла отсечь решение по task_id.
-    task = models.ForeignKey(
-        ExtractedTask,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="chunks",
-    )
+    # Тоже UUID без внешнего ключа: задача осталась в основной базе.
+    task_id = models.UUIDField(null=True, blank=True, db_index=True)
 
     content_hash = models.CharField(max_length=64, db_index=True)
     processing_version = models.CharField(max_length=16, default=PROCESSING_VERSION)
@@ -691,13 +694,26 @@ class KnowledgeChunk(models.Model):
 
     class Meta:
         ordering = ["page_start", "id"]
+        # Имена индексов закреплены явно. Автогенерируемое имя содержит хеш от
+        # имён полей, и переименование `document` → `document_id` заставило бы
+        # Django пересоздать индексы, которые лежат на тех же самых колонках.
+        # Здесь стоят имена, уже существующие в боевой базе.
         indexes = [
-            models.Index(fields=["document", "chunk_type"]),
-            models.Index(fields=["document", "page_start"]),
-            models.Index(fields=["content_hash"]),
+            models.Index(
+                fields=["document_id", "chunk_type"],
+                name="curriculum__documen_3069a9_idx",
+            ),
+            models.Index(
+                fields=["document_id", "page_start"],
+                name="curriculum__documen_161724_idx",
+            ),
+            models.Index(fields=["content_hash"], name="curriculum__content_88b461_idx"),
             # Выбор очереди на индексацию: «чанки этого документа, ещё не
             # посчитанные».
-            models.Index(fields=["document", "embedding_status"]),
+            models.Index(
+                fields=["document_id", "embedding_status"],
+                name="curriculum__documen_65c710_idx",
+            ),
         ]
 
 

@@ -94,7 +94,7 @@ class DocumentTests(TestCase):
             task=task, document=document, body="Решение", page_start=200
         )
         KnowledgeChunk.objects.create(
-            document=document, normalized_text="Текст", content_hash="b" * 64
+            document_id=document.pk, normalized_text="Текст", content_hash="b" * 64
         )
         DocumentFile.objects.create(
             document=document,
@@ -137,7 +137,7 @@ class TaskSolutionSeparationTests(TestCase):
     def test_solution_chunk_is_restricted_by_default_flag(self):
         document = Document.objects.create(user_email=OWNER, title="Задачник")
         chunk = KnowledgeChunk.objects.create(
-            document=document,
+            document_id=document.pk,
             chunk_type=KnowledgeChunk.ChunkType.SOLUTION,
             normalized_text="Решение",
             content_hash="d" * 64,

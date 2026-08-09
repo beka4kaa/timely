@@ -401,7 +401,7 @@ class PlanGenerationTests(_PlanBase):
             def review_plan(self, plan, context):
                 # Между validation и финальной транзакцией ingestion уже успел
                 # заменить строки и опубликовать новую processing version.
-                KnowledgeChunk.objects.filter(document=document).delete()
+                KnowledgeChunk.objects.filter(document_id=document.pk).delete()
                 Document.objects.filter(pk=document.pk).update(
                     ingestion_status=Document.Status.READY,
                     processing_version="future",
@@ -425,7 +425,7 @@ class PlanGenerationTests(_PlanBase):
             def review_plan(self, plan, context):
                 # Даже если внешний код не сменил status/version, исчезновение
                 # любого chunk из validated allowlist обязано разорвать CAS.
-                KnowledgeChunk.objects.filter(document=document).delete()
+                KnowledgeChunk.objects.filter(document_id=document.pk).delete()
                 return super().review_plan(plan, context)
 
         before_plans = CoursePlan.objects.count()
