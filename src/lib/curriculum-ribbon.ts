@@ -1,0 +1,391 @@
+// Геометрия «корешка книги»: какие куски учебника попали в программу.
+//
+// Отдельный модуль, а не дополнение к `curriculum-progress.ts`: там прогресс
+// обработки и оформление цитат, здесь — другая тема со своей арифметикой.
+//
+// Объединяющая идея: оба режима (страницы и разделы) — это упорядоченная ось из
+// N ВКЛЮЧИТЕЛЬНЫХ слотов. В режиме страниц слот i — это страница i+1, в режиме
+// разделов — i-й раздел по `order_index`. Всё ниже по течению работает со
+// слотами и про режим не спрашивает; компонент ветвится ровно в одном месте —
+// в подписи («страниц» или «разделов»).
+//
+// Главная ловушка входных данных: `page_start`/`page_end` на бэкенде —
+// `PositiveIntegerField(default=0)`, а НЕ nullable. «Страниц нет» приезжает
+// нулём. Поэтому `null`, `undefined` и `0` обязаны считаться одним и тем же:
+// иначе у каждого документа без страниц вырастает фантомный отрезок на нулевой
+// странице, а ветка «страниц нет — рисуем по разделам» не срабатывает никогда.
+
+export interface RibbonSource {
+  section_path?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+}
+
+export interface RibbonTopicInput {
+  id: string;
+  /** Порядковый номер модуля, 0-based. Задаёт тон заливки. */
+  moduleIndex: number;
+  sources: readonly RibbonSource[];
+}
+
+export interface RibbonSectionInput {
+  path?: string | null;
+  order_index: number;
+}
+
+export interface RibbonInput {
+  /** `Document.page_count`. Ноль и мусор считаются «неизвестно». */
+  pageCount?: number | null;
+  topics: readonly RibbonTopicInput[];
+  /** Нужны только для фолбэка, когда страниц нет ни у одной цитаты (EPUB). */
+  sections?: readonly RibbonSectionInput[];
+}
+
+export interface RibbonSegment {
+  key: string;
+  topicId: string;
+  moduleIndex: number;
+  /** 1-based включительные слоты — то, из чего считаются проценты. */
+  startUnit: number;
+  endUnit: number;
+  startPct: number;
+  widthPct: number;
+  /** Дорожка 0…2: пересекающиеся отрезки разных тем не должны наезжать. */
+  lane: number;
+}
+
+export interface RibbonBracket {
+  moduleIndex: number;
+  startPct: number;
+  widthPct: number;
+}
+
+export interface RibbonGap {
+  startPct: number;
+  widthPct: number;
+}
+
+export type RibbonScale = "pages" | "sections";
+
+export interface RibbonModel {
+  scale: RibbonScale;
+  /** Длина оси в слотах. Ноль означает «рисовать нечего». */
+  unitCount: number;
+  segments: RibbonSegment[];
+  brackets: RibbonBracket[];
+  gaps: RibbonGap[];
+  claimedUnits: number;
+  totalUnits: number;
+  unsourcedTopicIds: string[];
+  /** Ось пришлось растянуть: цитаты выходят за `page_count`. */
+  axisExtended: boolean;
+  /** Минимальная видимая ширина отрезка в процентах. */
+  minWidthPct: number;
+  laneCount: number;
+}
+
+/** Сколько дорожек максимум. Больше трёх полоса перестаёт читаться. */
+export const MAX_LANES = 3;
+
+/** Ниже этого отрезок физически не виден даже на широком экране. */
+const MIN_VISIBLE_PCT = 0.95;
+
+interface Span {
+  topicId: string;
+  moduleIndex: number;
+  startUnit: number;
+  endUnit: number;
+}
+
+const EMPTY: RibbonModel = {
+  scale: "pages",
+  unitCount: 0,
+  segments: [],
+  brackets: [],
+  gaps: [],
+  claimedUnits: 0,
+  totalUnits: 0,
+  unsourcedTopicIds: [],
+  axisExtended: false,
+  minWidthPct: 0,
+  laneCount: 0,
+};
+
+/**
+ * Номер страницы или ноль.
+ *
+ * Ноль здесь — это «страницы нет», а не «страница №0»: см. комментарий о
+ * `default=0` в шапке модуля.
+ */
+function pageNumber(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  const rounded = Math.floor(value);
+  return rounded > 0 ? rounded : 0;
+}
+
+/** Пара страниц одной цитаты в вид «начало ≤ конец», либо null. */
+function pageSpan(source: RibbonSource): [number, number] | null {
+  const from = pageNumber(source.page_start);
+  const to = pageNumber(source.page_end);
+  if (from === 0 && to === 0) return null;
+  if (from === 0) return [to, to];
+  if (to === 0) return [from, from];
+  return from <= to ? [from, to] : [to, from];
+}
+
+/**
+ * Схлопывание отрезков ОДНОЙ темы.
+ *
+ * Соседние тоже сливаются (`next.start <= cur.end + 1`): «стр. 12–14» и
+ * «стр. 15» — это один кусок книги, и рисовать между ними щель значит соврать.
+ * Между разными темами схлопывания нет: пересечение тем — это факт, который
+ * полоса обязана показать.
+ */
+function mergeSpans(spans: [number, number][]): [number, number][] {
+  if (spans.length === 0) return [];
+  const sorted = [...spans].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const merged: [number, number][] = [sorted[0]];
+  for (const [start, end] of sorted.slice(1)) {
+    const current = merged[merged.length - 1];
+    if (start <= current[1] + 1) {
+      current[1] = Math.max(current[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Слот раздела по `section_path`.
+ *
+ * Точное совпадение, иначе самый длинный предок: цитата на «1.2.3» при наличии
+ * только «1.2» должна попасть в «1.2», а не потеряться.
+ */
+function sectionSlot(path: string, slots: Map<string, number>): number | null {
+  const exact = slots.get(path);
+  if (exact !== undefined) return exact;
+
+  let probe = path;
+  while (probe.includes(".")) {
+    probe = probe.slice(0, probe.lastIndexOf("."));
+    const ancestor = slots.get(probe);
+    if (ancestor !== undefined) return ancestor;
+  }
+  return null;
+}
+
+/** Отрезки по страницам. Пусто — значит, страниц нет ни у одной цитаты. */
+function pageSpansFor(topics: readonly RibbonTopicInput[]): Map<string, Span[]> {
+  const byTopic = new Map<string, Span[]>();
+  for (const topic of topics) {
+    const raw: [number, number][] = [];
+    for (const source of topic.sources ?? []) {
+      const span = pageSpan(source);
+      if (span) raw.push(span);
+    }
+    if (raw.length === 0) continue;
+    byTopic.set(
+      topic.id,
+      mergeSpans(raw).map(([startUnit, endUnit]) => ({
+        topicId: topic.id,
+        moduleIndex: topic.moduleIndex,
+        startUnit,
+        endUnit,
+      })),
+    );
+  }
+  return byTopic;
+}
+
+/** Отрезки по разделам — фолбэк для источников без страниц. */
+function sectionSpansFor(
+  topics: readonly RibbonTopicInput[],
+  sections: readonly RibbonSectionInput[],
+): Map<string, Span[]> {
+  const ordered = [...sections].sort((a, b) => a.order_index - b.order_index);
+  const slots = new Map<string, number>();
+  ordered.forEach((section, index) => {
+    const path = (section.path || "").trim();
+    // Первый выигрывает: дубли путей в книге встречаются, и брать последний
+    // значит сдвигать цитату в конец без причины.
+    if (path && !slots.has(path)) slots.set(path, index + 1);
+  });
+
+  const byTopic = new Map<string, Span[]>();
+  for (const topic of topics) {
+    const raw: [number, number][] = [];
+    for (const source of topic.sources ?? []) {
+      const path = (source.section_path || "").trim();
+      if (!path) continue;
+      const slot = sectionSlot(path, slots);
+      if (slot !== null) raw.push([slot, slot]);
+    }
+    if (raw.length === 0) continue;
+    byTopic.set(
+      topic.id,
+      mergeSpans(raw).map(([startUnit, endUnit]) => ({
+        topicId: topic.id,
+        moduleIndex: topic.moduleIndex,
+        startUnit,
+        endUnit,
+      })),
+    );
+  }
+  return byTopic;
+}
+
+/**
+ * Раскладка по дорожкам: жадно, интервал занимает первую свободную.
+ *
+ * Порядок сортировки — полный (`startUnit`, `endUnit`, `moduleIndex`,
+ * `topicId`), поэтому результат детерминирован и не зависит от порядка
+ * итерации `Map`.
+ */
+function assignLanes(spans: Span[]): RibbonSegment[] {
+  const sorted = [...spans].sort(
+    (a, b) =>
+      a.startUnit - b.startUnit ||
+      a.endUnit - b.endUnit ||
+      a.moduleIndex - b.moduleIndex ||
+      (a.topicId < b.topicId ? -1 : a.topicId > b.topicId ? 1 : 0),
+  );
+
+  const laneEnds: number[] = [];
+  return sorted.map((span) => {
+    let lane = laneEnds.findIndex((end) => end < span.startUnit);
+    if (lane === -1) {
+      if (laneEnds.length < MAX_LANES) {
+        lane = laneEnds.length;
+        laneEnds.push(span.endUnit);
+      } else {
+        // Дорожек больше трёх не заводим: кладём в ту, что освободится раньше
+        // всех. Наложение здесь честнее, чем полоса высотой в пол-экрана.
+        lane = laneEnds.indexOf(Math.min(...laneEnds));
+        laneEnds[lane] = Math.max(laneEnds[lane], span.endUnit);
+      }
+    } else {
+      laneEnds[lane] = span.endUnit;
+    }
+    return {
+      key: `${span.topicId}:${span.startUnit}-${span.endUnit}`,
+      topicId: span.topicId,
+      moduleIndex: span.moduleIndex,
+      startUnit: span.startUnit,
+      endUnit: span.endUnit,
+      startPct: 0,
+      widthPct: 0,
+      lane,
+    };
+  });
+}
+
+/** Объединение занятых слотов — для «сколько страниц вошло» и для пропусков. */
+function unionOf(spans: Span[]): [number, number][] {
+  return mergeSpans(spans.map((span) => [span.startUnit, span.endUnit]));
+}
+
+export function buildRibbon(input: RibbonInput): RibbonModel {
+  const topics = input.topics ?? [];
+  if (topics.length === 0) return { ...EMPTY };
+
+  const byPage = pageSpansFor(topics);
+  const usePages = byPage.size > 0;
+  const byTopic = usePages
+    ? byPage
+    : sectionSpansFor(topics, input.sections ?? []);
+
+  const spans: Span[] = [];
+  const unsourcedTopicIds: string[] = [];
+  for (const topic of topics) {
+    const own = byTopic.get(topic.id);
+    if (!own || own.length === 0) {
+      unsourcedTopicIds.push(topic.id);
+      continue;
+    }
+    spans.push(...own);
+  }
+
+  const declaredCount = usePages ? pageNumber(input.pageCount) : (input.sections ?? []).length;
+  const maxUnit = spans.reduce((max, span) => Math.max(max, span.endUnit), 0);
+  // Ось РАСТЁТ, а не обрезает. Обрезать цитату по протухшему `page_count`
+  // значит молча выбросить провенанс — ровно то, ради чего эта полоса есть.
+  const unitCount = Math.max(declaredCount, maxUnit);
+
+  if (unitCount <= 0) {
+    return {
+      ...EMPTY,
+      scale: usePages ? "pages" : "sections",
+      unsourcedTopicIds,
+    };
+  }
+
+  const toPct = (startUnit: number, endUnit: number) => ({
+    startPct: ((startUnit - 1) / unitCount) * 100,
+    // Слот — интервал, а не точка: на двухстраничной книге страница 1 обязана
+    // занять половину полосы, а не нулевую ширину.
+    widthPct: ((endUnit - startUnit + 1) / unitCount) * 100,
+  });
+
+  const segments = assignLanes(spans).map((segment) => ({
+    ...segment,
+    ...toPct(segment.startUnit, segment.endUnit),
+  }));
+
+  const union = unionOf(spans);
+  const claimedUnits = union.reduce((sum, [start, end]) => sum + (end - start + 1), 0);
+
+  const gaps: RibbonGap[] = [];
+  let cursor = 1;
+  for (const [start, end] of union) {
+    if (start > cursor) gaps.push(toPct(cursor, start - 1));
+    cursor = end + 1;
+  }
+  if (cursor <= unitCount) gaps.push(toPct(cursor, unitCount));
+
+  const byModule = new Map<number, [number, number]>();
+  for (const span of spans) {
+    const current = byModule.get(span.moduleIndex);
+    if (!current) {
+      byModule.set(span.moduleIndex, [span.startUnit, span.endUnit]);
+    } else {
+      current[0] = Math.min(current[0], span.startUnit);
+      current[1] = Math.max(current[1], span.endUnit);
+    }
+  }
+  // `Array.from`, а не spread: цель компиляции ниже es2015, и итератор `Map`
+  // там не разворачивается.
+  const brackets: RibbonBracket[] = Array.from(byModule.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([moduleIndex, [start, end]]) => ({
+      moduleIndex,
+      ...toPct(start, end),
+    }));
+
+  return {
+    scale: usePages ? "pages" : "sections",
+    unitCount,
+    segments,
+    brackets,
+    gaps,
+    claimedUnits,
+    totalUnits: unitCount,
+    unsourcedTopicIds,
+    axisExtended: maxUnit > declaredCount,
+    // На книге в 600 страниц один слот — это 0.17%: в него не попасть курсором.
+    // Геометрия остаётся честной, зону наведения расширяет компонент.
+    minWidthPct: Math.max(100 / unitCount, MIN_VISIBLE_PCT),
+    laneCount: segments.reduce((max, segment) => Math.max(max, segment.lane + 1), 0),
+  };
+}
+
+/**
+ * Подпись покрытия: «Страниц в программе: 34 из 212».
+ *
+ * Двоеточие вместо «34 страницы из 212» — чтобы обойти склонение числительных
+ * без отдельного хелпера, а не потому, что так короче.
+ */
+export function coverageCaption(model: RibbonModel): string {
+  const noun = model.scale === "pages" ? "Страниц" : "Разделов";
+  return `${noun} в программе: ${model.claimedUnits} из ${model.totalUnits}`;
+}
