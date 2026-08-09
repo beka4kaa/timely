@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from django.db import transaction
@@ -61,6 +61,7 @@ from ..retrieval import (
     RetrievalPolicy,
     apply_access_policy,
 )
+from .chunk_view import as_retrievable
 
 logger = logging.getLogger(__name__)
 
@@ -94,24 +95,6 @@ class PlanGenerationOutcome:
 
 
 # ───────────────────────── Подготовка входа модели ───────────────────────────
-
-
-def _as_retrievable(chunk: KnowledgeChunk, document: Document) -> RetrievableChunk:
-    return RetrievableChunk(
-        chunk_id=str(chunk.pk),
-        document_id=str(document.pk),
-        owner_email=document.user_email,
-        chunk_type=chunk.chunk_type,
-        text=chunk.normalized_text,
-        section_path=chunk.section_path,
-        page_start=chunk.page_start,
-        page_end=chunk.page_end,
-        document_title=document.title,
-        access_scope=chunk.access_scope,
-        solution_visibility=chunk.solution_visibility,
-        language=document.language,
-        task_id=str(chunk.task_id) if chunk.task_id else None,
-    )
 
 
 def retrieve_planning_context(
@@ -150,7 +133,7 @@ def retrieve_planning_context(
         if part
     )
     chunks = [
-        _as_retrievable(chunk, document)
+        as_retrievable(chunk, document)
         for chunk in KnowledgeChunk.objects.filter(document=document)
         .select_related("task")
         .order_by("page_start", "id")
@@ -363,6 +346,58 @@ def normalize_enum_fields(result) -> None:
 # ──────────────────────────────── Генерация ──────────────────────────────────
 
 
+def _call_planner(planner, request: CoursePlanningRequest, bundle, *, goal):
+    """Один вызов планировщика с нормализацией enum'ов и валидацией."""
+    try:
+        result = planner.generate_plan(request, bundle)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Планировщик отказал для цели %s: %s", goal.pk, exc)
+        raise PlanRejected(None, f"Планировщик недоступен: {exc}") from exc
+
+    normalize_enum_fields(result)
+    return result, validate_plan(result, request)
+
+
+def _plan_with_one_repair(planner, request: CoursePlanningRequest, bundle, *, goal):
+    """Генерация с ОДНОЙ попыткой починки при блокерах валидатора.
+
+    Зачем: живая модель регулярно спотыкается на мелочи — забытый `objective`,
+    `estimated_minutes: 0`, ссылка на несуществующий chunk_id. Любая из них —
+    блокер, а блокер означает, что не сохраняется ничего и ученик получает 422.
+    Один повторный вызов со списком претензий превращает «работает через раз» в
+    «работает».
+
+    Попытка ровно одна: вторая почти не добавляет успеха, зато удваивает счёт и
+    задержку. Если и она не прошла — отдаём отчёт ВТОРОЙ попытки, он свежее.
+    """
+    result, report = _call_planner(planner, request, bundle, goal=goal)
+    if report.is_valid:
+        return result, report, False
+
+    issues = tuple(
+        f"{issue.code}: {issue.message}" for issue in report.issues if issue.is_blocker
+    )
+    logger.info(
+        "План для цели %s забракован валидатором (%s), пробуем починить",
+        goal.pk,
+        ", ".join(sorted({i.code for i in report.issues if i.is_blocker})),
+    )
+
+    repair_request = replace(request, repair_issues=issues)
+    try:
+        repaired, repaired_report = _call_planner(
+            planner, repair_request, bundle, goal=goal
+        )
+    except PlanRejected:
+        # Планировщик отвалился на повторе — возвращаем результат первой попытки,
+        # чтобы ученик увидел претензии валидатора, а не «модель недоступна».
+        return result, report, True
+
+    if repaired_report.is_valid:
+        return repaired, repaired_report, True
+    return repaired, repaired_report, True
+
+
 def generate_plan(
     goal: LearningGoal,
     document: Document,
@@ -387,14 +422,9 @@ def generate_plan(
     request = build_planning_request(goal, document, bundle)
     planner = planning_provider or get_planning_provider()
 
-    try:
-        result = planner.generate_plan(request, bundle)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Планировщик отказал для цели %s: %s", goal.pk, exc)
-        raise PlanRejected(None, f"Планировщик недоступен: {exc}") from exc
-
-    normalize_enum_fields(result)
-    report = validate_plan(result, request)
+    result, report, repair_attempted = _plan_with_one_repair(
+        planner, request, bundle, goal=goal
+    )
     if not report.is_valid:
         # Блокеры — стоп. Ничего не сохраняем: план со ссылками на выдуманные
         # фрагменты или с циклом в зависимостях в БД попасть не должен.
@@ -442,6 +472,10 @@ def generate_plan(
     warning_codes = sorted(
         {issue.code for issue in report.issues if not issue.is_blocker}
     )
+    if repair_attempted:
+        # Починка не должна быть невидимой: два вызова модели вместо одного видно
+        # в счёте, и причина этого должна быть прослеживаемой.
+        warning_codes.append("plan_repaired_after_validation")
     return PlanGenerationOutcome(
         plan=plan,
         report=report,

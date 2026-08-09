@@ -76,6 +76,11 @@ class CoursePlanningRequest:
     constraints: PlanningConstraints = field(default_factory=PlanningConstraints)
     schema_version: str = "1.0.0"
     prompt_version: str = PROMPT_VERSION
+    # Претензии валидатора к ПРЕДЫДУЩЕЙ попытке. Заполняется только при повторном
+    # вызове планировщика и в `input_hash` не входит: хеш отвечает на вопрос
+    # «одинаковый ли вход у моделей в benchmark», а починка — свойство попытки,
+    # а не входных данных.
+    repair_issues: tuple[str, ...] = ()
 
     def input_hash(self) -> str:
         """Стабильный хеш входа.
@@ -84,7 +89,9 @@ class CoursePlanningRequest:
         сравнение хешей — единственный способ это гарантировать после того, как
         данные прошли через сериализацию.
         """
-        payload = json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+        data = asdict(self)
+        data.pop("repair_issues", None)
+        payload = json.dumps(data, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

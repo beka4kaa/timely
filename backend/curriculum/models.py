@@ -27,11 +27,26 @@ from __future__ import annotations
 import uuid
 
 from django.db import models
+from pgvector.django import VectorField
+
+# Размерность эмбеддинга. Константа, а НЕ переменная окружения: она попадает в
+# миграцию (`vector(1536)`), и вычислять её из окружения значило бы получать
+# разную схему на разных машинах. Смена размерности — это отдельная миграция
+# плюс переиндексация всех чанков, а не правка конфига.
+#
+# 1536 — размерность `text-embedding-3-small` и совместимых. Модель с другой
+# размерностью подключать нельзя, пока не сделана миграция: провайдер это
+# проверяет и отказывается писать вектор не той длины.
+EMBEDDING_DIMENSIONS = 1536
 
 # Версия обработки. Меняется при любом изменении алгоритмов извлечения или
 # чанкинга: по ней отличают данные, построенные разными версиями пайплайна, и
 # решают, нужно ли переиндексировать документ.
-PROCESSING_VERSION = "1.0.0"
+# 1.1.0 — настоящий токенайзер (cl100k_base) вместо эвристики и overlap между
+# соседними фрагментами прозы. И то и другое меняет границы фрагментов, а
+# значит и `content_hash`, поэтому версия обязана вырасти: иначе переиндексация
+# молча переиспользовала бы старые фрагменты под новыми правилами.
+PROCESSING_VERSION = "1.1.0"
 
 # Версия схемы обмена с моделью-планировщиком. Отдельна от PROCESSING_VERSION:
 # промпт может измениться без переобработки книг.
@@ -453,6 +468,12 @@ class IngestionJob(TimestampedModel):
     error_code = models.CharField(max_length=64, blank=True, default="")
     # Текст для пользователя: без путей, стектрейсов и содержимого документа.
     error_message = models.CharField(max_length=400, blank=True, default="")
+    # Предупреждения обработки (`ocr_not_configured`, `ocr_limited_to_N_of_M_pages`).
+    # Хранить обязательно: при асинхронном запуске ответ на POST уходит раньше, чем
+    # они появятся, и без этого поля пользователь их никогда не увидит.
+    warnings = models.JSONField(default=list, blank=True)
+    # Идентификатор задачи Celery. Пусто при синхронном запуске.
+    celery_task_id = models.CharField(max_length=64, blank=True, default="")
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -574,6 +595,15 @@ class KnowledgeChunk(models.Model):
         # Решение — только по явной политике режима.
         RESTRICTED = "restricted", "По политике режима"
 
+    class EmbeddingStatus(models.TextChoices):
+        PENDING = "pending", "Ждёт вектора"
+        READY = "ready", "Вектор посчитан"
+        # Провайдер не настроен или чанк отброшен потолком: это НЕ ошибка, и
+        # повторять такой чанк при каждом прогоне бессмысленно.
+        SKIPPED = "skipped", "Пропущен"
+        # Батч упал. Помечаются только свои чанки, чужие остаются pending.
+        FAILED = "failed", "Не удалось"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(
         Document, on_delete=models.CASCADE, related_name="chunks"
@@ -624,7 +654,26 @@ class KnowledgeChunk(models.Model):
         choices=SolutionVisibility.choices,
         default=SolutionVisibility.ALWAYS,
     )
-    embedding_status = models.CharField(max_length=16, default="pending")
+    # ── Эмбеддинг ────────────────────────────────────────────────────────────
+    #
+    # `embedding_status` был мёртвым полем: `CharField` без choices и без
+    # индекса, который никто не выставлял. Теперь по нему выбираются чанки на
+    # индексацию, поэтому у него есть и то и другое.
+    embedding_status = models.CharField(
+        max_length=16,
+        choices=EmbeddingStatus.choices,
+        default=EmbeddingStatus.PENDING,
+        db_index=True,
+    )
+    # Колонка существует на всех бэкендах, а векторными операторами и HNSW
+    # пользуется только Postgres — см. гейт в миграции. На SQLite (тесты) она
+    # остаётся обычной колонкой, и плотный поиск туда не ходит.
+    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
+    # Какой моделью посчитан вектор. Без этого нельзя понять, можно ли сравнивать
+    # два чанка между собой: векторы разных моделей несопоставимы.
+    embedding_model = models.CharField(max_length=120, blank=True, default="")
+    embedded_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -633,6 +682,9 @@ class KnowledgeChunk(models.Model):
             models.Index(fields=["document", "chunk_type"]),
             models.Index(fields=["document", "page_start"]),
             models.Index(fields=["content_hash"]),
+            # Выбор очереди на индексацию: «чанки этого документа, ещё не
+            # посчитанные».
+            models.Index(fields=["document", "embedding_status"]),
         ]
 
 

@@ -350,10 +350,10 @@ class SimpleLexicalRetriever:
 class InMemoryDenseRetriever:
     """Заглушка плотного поиска на пересечении множеств термов.
 
-    Это НЕ эмуляция качества эмбеддингов и не заявка на production-готовность:
-    pgvector в проекте не подключён (проверено — зависимости нет). Класс
-    существует, чтобы гибридная схема и её тесты были полными, а реальный
-    `DenseRetriever` подключался позже без изменения вызывающего кода.
+    Это НЕ эмуляция качества эмбеддингов. Класс остаётся в строю для бэкендов
+    без векторного поиска — то есть для SQLite, на котором идут тесты. На
+    Postgres его место занимает `PgVectorDenseRetriever`, и выбирает между ними
+    `get_dense_retriever()`.
     """
 
     def search(
@@ -373,6 +373,88 @@ class InMemoryDenseRetriever:
             scored.append((chunk, overlap / math.sqrt(len(tokens))))
         scored.sort(key=lambda pair: (-pair[1], pair[0].chunk_id))
         return scored[:limit]
+
+
+class PgVectorDenseRetriever:
+    """Плотный поиск по косинусной близости через pgvector.
+
+    Реализует тот же Protocol, что и заглушка, поэтому подключается без правок
+    вызывающего кода. Два решения внутри стоит назвать явно:
+
+    1. **Поиск ограничен переданными кандидатами.** Их уже отфильтровала
+       `apply_access_policy`, и уходить за этот список в SQL нельзя: индекс
+       ничего не знает ни о владельце, ни о режиме доступа к решениям, и запрос
+       «ближайшие по всей таблице» вернул бы чужие фрагменты.
+    2. **Вектор запроса считается тем же провайдером.** Если он не настроен или
+       упал, возвращается пустая выдача, а не исключение: гибридная схема
+       переживает отсутствие плотной половины — останется лексическая.
+    """
+
+    name = "pgvector-dense"
+
+    def __init__(self, *, provider=None) -> None:
+        self._provider = provider
+
+    def _embed_query(self, query: str) -> list[float] | None:
+        from .embeddings import get_embedding_provider
+
+        provider = self._provider or get_embedding_provider()
+        if provider.name == "null-embedding":
+            return None
+        result = provider.embed([query])
+        if not result.matches([query]):
+            return None
+        return result.vectors[0]
+
+    def search(
+        self, query: str, candidates: Sequence[RetrievableChunk], *, limit: int
+    ) -> list[tuple[RetrievableChunk, float]]:
+        if not query.strip() or not candidates:
+            return []
+
+        vector = self._embed_query(query)
+        if vector is None:
+            return []
+
+        from pgvector.django import CosineDistance
+
+        from .models import KnowledgeChunk
+
+        by_id = {chunk.chunk_id: chunk for chunk in candidates}
+        rows = (
+            KnowledgeChunk.objects.filter(
+                pk__in=list(by_id),
+                embedding_status=KnowledgeChunk.EmbeddingStatus.READY,
+            )
+            .exclude(embedding=None)
+            .annotate(distance=CosineDistance("embedding", vector))
+            .order_by("distance", "id")
+            .values_list("id", "distance")[:limit]
+        )
+
+        scored: list[tuple[RetrievableChunk, float]] = []
+        for chunk_id, distance in rows:
+            chunk = by_id.get(str(chunk_id))
+            if chunk is None:
+                continue
+            # Косинусное расстояние 0…2 → близость. RRF использует только
+            # порядок, но осмысленный вес полезен в диагностике.
+            scored.append((chunk, max(0.0, 1.0 - float(distance))))
+        return scored
+
+
+def get_dense_retriever() -> DenseRetriever:
+    """Плотный ретривер, пригодный для текущей БД.
+
+    На SQLite (тесты и локальная разработка) отдаёт прежнюю заглушку: там нет
+    ни оператора `<=>`, ни расширения. Благодаря этому `test_retrieval.py`
+    остаётся без правок и продолжает проверять гибридную схему целиком.
+    """
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        return InMemoryDenseRetriever()
+    return PgVectorDenseRetriever()
 
 
 class NoopReranker:
@@ -487,7 +569,9 @@ class KnowledgeRetrievalService:
         assembler: ContextAssembler | None = None,
     ) -> None:
         self.lexical = lexical or SimpleLexicalRetriever()
-        self.dense = dense or InMemoryDenseRetriever()
+        # По умолчанию — тот ретривер, который умеет текущая БД: pgvector на
+        # Postgres, прежняя заглушка на SQLite.
+        self.dense = dense or get_dense_retriever()
         self.reranker = reranker or NoopReranker()
         self.assembler = assembler or ContextAssembler()
 

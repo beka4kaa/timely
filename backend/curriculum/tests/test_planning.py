@@ -1,6 +1,7 @@
 """Планировщик: провайдеры, парсер ответа, строгая валидация, benchmark."""
 
 import json
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -20,8 +21,12 @@ from curriculum.planning.providers import (
     FakeCourseReviewProvider,
     FixtureCoursePlanningProvider,
     MalformedPlanResponse,
+    OpenRouterCourseReviewProvider,
+    ProviderNotConfigured,
     get_planning_provider,
+    get_review_provider,
     parse_planning_response,
+    parse_review_response,
 )
 from curriculum.planning.validation import topological_order, validate_plan
 from curriculum.retrieval import RetrievalBundle
@@ -103,6 +108,90 @@ class FakeProviderTests(SimpleTestCase):
         plan = FakeCoursePlanningProvider().generate_plan(request, RetrievalBundle())
         review = FakeCourseReviewProvider().review_plan(plan, RetrievalBundle())
         self.assertTrue(any(f.kind == "unsourced_topic" for f in review.findings))
+
+    def test_default_reviewer_is_fake_without_configured_role(self):
+        """До появления реального рецензента фейк был ЕДИНСТВЕННЫМ вариантом.
+
+        Теперь их два, и выбор обязан остаться консервативным: забытая переменная
+        окружения не должна приводить к платному вызову.
+        """
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertIsInstance(get_review_provider(), FakeCourseReviewProvider)
+
+    def test_configured_role_yields_real_reviewer(self):
+        with mock.patch.dict(
+            "os.environ", {"COURSE_REVIEW_MODEL": "vendor/reviewer"}, clear=True
+        ):
+            provider = get_review_provider()
+        self.assertIsInstance(provider, OpenRouterCourseReviewProvider)
+        self.assertEqual(provider.model, "vendor/reviewer")
+
+    def test_unknown_reviewer_key_rejected(self):
+        with self.assertRaises(ProviderNotConfigured):
+            get_review_provider("нет-такого")
+
+
+class ReviewResponseParsingTests(SimpleTestCase):
+    """Разбор ответа рецензента. Право забраковать план даётся неохотно."""
+
+    def test_parses_findings_and_severity(self):
+        raw = json.dumps(
+            {
+                "approved": False,
+                "findings": [
+                    {
+                        "kind": "goal_mismatch",
+                        "message": "Курс не ведёт к цели",
+                        "topic_external_id": "t1",
+                        "severity": "blocker",
+                    }
+                ],
+            }
+        )
+        review = parse_review_response(raw, model="vendor/m")
+        self.assertFalse(review.approved)
+        self.assertEqual(len(review.blockers), 1)
+        self.assertEqual(review.blockers[0].topic_external_id, "t1")
+        self.assertEqual(review.model, "vendor/m")
+
+    def test_unknown_severity_downgraded_to_warning(self):
+        """Мусор в severity не должен давать права забраковать план."""
+        raw = json.dumps(
+            {"findings": [{"kind": "x", "message": "текст", "severity": "КРИТИЧНО"}]}
+        )
+        review = parse_review_response(raw)
+        self.assertEqual(review.findings[0].severity, "warning")
+        self.assertEqual(review.blockers, [])
+        self.assertTrue(review.approved)
+
+    def test_missing_approved_is_derived_from_blockers(self):
+        """Молчание — не одобрение и не отказ: решают блокеры."""
+        with_blocker = parse_review_response(
+            json.dumps(
+                {"findings": [{"kind": "x", "message": "т", "severity": "blocker"}]}
+            )
+        )
+        self.assertFalse(with_blocker.approved)
+
+        clean = parse_review_response(json.dumps({"findings": []}))
+        self.assertTrue(clean.approved)
+
+    def test_findings_without_message_dropped(self):
+        raw = json.dumps({"findings": [{"kind": "x", "message": "   "}, "мусор"]})
+        self.assertEqual(parse_review_response(raw).findings, [])
+
+    def test_fenced_json_accepted(self):
+        raw = '```json\n{"approved": true, "findings": []}\n```'
+        self.assertTrue(parse_review_response(raw).approved)
+
+    def test_non_object_rejected(self):
+        with self.assertRaises(MalformedPlanResponse):
+            parse_review_response("[1, 2, 3]")
+
+    def test_real_reviewer_requires_a_model(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ProviderNotConfigured):
+                OpenRouterCourseReviewProvider()
 
 
 class ResponseParsingTests(SimpleTestCase):
@@ -302,6 +391,66 @@ class ValidationTests(SimpleTestCase):
         report = validate_plan(self._plan_from(payload), make_request())
         self.assertLess(report.coverage_ratio, 0.5)
         self.assertTrue(any(i.code == "low_coverage" for i in report.issues))
+
+    def test_coverage_survives_paraphrased_titles(self):
+        """Главное, зачем метрика переписана: модель перефразирует заголовки.
+
+        Темы плана — «Скорость» и «Ускорение». При точном сравнении строк такой
+        план давал 0% покрытия и получал `low_coverage`, хотя покрывает книгу
+        целиком.
+        """
+        report = validate_plan(
+            self._plan_from(self._valid_payload()),
+            make_request(
+                toc=(
+                    TocEntry(
+                        path="1.1",
+                        title="§1.1 Скорость материальной точки",
+                        page_start=5,
+                        page_end=20,
+                    ),
+                    TocEntry(
+                        path="1.2", title="1.2. Ускорение тела", page_start=21, page_end=40
+                    ),
+                )
+            ),
+        )
+        self.assertEqual(report.covered_sections, 2)
+        self.assertEqual(report.coverage_ratio, 1.0)
+        self.assertFalse(any(i.code == "low_coverage" for i in report.issues))
+
+    def test_coverage_does_not_match_unrelated_titles(self):
+        """Порог не должен превращаться в «совпадает со всем»."""
+        report = validate_plan(
+            self._plan_from(self._valid_payload()),
+            make_request(
+                toc=(
+                    TocEntry(
+                        path="1", title="Термодинамика", page_start=1, page_end=10
+                    ),
+                    TocEntry(
+                        path="2", title="Преломление света", page_start=11, page_end=20
+                    ),
+                )
+            ),
+        )
+        self.assertEqual(report.covered_sections, 0)
+
+    def test_coverage_ignores_section_word_only_overlap(self):
+        """«Глава 1» и «Глава 2» не должны совпадать с произвольной темой.
+
+        Иначе достаточно слова «глава», чтобы покрытие стало 100%.
+        """
+        report = validate_plan(
+            self._plan_from(self._valid_payload()),
+            make_request(
+                toc=(
+                    TocEntry(path="1", title="Глава 1", page_start=1, page_end=10),
+                    TocEntry(path="2", title="Глава 2", page_start=11, page_end=20),
+                )
+            ),
+        )
+        self.assertEqual(report.covered_sections, 0)
 
     def test_module_duration_mismatch_is_a_warning(self):
         payload = self._valid_payload()

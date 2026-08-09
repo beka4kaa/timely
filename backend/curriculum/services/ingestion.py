@@ -22,6 +22,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -47,6 +48,8 @@ from ..models import (
 )
 from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
 from ..storage import get_storage
+from ..tokenizer import get_tokenizer
+from .embedding_index import index_document_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +201,11 @@ def ingest_document(
         logger.exception("Непредвиденная ошибка ingestion документа %s", document.pk)
         recorder.fail("internal_error", str(exc))
 
+    # Предупреждения переживают запрос: при асинхронном запуске ответ на POST уходит
+    # раньше, чем они появятся, и опрос статуса — единственный способ их показать.
+    job.warnings = list(outcome.warnings)
+    job.save(update_fields=["warnings", "updated_at"])
+
     document.refresh_from_db()
     outcome.document = document
     return outcome
@@ -273,7 +281,20 @@ def _run_pipeline(
     pairs = split_tasks_and_solutions(source_blocks)
 
     recorder.advance(Document.Status.CHUNKING)
-    chunks = chunk_blocks(list(source_blocks), processing_version=processing_version)
+    # Размеры приходят из конфигурации, а сам `chunking` остаётся чистым и
+    # тестируемым без поднятого Django.
+    chunks = chunk_blocks(
+        list(source_blocks),
+        processing_version=processing_version,
+        target_tokens=getattr(settings, "CURRICULUM_CHUNK_TARGET_TOKENS", 500),
+        max_tokens=getattr(settings, "CURRICULUM_CHUNK_MAX_TOKENS", 650),
+        overlap_tokens=getattr(settings, "CURRICULUM_CHUNK_OVERLAP_TOKENS", 75),
+    )
+    # Откат на приближённый счётчик безопасен, но МЕНЯЕТ границы фрагментов при
+    # той же `PROCESSING_VERSION`. Молчать об этом нельзя: расхождение всплывёт
+    # позже как «почему у одной книги хеши другие».
+    if get_tokenizer().name == "heuristic":
+        outcome.warnings.append("tokenizer_fallback_heuristic")
 
     # 7. indexing — единственная транзакция на всю запись.
     recorder.advance(Document.Status.INDEXING)
@@ -297,6 +318,18 @@ def _run_pipeline(
     outcome.tasks = len(task_rows)
     outcome.solutions = solution_count
     outcome.chunks = chunk_count
+
+    # 7b. Векторы фрагментов. Строго ПОСЛЕ закрытия `transaction.atomic()`:
+    # это сетевой вызов, и держать им открытую транзакцию — значит блокировать
+    # строки на всё время работы внешнего провайдера.
+    #
+    # `index_document_chunks` не бросает ни при каких обстоятельствах: провал
+    # эмбеддингов не превращает разобранную книгу в проваленную загрузку. Он
+    # возвращает предупреждения, и они видны в диагностике.
+    index_outcome = index_document_chunks(document)
+    for warning in index_outcome.warnings:
+        if warning not in outcome.warnings:
+            outcome.warnings.append(warning)
 
     # 8. quality_check — пустая книга не «готова».
     recorder.advance(Document.Status.QUALITY_CHECK)

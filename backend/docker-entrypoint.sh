@@ -17,8 +17,16 @@ set -e
 # exists». Контейнер после этого перезапустится и увидит схему уже накатанной,
 # то есть ситуация самозалечивается, но в логах будет шумно. Если реплик станет
 # больше одной, миграции надо выносить в отдельный release-шаг, а не в старт.
-echo "[entrypoint] applying database migrations..."
-python manage.py migrate --noinput
+#
+# `RUN_MIGRATIONS=0` нужен воркеру Celery: он поднимается из ТОГО ЖЕ образа, и
+# без флага web-контейнер и воркер начинали бы миграцию одновременно при каждом
+# деплое. Схему меняет ровно один процесс — web.
+if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
+    echo "[entrypoint] applying database migrations..."
+    python manage.py migrate --noinput
+else
+    echo "[entrypoint] RUN_MIGRATIONS=0 — миграции пропущены"
+fi
 
 echo "[entrypoint] starting: $*"
 exec "$@"

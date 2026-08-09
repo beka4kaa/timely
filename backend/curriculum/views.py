@@ -19,7 +19,9 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from . import progress
 from . import storage as storage_module
 from .models import (
     CourseEnrollment,
@@ -43,13 +45,15 @@ from .serializers import (
     ExtractedTaskSerializer,
     GeneratePlanSerializer,
     GoalConfirmSerializer,
+    IngestionAttemptSerializer,
     IngestionJobSerializer,
     KnowledgeChunkSerializer,
     LearningGoalSerializer,
 )
 from .services import goals as goals_service
 from .services import plans as plans_service
-from .services.ingestion import ingest_document
+from .services import search as search_service
+from .services.dispatch import enqueue_ingestion
 from .upload_validation import UploadRejected, validate_pdf_upload
 
 logger = logging.getLogger(__name__)
@@ -117,7 +121,6 @@ class DocumentViewSet(_UserScopedViewSet):
     """Документы ученика: загрузка PDF и его обработка."""
 
     serializer_class = DocumentSerializer
-    parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
         email = self._user_email()
@@ -128,7 +131,20 @@ class DocumentViewSet(_UserScopedViewSet):
     def perform_create(self, serializer):
         serializer.save(user_email=self._user_email())
 
-    @action(detail=False, methods=["post"])
+    # multipart объявлен ТОЧЕЧНО на upload, а не на классе. На классе он отбирал
+    # JSON у остальных actions: `PATCH`/`PUT` по документу отвечали 415, потому что
+    # сериализатор читает `request.data`. Django test client content-type не ставит,
+    # поэтому старые тесты этого не видели.
+    #
+    # `ingest` при этом не страдал: он не читает `request.data`, а парсеры DRF
+    # ленивые. Но фронтенд (`src/lib/auth-fetch.ts`) ставит
+    # `Content-Type: application/json` на КАЖДЫЙ запрос, так что стоит любому action
+    # обратиться к `request.data` — он тут же начнёт отвечать 415.
+    @action(
+        detail=False,
+        methods=["post"],
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def upload(self, request):
         """Принимает PDF: валидация содержимого → storage → Document."""
         email = self._user_email()
@@ -203,31 +219,62 @@ class DocumentViewSet(_UserScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def ingest(self, request, pk=None):
-        """Запускает обработку. Синхронно: очереди задач в проекте нет."""
+        """Ставит документ в обработку и отвечает 202.
+
+        Контракт асинхронный независимо от того, чем обработка выполняется
+        сегодня: прогресс забирается опросом `GET .../status/`. Так фронтенд не
+        придётся переписывать, когда пайплайн уедет в Celery.
+
+        Провал обработки — это НЕ ошибка постановки: 202 отдаётся и в этом случае,
+        а причина приезжает в `job.error_code` при первом же опросе статуса.
+        """
         document = self.get_object()
-        outcome = ingest_document(document)
+        job = enqueue_ingestion(document)
         document.refresh_from_db()
-        body = {
-            "document": DocumentSerializer(document).data,
-            "job": IngestionJobSerializer(outcome.job).data,
-            "stats": {
-                "pages": outcome.pages,
-                "ocr_pages": outcome.ocr_pages,
-                "sections": outcome.sections,
-                "blocks": outcome.blocks,
-                "tasks": outcome.tasks,
-                "solutions": outcome.solutions,
-                "chunks": outcome.chunks,
+        job.refresh_from_db()
+        return Response(
+            {
+                "document": DocumentSerializer(document).data,
+                "job": IngestionJobSerializer(job).data,
+                "poll_url": f"/api/curriculum/documents/{document.pk}/status/",
             },
-            "warnings": outcome.warnings,
-        }
-        # Провал обработки — не 500: пользователю нужен понятный статус.
-        code = (
-            status.HTTP_200_OK
-            if outcome.succeeded
-            else status.HTTP_422_UNPROCESSABLE_ENTITY
+            status=status.HTTP_202_ACCEPTED,
         )
-        return Response(body, status=code)
+
+    # url_path задан явно: метод нельзя назвать `status`, иначе он затенит
+    # одноимённый импорт `rest_framework.status` в теле класса.
+    @action(detail=True, methods=["get"], url_path="status")
+    def ingestion_status(self, request, pk=None):
+        """Текущее состояние обработки. Дёргается опросом раз в несколько секунд.
+
+        Счётчики считаются запросами COUNT по одному документу — это дёшево и
+        честнее, чем кешировать их в документе и разъезжаться с реальностью.
+        """
+        document = self.get_object()
+        job = (
+            IngestionJob.objects.filter(document=document)
+            .order_by("-created_at")
+            .first()
+        )
+        body = dict(progress.describe(document.ingestion_status))
+        body["document_id"] = str(document.pk)
+        body["job"] = IngestionJobSerializer(job).data if job else None
+        body["attempts"] = (
+            IngestionAttemptSerializer(
+                job.attempts.all().order_by("created_at"), many=True
+            ).data
+            if job
+            else []
+        )
+        body["warnings"] = list(job.warnings) if job else []
+        body["stats"] = {
+            "pages": document.pages.count(),
+            "sections": document.sections.count(),
+            "blocks": document.blocks.count(),
+            "tasks": document.tasks.count(),
+            "chunks": document.chunks.count(),
+        }
+        return Response(body)
 
     @action(detail=True, methods=["get"])
     def jobs(self, request, pk=None):
@@ -381,6 +428,44 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         return CourseEnrollment.objects.filter(user_email=email).select_related(
             "version"
         )
+
+
+class KnowledgeSearchView(APIView):
+    """POST /api/curriculum/search/ — поиск по книгам пользователя.
+
+    Режим фиксирован `STUDENT_READ_MODE`: выбирать себе политику доступа
+    клиент не может, иначе «режим» превратился бы в параметр обхода правила о
+    решениях задач.
+
+    Векторы в ответе не возвращаются никогда: это внутреннее представление,
+    наружу оно не нужно и весит в разы больше самого фрагмента.
+    """
+
+    def post(self, request):
+        email = getattr(request, "user_email", None)
+        if not email:
+            return _no_user()
+
+        query = str(request.data.get("query") or "").strip()
+        if not query:
+            return Response(
+                {"error": "Запрос пустой.", "code": "query_required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_ids = request.data.get("document_ids") or []
+        document_ids = [str(value) for value in raw_ids] if isinstance(raw_ids, list) else []
+
+        bundle = search_service.search_chunks(
+            search_service.SearchRequest(
+                user_email=email,
+                query=query,
+                document_ids=document_ids,
+                limit=search_service.clamp_limit(request.data.get("limit")),
+                mode=STUDENT_READ_MODE,
+            )
+        )
+        return Response({"query": query, **search_service.bundle_to_payload(bundle)})
 
 
 def _no_user():

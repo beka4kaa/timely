@@ -155,30 +155,228 @@ class LocalFileStorage:
 
 @dataclass(frozen=True)
 class S3StorageSettings:
-    """Конфигурация будущего S3-совместимого backend.
-
-    Класс намеренно без реализации: добавлять boto3 и production-креды в рамках
-    foundation нельзя. Здесь зафиксировано, чего именно не хватает для переезда,
-    чтобы это не пришлось выяснять заново.
-    """
+    """Конфигурация S3-совместимого backend (AWS S3, Cloudflare R2, MinIO)."""
 
     bucket: str
     region: str = ""
     endpoint_url: str = ""
+    access_key_id: str = ""
+    secret_access_key: str = ""
     # Обязательно: приватный бакет + подписанные ссылки с коротким TTL.
     public_read: bool = False
     signed_url_ttl_seconds: int = 300
-    server_side_encryption: str = "AES256"
+    # Пусто по умолчанию НЕ по недосмотру. AWS S3 с января 2023 шифрует объекты
+    # сам, а Cloudflare R2 заголовок `ServerSideEncryption` не принимает — на нём
+    # безусловный `AES256` превратил бы каждую загрузку в ошибку. Кому нужен
+    # явный SSE (например, `aws:kms`), задаёт его настройкой.
+    server_side_encryption: str = ""
+    # Ограничители сети. Без них зависший бакет держит поток gunicorn до упора,
+    # а в проде их всего 16 (2 воркера × 8 тредов).
+    connect_timeout_seconds: int = 5
+    read_timeout_seconds: int = 30
+    max_attempts: int = 3
+
+
+def _error_code(exc: Exception) -> str:
+    """Код ошибки S3 без импорта botocore.
+
+    Модуль обязан импортироваться там, где boto3 не установлен (тесты, локальная
+    разработка), поэтому `ClientError` здесь не ловится по типу.
+    """
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return ""
+    error = response.get("Error")
+    if not isinstance(error, dict):
+        return ""
+    return str(error.get("Code", ""))
+
+
+_NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound", "NoSuchBucket"}
+
+
+class S3FileStorage:
+    """Файлы в S3-совместимом бакете.
+
+    Реализует тот же `FileStorage`, что и локальный backend, поэтому вызывающий
+    код не меняется ни в одном месте.
+
+    Зачем это вообще: контейнер Northflank эфемерный, и загруженный PDF пропадает
+    при перезапуске. Отдельно это жёсткое предусловие Фазы 4b — воркер в другом
+    контейнере физически не видит диск web-контейнера, и без общего хранилища
+    каждая задача падала бы в `storage_unavailable`.
+    """
+
+    backend_name = "s3"
+
+    def __init__(self, settings: S3StorageSettings, *, client=None) -> None:
+        if not settings.bucket:
+            raise StorageError("S3-хранилище требует имя бакета.")
+        self.settings = settings
+        self._client = client
+
+    @property
+    def client(self):
+        """Ленивый клиент: без него модуль импортируется и без boto3."""
+        if self._client is None:
+            self._client = _build_s3_client(self.settings)
+        return self._client
+
+    def _extra_put_args(self) -> dict:
+        if not self.settings.server_side_encryption:
+            return {}
+        return {"ServerSideEncryption": self.settings.server_side_encryption}
+
+    def save(self, key: str, data: bytes) -> str:
+        _validate_key(key)
+        try:
+            self.client.put_object(
+                Bucket=self.settings.bucket,
+                Key=key,
+                Body=data,
+                **self._extra_put_args(),
+            )
+        except Exception as exc:  # noqa: BLE001 — наружу только StorageError
+            raise StorageError("Не удалось сохранить файл в хранилище.") from exc
+        return key
+
+    def open(self, key: str) -> bytes:
+        _validate_key(key)
+        try:
+            response = self.client.get_object(Bucket=self.settings.bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001
+            if _error_code(exc) in _NOT_FOUND_CODES:
+                raise StorageError("Файл не найден.") from exc
+            raise StorageError("Хранилище файлов сейчас недоступно.") from exc
+        body = response["Body"]
+        try:
+            return body.read()
+        finally:
+            close = getattr(body, "close", None)
+            if callable(close):
+                close()
+
+    def delete(self, key: str) -> None:
+        _validate_key(key)
+        try:
+            self.client.delete_object(Bucket=self.settings.bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001
+            # Удаление отсутствующего объекта — не ошибка: повторный вызов
+            # должен приводить к тому же состоянию, что и первый.
+            if _error_code(exc) in _NOT_FOUND_CODES:
+                return
+            raise StorageError("Не удалось удалить файл из хранилища.") from exc
+
+    def exists(self, key: str) -> bool:
+        try:
+            _validate_key(key)
+        except StorageError:
+            return False
+        try:
+            self.client.head_object(Bucket=self.settings.bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001
+            if _error_code(exc) in _NOT_FOUND_CODES:
+                return False
+            raise StorageError("Хранилище файлов сейчас недоступно.") from exc
+        return True
+
+    def signed_url(self, key: str, *, expires_seconds: int = 300) -> str:
+        """Подписанная ссылка с коротким TTL. Бакет приватный всегда."""
+        _validate_key(key)
+        ttl = expires_seconds or self.settings.signed_url_ttl_seconds
+        try:
+            return self.client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.settings.bucket, "Key": key},
+                ExpiresIn=int(ttl),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise StorageError("Не удалось выдать ссылку на файл.") from exc
+
+
+def _build_s3_client(settings: S3StorageSettings):
+    """Клиент boto3. Импорт внутри функции — см. `S3FileStorage.client`."""
+    try:
+        import boto3
+        from botocore.config import Config
+    except ImportError as exc:  # pragma: no cover — зависит от окружения
+        raise StorageError(
+            "boto3 не установлен, а хранилище настроено на S3."
+        ) from exc
+
+    config = Config(
+        connect_timeout=settings.connect_timeout_seconds,
+        read_timeout=settings.read_timeout_seconds,
+        retries={"max_attempts": settings.max_attempts, "mode": "standard"},
+        # R2 и MinIO работают только с подписью v4.
+        signature_version="s3v4",
+    )
+    kwargs = {"config": config}
+    if settings.region:
+        kwargs["region_name"] = settings.region
+    if settings.endpoint_url:
+        kwargs["endpoint_url"] = settings.endpoint_url
+    # Ключи можно не задавать: тогда boto3 возьмёт их из своей обычной цепочки
+    # (переменные окружения, профиль, роль инстанса).
+    if settings.access_key_id and settings.secret_access_key:
+        kwargs["aws_access_key_id"] = settings.access_key_id
+        kwargs["aws_secret_access_key"] = settings.secret_access_key
+    return boto3.client("s3", **kwargs)
+
+
+def s3_settings_from_django() -> S3StorageSettings | None:
+    """Настройки S3 из Django-конфигурации.
+
+    `None`, если бакет не задан или S3 выключен общим рубильником — под
+    тест-раннером он выключен всегда, см. комментарий в `config/settings.py`.
+    """
+    from django.conf import settings as django_settings
+
+    if not getattr(django_settings, "CURRICULUM_S3_ENABLED", True):
+        return None
+
+    bucket = (getattr(django_settings, "CURRICULUM_S3_BUCKET", "") or "").strip()
+    if not bucket:
+        return None
+    return S3StorageSettings(
+        bucket=bucket,
+        region=(getattr(django_settings, "CURRICULUM_S3_REGION", "") or "").strip(),
+        endpoint_url=(
+            getattr(django_settings, "CURRICULUM_S3_ENDPOINT_URL", "") or ""
+        ).strip(),
+        access_key_id=(
+            getattr(django_settings, "CURRICULUM_S3_ACCESS_KEY_ID", "") or ""
+        ).strip(),
+        secret_access_key=(
+            getattr(django_settings, "CURRICULUM_S3_SECRET_ACCESS_KEY", "") or ""
+        ).strip(),
+        signed_url_ttl_seconds=int(
+            getattr(django_settings, "CURRICULUM_S3_SIGNED_URL_TTL", 300)
+        ),
+        server_side_encryption=(
+            getattr(django_settings, "CURRICULUM_S3_SSE", "") or ""
+        ).strip(),
+    )
 
 
 _storage: FileStorage | None = None
 
 
 def get_storage() -> FileStorage:
-    """Текущее хранилище. Переопределяется в тестах через `set_storage`."""
+    """Текущее хранилище. Переопределяется в тестах через `set_storage`.
+
+    S3 выбирается ровно по одному признаку — заданному бакету. Ключи при этом
+    необязательны: в облаке их часто выдаёт роль инстанса, и требовать их здесь
+    значило бы запретить самый безопасный способ доступа.
+    """
     global _storage
     if _storage is None:
         from django.conf import settings
+
+        s3 = s3_settings_from_django()
+        if s3 is not None:
+            _storage = S3FileStorage(s3)
+            return _storage
 
         root = getattr(settings, "CURRICULUM_STORAGE_ROOT", None)
         if not root:

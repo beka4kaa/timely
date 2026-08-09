@@ -253,6 +253,10 @@ class ModelRegistryTests(TestCase):
         import os
 
         os.environ["TEXT_LLM_MODEL"] = "vendor/cheap-chat"
+        # `EMBEDDING_MODEL` снимается на время теста: он появился в `.env`, и
+        # без этого тест проверял бы не отсутствие отката, а содержимое
+        # окружения разработчика.
+        saved = os.environ.pop("EMBEDDING_MODEL", None)
         try:
             binding = resolve_model(ROLE_EMBEDDING)
             # Чат-модель не выдаёт векторы — молчаливый откат был бы багом.
@@ -260,6 +264,8 @@ class ModelRegistryTests(TestCase):
             self.assertEqual(binding.source, "unset")
         finally:
             os.environ.pop("TEXT_LLM_MODEL", None)
+            if saved is not None:
+                os.environ["EMBEDDING_MODEL"] = saved
 
     def test_ocr_role_does_not_fall_back_to_chat_model(self):
         import os

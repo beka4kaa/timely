@@ -29,13 +29,33 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
-# Ограничение на «прозаический» чанк. Токены считаем приближённо (см.
-# `estimate_tokens`) — точный токенайзер зависит от модели, а чанкинг обязан
-# оставаться от модели независимым.
-MAX_PROSE_TOKENS = 350
+from .tokenizer import Tokenizer, get_tokenizer
+
+# Размер прозаического чанка. `TARGET` — где стараемся закрыть чанк, `MAX` —
+# граница, которую не переходим, добавляя следующий блок. Оба значения
+# считаются НАСТОЯЩИМ токенайзером (`tokenizer.get_tokenizer`), а не «символы
+# делить на четыре»: на кириллице эвристика недосчитывает почти вдвое, и чанк
+# «на 350 токенов» на деле весил около 630.
+DEFAULT_TARGET_TOKENS = 500
+DEFAULT_MAX_TOKENS = 650
+
+# Сколько токенов предыдущего чанка повторяется в начале следующего.
+#
+# Overlap решает конкретную проблему: мысль, разрезанная границей чанков,
+# перестаёт находиться поиском — ни одна из половин не содержит её целиком.
+#
+# И столь же конкретное ограничение (Решения №3 в ROADMAP): overlap живёт
+# ТОЛЬКО внутри непрерывного прогона прозы одного раздела. Наивное скользящее
+# окно затащило бы текст решения в чанк с `solution_visibility="always"`, и
+# ученик увидел бы ответ в выдаче.
+DEFAULT_OVERLAP_TOKENS = 75
+
 # Ниже этого порога отдельный прозаический чанк бессмысленен — приклеиваем к
 # предыдущему, если он в том же разделе.
 MIN_PROSE_TOKENS = 20
+
+# Сохранено для обратной совместимости: на это имя ссылались снаружи.
+MAX_PROSE_TOKENS = DEFAULT_TARGET_TOKENS
 
 # Типы блоков, каждый из которых всегда становится самостоятельным чанком.
 _STANDALONE = {
@@ -60,15 +80,15 @@ def normalize_text(text: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    """Грубая оценка: ~4 символа на токен для кириллицы и латиницы.
+    """Число токенов текста.
 
-    Специально приближённая и без внешних зависимостей: точное число знает
-    только токенайзер конкретной модели, а бюджет контекста всё равно берётся с
-    запасом в `ContextAssembler`.
+    Имя осталось прежним ради вызывающего кода, но оценка больше не грубая:
+    считает `tokenizer.get_tokenizer()`, то есть `cl100k_base`, когда он
+    доступен. Эвристика остаётся фолбэком — см. шапку `tokenizer.py`.
     """
     if not text:
         return 0
-    return max(1, (len(text) + 3) // 4)
+    return get_tokenizer().count(text)
 
 
 @dataclass(frozen=True)
@@ -158,11 +178,17 @@ def _make_chunk(
 
 
 def _flush_prose(
-    buffer: list[SourceBlock], out: list[Chunk], processing_version: str
+    buffer: list[SourceBlock], run: list[Chunk], processing_version: str
 ) -> None:
+    """Закрывает накопленную прозу и кладёт её в ТЕКУЩИЙ ПРОГОН, не в выход.
+
+    Разделение на «прогон» и «выход» — это и есть механизм безопасности
+    overlap'а: перекрытие добавляется при закрытии прогона, а прогон рвётся на
+    любом блоке, который прозой не является.
+    """
     if not buffer:
         return
-    out.append(
+    run.append(
         _make_chunk(
             chunk_type="prose", blocks=list(buffer), processing_version=processing_version
         )
@@ -170,18 +196,93 @@ def _flush_prose(
     buffer.clear()
 
 
+def _with_overlap(
+    chunk: Chunk, previous_text: str, *, overlap_tokens: int,
+    processing_version: str, tokenizer: Tokenizer,
+) -> Chunk:
+    """Приписывает к чанку хвост предыдущего и пересчитывает хеш.
+
+    `block_ids` и страницы остаются СВОИМИ: заимствованный хвост — это контекст
+    для поиска, а не содержимое фрагмента. Цитата обязана указывать на страницы,
+    где текст действительно напечатан, иначе провенанс начнёт врать.
+    """
+    tail = tokenizer.tail(previous_text, overlap_tokens)
+    if not tail:
+        return chunk
+    merged = normalize_text(f"{tail} {chunk.normalized_text}")
+    chunk.normalized_text = merged
+    chunk.token_count = tokenizer.count(merged)
+    chunk.content_hash = compute_content_hash(
+        chunk_type=chunk.chunk_type,
+        normalized_text=merged,
+        processing_version=processing_version,
+    )
+    return chunk
+
+
+def _end_prose_run(
+    run: list[Chunk],
+    out: list[Chunk],
+    *,
+    overlap_tokens: int,
+    processing_version: str,
+    tokenizer: Tokenizer,
+) -> None:
+    """Закрывает прогон прозы: добавляет overlap и переносит чанки в выход."""
+    if not run:
+        return
+    if overlap_tokens > 0 and len(run) > 1:
+        # Хвост берётся от ИСХОДНОГО текста соседа, а не от уже дополненного:
+        # иначе перекрытия наслаиваются, и третий чанк тащит кусок первого.
+        originals = [chunk.normalized_text for chunk in run]
+        for index in range(1, len(run)):
+            _with_overlap(
+                run[index],
+                originals[index - 1],
+                overlap_tokens=overlap_tokens,
+                processing_version=processing_version,
+                tokenizer=tokenizer,
+            )
+    out.extend(run)
+    run.clear()
+
+
 def chunk_blocks(
-    blocks: list[SourceBlock], *, processing_version: str
+    blocks: list[SourceBlock],
+    *,
+    processing_version: str,
+    target_tokens: int = DEFAULT_TARGET_TOKENS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    overlap_tokens: int = DEFAULT_OVERLAP_TOKENS,
+    tokenizer: Tokenizer | None = None,
 ) -> list[Chunk]:
     """Главная точка входа. Порядок выхода повторяет `reading_order`.
 
     Вход не сортируется по месту: копия сортируется явно, чтобы функция
     оставалась чистой и не зависела от того, в каком порядке ORM вернул строки.
+
+    Размеры приходят параметрами, а не читаются из Django-настроек: модуль
+    обязан оставаться чистым и тестируемым без поднятого приложения. Значения из
+    конфигурации подставляет вызывающий (`services/ingestion.py`).
     """
+    counter = tokenizer or get_tokenizer()
     ordered = sorted(blocks, key=lambda b: (b.reading_order, b.block_id))
     out: list[Chunk] = []
     prose: list[SourceBlock] = []
+    # Незакрытый прогон прозы. Живёт между `out` и буфером блоков: overlap
+    # добавляется ровно при его закрытии.
+    run: list[Chunk] = []
     pending_caption_for: int | None = None
+
+    def close_run() -> None:
+        _flush_prose(prose, run, processing_version)
+        _end_prose_run(
+            run,
+            out,
+            overlap_tokens=overlap_tokens,
+            processing_version=processing_version,
+            tokenizer=counter,
+        )
 
     for block in ordered:
         kind = block.kind
@@ -214,7 +315,9 @@ def chunk_blocks(
         pending_caption_for = None
 
         if kind in _STANDALONE:
-            _flush_prose(prose, out, processing_version)
+            # Прогон рвётся: определение, теорема, задача и решение — граница,
+            # через которую overlap не проходит никогда.
+            close_run()
             chunk_type = _STANDALONE[kind]
             # Решение — единственный тип с ограниченной видимостью.
             visibility = "restricted" if chunk_type == "solution" else "always"
@@ -229,7 +332,7 @@ def chunk_blocks(
             continue
 
         if kind in _CAPTIONED:
-            _flush_prose(prose, out, processing_version)
+            close_run()
             out.append(
                 _make_chunk(
                     chunk_type=_CAPTIONED[kind],
@@ -242,22 +345,33 @@ def chunk_blocks(
 
         if kind == "heading":
             # Заголовок закрывает предыдущий прозаический чанк, но сам чанком
-            # не становится: его роль — в `section_path`.
-            _flush_prose(prose, out, processing_version)
+            # не становится: его роль — в `section_path`. Прогон он тоже рвёт:
+            # за заголовком начинается другая мысль.
+            close_run()
             continue
 
-        # Обычный текст: копим в пределах раздела до лимита.
+        # Обычный текст: копим в пределах раздела до целевого размера.
         if prose and prose[-1].section_path != block.section_path:
-            _flush_prose(prose, out, processing_version)
+            # Смена раздела — тоже конец прогона: перекрытие между разделами
+            # смешало бы разные темы в одном фрагменте.
+            close_run()
 
-        prose.append(block)
-        accumulated = estimate_tokens(
-            normalize_text(" ".join(b.text for b in prose))
-        )
-        if accumulated >= MAX_PROSE_TOKENS:
-            _flush_prose(prose, out, processing_version)
+        candidate = normalize_text(" ".join(b.text for b in prose + [block]))
+        if prose and counter.count(candidate) > max_tokens:
+            # Добавление блока перевалило бы за потолок — закрываем чанк БЕЗ
+            # него, а блок начинает следующий. Прогон при этом продолжается,
+            # поэтому перекрытие между ними будет.
+            _flush_prose(prose, run, processing_version)
+            prose.append(block)
+            accumulated = counter.count(normalize_text(block.text))
+        else:
+            prose.append(block)
+            accumulated = counter.count(candidate)
 
-    _flush_prose(prose, out, processing_version)
+        if accumulated >= target_tokens:
+            _flush_prose(prose, run, processing_version)
+
+    close_run()
     return link_chunks(out)
 
 
