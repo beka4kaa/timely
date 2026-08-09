@@ -33,6 +33,7 @@ import {
   useSmartLabels,
   contrastStylesFor,
   moveLabelPlacement,
+  shouldShowLeaderLine,
 } from "@/lib/illustration-contrast";
 import { IllustrationLeaderLines } from "@/components/whiteboard/IllustrationLeaderLines";
 
@@ -108,7 +109,11 @@ export const IllustrationRenderer: React.FC<IllustrationRendererProps> = ({
           draggingIndex === index
           || draftPositions[index] != null
           || labels[index]?.manual_position != null;
-        return manuallyPlaced
+        // Правило одно на все рендереры (см. shouldShowLeaderLine): линия
+        // появляется, когда подпись далеко от своей цели. Прежнее условие
+        // «только вручную перемещённая» оставляло далеко улетевшую
+        // авто-подпись без всякой связи с объектом.
+        return shouldShowLeaderLine(placement, labels[index]?.arrow_to, manuallyPlaced)
           ? placement
           : { ...placement, connector: null };
       }),

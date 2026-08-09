@@ -295,7 +295,9 @@ function sampleBackdropAt(data: ImageData, px: number, py: number): BackdropSamp
  * пиксель одинаковая раскладка, в любом стиле генерации.
  */
 
-type Offset = { dx: number; dy: number };
+// `fromBackend` помечает кандидата, собранного из присланных бэкендом x/y.
+// Скоринг даёт ему бонус — см. BACKEND_PLACEMENT_BONUS.
+type Offset = { dx: number; dy: number; fromBackend?: boolean };
 
 /** Базовые кандидаты-офсеты от якоря (в % картинки), в порядке предпочтения. */
 const CANDIDATE_OFFSETS: ReadonlyArray<Offset> = [
@@ -337,6 +339,29 @@ const MIN_LEADER_DISTANCE_PCT = 8.5;
 const CONNECTOR_GAP_PCT = 0.9;
 const CONNECTOR_BOX_GAP_PCT = 0.7;
 
+// Максимальная длина выноски. Это ЗАПРЕТ, а не штраф: линия через весь кадр
+// нечитаема в принципе, сколько бы чистого фона под текстом ни было. Значение
+// согласовано с `_MAX_CONNECTOR_DISTANCE_PCT = 30` в backend/label_layout.py
+// плюс небольшой допуск на клампинг к BOUNDS.
+export const MAX_LEADER_DISTANCE_PCT = 32;
+
+// Штраф за уход на противоположную от якоря половину кадра. Портирован из
+// backend/label_layout.py (там ровно +8.0): без него подпись «телепортируется»
+// к дальнему краю, потому что фон там чище, и выноска идёт через всю картинку.
+const CROSS_FRAME_PENALTY = 8;
+
+// Бонус позиции, ПРИСЛАННОЙ БЭКЕНДОМ. Бэкенд уже искал тихие зоны по картинке
+// (label_layout.py) и штрафовал пересечение кадра. Его выбор должен проигрывать
+// только жёсткому запрету, а не «чуть более чистому» фону — иначе вся серверная
+// раскладка выбрасывается впустую.
+const BACKEND_PLACEMENT_BONUS = 6;
+
+// Насколько чистый фон может «перевесить» лучший по расстоянию вариант. Раньше
+// выбор был лексикографическим (`bestClear ?? bestFallback`), поэтому ЛЮБОЕ
+// чистое место побеждало близкое с малейшим следом краски. Порог сохраняет
+// предпочтение читаемого фона, но не за счёт улёта через кадр.
+const CLEAR_PREFERENCE_MARGIN = 4;
+
 /** Геометрия выноски уже после раскладки текста. */
 export interface LabelConnector {
   start: SamplePoint;
@@ -369,6 +394,30 @@ export interface LabelPlacement {
  * target и стрелка не оказываются под буквами. Начало leader-line каждый раз
  * вычисляется заново от внешней границы bbox.
  */
+/**
+ * Показывать ли выноску у подписи — ЕДИНОЕ правило для всех рендереров.
+ *
+ * Раньше `IllustrationRenderer` рисовал выноску только у вручную перемещённой
+ * подписи, а `ScientificIllustration` — всегда. Из-за первого варианта
+ * авто-подпись, которую раскладка увела от объекта, оставалась сиротой: текст
+ * есть, а на что он указывает — непонятно.
+ *
+ * Правило: выноска нужна, когда подпись ДАЛЕКО от своей цели. Рядом стоящей
+ * подписи линия только добавляет шум, поэтому там её по-прежнему нет —
+ * ручное перемещение при этом всегда считается «далеко» осознанно, чтобы связь
+ * с объектом не терялась после перетаскивания.
+ */
+export function shouldShowLeaderLine(
+  placement: Pick<LabelPlacement, "x" | "y" | "connector">,
+  arrowTo: SamplePoint | undefined,
+  manuallyPlaced = false,
+): boolean {
+  if (placement.connector == null) return false;
+  if (manuallyPlaced) return true;
+  if (!arrowTo) return false;
+  return distance({ x: placement.x, y: placement.y }, arrowTo) >= MIN_LEADER_DISTANCE_PCT;
+}
+
 export function moveLabelPlacement(
   placement: LabelPlacement,
   target: SamplePoint | undefined,
@@ -741,13 +790,16 @@ function uniqueOffsets(offsets: ReadonlyArray<Offset>): Offset[] {
 function candidateOffsetsFor(label: LabelInput, anchor: SamplePoint): Offset[] {
   const kind = targetKindFor(label);
   const preferredDistance = distance(label, anchor);
-  const preferredMax = kind === "angle" ? 10 : kind === "vector" ? 18 : 26;
-  const preferred =
+  // Верхняя граница согласована с `_MAX_CONNECTOR_DISTANCE_PCT = 30` в
+  // backend/label_layout.py: раньше здесь было 26, и легальная серверная
+  // раскладка на 26–30% молча отбрасывалась, после чего позиция искалась с нуля.
+  const preferredMax = kind === "angle" ? 10 : kind === "vector" ? 18 : 30;
+  const preferred: Offset[] =
     Number.isFinite(label.x)
     && Number.isFinite(label.y)
     && preferredDistance >= 2
     && preferredDistance <= preferredMax
-      ? [{ dx: label.x - anchor.x, dy: label.y - anchor.y }]
+      ? [{ dx: label.x - anchor.x, dy: label.y - anchor.y, fromBackend: true }]
       : [];
   if (isAngleLabel(label)) {
     return uniqueOffsets([
@@ -913,8 +965,11 @@ export function layoutIllustrationLabels(
     const angleLabel = targetKind === "angle";
     const vectorLabel = targetKind === "vector";
     const metrics = estimatedLabelMetrics(label);
-    let bestClear: CandidatePlacement | null = null;
-    let bestFallback: CandidatePlacement | null = null;
+    // Все допустимые кандидаты, выбор — ниже одним проходом. Раньше здесь были
+    // два аккумулятора `bestClear`/`bestFallback`, и выбор между ними шёл
+    // лексикографически: чистый фон побеждал близкое расположение при любом
+    // разрыве в score.
+    const candidates: CandidatePlacement[] = [];
     const seenCandidates = new Set<string>();
 
     candidateOffsetsFor(label, anchor).forEach((off, ci) => {
@@ -971,6 +1026,12 @@ export function layoutIllustrationLabels(
             && distancePointToSegment(a, connector.start, connector.end) < 3.5,
         );
 
+      const leaderDistance = distance(boxCenter(box), anchor);
+      // Выноска через весь кадр нечитаема при любом фоне, поэтому это запрет,
+      // а не штраф. Аварийный путь ниже остаётся последним рубежом, если
+      // ВООБЩЕ ни один кандидат не прошёл.
+      const leaderTooLong = leaderDistance > MAX_LEADER_DISTANCE_PCT;
+
       if (
         overlapsPlacedText
         || missingRequiredConnector
@@ -980,11 +1041,11 @@ export function layoutIllustrationLabels(
         || connectorCrossesPlacedText
         || connectorCrossesConnector
         || connectorThroughForeignAnchor
+        || leaderTooLong
       ) {
         return;
       }
 
-      const leaderDistance = distance(boxCenter(box), anchor);
       const minLeaderDistance = angleLabel ? 2.5 : vectorLabel ? 5 : MIN_LEADER_DISTANCE_PCT;
       const tooClosePenalty = leaderDistance < minLeaderDistance
         ? (minLeaderDistance - leaderDistance) * (vectorLabel ? 1.1 : 0.45)
@@ -1006,26 +1067,38 @@ export function layoutIllustrationLabels(
       const clampPenalty =
         Math.abs(x - (anchor.x + off.dx)) + Math.abs(y - (anchor.y + off.dy)) > 0.5 ? 0.3 : 0;
 
+      // Подпись ушла на противоположную от якоря половину кадра — выноска
+      // пересечёт картинку. Тот же сдерживающий фактор, что +8.0 в
+      // backend/label_layout.py:226; на фронте его не было вовсе.
+      //
+      // Проверка ТОЛЬКО горизонтальная, как на бэкенде. Вертикальная давала
+      // ложные срабатывания на штатном «над объектом»: якорь чуть ниже
+      // середины, подпись чуть выше — формально разные половины, а на деле
+      // сдвиг на десяток процентов.
+      const center = boxCenter(box);
+      const crossFramePenalty =
+        anchor.x < 50 !== center.x < 50 ? CROSS_FRAME_PENALTY : 0;
+
+      // Позиция от бэкенда: он уже анализировал картинку и держал выноску
+      // короткой. Бонус, а не запрет — жёсткие проверки выше её всё ещё режут.
+      const backendBonus = off.fromBackend ? BACKEND_PLACEMENT_BONUS : 0;
+
       const score =
         tooClosePenalty +
         tooFarPenalty +
         inwardPenalty +
         backdropPenalty +
         clampPenalty +
+        crossFramePenalty -
+        backendBonus +
         ci * 0.04; // порядок кандидатов: при прочих равных — над объектом
 
-      const candidate: CandidatePlacement = {
+      candidates.push({
         box,
         connector,
         score,
         surfaceClear: surfaceIsClear(surfaceRisk),
-      };
-      if (candidate.surfaceClear && (bestClear == null || score < bestClear.score)) {
-        bestClear = candidate;
-      }
-      if (bestFallback == null || score < bestFallback.score) {
-        bestFallback = candidate;
-      }
+      });
     });
 
     const emergencyBox = labelBox(
@@ -1034,9 +1107,29 @@ export function layoutIllustrationLabels(
       metrics.width,
       metrics.height,
     );
+    // Раньше здесь было `bestClear ?? bestFallback` — лексикографика, из-за
+    // которой ЛЮБОЕ чистое место побеждало близкое с малейшим следом краски,
+    // независимо от score. На насыщенном растре это и давало «подпись у
+    // противоположного края и выноска через всю картинку». Теперь чистый фон
+    // предпочитается только когда он не проигрывает по score больше, чем на
+    // CLEAR_PREFERENCE_MARGIN.
+    const cheapest = (list: ReadonlyArray<CandidatePlacement>) =>
+      list.reduce<CandidatePlacement | null>(
+        (best, item) => (best == null || item.score < best.score ? item : best),
+        null,
+      );
+    const bestOverall = cheapest(candidates);
+    const bestClear = cheapest(candidates.filter((c) => c.surfaceClear));
+    // Чистый фон предпочитаем, только если он не проигрывает по score больше,
+    // чем на CLEAR_PREFERENCE_MARGIN. Так читаемость остаётся приоритетом, но
+    // не ценой улёта подписи через кадр.
+    const preferClear =
+      bestClear != null
+      && (bestOverall == null
+        || bestClear.score <= bestOverall.score + CLEAR_PREFERENCE_MARGIN);
     const chosen: CandidatePlacement =
-      bestClear
-      ?? bestFallback
+      (preferClear ? bestClear : null)
+      ?? bestOverall
       ?? {
         box: emergencyBox,
         connector: connectorFor(emergencyBox, label.arrow_to),

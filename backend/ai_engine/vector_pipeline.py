@@ -224,6 +224,9 @@ _SCENE_TOP_FIELDS = {
 }
 _SCENE_KINDS = {
     "free_body_diagram",
+    # Неподвижный блок с подвешенным грузом. Второй сюжет (после наклонной
+    # плоскости), который компилируется в Vector DSL, а не уходит в растр.
+    "pulley_system",
     "mechanics_diagram",
     "math_graph",
     "spring_system",
@@ -233,6 +236,7 @@ _SCENE_KINDS = {
 _OBJECT_TYPES = {
     "body",
     "surface",
+    "pulley",
     "support",
     "connector",
     "axis",
@@ -281,6 +285,9 @@ _DIRECTION_TYPES = {
     "right",
     "parallel_to",
     "perpendicular_to",
+    # Натяжение: направлено вдоль троса. Остальные relational-формы требуют
+    # поверхности, поэтому без этой силу T нельзя было выразить.
+    "along_connector",
 }
 _LABEL_FIELDS = {"id", "text", "attach_to", "placement"}
 _PLACEMENTS = {"above", "below", "left", "right", "center", "auto"}
@@ -902,6 +909,19 @@ def validate_scientific_scene_plan(plan: dict[str, Any]) -> None:
                     errors.append(
                         f"{path}.direction.sense is forbidden for perpendicular_to"
                     )
+            elif direction_type == "along_connector":
+                if not isinstance(reference, str):
+                    errors.append(
+                        f"{path}.direction.reference is required for along_connector"
+                    )
+                if sense not in {"away_from_body", "toward_body"}:
+                    errors.append(
+                        f"{path}.direction.sense is required for along_connector"
+                    )
+                if side is not None:
+                    errors.append(
+                        f"{path}.direction.side is forbidden for along_connector"
+                    )
             elif reference is not None:
                 errors.append(
                     f"{path}.direction.reference is forbidden for {direction_type}"
@@ -910,7 +930,14 @@ def validate_scientific_scene_plan(plan: dict[str, Any]) -> None:
                 errors.append(
                     f"{path}.direction sense/side is forbidden for {direction_type}"
                 )
-            if sense not in {None, "up_slope", "down_slope"}:
+            if sense not in {
+                None,
+                "up_slope",
+                "down_slope",
+                # along_connector: натяжение вдоль троса.
+                "away_from_body",
+                "toward_body",
+            }:
                 errors.append(f"{path}.direction.sense is invalid")
             if side not in {None, "outward", "inward"}:
                 errors.append(f"{path}.direction.side is invalid")
@@ -978,9 +1005,20 @@ def validate_scientific_scene_plan(plan: dict[str, Any]) -> None:
         reference = direction.get("reference")
         if reference is not None:
             reference_root, _ = _ref_parts(str(reference))
-            if objects_by_id.get(reference_root, {}).get("type") != "surface":
+            reference_type = objects_by_id.get(reference_root, {}).get("type")
+            # parallel_to/perpendicular_to считаются от поверхности, а
+            # along_connector — от троса. Держим проверку типа по направлению,
+            # иначе натяжение либо не пройдёт валидацию, либо сошлётся на
+            # поверхность, которой в сцене со шкивом нет вовсе.
+            expected_type = (
+                "connector"
+                if direction.get("type") == "along_connector"
+                else "surface"
+            )
+            if reference_type != expected_type:
                 errors.append(
-                    f"$.vectors[{vector_id}].direction.reference must be a surface"
+                    f"$.vectors[{vector_id}].direction.reference must be a "
+                    f"{expected_type}"
                 )
             _validate_scene_reference(
                 reference,
@@ -1124,9 +1162,91 @@ def validate_scientific_scene_plan(plan: dict[str, Any]) -> None:
             label_roots=label_roots,
             errors=errors,
         )
+    elif plan.get("scene_kind") == "pulley_system":
+        _validate_pulley_physics(
+            plan,
+            objects_by_id=objects_by_id,
+            vectors_by_id=vectors_by_id,
+            errors=errors,
+        )
 
     if errors:
         raise ScenePlanValidationError(errors)
+
+
+def _validate_pulley_physics(
+    plan: dict[str, Any],
+    *,
+    objects_by_id: dict[str, dict[str, Any]],
+    vectors_by_id: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> None:
+    """Физика неподвижного блока.
+
+    Смысл этих проверок — не «строгость ради строгости»: именно здесь ловится
+    дефект, из-за которого сцена и переделывалась. Растровая модель рисовала
+    тяжесть куда угодно, поэтому `mg` обязана быть строго `down`, а натяжение —
+    вдоль троса и ОТ тела. Всё остальное отклоняем и честно уходим в растр.
+    """
+    pulleys = [item for item in objects_by_id.values() if item.get("type") == "pulley"]
+    bodies = [item for item in objects_by_id.values() if item.get("type") == "body"]
+    connectors = [
+        item for item in objects_by_id.values() if item.get("type") == "connector"
+    ]
+    extra_objects = [
+        item
+        for item in objects_by_id.values()
+        if item.get("type") not in {"pulley", "body", "connector"}
+    ]
+
+    if len(pulleys) != 1 or pulleys[0].get("count") != 1:
+        errors.append("pulley_system requires exactly one pulley")
+    if len(bodies) != 1 or bodies[0].get("count") != 1:
+        errors.append("pulley_system requires exactly one hanging body")
+    if len(connectors) != 1 or connectors[0].get("count") != 1:
+        errors.append("pulley_system requires exactly one rope")
+    if extra_objects:
+        errors.append("pulley_system forbids extra semantic objects")
+    if not (pulleys and bodies and connectors):
+        return
+
+    body_id = str(bodies[0].get("id"))
+    rope_id = str(connectors[0].get("id"))
+    if connectors[0].get("shape") not in {None, "rope", "thread", "cable"}:
+        errors.append("pulley_system connector must be a rope")
+
+    by_subtype: dict[str, dict[str, Any]] = {}
+    for vector in vectors_by_id.values():
+        if vector.get("kind") != "force":
+            errors.append("pulley_system vectors must all be force vectors")
+        subtype = str(vector.get("subtype", "")).lower()
+        canonical = "gravity" if subtype in {"gravity", "weight"} else subtype
+        if canonical in by_subtype:
+            errors.append(f"Duplicate force vector subtype: {canonical}")
+        by_subtype[canonical] = vector
+
+    if set(by_subtype) != {"gravity", "tension"}:
+        errors.append("pulley_system requires exactly gravity and tension")
+        return
+
+    gravity = by_subtype["gravity"]
+    if (gravity.get("direction") or {}).get("type") != "down":
+        errors.append("gravity must point vertically down")
+    if _ref_parts(str(gravity.get("target", "")))[0] != body_id:
+        errors.append("gravity must attach to the hanging body")
+
+    tension = by_subtype["tension"]
+    tension_direction = tension.get("direction") or {}
+    if (
+        tension_direction.get("type") != "along_connector"
+        or _ref_parts(str(tension_direction.get("reference", "")))[0] != rope_id
+    ):
+        errors.append("tension must be along_connector of the rope")
+    if tension_direction.get("sense") != "away_from_body":
+        # Трос ТЯНЕТ тело к подвесу. Обратный знак — типичная ошибка модели.
+        errors.append("tension must point away from the body")
+    if _ref_parts(str(tension.get("target", "")))[0] != body_id:
+        errors.append("tension must attach to the hanging body")
 
 
 def _validate_free_body_physics(
@@ -1418,6 +1538,53 @@ Required free-body example:
   ],
   "render_prompt": "Professional flat scientific textbook illustration with clean outlines and restrained colors."
 }
+
+For a load hanging from a FIXED PULLEY (неподвижный блок, шкив) with tension:
+- scene_kind is pulley_system;
+- exactly one pulley object, one body and one rope connector;
+- no surface, no support, no angle_arc;
+- exactly gravity and tension, nothing else;
+- gravity direction.type is down — never up, never along the rope;
+- tension direction.type is along_connector, references the ROPE (not a
+  surface), sense away_from_body, because the rope pulls the load toward the
+  pulley;
+- one label per vector;
+- never state which side the load hangs on or where the pulley sits: the
+  backend owns every position.
+
+Required pulley example:
+{
+  "type": "scientific_scene_plan",
+  "schema_version": "0.1",
+  "scene_kind": "pulley_system",
+  "canvas": {"aspect_ratio": "16:9", "background": "white"},
+  "objects": [
+    {"id": "pulley1", "type": "pulley", "role": "fixed pulley", "shape": "wheel", "count": 1, "size": "medium"},
+    {"id": "load1", "type": "body", "role": "hanging load", "shape": "block", "count": 1, "size": "medium"},
+    {"id": "rope1", "type": "connector", "role": "rope", "shape": "rope", "count": 1}
+  ],
+  "relations": [
+    {"id": "rope_load", "type": "attached_to", "subject": "rope1", "object": "load1"},
+    {"id": "rope_pulley", "type": "connected_to", "subject": "rope1", "object": "pulley1"}
+  ],
+  "vectors": [
+    {"id": "gravity", "kind": "force", "subtype": "gravity", "target": "load1.center", "direction": {"type": "down"}, "length": "medium"},
+    {"id": "tension", "kind": "force", "subtype": "tension", "target": "load1.top", "direction": {"type": "along_connector", "reference": "rope1", "sense": "away_from_body"}, "length": "medium"}
+  ],
+  "labels": [
+    {"id": "gravity_label", "text": "Сила тяжести mg", "attach_to": "gravity.mid", "placement": "right"},
+    {"id": "tension_label", "text": "Натяжение T", "attach_to": "tension.mid", "placement": "right"}
+  ],
+  "constraints": [
+    {"id": "pulley_count", "type": "exact_count", "target": "pulley", "value": 1},
+    {"id": "body_count", "type": "exact_count", "target": "body", "value": 1},
+    {"id": "force_count", "type": "exact_count", "target": "force", "value": 2},
+    {"id": "single_heads", "type": "single_headed", "target": "force", "value": 1},
+    {"id": "text_free", "type": "text_free_raster", "target": "image", "value": 1},
+    {"id": "label_match", "type": "labels_match_components", "target": "labels", "value": 1}
+  ],
+  "render_prompt": "Professional flat scientific textbook illustration with clean outlines and restrained colors."
+}
 """.strip()
 
 
@@ -1597,12 +1764,107 @@ def _anchor_for_vector_layout(reference: str) -> str:
     return f"{root}.{alias}" if alias else root
 
 
+def _pulley_plan_to_vector_layout(plan: dict[str, Any]) -> dict[str, Any] | None:
+    """Компилирует `pulley_system` в Vector DSL.
+
+    Позиции здесь не фигурируют вовсе: план даёт только отношения
+    (`hangs_from`, `over`, `along_connector`), а координаты, касательные и дугу
+    троса считает рендерер. Плану достаточно быть валидным — на любой
+    неожиданной форме возвращаем None, и запрос честно уходит в растр, а не
+    падает с исключением.
+    """
+    objects = [copy.deepcopy(item) for item in plan["objects"]]
+    pulley = next((item for item in objects if item["type"] == "pulley"), None)
+    body = next((item for item in objects if item["type"] == "body"), None)
+    rope = next((item for item in objects if item["type"] == "connector"), None)
+    if pulley is None or body is None or rope is None:
+        return None
+
+    labels_by_root = {
+        _ref_parts(label["attach_to"])[0]: label["text"] for label in plan["labels"]
+    }
+    pulley_id = str(pulley["id"])
+    body_id = str(body["id"])
+    rope_id = str(rope["id"])
+
+    # Груз висит слева — сторона фиксирована бэкендом, чтобы пять одинаковых
+    # запросов давали одну и ту же схему.
+    hang_side = "left"
+    rope_end_anchor = f"{pulley_id}.rim_right"
+
+    components: list[dict[str, Any]] = [
+        {
+            "id": pulley_id,
+            "type": "pulley",
+            "mount": "ceiling",
+            "size": pulley.get("size") or "medium",
+        },
+        {
+            "id": body_id,
+            "type": "body",
+            "shape": body.get("shape") or "block",
+            "hangs_from": pulley_id,
+            "side": hang_side,
+            "size": body.get("size") or "medium",
+        },
+        {
+            "id": rope_id,
+            "type": "connector",
+            "kind": "rope",
+            "from": f"{body_id}.top",
+            "to": rope_end_anchor,
+            "over": pulley_id,
+        },
+    ]
+
+    for vector in plan["vectors"]:
+        subtype = str(vector["subtype"]).lower()
+        canonical = "weight" if subtype in {"gravity", "weight"} else subtype
+        direction = vector["direction"]
+        if direction["type"] == "along_connector":
+            normalized: str | dict[str, Any] = {
+                "along_connector": _ref_parts(direction["reference"])[0],
+                "sense": direction.get("sense") or "away_from_body",
+            }
+            # Натяжение приложено в точке крепления троса, а не в центре тела:
+            # иначе стрелка выходит из середины груза и читается как ещё одна
+            # объёмная сила.
+            target = f"{body_id}.top"
+        else:
+            normalized = direction["type"]
+            target = f"{body_id}.center"
+        components.append(
+            {
+                "id": vector["id"],
+                "type": "vector",
+                "kind": vector["kind"],
+                "subtype": canonical,
+                "target": target,
+                "direction": normalized,
+                "length": vector["length"],
+                "label": labels_by_root.get(vector["id"], ""),
+            }
+        )
+
+    layout = {
+        "type": "vector_layout",
+        "schema_version": "0.1",
+        "canvas": {"width": 1024, "height": 576, "background": "white"},
+        "components": components,
+    }
+    ensure_semantic_vector_layout(layout)
+    return layout
+
+
 def scene_plan_to_vector_layout(
     plan: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Normalize a supported semantic scene into the existing Vector DSL."""
     validate_scientific_scene_plan(plan)
-    if plan.get("scene_kind") != "free_body_diagram":
+    scene_kind = plan.get("scene_kind")
+    if scene_kind == "pulley_system":
+        return _pulley_plan_to_vector_layout(plan)
+    if scene_kind != "free_body_diagram":
         return None
 
     objects = [copy.deepcopy(item) for item in plan["objects"]]

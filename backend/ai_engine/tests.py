@@ -1088,6 +1088,69 @@ class SemanticLabelGroundingTests(TestCase):
         self.assertEqual(grounded[0]["arrow_to"], {"x": 62.0, "y": 58.0})
 
 
+class LabelTargetKindInferenceTests(TestCase):
+    """`target_kind` должен проставляться и БЕЗ vision-грунтинга.
+
+    Регрессия: эвристика жила внутри `_ground_labels_with_vision`, а при
+    рестайле грунтинг пропускается (`skip_grounding=True`). Из-за этого подписи
+    сил приходили в `layout_labels_on_margins` как `object`, а он выносит
+    object на поля — «mg» уезжала от своей стрелки на край кадра.
+    """
+
+    def test_force_labels_are_classified_as_vectors(self) -> None:
+        from ai_engine.illustration_pipeline import infer_label_target_kind
+
+        for content in ("mg", "T", "N", "сила тяжести", "натяжение", "tension"):
+            with self.subTest(content=content):
+                self.assertEqual(
+                    infer_label_target_kind({"content": content}), "vector"
+                )
+
+    def test_angle_and_object_labels(self) -> None:
+        from ai_engine.illustration_pipeline import infer_label_target_kind
+
+        self.assertEqual(infer_label_target_kind({"content": "θ"}), "angle")
+        self.assertEqual(infer_label_target_kind({"content": "30°"}), "angle")
+        self.assertEqual(infer_label_target_kind({"content": "Груз"}), "object")
+        self.assertEqual(infer_label_target_kind({"content": "Блок"}), "object")
+
+    def test_explicit_target_kind_wins(self) -> None:
+        from ai_engine.illustration_pipeline import infer_label_target_kind
+
+        # Явное указание модели уважаем: она видит сцену, а мы только текст.
+        self.assertEqual(
+            infer_label_target_kind({"content": "mg", "target_kind": "object"}),
+            "object",
+        )
+
+    def test_apply_does_not_mutate_input(self) -> None:
+        from ai_engine.illustration_pipeline import apply_label_target_kinds
+
+        labels = [{"content": "mg"}]
+        result = apply_label_target_kinds(labels)
+
+        self.assertEqual(result[0]["target_kind"], "vector")
+        self.assertNotIn("target_kind", labels[0])
+
+    def test_force_label_stays_local_after_restyle_layout(self) -> None:
+        """Сквозная проверка мотивации: с проставленным kind раскладка не
+        уносит силу на поля."""
+        from ai_engine.illustration_pipeline import apply_label_target_kinds
+        from ai_engine.label_layout import layout_labels_on_margins
+
+        img = LabelMarginLayoutTests._frame(35, 65)
+        anchor = {"x": 52.0, "y": 48.0}
+        labels = apply_label_target_kinds(
+            [{"content": "mg", "x": 52.0, "y": 41.0, "arrow_to": anchor}]
+        )
+
+        result = layout_labels_on_margins(img, labels)[0]
+
+        # vector/angle раскладка не трогает — подпись осталась у своей стрелки.
+        self.assertLess(abs(result["x"] - 52.0), 1.0)
+        self.assertLess(abs(result["y"] - 41.0), 1.0)
+
+
 class LabelMarginLayoutTests(TestCase):
     """Раскладка подписей по спокойным зонам (ai_engine.label_layout).
 

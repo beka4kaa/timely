@@ -91,6 +91,7 @@ _COMPONENT_TYPES = {
     "vector",
     "body",
     "surface",
+    "pulley",
     "angle_arc",
     "dimension_line",
     "connector",
@@ -225,6 +226,69 @@ def _reject_unsafe_component_value(value: Any, path: str) -> None:
             raise VectorRenderError(f"String is too long: {path}")
 
 
+def tangent_point_on_wheel(point: Vec, center: Vec, radius: float) -> Vec:
+    """Точка касания прямой, идущей из `point` к окружности (center, radius).
+
+    Чистая геометрия, без рендерера — как требует AGENTS.md по геометрическим
+    хелперам. Если точка внутри окружности, касательной нет: возвращаем
+    ближайшую точку обода, чтобы трос всё равно вышел из обода, а не из центра.
+
+    Из двух симметричных касательных берём ту, что лежит с той же стороны от
+    оси колеса, что и сама точка. Это НЕ косметика: груз висит ровно под ободом,
+    и только «своя» касательная даёт вертикальный участок троса — а значит
+    вертикальное натяжение. Противоположная касательная уводила трос по
+    диагонали через колесо, и сила T получалась физически неверной.
+    """
+    delta = point - center
+    span = math.hypot(delta.x, delta.y)
+    if span <= radius:
+        unit = delta.unit() if span > 1e-9 else Vec(0, -1)
+        return center + unit * radius
+
+    # Угол между линией «центр→точка» и касательной: cos(alpha) = r / span.
+    alpha = math.acos(max(-1.0, min(1.0, radius / span)))
+    base = math.atan2(delta.y, delta.x)
+    candidates = [
+        center + Vec(math.cos(base + alpha) * radius, math.sin(base + alpha) * radius),
+        center + Vec(math.cos(base - alpha) * radius, math.sin(base - alpha) * radius),
+    ]
+    # Ближайшая по горизонтали к точке: для груза под левым ободом это ровно
+    # rim_left, и участок троса выходит строго вертикальным.
+    return min(candidates, key=lambda candidate: abs(candidate.x - point.x))
+
+
+def rope_over_wheel(
+    start: Vec,
+    end: Vec,
+    center: Vec,
+    radius: float,
+) -> tuple[str, list[Vec]]:
+    """SVG-path троса, перекинутого через колесо, + точки касания.
+
+    Трос идёт прямым участком от `start` до обода, огибает колесо по дуге и
+    уходит прямым участком к `end`. Дуга рисуется по «внешней» стороне — той,
+    что дальше от хорды между точками касания, иначе трос прошёл бы сквозь ось.
+
+    Возвращает `(path, [tangent_start, tangent_end])`. Детерминировано:
+    ни случайности, ни зависимости от порядка вызовов.
+    """
+    t_start = tangent_point_on_wheel(start, center, radius)
+    t_end = tangent_point_on_wheel(end, center, radius)
+
+    # sweep_flag определяем по знаку векторного произведения: дуга должна идти
+    # «поверх» колеса, а не срезать его насквозь.
+    cross = (t_start - center).x * (t_end - center).y - (t_start - center).y * (t_end - center).x
+    sweep = 1 if cross > 0 else 0
+
+    path = (
+        f"M {start.x:.1f},{start.y:.1f} "
+        f"L {t_start.x:.1f},{t_start.y:.1f} "
+        f"A {radius:.1f},{radius:.1f} 0 0 {sweep} {t_end.x:.1f},{t_end.y:.1f} "
+        f"L {end.x:.1f},{end.y:.1f}"
+    )
+    return path, [t_start, t_end]
+
+
 class VectorRenderer:
     """Compile a validated semantic layout into deterministic SVG."""
 
@@ -233,6 +297,12 @@ class VectorRenderer:
         "floor",
         "wall",
         "body",
+        # Шкив и его крепление — физическая структура сцены: именно её
+        # стилизует image-модель. Трос остаётся в overlay, потому что его
+        # геометрию (касательные + дуга) бэкенд считает точно, а модель — нет.
+        "pulley",
+        "pulley-axle",
+        "pulley-mount",
     }
     _OVERLAY_ROLES = {
         "axis",
@@ -247,6 +317,9 @@ class VectorRenderer:
     _PRIORITY = {
         "axis": 10,
         "surface": 20,
+        # Шкив рисуется ДО тела: тело может висеть на нём (`hangs_from`), а для
+        # этого его якоря должны быть уже зарегистрированы.
+        "pulley": 25,
         "body": 30,
         "curve": 40,
         "connector": 50,
@@ -269,6 +342,10 @@ class VectorRenderer:
         self.elements: list[str] = []
         self.anchors: dict[str, Vec] = {}
         self.surfaces: dict[str, SurfaceGeometry] = {}
+        # id шкива → (центр, радиус). Нужен тросу (`over`) и телу (`hangs_from`).
+        self.pulleys: dict[str, tuple[Vec, float]] = {}
+        # id троса → (начало, конец) фактических участков, для along_connector.
+        self.connector_segments: dict[str, tuple[Vec, Vec]] = {}
         self.axes: dict[str, dict[str, Any]] = {}
         self.vector_segments: list[tuple[Vec, Vec]] = []
         self.label_boxes: list[Box] = []
@@ -401,6 +478,7 @@ class VectorRenderer:
             "label": self._render_label,
             "math_label": self._render_label,
             "surface": self._render_surface,
+            "pulley": self._render_pulley,
             "body": self._render_body,
             "vector": self._render_vector,
             "angle_arc": self._render_angle_arc,
@@ -499,6 +577,82 @@ class VectorRenderer:
             )
         )
 
+    def _render_pulley(self, component: dict[str, Any]) -> None:
+        """Неподвижный блок: обод, ось и кронштейн крепления к потолку.
+
+        Позиция семантическая, а не пиксельная: `mount` = "ceiling" | "wall".
+        Модель называет отношение, координаты считает бэкенд.
+        """
+        component_id = self._id(component)
+        size_name = str(component.get("size", "medium"))
+        size_scale = {"small": 0.09, "medium": 0.12, "large": 0.155}.get(size_name)
+        if size_scale is None:
+            raise VectorRenderError(f"Unsupported pulley size: {size_name}")
+        radius = min(self.width, self.height) * size_scale
+
+        mount = str(component.get("mount", "ceiling"))
+        if mount not in {"ceiling", "wall"}:
+            raise VectorRenderError(f"Unsupported pulley mount: {mount}")
+
+        # Шкив висит в верхней части кадра, по центру: ниже должно остаться
+        # место под груз и под вертикальную стрелку mg.
+        center = Vec(self.width * 0.5, self.height * 0.26)
+        bracket_top = Vec(center.x, self.height * 0.09)
+
+        # Кронштейн и опорная планка.
+        self.elements.append(
+            self._line(
+                Vec(bracket_top.x - self.width * 0.11, bracket_top.y),
+                Vec(bracket_top.x + self.width * 0.11, bracket_top.y),
+                color=_INK,
+                width=6,
+                data_role="pulley-mount",
+                data_component_id=component_id,
+            )
+        )
+        self.elements.append(
+            self._line(
+                bracket_top,
+                Vec(center.x, center.y - radius),
+                color=_INK,
+                width=4,
+                data_role="pulley-mount",
+                data_component_id=component_id,
+            )
+        )
+        # Обод + ось.
+        self.elements.append(
+            f'<circle data-component-id="{escape(component_id)}" data-role="pulley" '
+            f'cx="{center.x:.1f}" cy="{center.y:.1f}" r="{radius:.1f}" '
+            f'fill="{_BLOCK_FILL}" stroke="{_INK}" stroke-width="4"/>'
+        )
+        self.elements.append(
+            f'<circle data-component-id="{escape(component_id)}" data-role="pulley-axle" '
+            f'cx="{center.x:.1f}" cy="{center.y:.1f}" r="{radius * 0.16:.1f}" '
+            f'fill="{_INK}" stroke="none"/>'
+        )
+
+        self.pulleys[component_id] = (center, radius)
+        self._register(
+            component_id,
+            {
+                "center": center,
+                "top": center + Vec(0, -radius),
+                "bottom": center + Vec(0, radius),
+                "rim_left": center + Vec(-radius, 0),
+                "rim_right": center + Vec(radius, 0),
+                "mount": bracket_top,
+            },
+        )
+        if component.get("label"):
+            self._text(
+                component["label"],
+                center + Vec(-radius * 1.25, -radius * 0.9),
+                size=20,
+                data_role="body-label",
+                data_for=component_id,
+            )
+
     def _render_body(self, component: dict[str, Any]) -> None:
         component_id = self._id(component)
         shape = component.get("shape")
@@ -521,6 +675,21 @@ class VectorRenderer:
         if surface:
             tangent = surface.tangent
             normal = surface.normal
+
+        # Тело, подвешенное на шкиве. Отношение семантическое (`hangs_from` +
+        # `side`), позицию считает бэкенд: под соответствующей точкой обода, на
+        # фиксированной доле высоты кадра — так под ним остаётся место под mg.
+        hangs_from = component.get("hangs_from")
+        if isinstance(hangs_from, str):
+            pulley = self.pulleys.get(hangs_from)
+            if pulley is None:
+                raise VectorRenderError(f"Missing pulley: {hangs_from}")
+            pulley_center, pulley_radius = pulley
+            side = str(component.get("side", "left"))
+            if side not in {"left", "right"}:
+                raise VectorRenderError(f"Unsupported hang side: {side}")
+            offset = -pulley_radius if side == "left" else pulley_radius
+            center = Vec(pulley_center.x + offset, self.height * 0.68)
 
         if shape == "block":
             half_width = size * 0.76
@@ -666,6 +835,24 @@ class VectorRenderer:
             if not surface:
                 raise VectorRenderError(f"Missing surface for parallel vector: {parallel_to}")
             return surface.tangent if relation.get("sense", "up_slope") == "up_slope" else surface.tangent * -1
+
+        # Натяжение направлено вдоль троса. Все формы выше требуют `surface`,
+        # поэтому без этой ветки силу T в DSL выразить было нельзя.
+        along_connector = relation.get("along_connector")
+        if isinstance(along_connector, str):
+            segment = self.connector_segments.get(along_connector)
+            if segment is None:
+                raise VectorRenderError(
+                    f"Missing connector for along_connector vector: {along_connector}"
+                )
+            body_end, far_end = segment
+            unit = (far_end - body_end).unit()
+            # away_from_body — физически верный смысл натяжения: трос ТЯНЕТ тело
+            # к точке подвеса, то есть от тела вдоль троса.
+            sense = relation.get("sense", "away_from_body")
+            if sense not in {"away_from_body", "toward_body"}:
+                raise VectorRenderError(f"Unsupported along_connector sense: {sense}")
+            return unit if sense == "away_from_body" else unit * -1
 
         raise VectorRenderError(f"Unsupported vector direction: {spec}")
 
@@ -1025,6 +1212,39 @@ class VectorRenderer:
         start = self._anchor(component.get("from"))
         end = self._anchor(component.get("to"))
         component_id = self._id(component)
+
+        # Трос через шкив: два прямых участка по касательным плюс дуга по ободу.
+        # Без этого трос шёл бы ПРЯМОЙ сквозь колесо и ось.
+        over_id = component.get("over")
+        if isinstance(over_id, str):
+            pulley = self.pulleys.get(over_id)
+            if pulley is None:
+                raise VectorRenderError(f"Missing pulley: {over_id}")
+            if kind == "spring":
+                raise VectorRenderError("A spring cannot be routed over a pulley")
+            center, radius = pulley
+            path, tangents = rope_over_wheel(start, end, center, radius)
+            self.elements.append(
+                f'<path data-component-id="{escape(component_id)}" data-role="connector" '
+                f'd="{path}" fill="none" stroke="{_INK}" stroke-width="4" '
+                'stroke-linejoin="round" stroke-linecap="round"/>'
+            )
+            # Якоря и «участок» троса — от тела до первой точки касания: именно
+            # вдоль него направлено натяжение, приложенное к телу.
+            self.connector_segments[component_id] = (start, tangents[0])
+            self._register(
+                component_id,
+                {
+                    "start": start,
+                    "mid": start + (tangents[0] - start) * 0.5,
+                    "end": end,
+                    "tangent_start": tangents[0],
+                    "tangent_end": tangents[1],
+                },
+            )
+            self._render_connector_label(component, component_id, start, tangents[0])
+            return
+
         if kind == "spring":
             path = self._spring_path(start, end)
             self.elements.append(
@@ -1043,14 +1263,36 @@ class VectorRenderer:
                     data_component_id=component_id,
                 )
             )
-        if component.get("label"):
-            self._text(
-                component["label"],
-                start + (end - start) * 0.5 + Vec(0, -24),
-                size=22,
-                data_role="connector-label",
-                data_for=component_id,
-            )
+        # Якоря троса/пружины. Раньше `_register` здесь не вызывался вовсе,
+        # поэтому к соединению нельзя было прицепить ни вектор, ни подпись —
+        # именно из-за этого натяжение было невыразимо в DSL.
+        self.connector_segments[component_id] = (start, end)
+        self._register(
+            component_id,
+            {
+                "start": start,
+                "mid": start + (end - start) * 0.5,
+                "end": end,
+            },
+        )
+        self._render_connector_label(component, component_id, start, end)
+
+    def _render_connector_label(
+        self,
+        component: dict[str, Any],
+        component_id: str,
+        start: Vec,
+        end: Vec,
+    ) -> None:
+        if not component.get("label"):
+            return
+        self._text(
+            component["label"],
+            start + (end - start) * 0.5 + Vec(0, -24),
+            size=22,
+            data_role="connector-label",
+            data_for=component_id,
+        )
 
     @staticmethod
     def _spring_path(start: Vec, end: Vec) -> str:

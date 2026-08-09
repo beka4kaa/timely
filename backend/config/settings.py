@@ -384,16 +384,17 @@ IMAGE_GEN_API_KEY = os.getenv(
 # терминальным запретом — и тем ломала контракт, по которому подписи
 # накладываются отдельным слоем. Она же добавляла лишние стрелки, второй угол и
 # внешнюю силу вопреки MECHANICS/INCLINED_PLANE-контрактам.
-# NB: чисто image-модели (например Seedream) обязаны попадать в
-# `_is_image_only_model` (image_enrichment.py), иначе запрос уйдёт с modalities
-# ["image", "text"] и провайдер ответит 404. То же касается любой новой модели.
+# NB: чисто image-модели (Seedream) обязаны попадать в `_is_image_only_model`
+# (image_enrichment.py), иначе запрос уйдёт с modalities ["image", "text"] и
+# провайдер ответит 404. То же касается любой новой модели.
+# Gemini-3-pro-image мультимодальная (отдаёт и картинку, и текст), поэтому её
+# туда добавлять НЕ нужно — проверено живым запросом.
 #
-# Дефолт сменён с bytedance-seed/seedream-4.5: этой модели БОЛЬШЕ НЕТ на
-# OpenRouter — она пропала из /api/v1/models, а запрос отвечает
-# 404 «No endpoints found that support the requested output modalities».
-# Из-за этого падала ЛЮБАЯ генерация иллюстрации. Gemini-3-pro-image
-# мультимодальная (отдаёт и картинку, и текст), поэтому в
-# `_is_image_only_model` её добавлять НЕ нужно — проверено живым запросом.
+# Проверять доступность модели нужно ТОЧЕЧНЫМ запросом
+# GET /api/v1/models/<id>/endpoints, а НЕ поиском по листингу /api/v1/models:
+# листинг отдаёт не весь каталог, и по нему легко ошибочно счесть живую модель
+# снятой. bytedance-seed/seedream-4.5 в листинге отсутствует, но её endpoint
+# `bytedance-seed/seedream-4.5-20251203` жив.
 IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "google/gemini-3-pro-image")
 
 # ── Выбор модели пользователем (ai_engine.image_models) ──────────────────────
@@ -413,10 +414,6 @@ IMAGE_GEN_ALLOWED_MODELS = os.getenv(
 # Дефолт для UI и для запросов без явного выбора. Приоритет выше, чем у
 # IMAGE_GEN_MODEL, но значение обязано входить в allowlist — иначе берётся
 # модель с флагом default из реестра.
-#
-# NB: см. предупреждение выше про Seedream — на 2026-07-29 её нет в каталоге
-# OpenRouter. Дефолт задан по прямому решению владельца продукта; откат на
-# рабочую модель делается этой же переменной, без правки кода.
 IMAGE_GEN_DEFAULT_MODEL = os.getenv(
     "IMAGE_GEN_DEFAULT_MODEL",
     "bytedance-seed/seedream-4.5",
