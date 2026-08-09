@@ -22,6 +22,7 @@ from .models import (
     DocumentFile,
     DocumentSection,
     ExtractedTask,
+    IngestionAttempt,
     IngestionJob,
     KnowledgeChunk,
     LearningGoal,
@@ -198,8 +199,28 @@ class IngestionJobSerializer(serializers.ModelSerializer):
             "retry_count",
             "error_code",
             "error_message",
+            "warnings",
             "started_at",
             "finished_at",
+        ]
+        read_only_fields = fields
+        # `celery_task_id` наружу не отдаём: внутренний идентификатор очереди
+        # пользователю не нужен и ничего ему не объясняет.
+
+
+class IngestionAttemptSerializer(serializers.ModelSerializer):
+    """Журнал переходов. Нужен, чтобы показать, где именно всё остановилось."""
+
+    class Meta:
+        model = IngestionAttempt
+        fields = [
+            "from_status",
+            "to_status",
+            "succeeded",
+            "error_code",
+            "error_message",
+            "duration_ms",
+            "created_at",
         ]
         read_only_fields = fields
 

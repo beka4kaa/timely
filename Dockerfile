@@ -21,6 +21,18 @@ COPY backend/ .
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Кодировка токенайзера — В ОБРАЗ, а не при первом запросе.
+#
+# `tiktoken` качает файл кодировки при первом обращении и кладёт в кэш. В
+# контейнере это означало бы поход в сеть посреди обработки книги, а при
+# закрытом исходящем трафике — молчаливый откат на эвристику. Откат сам по себе
+# безопасен, но он МЕНЯЕТ границы фрагментов, то есть один и тот же учебник при
+# одной `PROCESSING_VERSION` разбивался бы по-разному в зависимости от того,
+# достучался ли контейнер до CDN. Прогрев на сборке убирает и сеть, и эту
+# недетерминированность.
+ENV TIKTOKEN_CACHE_DIR=/app/.tiktoken-cache
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 # Collect static files
 RUN python manage.py collectstatic --noinput
 

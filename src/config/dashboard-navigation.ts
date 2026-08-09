@@ -8,6 +8,7 @@ import {
   GraduationCapIcon,
   HeartIcon,
   LayoutDashboardIcon,
+  LibraryIcon,
   MedalIcon,
   NotebookPenIcon,
   ShieldCheckIcon,
@@ -61,6 +62,17 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   "/dashboard/whiteboard": {
     title: "Научная доска",
     subtitle: "Учебная сессия · сохраняется автоматически",
+  },
+  "/dashboard/curriculum": {
+    title: "Курс по книге",
+    subtitle: "Программа по вашему учебнику со ссылками на страницы",
+  },
+  // Ключ длиннее «/dashboard/curriculum», а `getDashboardPageMeta` сортирует
+  // ключи по убыванию длины — поэтому он выигрывает. В боковое меню программа
+  // не попадает: она открывается по ссылке, а не из списка разделов.
+  "/dashboard/curriculum/plan": {
+    title: "Программа",
+    subtitle: "Модули, темы и страницы учебника",
   },
   "/dashboard/board": {
     title: "Доска",
@@ -183,6 +195,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
     items: [
       { title: "Предметы", url: "/dashboard/subjects", icon: GraduationCapIcon },
       { title: "Слабые темы", url: "/dashboard/weaknesses", icon: ZapIcon },
+      { title: "Курс по книге", url: "/dashboard/curriculum", icon: LibraryIcon },
       { title: "Программа", url: "/dashboard/program", icon: BookOpenIcon },
       { title: "Самостоятельная", url: "/dashboard/self-work", icon: HeartIcon },
     ],
@@ -218,6 +231,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
 const visibleNavigationRoutes = new Set([
   "/dashboard/diary",
   "/dashboard/whiteboard",
+  "/dashboard/curriculum",
   "/dashboard/pomodoro",
   "/dashboard/arena/solve",
   "/dashboard/arena/review",

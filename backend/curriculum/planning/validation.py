@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from .contracts import CoursePlanningRequest, CoursePlanningResult
@@ -23,6 +24,46 @@ from .contracts import CoursePlanningRequest, CoursePlanningResult
 _ALLOWED_DIFFICULTY = frozenset({"easy", "medium", "hard"})
 _ALLOWED_BALANCE = frozenset({"theory", "balanced", "practice"})
 _ALLOWED_REVIEW = frozenset({"", "spaced", "massed", "interleaved"})
+
+# ── Сопоставление заголовков темы и раздела книги ──
+#
+# Раньше покрытие считалось ТОЧНЫМ равенством casefold-строк. Живая модель
+# перефразирует («§2.1 Кинематика материальной точки» → «Кинематика точки»), и
+# метрика показывала 0% на любом осмысленном плане: предупреждение `low_coverage`
+# приезжало всегда, а цифра в интерфейсе врала.
+#
+# Считаем пересечение значимых слов. Порог 0.5 — от МЕНЬШЕГО множества, иначе
+# длинный заголовок книги никогда не совпадёт с короткой темой.
+_SECTION_NUMBER_RE = re.compile(r"^[\s§]*\d+(?:[.\-]\d+)*[.)]?\s*")
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+_TITLE_MATCH_THRESHOLD = 0.5
+# Слова, которые несут нагрузку раздела, а не темы: совпадение только по ним не
+# означает, что тема покрывает раздел.
+_TITLE_STOPWORDS = frozenset(
+    {
+        "глава", "раздел", "параграф", "часть", "тема", "введение", "заключение",
+        "chapter", "section", "part", "unit", "introduction", "conclusion",
+        "и", "или", "в", "на", "по", "с", "к", "о", "об", "для", "из", "the", "a", "an",
+        "of", "in", "on", "to", "for", "and", "or",
+    }
+)
+
+
+def _title_terms(title: str) -> frozenset[str]:
+    """Значимые слова заголовка: без номера раздела, регистра и стоп-слов."""
+    stripped = _SECTION_NUMBER_RE.sub("", (title or "").strip())
+    words = {w.casefold() for w in _WORD_RE.findall(stripped)}
+    meaningful = words - _TITLE_STOPWORDS
+    # Если после чистки не осталось ничего (заголовок вида «Глава 3»), возвращаем
+    # исходные слова: пусть лучше совпадёт по слабому признаку, чем никогда.
+    return frozenset(meaningful or words)
+
+
+def _titles_match(section_terms: frozenset[str], topic_terms: frozenset[str]) -> bool:
+    if not section_terms or not topic_terms:
+        return False
+    overlap = len(section_terms & topic_terms)
+    return overlap / min(len(section_terms), len(topic_terms)) >= _TITLE_MATCH_THRESHOLD
 
 # Признаки того, что модель попыталась вернуть не семантику, а исполняемое.
 _FORBIDDEN_MARKERS = ("<script", "</script", "<svg", "foreignObject", "SELECT ", "DROP ")
@@ -322,9 +363,11 @@ def validate_plan(
 
     # ── Покрытие книги ──
     report.total_sections = len(request.toc)
-    referenced_titles = {t.title.strip().casefold() for t in topics}
+    topic_terms = [_title_terms(t.title) for t in topics]
     report.covered_sections = sum(
-        1 for entry in request.toc if entry.title.strip().casefold() in referenced_titles
+        1
+        for entry in request.toc
+        if any(_titles_match(_title_terms(entry.title), terms) for terms in topic_terms)
     )
     if report.total_sections and report.coverage_ratio < 0.5:
         report.add(

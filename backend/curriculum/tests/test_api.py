@@ -260,23 +260,106 @@ class UploadEndpointTests(_ApiBase):
         self.assertIn("antivirus_not_configured", response.json()["warnings"])
 
     def test_upload_then_ingest_flow(self):
+        """Контракт асинхронный: 202 на постановку, результат — опросом.
+
+        Исполнитель сейчас синхронный, поэтому к моменту опроса документ уже
+        готов; когда обработка уедет в Celery, поменяется только это.
+        """
         upload = self._upload(textbook_pdf())
         document_id = upload.json()["document"]["id"]
         response = self.client.post(
             f"/api/curriculum/documents/{document_id}/ingest/", **_auth(OWNER)
         )
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertEqual(body["document"]["ingestion_status"], Document.Status.READY)
+        self.assertEqual(response.status_code, 202)
+        self.assertIn("poll_url", response.json())
+
+        state = self.client.get(
+            f"/api/curriculum/documents/{document_id}/status/", **_auth(OWNER)
+        )
+        self.assertEqual(state.status_code, 200)
+        body = state.json()
+        self.assertEqual(body["ingestion_status"], Document.Status.READY)
+        self.assertTrue(body["is_terminal"])
+        self.assertEqual(body["progress"], 1.0)
         self.assertGreater(body["stats"]["chunks"], 0)
 
-    def test_failed_ingestion_returns_422_not_500(self):
+    def test_failed_ingestion_surfaces_in_status_not_500(self):
+        """Провал обработки — не ошибка ПОСТАНОВКИ.
+
+        Раньше endpoint отвечал 422 сразу, потому что успевал всё обработать
+        внутри запроса. Теперь постановка всегда успешна, а причина провала
+        приезжает первым же опросом статуса.
+        """
         document = Document.objects.create(user_email=OWNER, title="Без файла")
         response = self.client.post(
             f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
         )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["job"]["error_code"], "no_file")
+        self.assertEqual(response.status_code, 202)
+
+        state = self.client.get(
+            f"/api/curriculum/documents/{document.pk}/status/", **_auth(OWNER)
+        ).json()
+        self.assertEqual(state["ingestion_status"], Document.Status.FAILED)
+        self.assertTrue(state["is_terminal"])
+        self.assertEqual(state["job"]["error_code"], "no_file")
+
+    def test_status_reports_progress_and_attempts(self):
+        upload = self._upload(textbook_pdf())
+        document_id = upload.json()["document"]["id"]
+        self.client.post(
+            f"/api/curriculum/documents/{document_id}/ingest/", **_auth(OWNER)
+        )
+        body = self.client.get(
+            f"/api/curriculum/documents/{document_id}/status/", **_auth(OWNER)
+        ).json()
+
+        self.assertEqual(body["document_id"], document_id)
+        self.assertEqual(body["step_index"], body["step_total"])
+        self.assertEqual(body["phase_total"], 4)
+        self.assertTrue(body["step_label"])
+        self.assertGreater(len(body["attempts"]), 0)
+        self.assertTrue(all(a["succeeded"] for a in body["attempts"]))
+
+    def test_status_requires_ownership(self):
+        upload = self._upload(textbook_pdf())
+        document_id = upload.json()["document"]["id"]
+        response = self.client.get(
+            f"/api/curriculum/documents/{document_id}/status/", **_auth(INTRUDER)
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_ingest_accepts_json_content_type(self):
+        """Страховка на будущее, а не регрессия.
+
+        Фронтенд (`src/lib/auth-fetch.ts`) ставит `Content-Type: application/json`
+        на КАЖДЫЙ запрос, включая POST без тела. Сегодня `ingest` это переживает даже
+        с multipart-парсерами: он не читает `request.data`, а парсеры DRF ленивые.
+        Тест зафиксирует момент, когда в action появится доступ к `request.data` —
+        тогда без JSON-парсера он немедленно начнёт отвечать 415.
+        """
+        upload = self._upload(textbook_pdf())
+        document_id = upload.json()["document"]["id"]
+        response = self.client.post(
+            f"/api/curriculum/documents/{document_id}/ingest/",
+            data="",
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+        self.assertNotEqual(response.status_code, 415)
+        self.assertEqual(response.status_code, 202)
+
+    def test_document_patch_accepts_json(self):
+        """Регрессия: с `parser_classes` на классе это отвечало 415 (проверено)."""
+        upload = self._upload(textbook_pdf())
+        document_id = upload.json()["document"]["id"]
+        response = self.client.patch(
+            f"/api/curriculum/documents/{document_id}/",
+            data={"title": "Новое название"},
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["title"], "Новое название")
 
 
 class SolutionLeakageTests(_ApiBase):

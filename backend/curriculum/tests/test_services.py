@@ -384,6 +384,7 @@ class PlanGenerationTests(_PlanBase):
             )
         self.assertEqual(CoursePlan.objects.count(), 0)
 
+
     def test_reviewer_blocker_marks_rejected(self):
         class Blocking:
             name = "blocking-reviewer"
@@ -425,6 +426,178 @@ class PlanGenerationTests(_PlanBase):
                 order.index(dependency.depends_on.external_id),
                 order.index(dependency.topic.external_id),
             )
+
+
+class PlanRepairTests(_PlanBase):
+    """Одна попытка починки при блокерах валидатора.
+
+    Без неё одна забытая моделью `objective` или `estimated_minutes: 0`
+    превращались в 422 и тупик для ученика.
+    """
+
+    class _FirstAttemptBroken:
+        """Первый раз возвращает план с блокером, второй — исправленный."""
+
+        name = "repairable"
+
+        def __init__(self, chunk_id_source=None):
+            self.calls: list[tuple[str, ...]] = []
+            self._chunk_id_source = chunk_id_source
+
+        def generate_plan(self, request, context):
+            self.calls.append(tuple(request.repair_issues))
+            chunk_id = (request.available_chunk_ids or ("c1",))[0]
+            # Блокер только на первой попытке: пустой objective у темы.
+            objective = "" if len(self.calls) == 1 else "Понять скорость"
+            return CoursePlanningResult(
+                title="Курс механики",
+                objective="Освоить механику",
+                modules=[
+                    ProposedModule(
+                        external_id="m1",
+                        title="Кинематика",
+                        objective="Освоить",
+                        estimated_minutes=45,
+                        topics=[
+                            ProposedTopic(
+                                external_id="t1",
+                                title="Скорость",
+                                objective=objective,
+                                estimated_minutes=45,
+                                source_chunk_ids=[chunk_id],
+                            )
+                        ],
+                    )
+                ],
+            )
+
+    def test_blocker_triggers_one_repair_and_succeeds(self):
+        planner = self._FirstAttemptBroken()
+        outcome = plans_service.generate_plan(
+            self.goal,
+            self.document,
+            planning_provider=planner,
+            review_provider=FakeCourseReviewProvider(),
+        )
+        self.assertEqual(len(planner.calls), 2)
+        self.assertEqual(outcome.plan.status, CoursePlan.Status.AWAITING_APPROVAL)
+        self.assertIn("plan_repaired_after_validation", outcome.warnings)
+
+    def test_repair_call_receives_blocker_codes(self):
+        planner = self._FirstAttemptBroken()
+        plans_service.generate_plan(
+            self.goal,
+            self.document,
+            planning_provider=planner,
+            review_provider=FakeCourseReviewProvider(),
+        )
+        self.assertEqual(planner.calls[0], ())
+        self.assertTrue(
+            any("missing_objective" in issue for issue in planner.calls[1]),
+            planner.calls[1],
+        )
+
+    def test_valid_plan_does_not_trigger_repair(self):
+        """Цена починки — второй платный вызов. Зря его делать нельзя."""
+
+        class Counting(FakeCoursePlanningProvider):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def generate_plan(self, request, context):
+                self.calls += 1
+                return super().generate_plan(request, context)
+
+        planner = Counting()
+        outcome = plans_service.generate_plan(
+            self.goal,
+            self.document,
+            planning_provider=planner,
+            review_provider=FakeCourseReviewProvider(),
+        )
+        self.assertEqual(planner.calls, 1)
+        self.assertNotIn("plan_repaired_after_validation", outcome.warnings)
+
+    def test_repair_is_attempted_only_once(self):
+        """Вторая попытка не добавляет успеха, зато удваивает счёт."""
+
+        class AlwaysBroken:
+            name = "always-broken"
+
+            def __init__(self):
+                self.calls = 0
+
+            def generate_plan(self, request, context):
+                self.calls += 1
+                return CoursePlanningResult(title="", objective="", modules=[])
+
+        planner = AlwaysBroken()
+        with self.assertRaises(plans_service.PlanRejected):
+            plans_service.generate_plan(
+                self.goal, self.document, planning_provider=planner
+            )
+        self.assertEqual(planner.calls, 2)
+        self.assertEqual(CoursePlan.objects.count(), 0)
+
+    def test_planner_dying_on_repair_keeps_first_report(self):
+        """Ученику нужны претензии валидатора, а не «модель недоступна»."""
+
+        class DiesOnRetry:
+            name = "dies-on-retry"
+
+            def __init__(self):
+                self.calls = 0
+
+            def generate_plan(self, request, context):
+                self.calls += 1
+                if self.calls > 1:
+                    raise RuntimeError("нет сети")
+                return CoursePlanningResult(
+                    title="Курс",
+                    objective="Цель",
+                    modules=[
+                        ProposedModule(
+                            external_id="m1",
+                            title="Модуль",
+                            objective="Цель",
+                            topics=[
+                                ProposedTopic(
+                                    external_id="t1",
+                                    title="Тема",
+                                    objective="Цель",
+                                    estimated_minutes=45,
+                                    source_chunk_ids=["выдуманный-id"],
+                                )
+                            ],
+                        )
+                    ],
+                )
+
+        planner = DiesOnRetry()
+        with self.assertRaises(plans_service.PlanRejected) as ctx:
+            plans_service.generate_plan(
+                self.goal, self.document, planning_provider=planner
+            )
+        self.assertEqual(planner.calls, 2)
+        self.assertIsNotNone(ctx.exception.report)
+        codes = {issue.code for issue in ctx.exception.report.issues}
+        self.assertIn("hallucinated_source", codes)
+
+    def test_repair_issues_excluded_from_input_hash(self):
+        """`input_hash` отвечает на вопрос «одинаковый ли вход у моделей».
+
+        Починка — свойство попытки, а не входных данных, иначе benchmark решит,
+        что моделям дали разное.
+        """
+        from dataclasses import replace
+
+        bundle = plans_service.retrieve_planning_context(self.goal, self.document)
+        request = plans_service.build_planning_request(
+            self.goal, self.document, bundle
+        )
+        repaired = replace(request, repair_issues=("missing_objective: нет цели",))
+        self.assertEqual(request.input_hash(), repaired.input_hash())
 
 
 class PlanApprovalTests(_PlanBase):

@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 import dj_database_url
 from dotenv import load_dotenv
 
@@ -191,6 +192,146 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 CURRICULUM_STORAGE_ROOT = os.getenv(
     "CURRICULUM_STORAGE_ROOT", str(BASE_DIR / ".curriculum-storage")
 )
+
+# S3-совместимое хранилище (AWS S3, Cloudflare R2, MinIO).
+#
+# Переключатель ровно один: непустой `CURRICULUM_S3_BUCKET`. Ключи при этом
+# необязательны — в облаке их часто выдаёт роль инстанса, и требовать их здесь
+# значило бы запретить самый безопасный способ доступа.
+#
+# Для Cloudflare R2: `ENDPOINT_URL` вида
+# `https://<account>.r2.cloudflarestorage.com`, регион `auto`, а
+# `CURRICULUM_S3_SSE` оставить ПУСТЫМ — заголовок `ServerSideEncryption` R2 не
+# принимает, и с ним каждая загрузка отвечала бы ошибкой. Объекты в R2 и так
+# шифруются на стороне сервера.
+#
+# Под тест-раннером S3 выключен ВСЕГДА. Это не перестраховка: `.env`
+# разработчика содержит боевые ключи R2, и тест, забывший подменить хранилище
+# через `set_storage`, начал бы писать мусор в настоящий бакет. Тесты выбора
+# backend включают флаг обратно через `@override_settings`.
+CURRICULUM_S3_ENABLED = os.getenv(
+    "CURRICULUM_S3_ENABLED", "true"
+).strip().lower() not in ("0", "false", "no", "off")
+if "test" in sys.argv:
+    CURRICULUM_S3_ENABLED = False
+
+CURRICULUM_S3_BUCKET = os.getenv("CURRICULUM_S3_BUCKET", "")
+CURRICULUM_S3_REGION = os.getenv("CURRICULUM_S3_REGION", "")
+CURRICULUM_S3_ENDPOINT_URL = os.getenv("CURRICULUM_S3_ENDPOINT_URL", "")
+CURRICULUM_S3_ACCESS_KEY_ID = os.getenv("CURRICULUM_S3_ACCESS_KEY_ID", "")
+CURRICULUM_S3_SECRET_ACCESS_KEY = os.getenv("CURRICULUM_S3_SECRET_ACCESS_KEY", "")
+CURRICULUM_S3_SIGNED_URL_TTL = int(os.getenv("CURRICULUM_S3_SIGNED_URL_TTL", "300"))
+CURRICULUM_S3_SSE = os.getenv("CURRICULUM_S3_SSE", "")
+
+# Как запускается обработка документа: "auto" | "inline" | "celery".
+# "auto" смотрит на наличие CELERY_BROKER_URL. Пока брокера нет, это "inline" —
+# осознанный дефолт: забытая переменная окружения должна приводить к работающей
+# обработке, а не к документу, навсегда зависшему в статусе «загружен».
+CURRICULUM_INGEST_MODE = os.getenv("CURRICULUM_INGEST_MODE", "auto")
+
+# Через сколько секунд без смены статуса джоб считается зависшим и документ можно
+# ставить в обработку заново. Контейнер эфемерный: воркер может быть убит в любой
+# момент, и без этого таймаута документ блокируется навсегда.
+CURRICULUM_INGEST_STALE_AFTER_SECONDS = int(
+    os.getenv("CURRICULUM_INGEST_STALE_AFTER_SECONDS", "1800")
+)
+
+# Размер фрагмента книги в токенах. Считает настоящий токенайзер
+# (`curriculum/tokenizer.py`, cl100k_base), а не «символы делить на четыре»: на
+# кириллице эвристика недосчитывает почти вдвое, и прежний лимит «350 токенов»
+# на деле давал фрагменты около 630.
+#
+# TARGET — где стараемся закрыть фрагмент, MAX — граница, за которую не выходим,
+# добавляя следующий блок. OVERLAP — сколько токенов предыдущего фрагмента
+# повторяется в начале следующего, чтобы мысль на границе не пропадала из поиска.
+# Перекрытие работает ТОЛЬКО внутри прозы одного раздела и никогда не пересекает
+# границу задачи или решения.
+CURRICULUM_CHUNK_TARGET_TOKENS = int(os.getenv("CHUNK_TARGET_TOKENS", "500"))
+CURRICULUM_CHUNK_MAX_TOKENS = int(os.getenv("CHUNK_MAX_TOKENS", "650"))
+CURRICULUM_CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", "75"))
+
+# Считать ли эмбеддинги вообще.
+#
+# Под тест-раннером — НИКОГДА. Причина конкретная и уже наступила: как только
+# `EMBEDDING_MODEL` появился в `.env`, обработка книги в тестах пошла в сеть,
+# и прогон curriculum вырос с 1.3 до 70 секунд на ретраях. Тесты не должны ни
+# ходить наружу, ни тратить деньги, а патчить провайдера в каждом файле, где
+# запускается пайплайн (их уже четыре), — значит гарантированно забыть про
+# пятый.
+#
+# Тесты самого провайдера включают флаг обратно через
+# `@override_settings(CURRICULUM_EMBEDDINGS_ENABLED=True)` и подставляют фейк.
+CURRICULUM_EMBEDDINGS_ENABLED = os.getenv(
+    "CURRICULUM_EMBEDDINGS_ENABLED", "true"
+).strip().lower() not in ("0", "false", "no", "off")
+if "test" in sys.argv:
+    CURRICULUM_EMBEDDINGS_ENABLED = False
+
+# Потолок числа фрагментов одной книги, для которых считаются эмбеддинги.
+# Нужен не ради экономии — учебник на 400 страниц стоит около $0.004, — а чтобы
+# ограничить патологический документ: `upload_validation.MAX_PAGES` допускает
+# 1500 страниц, и вырожденная разбивка способна дать десятки тысяч фрагментов.
+CURRICULUM_MAX_EMBEDDED_CHUNKS = int(
+    os.getenv("CURRICULUM_MAX_EMBEDDED_CHUNKS", "4000")
+)
+
+# Брокер очереди. Пусто = очереди нет, обработка идёт внутри HTTP-запроса.
+# ВНИМАНИЕ: Redis-аддон Northflank выдаёт схему `rediss://` (TLS), и kombu на ней
+# требует `ssl_cert_reqs` — без него Celery падает при СТАРТЕ, а не на первой
+# задаче. Подключать вместе с воркером в отдельной фазе.
+CELERY_BROKER_URL = (
+    os.getenv("CELERY_BROKER_URL", "")
+    or os.getenv("REDIS_URL", "")
+    or os.getenv("REDIS_MASTER_URL", "")  # так эту переменную называет Northflank
+)
+
+# Под тест-раннером брокера нет НИКОГДА — третий рубильник того же рода, что
+# `CURRICULUM_EMBEDDINGS_ENABLED` и `CURRICULUM_S3_ENABLED`. Как только боевой
+# `REDIS_MASTER_URL` появился в `.env`, восемь тестов упали разом: `resolve_mode`
+# начал выбирать celery, и документы в inline-тестах перестали обрабатываться.
+# Тесты очереди задают брокер сами через `@override_settings`.
+if "test" in sys.argv:
+    CELERY_BROKER_URL = ""
+
+# TLS у брокера. Redis-аддон Northflank выдаёт схему `rediss://`, и без явного
+# `ssl_cert_reqs` kombu падает при СТАРТЕ воркера, а не на первой задаче —
+# отладить это по логам тяжело, потому что процесс не доживает до полезной
+# работы. Проверка сертификата остаётся включённой: отключать её ради тишины в
+# логах значит выбросить смысл TLS.
+if CELERY_BROKER_URL.startswith("rediss://"):
+    import ssl as _ssl
+
+    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": _ssl.CERT_REQUIRED}
+
+# Результатов у задач нет: хранилище результата — строка `IngestionJob`, её и
+# опрашивает фронтенд. Отдельный result backend означал бы вторую копию статуса,
+# которая рано или поздно разойдётся с первой.
+CELERY_RESULT_BACKEND = None
+CELERY_TASK_IGNORE_RESULT = True
+
+# Подтверждение задачи ПОСЛЕ выполнения: контейнер эфемерный, воркера могут убить
+# посреди обработки книги, и сообщение должно вернуться в очередь.
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = False
+
+# По одной книге за раз на воркера. Обработка упирается в память (PDF целиком в
+# RAM плюс растры страниц), и набирать себе очередь впрок — верный способ словить
+# OOM-kill на середине второй книги.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 8
+
+# Только JSON. Pickle позволил бы исполнить произвольный код из сообщения — при
+# скомпрометированном Redis это мгновенный захват воркера.
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_RESULT_SERIALIZER = "json"
+
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Жёсткий потолок на книгу: 1500 страниц с OCR не должны висеть вечно. Мягкий
+# лимит на минуту раньше даёт задаче шанс записать в джоб причину остановки.
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3540"))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Adaptive lesson planning intake (existing OpenRouter text client)

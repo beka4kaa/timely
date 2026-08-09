@@ -37,6 +37,7 @@ from curriculum.views import (
     CourseEnrollmentViewSet,
     CoursePlanViewSet,
     DocumentViewSet,
+    KnowledgeSearchView,
     LearningGoalViewSet,
 )
 
@@ -82,6 +83,12 @@ router.register(
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Поиск по книгам ученика. Не ViewSet: это одно действие, а не ресурс.
+    path(
+        'api/curriculum/search/',
+        KnowledgeSearchView.as_view(),
+        name='curriculum-search',
+    ),
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),
     
