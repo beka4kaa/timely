@@ -311,6 +311,25 @@ CURRICULUM_EMBEDDINGS_ENABLED = os.getenv(
 if "test" in sys.argv:
     CURRICULUM_EMBEDDINGS_ENABLED = False
 
+# Тот же рубильник для ролей планировщика курса — четвёртый по счёту и по той же
+# причине. `curriculum.model_registry.resolve_model` читает окружение НАПРЯМУЮ, а
+# не settings, поэтому выключателем служит снятие самих переменных: без
+# `<ROLE>_MODEL` роль разрешается в "unset", и `get_planning_provider` отдаёт
+# детерминированный fake вместо сетевого провайдера.
+#
+# Без этого появление `COURSE_PLANNING_MODEL` в `.env` увело бы в сеть — и,
+# главное, в оплату — любой тест, который вызывает генерацию плана, не подставив
+# провайдера явно. Тесты самой маршрутизации ставят переменные сами
+# (`mock.patch.dict("os.environ", ...)`).
+if "test" in sys.argv:
+    for _role_var in (
+        "COURSE_PLANNING_MODEL",
+        "COURSE_PLANNING_PROVIDERS",
+        "COURSE_REVIEW_MODEL",
+        "TEXT_LLM_MODEL",
+    ):
+        os.environ.pop(_role_var, None)
+
 # Потолок числа фрагментов одной книги, для которых считаются эмбеддинги.
 # Нужен не ради экономии — учебник на 400 страниц стоит около $0.004, — а чтобы
 # ограничить патологический документ: `upload_validation.MAX_PAGES` допускает
@@ -599,6 +618,13 @@ AI_USAGE_ENFORCE_LIMITS = os.getenv("AI_USAGE_ENFORCE_LIMITS", "true").lower() i
 # not a cost prediction or charge: actual usage stays in AIUsageEvent.
 CURRICULUM_INGESTION_AI_RESERVATION_TOKENS = int(
     os.getenv("CURRICULUM_INGESTION_AI_RESERVATION_TOKENS", "8000")
+)
+# Общий дедлайн на генерацию программы курса. В отличие от ingestion, она идёт
+# внутри HTTP-запроса, поэтому обязана уложиться в `gunicorn --timeout` (360 с в
+# Dockerfile) с запасом. Шаги, на которые времени не осталось, пропускаются с
+# предупреждением — см. `curriculum.services.plans.generate_plan`.
+CURRICULUM_PLAN_DEADLINE_SECONDS = int(
+    os.getenv("CURRICULUM_PLAN_DEADLINE_SECONDS", "300")
 )
 AI_USAGE_RESERVATION_TTL_SECONDS = max(
     CELERY_TASK_TIME_LIMIT + 300,

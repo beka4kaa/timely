@@ -21,9 +21,12 @@ from dataclasses import dataclass, field
 
 from .contracts import CoursePlanningRequest, CoursePlanningResult
 
-_ALLOWED_DIFFICULTY = frozenset({"easy", "medium", "hard"})
-_ALLOWED_BALANCE = frozenset({"theory", "balanced", "practice"})
-_ALLOWED_REVIEW = frozenset({"", "spaced", "massed", "interleaved"})
+# Публичные: из них же собирается JSON Schema (`planning/schema.py`). Разъехавшись,
+# схема начала бы разрешать то, что валидатор запрещает, — и модель получала бы
+# отказ за ответ, о котором её сами попросили.
+ALLOWED_DIFFICULTY = frozenset({"easy", "medium", "hard"})
+ALLOWED_BALANCE = frozenset({"theory", "balanced", "practice"})
+ALLOWED_REVIEW = frozenset({"", "spaced", "massed", "interleaved"})
 
 # ── Сопоставление заголовков темы и раздела книги ──
 #
@@ -265,7 +268,7 @@ def validate_plan(
                 )
             )
 
-        if topic.difficulty not in _ALLOWED_DIFFICULTY:
+        if topic.difficulty not in ALLOWED_DIFFICULTY:
             report.add(
                 ValidationIssue(
                     "invalid_difficulty",
@@ -273,7 +276,7 @@ def validate_plan(
                     topic_external_id=topic.external_id,
                 )
             )
-        if topic.theory_practice_balance not in _ALLOWED_BALANCE:
+        if topic.theory_practice_balance not in ALLOWED_BALANCE:
             report.add(
                 ValidationIssue(
                     "invalid_balance",
@@ -281,7 +284,7 @@ def validate_plan(
                     topic_external_id=topic.external_id,
                 )
             )
-        if topic.review_strategy not in _ALLOWED_REVIEW:
+        if topic.review_strategy not in ALLOWED_REVIEW:
             report.add(
                 ValidationIssue(
                     "invalid_review_strategy",

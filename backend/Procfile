@@ -1,1 +1,4 @@
-web: python manage.py migrate --noinput && python manage.py createcachetable; gunicorn config.wsgi --log-file -
+# Прод собирается из корневого Dockerfile; этот файл — запасной путь запуска.
+# Флаги обязаны совпадать с Dockerfile: без --timeout gunicorn берёт 30 с и
+# убивает воркер по SIGABRT посреди генерации программы, которая идёт минутами.
+web: python manage.py migrate --noinput && python manage.py createcachetable; gunicorn config.wsgi --log-file - --timeout 360 --worker-class gthread --workers 2 --threads 8

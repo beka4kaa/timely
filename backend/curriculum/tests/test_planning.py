@@ -17,6 +17,9 @@ from curriculum.planning.contracts import (
     TocEntry,
 )
 from curriculum.planning.providers import (
+    _MODULE_FIELDS,
+    _ROOT_FIELDS,
+    _TOPIC_FIELDS,
     FakeCoursePlanningProvider,
     FakeCourseReviewProvider,
     FixtureCoursePlanningProvider,
@@ -28,7 +31,14 @@ from curriculum.planning.providers import (
     parse_planning_response,
     parse_review_response,
 )
-from curriculum.planning.validation import topological_order, validate_plan
+from curriculum.planning.schema import COURSE_PLAN_SCHEMA
+from curriculum.planning.validation import (
+    ALLOWED_BALANCE,
+    ALLOWED_DIFFICULTY,
+    ALLOWED_REVIEW,
+    topological_order,
+    validate_plan,
+)
 from curriculum.retrieval import RetrievalBundle
 
 TOC = (
@@ -586,3 +596,46 @@ class BenchmarkTests(SimpleTestCase):
         self.assertIn("prerequisite_cycle_count", metrics)
         # Экспертных оценок в автоматических метриках быть не должно.
         self.assertNotIn("pedagogical_coherence", metrics)
+
+
+class CoursePlanSchemaTests(SimpleTestCase):
+    """Схема — это контракт, продублированный в трёх местах.
+
+    Она обязана совпадать с тем, что читает парсер, и с тем, что пропускает
+    валидатор. Разъехавшись, схема начнёт разрешать значение, за которое
+    валидатор выдаст блокер, — и модель будет получать отказ за ответ, о котором
+    её сами попросили. Эти тесты ловят расхождение при правке любой из сторон.
+    """
+
+    def _objects(self):
+        """Все объектные узлы схемы: корень, модуль, тема."""
+        module = COURSE_PLAN_SCHEMA["properties"]["modules"]["items"]
+        topic = module["properties"]["topics"]["items"]
+        return {"root": COURSE_PLAN_SCHEMA, "module": module, "topic": topic}
+
+    def test_enums_match_the_validator(self):
+        topic = self._objects()["topic"]["properties"]
+        self.assertEqual(set(topic["difficulty"]["enum"]), set(ALLOWED_DIFFICULTY))
+        self.assertEqual(
+            set(topic["theory_practice_balance"]["enum"]), set(ALLOWED_BALANCE)
+        )
+        self.assertEqual(set(topic["review_strategy"]["enum"]), set(ALLOWED_REVIEW))
+
+    def test_fields_match_the_parser(self):
+        objects = self._objects()
+        self.assertEqual(set(objects["root"]["properties"]), _ROOT_FIELDS)
+        self.assertEqual(set(objects["module"]["properties"]), _MODULE_FIELDS)
+        self.assertEqual(set(objects["topic"]["properties"]), _TOPIC_FIELDS)
+
+    def test_every_object_is_closed_and_fully_required(self):
+        # Требование strict-режима: `additionalProperties: false` и `required`,
+        # перечисляющий ВСЕ ключи. Необязательное поле провайдер не примет.
+        for name, node in self._objects().items():
+            with self.subTest(node=name):
+                self.assertFalse(node["additionalProperties"])
+                self.assertEqual(set(node["required"]), set(node["properties"]))
+
+    def test_schema_is_json_serializable(self):
+        # Схема уходит в тело HTTP-запроса: несериализуемый узел (frozenset из
+        # валидатора вместо списка) сломал бы вызов уже в проде.
+        json.dumps(COURSE_PLAN_SCHEMA)

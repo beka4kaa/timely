@@ -306,6 +306,63 @@ class ModelRegistryTests(TestCase):
             os.environ.pop("GOAL_NORMALIZATION_MODEL", None)
             os.environ.pop("COURSE_PLANNING_MODEL", None)
 
+    def test_role_branch_reads_all_tuning_knobs(self):
+        import os
+
+        os.environ["COURSE_PLANNING_MODEL"] = "vendor/strong-planner"
+        os.environ["COURSE_PLANNING_TIMEOUT"] = "240"
+        os.environ["COURSE_PLANNING_MAX_TOKENS"] = "24000"
+        os.environ["COURSE_PLANNING_REASONING_EFFORT"] = "low"
+        os.environ["COURSE_PLANNING_PROVIDERS"] = " together , morph ,, parasail/fp8 "
+        try:
+            binding = resolve_model(ROLE_COURSE_PLANNING)
+            self.assertEqual(binding.source, "role")
+            self.assertEqual(binding.timeout_seconds, 240)
+            self.assertEqual(binding.max_tokens, 24000)
+            self.assertEqual(binding.reasoning_effort, "low")
+            # Пробелы срезаются, пустые элементы отбрасываются: список приходит
+            # из .env, где запятая с пробелом — норма.
+            self.assertEqual(
+                binding.providers, ("together", "morph", "parasail/fp8")
+            )
+        finally:
+            for name in (
+                "COURSE_PLANNING_MODEL",
+                "COURSE_PLANNING_TIMEOUT",
+                "COURSE_PLANNING_MAX_TOKENS",
+                "COURSE_PLANNING_REASONING_EFFORT",
+                "COURSE_PLANNING_PROVIDERS",
+            ):
+                os.environ.pop(name, None)
+
+    def test_fallback_branch_ignores_tuning_knobs(self):
+        """Ловушка, стоившая отдельного разбирательства.
+
+        Пока `COURSE_PLANNING_MODEL` не задан, роль откатывается на общую
+        текстовую модель, и настройки роли не читаются ВООБЩЕ — привязка
+        собирается на дефолтах датакласса. Совет «снизить COURSE_PLANNING_TIMEOUT»
+        в такой конфигурации не делает ничего, и это лучше зафиксировать тестом,
+        чем обнаруживать заново.
+        """
+        import os
+
+        os.environ.pop("COURSE_PLANNING_MODEL", None)
+        os.environ["TEXT_LLM_MODEL"] = "some/shared-model"
+        os.environ["COURSE_PLANNING_TIMEOUT"] = "17"
+        os.environ["COURSE_PLANNING_PROVIDERS"] = "together"
+        try:
+            binding = resolve_model(ROLE_COURSE_PLANNING)
+            self.assertEqual(binding.source, "text_llm_fallback")
+            self.assertEqual(binding.timeout_seconds, 180)
+            self.assertEqual(binding.providers, ())
+        finally:
+            for name in (
+                "TEXT_LLM_MODEL",
+                "COURSE_PLANNING_TIMEOUT",
+                "COURSE_PLANNING_PROVIDERS",
+            ):
+                os.environ.pop(name, None)
+
     def test_goal_normalization_falls_back_to_shared_text_model(self):
         import os
 

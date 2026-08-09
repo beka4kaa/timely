@@ -13,8 +13,13 @@
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextvars
+import functools
+import json
 import logging
 import os
+from collections.abc import Sequence
 from typing import Any
 
 from openai import OpenAI
@@ -30,6 +35,23 @@ TEXT_LLM_TIMEOUT = int(os.getenv("TEXT_LLM_TIMEOUT", "180"))
 # Учебная программа на 12 недель — это большой JSON. Лимит с запасом: при
 # обрезке ответа json.loads падает и вся генерация уходит впустую.
 TEXT_LLM_MAX_TOKENS = int(os.getenv("TEXT_LLM_MAX_TOKENS", "16000"))
+
+# `timeout=`, который уходит в OpenAI SDK, а оттуда в httpx, — это таймаут
+# ПРОСТОЯ между чанками, а не дедлайн вызова. Провайдер, который шлёт keep-alive,
+# пока модель думает, сбрасывает этот таймер на каждом чанке, и вызов спокойно
+# живёт кратно дольше настроенного. Измерено на `planning_intake` (настроено 20 с,
+# фактически ~120 с) — там же появился и этот приём, теперь он переехал в общий
+# транспорт, потому что болезнь одинакова для всех вызывающих.
+#
+# Воркеров восемь, а не четыре: через эту функцию ходят и планировщик курса, и
+# рецензент, и нормализация цели. Брошенный вызов продолжает жить в своём треде,
+# пока провайдер не закроет соединение, — и занимает слот всё это время.
+_JSON_MODEL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8, thread_name_prefix="text-llm-json"
+)
+# Запас поверх собственного таймаута клиента: сначала должен сработать штатный
+# путь с внятной ошибкой провайдера, и только если он промолчал — жёсткий backstop.
+_WALL_CLOCK_GRACE_SECONDS = 5
 
 
 class TextLLMNotConfigured(RuntimeError):
@@ -86,6 +108,9 @@ class TextModel:
         reasoning_enabled: bool = True,
         reasoning_effort: str | None = None,
         feature: str = "structured_text",
+        json_schema: dict[str, Any] | None = None,
+        schema_name: str = "response",
+        providers: Sequence[str] | None = None,
     ) -> _TextResponse:
         """Request a compact JSON object through the existing OpenRouter client.
 
@@ -99,6 +124,27 @@ class TextModel:
         of ``max_tokens``, leaving nothing for the JSON body — see
         ``skills/board.py`` where this was measured directly (2735 of 3000
         tokens burned on reasoning alone).
+
+        ``json_schema`` upgrades JSON mode to strict structured outputs, which
+        removes the whole class of "model returned a synonym instead of the
+        enum value". Not every provider behind a model implements it, so it is
+        meaningful only together with ``providers``.
+
+        ``providers`` pins the OpenRouter routing pool by provider slug. It
+        exists because the obvious alternative — ``provider.require_parameters``
+        — was measured to be actively harmful for ``minimax/minimax-m3``: it
+        routed to the slowest strict-capable provider every single time
+        (175–244 s per call) and never picked the fastest one, even when asked
+        for it explicitly through ``order``. An explicit allow-list gives the
+        same guarantee (nobody in the pool can silently ignore the schema) and
+        leaves ``sort`` free to do its job: the same request completed in 57 s.
+        Prices across such an allow-list are expected to be equal, so throughput
+        is the only axis left worth sorting on.
+
+        The call runs in a worker thread with a hard wall-clock deadline; see
+        ``_JSON_MODEL_EXECUTOR``. On expiry this raises ``TimeoutError`` while
+        the abandoned request keeps running until the provider drops it — and
+        still records its own usage, so nothing is spent unaccounted.
         """
         if not TEXT_LLM_API_KEY:
             raise TextLLMNotConfigured(
@@ -106,13 +152,6 @@ class TextModel:
                 "текстовые AI-функции работать не будут."
             )
 
-        import json
-
-        client = OpenAI(
-            api_key=TEXT_LLM_API_KEY,
-            base_url=TEXT_LLM_BASE_URL,
-            max_retries=0,
-        )
         messages = [
             {"role": "system", "content": system_prompt},
             {
@@ -124,15 +163,73 @@ class TextModel:
         if reasoning_enabled and reasoning_effort:
             reasoning["effort"] = reasoning_effort
 
+        if json_schema is not None:
+            response_format: dict[str, Any] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            }
+        else:
+            response_format = {"type": "json_object"}
+
+        extra_body: dict[str, Any] = {"reasoning": reasoning}
+        if providers:
+            extra_body["provider"] = {
+                "only": list(providers),
+                "sort": "throughput",
+            }
+
         logger.info("[text_llm] JSON-запрос к %s (%s)", self.model, feature)
+        # Контекст копируется явно: `ThreadPoolExecutor` создаёт тред с ПУСТЫМ
+        # набором ContextVar, а `record_model_usage` берёт из него e-mail и
+        # feature (`usage.current_usage_context`). Без этой строки весь расход
+        # планировщика писался бы как анонимный и не списывался бы с квоты.
+        context = contextvars.copy_context()
+        future = _JSON_MODEL_EXECUTOR.submit(
+            context.run,
+            functools.partial(
+                self._create_json_completion,
+                messages=messages,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                response_format=response_format,
+                extra_body=extra_body,
+                feature=feature,
+            ),
+        )
+        return _TextResponse(future.result(timeout=timeout + _WALL_CLOCK_GRACE_SECONDS))
+
+    def _create_json_completion(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        timeout: int,
+        response_format: dict[str, Any],
+        extra_body: dict[str, Any],
+        feature: str,
+    ) -> str:
+        """Сетевой вызов и учёт расхода — то, что живёт в отдельном треде.
+
+        Учёт намеренно внутри: если внешний backstop уже сдался, токены всё
+        равно потрачены, и `AIUsageEvent` должен появиться.
+        """
+        client = OpenAI(
+            api_key=TEXT_LLM_API_KEY,
+            base_url=TEXT_LLM_BASE_URL,
+            max_retries=0,
+        )
         response = client.chat.completions.create(
             model=self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=self.temperature,
             timeout=timeout,
-            response_format={"type": "json_object"},
-            extra_body={"reasoning": reasoning},
+            response_format=response_format,
+            extra_body=extra_body,
         )
         text = response.choices[0].message.content or ""
         record_model_usage(
@@ -143,7 +240,7 @@ class TextModel:
             input_payload=messages,
             output_payload=text,
         )
-        return _TextResponse(text)
+        return text
 
 
 def get_text_model(temperature: float = 0.7) -> TextModel:

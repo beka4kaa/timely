@@ -7,7 +7,6 @@ question, and builds the final ``LessonPlan`` deterministically.
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
 import re
@@ -24,16 +23,14 @@ from .text_llm import TextModel
 
 logger = logging.getLogger(__name__)
 
-# httpx's per-call `timeout` is a per-chunk *read idle* timeout, not a wall-clock
-# deadline: a provider that trickles keep-alive bytes while a reasoning model
-# "thinks" resets that idle timer on every chunk, so the call can run far past
-# the intended timeout (observed: ~20s configured, ~120s actual before an
-# unrelated infra boundary killed it). This intake step is meant to be a fast,
-# interactive wait, so it gets its own hard wall-clock deadline via a background
-# thread instead of trusting the HTTP client's timeout alone.
-_PLANNING_MODEL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="planning-intake-model"
-)
+# Здесь был собственный ThreadPoolExecutor с жёстким wall-clock дедлайном: httpx
+# считает `timeout` простоем между чанками, а не дедлайном вызова, и провайдер,
+# шлющий keep-alive пока модель думает, растягивает вызов кратно (замерено: 20 с
+# настроено, ~120 с фактически). Приём переехал внутрь `text_llm`
+# (`_JSON_MODEL_EXECUTOR`), потому что болезнь общая для всех вызывающих, и теперь
+# действует здесь сам собой. Вместе с ним ушла и тихая потеря учёта: ContextVar не
+# переходит в тред, поэтому расход этого шага писался анонимным — общий транспорт
+# копирует контекст явно.
 
 SESSION_SALT = "timely.planning-intake.v1"
 SESSION_MAX_AGE_SECONDS = 2 * 60 * 60
@@ -373,8 +370,9 @@ def _ask_model(
     max_tokens = int(getattr(settings, "PLANNING_MAX_TOKENS", 700))
     model = TextModel(model=model_name, temperature=0.2)
 
-    future = _PLANNING_MODEL_EXECUTOR.submit(
-        model.generate_json_content,
+    # Жёсткий wall-clock дедлайн держит сам транспорт (см. комментарий у
+    # SESSION_SALT выше), поэтому здесь снова обычный прямой вызов.
+    response = model.generate_json_content(
         system_prompt=_planner_system_prompt(),
         payload={
             "type": "planning_intake_context",
@@ -391,11 +389,6 @@ def _ask_model(
         or None,
         feature="planning_intake",
     )
-    # A grace window on top of the client's own `timeout` for the normal path
-    # to fire first; this is the hard backstop when it doesn't (see module
-    # docstring above _PLANNING_MODEL_EXECUTOR). The abandoned call keeps
-    # running in its thread until the provider connection eventually closes.
-    response = future.result(timeout=timeout + 5)
     parsed = _parse_json_object(response.text)
     return _validate_question(parsed, answers=answers, asked_ids=asked_ids), model_name
 

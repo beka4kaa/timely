@@ -68,6 +68,16 @@ class ModelBinding:
     timeout_seconds: int = 180
     max_tokens: int = 8000
     reasoning_effort: str | None = "medium"
+    # Слаги провайдеров OpenRouter, которым разрешено обслуживать роль. Пусто —
+    # маршрутизация по умолчанию.
+    #
+    # Список нужен там, где важна не только модель, но и КТО её обслуживает.
+    # Измерено на `minimax/minimax-m3`: провайдеры одной и той же модели
+    # различаются втрое по скорости (57 с против 178 с на одном запросе) и по
+    # поддержке strict-схемы (3 из 9). Штатный `provider.require_parameters`
+    # эту задачу не решает — он стабильно уводил на самого медленного из
+    # подходящих и не выбирал быстрого даже по явному `order`.
+    providers: tuple[str, ...] = ()
 
     @property
     def configured(self) -> bool:
@@ -92,6 +102,7 @@ def resolve_model(role: str) -> ModelBinding:
             timeout_seconds=_int_env(f"{role}_TIMEOUT", 180),
             max_tokens=_int_env(f"{role}_MAX_TOKENS", 8000),
             reasoning_effort=_env(f"{role}_REASONING_EFFORT") or "medium",
+            providers=_list_env(f"{role}_PROVIDERS"),
         )
 
     if role in _TEXT_FALLBACK_ROLES:
@@ -100,6 +111,10 @@ def resolve_model(role: str) -> ModelBinding:
             return ModelBinding(role=role, model=shared, source="text_llm_fallback")
 
     return ModelBinding(role=role, model="", source="unset")
+
+
+def _list_env(name: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in _env(name).split(",") if part.strip())
 
 
 def _int_env(name: str, default: int) -> int:

@@ -18,9 +18,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field, replace
 from datetime import date
+from typing import NamedTuple
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -74,6 +77,25 @@ logger = logging.getLogger(__name__)
 PLANNING_RETRIEVAL_MODE = "explain"
 PLANNING_MAX_CHUNKS = 24
 PLANNING_TOKEN_BUDGET = 6000
+
+# Общий дедлайн на ВСЮ генерацию, а не на отдельный вызов модели.
+#
+# Пер-вызовные таймауты складываются: планировщик + починка + рецензент в худшем
+# случае дают 180 + 180 + 60 = 420 с, тогда как в проде стоит `gunicorn
+# --timeout 360`. Воркер, убитый по SIGABRT посреди запроса, не оставляет ученику
+# ничего — ни плана, ни ошибки, только оборванное соединение (ROADMAP, «Грабли»).
+#
+# Поэтому дедлайн один и общий, а шаги по нему ДЕГРАДИРУЮТ, а не падают: и
+# починка, и рецензия необязательны, план без них хуже, но он есть. Каждый
+# пропуск попадает в `outcome.warnings` — два пропущенных платных шага не должны
+# быть невидимой магией.
+PLAN_DEADLINE_SECONDS = 300
+
+
+def _plan_deadline_seconds() -> int:
+    return max(
+        1, int(getattr(settings, "CURRICULUM_PLAN_DEADLINE_SECONDS", PLAN_DEADLINE_SECONDS))
+    )
 
 
 class PlanRejected(RuntimeError):
@@ -439,7 +461,18 @@ def _call_planner(planner, request: CoursePlanningRequest, bundle, *, goal):
     return result, validate_plan(result, request)
 
 
-def _plan_with_one_repair(planner, request: CoursePlanningRequest, bundle, *, goal):
+class PlannerOutcome(NamedTuple):
+    """Что вышло у планировщика вместе с историей попыток."""
+
+    result: object
+    report: ValidationReport
+    repair_attempted: bool
+    repair_skipped_deadline: bool
+
+
+def _plan_with_one_repair(
+    planner, request: CoursePlanningRequest, bundle, *, goal, deadline: float | None = None
+) -> PlannerOutcome:
     """Генерация с ОДНОЙ попыткой починки при блокерах валидатора.
 
     Зачем: живая модель регулярно спотыкается на мелочи — забытый `objective`,
@@ -450,10 +483,20 @@ def _plan_with_one_repair(planner, request: CoursePlanningRequest, bundle, *, go
 
     Попытка ровно одна: вторая почти не добавляет успеха, зато удваивает счёт и
     задержку. Если и она не прошла — отдаём отчёт ВТОРОЙ попытки, он свежее.
+
+    `deadline` — момент `time.monotonic()`, после которого второй вызов уже не
+    начинается. Починка стоит целого вызова модели, и запускать её, когда времени
+    заведомо не осталось, значит гарантированно потерять и её, и ответ ученику.
     """
     result, report = _call_planner(planner, request, bundle, goal=goal)
     if report.is_valid:
-        return result, report, False
+        return PlannerOutcome(result, report, False, False)
+
+    if deadline is not None and time.monotonic() >= deadline:
+        logger.warning(
+            "План для цели %s забракован, но на починку не осталось времени", goal.pk
+        )
+        return PlannerOutcome(result, report, False, True)
 
     issues = tuple(
         f"{issue.code}: {issue.message}" for issue in report.issues if issue.is_blocker
@@ -472,11 +515,9 @@ def _plan_with_one_repair(planner, request: CoursePlanningRequest, bundle, *, go
     except PlanRejected:
         # Планировщик отвалился на повторе — возвращаем результат первой попытки,
         # чтобы ученик увидел претензии валидатора, а не «модель недоступна».
-        return result, report, True
+        return PlannerOutcome(result, report, True, False)
 
-    if repaired_report.is_valid:
-        return repaired, repaired_report, True
-    return repaired, repaired_report, True
+    return PlannerOutcome(repaired, repaired_report, True, False)
 
 
 def generate_plan(
@@ -488,6 +529,10 @@ def generate_plan(
     start_date: date | None = None,
 ) -> PlanGenerationOutcome:
     """Полный цикл генерации. Кидает `PlanRejected`, если план непригоден."""
+    # Отсчёт идёт от входа в функцию, а не от первого вызова модели: retrieval и
+    # сборка запроса тоже тратят время из того же бюджета ответа.
+    deadline = time.monotonic() + _plan_deadline_seconds()
+
     # Объект мог ждать во view, пока другой запрос уже запустил ingestion.
     # Снимок берём из БД непосредственно перед retrieval/LLM и повторно сверяем
     # под row lock перед первой записью плана.
@@ -508,23 +553,45 @@ def generate_plan(
     request = build_planning_request(goal, document, bundle)
     planner = planning_provider or get_planning_provider()
 
-    result, report, repair_attempted = _plan_with_one_repair(
-        planner, request, bundle, goal=goal
+    attempt = _plan_with_one_repair(
+        planner, request, bundle, goal=goal, deadline=deadline
     )
+    result, report = attempt.result, attempt.report
     if not report.is_valid:
         # Блокеры — стоп. Ничего не сохраняем: план со ссылками на выдуманные
         # фрагменты или с циклом в зависимостях в БД попасть не должен.
+        #
+        # Про пропущенную починку сообщаем ЗДЕСЬ, а не кодом в `warnings`:
+        # предупреждения собираются только на успешном пути, а пропуск починки
+        # по определению случается на неуспешном. Иначе причина отказа была бы
+        # видна только в логах сервера.
         codes = sorted({issue.code for issue in report.issues if issue.is_blocker})
+        if attempt.repair_skipped_deadline:
+            raise PlanRejected(
+                report,
+                "План не прошёл валидацию, а времени на повторную попытку не "
+                f"осталось: {', '.join(codes)}",
+            )
         raise PlanRejected(report, f"План не прошёл валидацию: {', '.join(codes)}")
 
     reviewer = review_provider or get_review_provider()
     review = None
-    try:
-        review = reviewer.review_plan(result, request)
-    except AIUsageLimitExceeded:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Рецензент недоступен для цели %s: %s", goal.pk, exc)
+    review_skipped_deadline = False
+    review_unavailable = False
+    if time.monotonic() >= deadline:
+        # Рецензент необязателен: его заключение только помечает план, а
+        # публикацию всё равно подтверждает ученик. Лучше отдать план без
+        # рецензии, чем не отдать ничего.
+        review_skipped_deadline = True
+        logger.warning("Рецензия для цели %s пропущена: вышел дедлайн", goal.pk)
+    else:
+        try:
+            review = reviewer.review_plan(result, request)
+        except AIUsageLimitExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            review_unavailable = True
+            logger.warning("Рецензент недоступен для цели %s: %s", goal.pk, exc)
 
     findings = [
         {
@@ -568,16 +635,26 @@ def generate_plan(
     warning_codes = sorted(
         {issue.code for issue in report.issues if not issue.is_blocker}
     )
-    if repair_attempted:
+    if attempt.repair_attempted:
         # Починка не должна быть невидимой: два вызова модели вместо одного видно
         # в счёте, и причина этого должна быть прослеживаемой.
         warning_codes.append("plan_repaired_after_validation")
+    # Пропущенный шаг — тоже событие. Раньше падение рецензента не оставляло
+    # следа нигде, кроме лога: снаружи план выглядел полностью проверенным.
+    # (Пропуск ПОЧИНКИ сюда не попадает: он возможен только когда план
+    # забракован, а тогда мы уже вышли через PlanRejected выше.)
+    if review_skipped_deadline:
+        warning_codes.append("plan_review_skipped_deadline")
+    if review_unavailable:
+        warning_codes.append("plan_review_unavailable")
     return PlanGenerationOutcome(
         plan=plan,
         report=report,
         review_findings=findings,
         planner_model=getattr(planner, "name", ""),
-        reviewer_model=getattr(reviewer, "name", ""),
+        # Пусто, если рецензия не состоялась: имя провайдера, который не
+        # отработал, читается как «план проверен», а он не проверен.
+        reviewer_model=getattr(reviewer, "name", "") if review is not None else "",
         warnings=warning_codes + forecast_warnings,
     )
 
