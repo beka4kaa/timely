@@ -13,6 +13,7 @@ benchmark harness.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Callable, Protocol
 
@@ -32,6 +33,8 @@ from .contracts import (
     ReviewFinding,
 )
 from .schema import COURSE_PLAN_SCHEMA, SCHEMA_NAME
+
+logger = logging.getLogger(__name__)
 
 
 class CoursePlanningProvider(Protocol):
@@ -642,11 +645,116 @@ class OpenRouterCourseReviewProvider:
         )
 
 
+class SkeletonCoursePlanningProvider:
+    """Структуру строит оглавление, смысл заполняет модель по главам.
+
+    Заменяет одновызывный путь, в котором модель сама выбирала, что считать
+    модулем. По «Механике» Мякишева она выбирала части книги: пять модулей,
+    пятнадцать тем, ни одного из 129 параграфов. Просьбой в промпте это не
+    чинится — полный план в один ответ и не помещается: 129 тем по двенадцати
+    полям строгой схемы дают около 23 тысяч токенов при потолке в восемь.
+
+    Здесь состав плана известен до всякого вызова модели
+    (`planning/structure.py`), а вызовы идут по главам параллельно. Отказ на
+    одной главе оставляет её темы с детерминированными формулировками и не
+    трогает остальные.
+    """
+
+    name = "skeleton-planner"
+
+    # Больше четырёх одновременных вызовов OpenRouter отдаёт 429 раньше, чем
+    # параллельность начинает экономить время.
+    max_concurrency = 4
+
+    def __init__(self, *, enrichment_provider=None):
+        self._enrichment = enrichment_provider
+
+    def generate_plan(
+        self, request: CoursePlanningRequest, context: RetrievalBundle
+    ) -> CoursePlanningResult:
+        import contextvars
+        from concurrent.futures import ThreadPoolExecutor
+
+        from .enrichment import (
+            ENRICHMENT_PROMPT_VERSION,
+            ChapterRequest,
+            apply_enrichment,
+            get_enrichment_provider,
+        )
+        from .structure import build_skeleton
+
+        modules = build_skeleton(request.toc)
+        provider = self._enrichment or get_enrichment_provider()
+        by_section = {e.section_id: e for e in request.toc if e.section_id}
+
+        chapter_requests = [
+            ChapterRequest(
+                module=module,
+                chapter=next(
+                    (
+                        by_section[sid]
+                        for topic in module.topics
+                        for sid in topic.source_section_ids
+                        if sid in by_section
+                    ),
+                    None,
+                ),
+                entries_by_section=by_section,
+                goal_text=request.goal_text,
+                current_level=request.current_level,
+                language=request.language,
+            )
+            for module in modules
+        ]
+
+        if chapter_requests:
+            # Контекст копируется НА КАЖДУЮ главу, а не один раз на всех.
+            # `copy_context` обязателен сам по себе — usage-метрики и tenant
+            # живут в ContextVar и в пул сами не переезжают, воркер записал бы
+            # расход не тому пользователю. Но один и тот же объект контекста
+            # нельзя войти из двух потоков одновременно: Python отвечает
+            # «cannot enter context: … is already entered», и планировщик падает
+            # целиком. Снимок на задачу снимает и то, и другое.
+            tasks = [(contextvars.copy_context(), item) for item in chapter_requests]
+            workers = min(self.max_concurrency, len(tasks))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                results = pool.map(
+                    lambda task: task[0].run(_enrich_one, provider, task[1]), tasks
+                )
+                for module, enrichment in zip(modules, results):
+                    if enrichment is not None:
+                        apply_enrichment(module, enrichment)
+
+        return CoursePlanningResult(
+            title=request.book.title or request.normalized_subject or "Учебный курс",
+            objective=request.goal_text,
+            modules=modules,
+            rationale=(
+                "Программа повторяет структуру книги: модуль — глава, "
+                "тема — параграф."
+            ),
+            model=getattr(provider, "name", ""),
+            prompt_version=ENRICHMENT_PROMPT_VERSION,
+        )
+
+
+def _enrich_one(provider, request):
+    """Отказ на одной главе не должен уносить остальные."""
+    try:
+        return provider.enrich(request)
+    except Exception as exc:  # провайдер, сеть, таймаут — реакция одна
+        logger.warning(
+            "Обогащение главы «%s» не удалось: %s", request.module.title, exc
+        )
+        return None
+
+
 # ───────────────────────────── Registry ──────────────────────────────────────
 
 _PLANNING_FACTORIES: dict[str, Callable[[], CoursePlanningProvider]] = {
     "fake": FakeCoursePlanningProvider,
     "openrouter": OpenRouterCoursePlanningProvider,
+    "skeleton": SkeletonCoursePlanningProvider,
 }
 _REVIEW_FACTORIES: dict[str, Callable[[], CourseReviewProvider]] = {
     "fake": FakeCourseReviewProvider,
@@ -663,9 +771,13 @@ def register_planning_provider(
 def get_planning_provider(key: str | None = None) -> CoursePlanningProvider:
     """Провайдер планирования.
 
-    Без явного ключа выбор консервативен: реальная модель берётся, только если
-    роль настроена. Иначе — fake. Так забытая переменная окружения приводит к
-    предсказуемому результату, а не к неожиданному платному вызову.
+    Структуру плана строит оглавление, а не модель, поэтому по умолчанию
+    возвращается `SkeletonCoursePlanningProvider` — и с настроенной ролью, и
+    без неё. Разница лишь в том, кто заполняет смысл: модель или детерминированный
+    fake. Полнота плана в обоих случаях одинакова.
+
+    `OpenRouterCoursePlanningProvider` остаётся доступным по ключу `openrouter`
+    как точка отката на одновызывный путь.
     """
     if key:
         factory = _PLANNING_FACTORIES.get(key)
@@ -673,12 +785,7 @@ def get_planning_provider(key: str | None = None) -> CoursePlanningProvider:
             raise ProviderNotConfigured(f"Неизвестный провайдер: {key}")
         return factory()
 
-    if resolve_model(ROLE_COURSE_PLANNING).configured:
-        try:
-            return OpenRouterCoursePlanningProvider()
-        except ProviderNotConfigured:
-            pass
-    return FakeCoursePlanningProvider()
+    return SkeletonCoursePlanningProvider()
 
 
 def get_review_provider(key: str | None = None) -> CourseReviewProvider:

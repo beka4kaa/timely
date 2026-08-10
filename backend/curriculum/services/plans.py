@@ -57,12 +57,7 @@ from ..planning.contracts import (
     PlanningConstraints,
     TocEntry,
 )
-from ..planning.duration import (
-    Duration,
-    covered_pages,
-    estimate_topic_minutes,
-    split_total,
-)
+from ..planning.duration import covered_pages, estimate_topic_minutes, split_total
 from ..planning.providers import get_planning_provider, get_review_provider
 from ..planning.validation import ValidationReport, topological_order, validate_plan
 from ..retrieval import (
@@ -371,6 +366,8 @@ def build_planning_request(
             level=section.level or 1,
             role=section.structural_role,
             parent_path=section.parent.path if section.parent_id else "",
+            number_label=section.number_label,
+            parent_section_id=str(section.parent_id) if section.parent_id else "",
             section_id=str(section.pk),
             concepts=tuple(_profile_list(profiles.get(section.pk), "concepts")),
             skills=tuple(_profile_list(profiles.get(section.pk), "skills")),
@@ -495,7 +492,46 @@ def _call_planner(planner, request: CoursePlanningRequest, bundle, *, goal):
         raise PlanRejected(None, f"Планировщик недоступен: {exc}") from exc
 
     normalize_enum_fields(result)
+    # Длительности проставляются ДО валидации. Считает их backend по объёму
+    # разделов, а валидатор бракует нулевую длительность — значит, посчитать
+    # надо раньше проверки, иначе план отвергается за то, чего от модели больше
+    # и не ждут.
+    apply_durations(result, goal=goal, toc=request.toc)
     return result, validate_plan(result, request)
+
+
+def apply_durations(result, *, goal: LearningGoal, toc) -> None:
+    """Проставляет темам время по объёму их разделов.
+
+    Модель длительность не оценивает: у неё на входе заголовки, поэтому она
+    ставила одно и то же число всем темам подряд — 45 минут и двухстраничному
+    параграфу, и сорокастраничной главе.
+    """
+    pages_by_section = {
+        entry.section_id: (entry.page_start, entry.page_end)
+        for entry in toc
+        if entry.section_id
+    }
+    for module in result.modules:
+        module_minutes = 0
+        for topic in module.topics:
+            ranges = [
+                pages_by_section[section_id]
+                for section_id in getattr(topic, "source_section_ids", None) or []
+                if section_id in pages_by_section
+            ]
+            duration = estimate_topic_minutes(
+                page_count=covered_pages(ranges),
+                difficulty=topic.difficulty,
+                current_level=goal.current_level,
+                balance=topic.theory_practice_balance,
+            )
+            topic.estimated_minutes = duration.total
+            topic.duration_breakdown = duration.to_payload()
+            module_minutes += duration.total
+        # Иначе строка модуля разойдётся со строками внутри него, и валидатор
+        # честно сообщит `module_duration_mismatch`.
+        module.estimated_minutes = module_minutes
 
 
 class PlannerOutcome(NamedTuple):
@@ -765,13 +801,11 @@ def _persist_plan(
         current_version=1,
     )
 
-    # Страницы каждого раздела берутся из того же snapshot'а, что ушёл в модель:
-    # id уже прошли allowlist валидатора, и повторный поход в базу ничего не
-    # уточнит, зато способен разойтись с тем, что модель видела на входе.
-    pages_by_section = {
-        entry.section_id: (entry.page_start, entry.page_end)
-        for entry in request.toc
-        if entry.section_id
+    # Разделы берутся из того же snapshot'а, что ушёл в модель: id уже прошли
+    # allowlist валидатора, и повторный поход в базу ничего не уточнит, зато
+    # способен разойтись с тем, что модель видела на входе.
+    sections_by_id = {
+        entry.section_id: entry for entry in request.toc if entry.section_id
     }
 
     topics_by_external: dict[str, CourseTopic] = {}
@@ -793,11 +827,7 @@ def _persist_plan(
                 description="",
                 order_index=module_index,
             )
-        module_minutes = 0
         for topic_index, proposed_topic in enumerate(proposed_module.topics):
-            duration = _estimate_topic_duration(
-                proposed_topic, goal=goal, pages_by_section=pages_by_section
-            )
             topic = CourseTopic.objects.create(
                 module=module,
                 external_id=proposed_topic.external_id[:64],
@@ -805,24 +835,14 @@ def _persist_plan(
                 objective=proposed_topic.objective,
                 order_index=topic_index,
                 difficulty=proposed_topic.difficulty[:24],
-                estimated_minutes=duration.total,
+                estimated_minutes=proposed_topic.estimated_minutes,
                 suggested_lesson_count=proposed_topic.suggested_lesson_count,
                 theory_practice_balance=proposed_topic.theory_practice_balance[:16],
                 mastery_criteria=proposed_topic.mastery_criteria,
                 review_strategy=proposed_topic.review_strategy[:64],
-                duration_breakdown=duration.to_payload(),
+                duration_breakdown=proposed_topic.duration_breakdown,
             )
-            # Модель тоже перестаёт распоряжаться временем: её `estimated_minutes`
-            # для модуля разошлось бы с суммой пересчитанных тем, а расхождение
-            # между строкой модуля и строками внутри него ученик читает как
-            # ошибку приложения.
-            module_minutes += duration.total
-            proposed_topic.estimated_minutes = duration.total
             topics_by_external[proposed_topic.external_id] = topic
-
-        if module_minutes != module.estimated_minutes:
-            module.estimated_minutes = module_minutes
-            module.save(update_fields=["estimated_minutes"])
 
     recomputed_total = result.total_minutes()
     if recomputed_total != plan.estimated_total_minutes:
@@ -849,34 +869,10 @@ def _persist_plan(
             document,
             source_processing_version=source_processing_version,
             source_chunks=source_chunks,
+            sections_by_id=sections_by_id,
         )
 
     return plan
-
-
-def _estimate_topic_duration(
-    proposed_topic,
-    *,
-    goal: LearningGoal,
-    pages_by_section: dict[str, tuple[int, int]],
-) -> Duration:
-    """Время темы — из объёма её разделов, а не из ответа модели.
-
-    Модель не умеет оценивать длительность: у неё на входе заголовки, поэтому
-    она ставит одно и то же число всем темам подряд. Страницы, сложность и
-    уровень ученика у backend'а есть — считает он.
-    """
-    ranges = [
-        pages_by_section[section_id]
-        for section_id in getattr(proposed_topic, "source_section_ids", []) or []
-        if section_id in pages_by_section
-    ]
-    return estimate_topic_minutes(
-        page_count=covered_pages(ranges),
-        difficulty=proposed_topic.difficulty,
-        current_level=goal.current_level,
-        balance=proposed_topic.theory_practice_balance,
-    )
 
 
 def _bind_sources(
@@ -887,13 +883,35 @@ def _bind_sources(
     *,
     source_processing_version: str,
     source_chunks: dict[str, KnowledgeChunk],
+    sections_by_id: dict[str, object] | None = None,
 ) -> None:
-    """Привязывает тему к фрагментам книги.
+    """Привязывает тему к книге: к разделу и, если он известен, к фрагменту.
+
+    Раздел — основная привязка. Тема плана соответствует параграфу книги, и
+    именно его страницы нужно открыть ученику. Фрагменты же приходят из
+    retrieval-выдачи, ограниченной `PLANNING_MAX_CHUNKS`: их у темы может не
+    быть вовсе, и раньше такая тема оставалась без ссылки на книгу — в
+    интерфейсе у разных тем повторялись одни и те же «§ 2.1, стр. 153».
 
     Валидатор уже отсёк галлюцинации, а финальный CAS зафиксировал существование
     строк. Поэтому отсутствие id здесь означает нарушение snapshot-инварианта,
     а не допустимый повод молча сохранить тему без provenance.
     """
+    for section_id in getattr(proposed_topic, "source_section_ids", None) or []:
+        entry = (sections_by_id or {}).get(section_id)
+        if entry is None:
+            continue
+        CourseSourceBinding.objects.get_or_create(
+            topic=topic,
+            document=document,
+            chunk=None,
+            section_path=entry.path[:120],
+            defaults={
+                "page_start": entry.page_start,
+                "page_end": entry.page_end,
+            },
+        )
+
     for chunk_id in proposed_topic.source_chunk_ids:
         chunk = source_chunks.get(str(chunk_id))
         if (

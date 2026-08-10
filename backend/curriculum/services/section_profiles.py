@@ -172,20 +172,25 @@ def profile_document_sections(
     if not pending:
         return report
 
-    # `copy_context` обязателен: usage-метрики и tenant живут в ContextVar, а в
-    # пул они сами не переезжают — воркер увидел бы пустой контекст и записал
-    # расход не тому пользователю.
-    parent_context = contextvars.copy_context()
+    # Контекст копируется НА КАЖДЫЙ раздел, а не один раз на всех.
+    # `copy_context` обязателен сам по себе — usage-метрики и tenant живут в
+    # ContextVar и в пул сами не переезжают, воркер увидел бы пустой контекст и
+    # записал расход не тому пользователю. Но один и тот же объект контекста
+    # нельзя войти из двух потоков одновременно: Python отвечает «cannot enter
+    # context: … is already entered». Снимок на задачу снимает и то, и другое.
+    # Копии снимаются здесь, в родительском потоке: внутри воркера копировать
+    # уже нечего — там контекст пуст.
+    tasks = [(contextvars.copy_context(), item) for item in pending]
 
-    def run(item):
-        section, request, content_hash = item
-        return section, request, content_hash, parent_context.run(
+    def run(task):
+        context, (section, request, content_hash) = task
+        return section, request, content_hash, context.run(
             _profile_one, provider, request
         )
 
-    workers = min(MAX_CONCURRENCY, len(pending))
+    workers = min(MAX_CONCURRENCY, len(tasks))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for section, request, content_hash, result in pool.map(run, pending):
+        for section, request, content_hash, result in pool.map(run, tasks):
             if result is None:
                 report.failed += 1
                 report.errors.append(str(section.pk))

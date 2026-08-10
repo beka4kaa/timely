@@ -121,6 +121,52 @@ class TocParsingTests(SimpleTestCase):
         self.assertEqual(roles["Упражнение"], Role.EXERCISE_SET)
         self.assertEqual(roles["Ответы"], Role.ANSWERS)
 
+    def test_paragraph_without_dot_leaders_keeps_its_page(self):
+        """Длинное название вытесняет выноски, и перед номером остаётся пробел.
+
+        Регресс с «Механики» Мякишева: четыре таких параграфа теряли страницу,
+        а без страницы разметка считала их контейнерами и делала ГЛАВАМИ. Книга
+        получала 16 глав вместо девяти, а план строился по ним.
+        """
+        line = "§\xa09.5. Давление в жидкостях и газах. Сообщающиеся сосуды 450"
+        node = parse_toc_lines([line])[0]
+
+        self.assertEqual(node.printed_page, 450)
+        self.assertEqual(
+            node.title, "Давление в жидкостях и газах. Сообщающиеся сосуды"
+        )
+
+    def test_chapter_heading_is_not_read_as_an_entry(self):
+        """«Глава 1» — заголовок, а не запись со страницей 1.
+
+        Проверено: шаблон с одним пробелом БЕЗ сужения до §-строк разбирает эту
+        строку как «Глава» на странице 1. Все части книги схлопываются в один
+        уровень — 1 часть и 16 глав вместо 5 и 12.
+        """
+        node = parse_toc_lines(["Глава 1", "§ 1.1. Механическое движение . . . 5"])[0]
+
+        self.assertIsNone(node.printed_page)
+        self.assertTrue(node.is_container)
+
+    def test_paragraph_is_never_a_container(self):
+        """Даже если номер страницы прочитать не удалось.
+
+        Контейнер определяется при разборе строки, а не выводится потом из
+        отсутствия страницы: именно этот вывод и превращал параграфы в главы.
+        """
+        nodes = parse_toc_lines(
+            [
+                "Глава 7",
+                "§ 7.1. Первый параграф . . . 10",
+                "§ 7.2. Параграф, чей номер потерялся",
+                "§ 7.3. Третий параграф . . . 20",
+            ]
+        )
+        lost = next(n for n in nodes if n.number_label.startswith("§ 7.2"))
+
+        self.assertFalse(lost.is_container)
+        self.assertEqual(lost.level, nodes[1].level)
+
     def test_parsing_is_deterministic(self):
         again = parse_toc_lines(TOC_PAGE.split("\n"))
         self.assertEqual(

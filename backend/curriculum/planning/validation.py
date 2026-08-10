@@ -109,6 +109,11 @@ class ValidationReport:
     # Доля модулей ровно с одной темой.
     single_topic_module_ratio: float = 0.0
     unknown_section_count: int = 0
+    # Доля глав книги, представленных в плане хотя бы одной темой. Считается по
+    # идентификаторам разделов, а не по совпадению названий: точное число, а не
+    # оценка. Именно оно отличает план по всей книге от плана по её пятой части.
+    covered_chapters: int = 0
+    total_chapters: int = 0
 
     @property
     def blockers(self) -> list[ValidationIssue]:
@@ -122,8 +127,36 @@ class ValidationReport:
     def coverage_ratio(self) -> float:
         return (self.covered_sections / self.total_sections) if self.total_sections else 0.0
 
+    @property
+    def chapter_coverage_ratio(self) -> float:
+        return (
+            (self.covered_chapters / self.total_chapters)
+            if self.total_chapters
+            else 0.0
+        )
+
     def add(self, issue: ValidationIssue) -> None:
         self.issues.append(issue)
+
+
+# Уровень главы в книге. Дублирует `planning.structure.CHAPTER_LEVEL`
+# намеренно: импорт связал бы валидатор со сборщиком скелета, а он обязан
+# проверять любой план, включая пришедший от одновызывного провайдера.
+_CHAPTER_LEVEL = 2
+
+
+def _owning_chapter_id(entry, toc) -> str:
+    """Глава, которой принадлежит раздел. Пусто, если раздел выше главы."""
+    by_id = {e.section_id: e for e in toc if e.section_id}
+    current = entry
+    for _ in range(8):
+        if current.level == _CHAPTER_LEVEL:
+            return current.section_id
+        parent = by_id.get(current.parent_section_id)
+        if parent is None:
+            return ""
+        current = parent
+    return ""
 
 
 def _detect_cycles(edges: dict[str, list[str]]) -> list[list[str]]:
@@ -457,6 +490,46 @@ def validate_plan(
                 severity="warning",
             )
         )
+
+    # ── Покрытие ГЛАВ ──
+    #
+    # Отдельно от покрытия разделов и по идентификаторам, а не по названиям.
+    # Пропущенная глава — это пропущенная часть книги, и заметить её обязан
+    # точный счёт: план на пять модулей по книге из девяти глав проходил
+    # проверку названий молча, потому что названия у него совпадали.
+    chapters = [e for e in request.toc if e.level == _CHAPTER_LEVEL and e.section_id]
+    if chapters:
+        referenced = {
+            section_id for topic in topics for section_id in topic.source_section_ids
+        }
+        chapter_of = {
+            entry.section_id: _owning_chapter_id(entry, request.toc)
+            for entry in request.toc
+            if entry.section_id
+        }
+        touched = {chapter_of.get(section_id) for section_id in referenced}
+        report.total_chapters = len(chapters)
+        report.covered_chapters = sum(1 for c in chapters if c.section_id in touched)
+        if report.chapter_coverage_ratio < 1.0:
+            missing = [
+                c.title for c in chapters if c.section_id not in touched
+            ]
+            report.add(
+                ValidationIssue(
+                    "missing_chapters",
+                    "В плане нет глав книги: " + ", ".join(missing[:5]),
+                    severity="warning",
+                )
+            )
+
+    for module in plan.modules:
+        if not module.topics:
+            report.add(
+                ValidationIssue(
+                    "empty_module",
+                    f"Модуль «{module.title}» не содержит ни одной темы.",
+                )
+            )
 
     if report.total_minutes > constraints.max_total_minutes:
         report.add(

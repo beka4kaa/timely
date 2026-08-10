@@ -30,6 +30,7 @@ from curriculum.planning.contracts import (
 from curriculum.planning.providers import (
     FakeCoursePlanningProvider,
     FakeCourseReviewProvider,
+    SkeletonCoursePlanningProvider,
 )
 from curriculum.services import goals as goals_service
 from curriculum.services import plans as plans_service
@@ -611,6 +612,80 @@ class PlanDurationTests(_PlanBase):
                 module.estimated_minutes,
                 sum(topic.estimated_minutes for topic in module.topics.all()),
             )
+
+
+class PlanStructureTests(_PlanBase):
+    """Состав плана определяет книга, а не модель.
+
+    Регресс с живого прогона: по «Механике» Мякишева модель выбирала уровень
+    ЧАСТЕЙ книги и возвращала пять модулей на девять глав, а все 129 параграфов
+    не попадали в план ни разу. Теперь уровень выбирает backend.
+    """
+
+    def _skeleton(self, **kwargs):
+        kwargs.setdefault("planning_provider", SkeletonCoursePlanningProvider())
+        return self._generate(**kwargs)
+
+    def test_модуль_на_каждую_главу_книги(self):
+        outcome = self._skeleton()
+        chapters = DocumentSection.objects.filter(
+            document=self.document, level=2, is_teachable=True
+        ).count()
+        self.assertEqual(outcome.plan.modules.count(), chapters)
+
+    def test_ни_одного_пустого_модуля(self):
+        outcome = self._skeleton()
+        for module in outcome.plan.modules.all():
+            self.assertGreater(module.topics.count(), 0, module.title)
+
+    def test_каждая_тема_привязана_к_разделу_книги(self):
+        """Раньше провенанс упирался в 24 фрагмента retrieval-выдачи, и у разных
+        тем повторялась одна и та же ссылка."""
+        outcome = self._skeleton()
+        for topic in CourseTopic.objects.filter(module__plan=outcome.plan):
+            paths = {
+                binding.section_path for binding in topic.source_bindings.all()
+            }
+            self.assertTrue(paths, f"тема «{topic.title}» без источника")
+
+    def test_ссылки_на_разделы_не_повторяются_между_темами(self):
+        outcome = self._skeleton()
+        paths = [
+            binding.section_path
+            for topic in CourseTopic.objects.filter(module__plan=outcome.plan)
+            for binding in topic.source_bindings.filter(chunk__isnull=True)
+        ]
+        self.assertEqual(len(paths), len(set(paths)))
+
+    def test_время_считается_по_объёму_а_не_моделью(self):
+        outcome = self._skeleton()
+        for topic in CourseTopic.objects.filter(module__plan=outcome.plan):
+            self.assertGreater(topic.estimated_minutes, 0)
+            self.assertEqual(
+                topic.estimated_minutes, topic.duration_breakdown["total_minutes"]
+            )
+
+    def test_отказ_обогащения_не_уменьшает_план(self):
+        """Полнота плана не зависит от модели вовсе."""
+
+        class Broken:
+            name = "broken"
+
+            def enrich(self, request):
+                raise RuntimeError("провайдер лёг")
+
+        full = self._skeleton().plan
+        degraded = self._skeleton(
+            planning_provider=SkeletonCoursePlanningProvider(
+                enrichment_provider=Broken()
+            )
+        ).plan
+
+        self.assertEqual(degraded.modules.count(), full.modules.count())
+        self.assertEqual(
+            CourseTopic.objects.filter(module__plan=degraded).count(),
+            CourseTopic.objects.filter(module__plan=full).count(),
+        )
 
 
 class PlanRepairTests(_PlanBase):
