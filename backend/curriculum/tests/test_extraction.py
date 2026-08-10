@@ -226,6 +226,90 @@ class BlockClassificationTests(SimpleTestCase):
         )
 
 
+class HeadingDetectionTests(SimpleTestCase):
+    """Регрессии, снятые с живого учебника.
+
+    «Механика, 10 класс» Мякишева (513 страниц) давала 1151 «раздел». Каждый
+    тест ниже — отдельный источник этого мусора. Цена ошибки не косметическая:
+    оглавление уходит планировщику как есть, и он честно превращает каждый
+    обрывок в тему курса.
+    """
+
+    def _titles(self, text: str, page: int = 1) -> list[str]:
+        _, sections = classify_pages([PageText(page, text)])
+        return [s.title for s in sections]
+
+    def test_footnote_marker_is_not_a_heading(self):
+        # «1 Это введение…» — сноска, приклеенная к первой строке абзаца.
+        # Голый номер без точки заголовком больше не считается.
+        titles = self._titles(
+            "1 Это введение при первом чтении может показаться сложным."
+        )
+        self.assertEqual(titles, [])
+
+    def test_numbered_questions_are_not_headings(self):
+        """Список вопросов к параграфу — не оглавление.
+
+        Отличить «3. Динамика» от «3. Почему второй закон…» по словам нельзя, а
+        по длине ненадёжно: PDF отдаёт строку уже перенесённой. Зато список
+        виден по количеству.
+        """
+        titles = self._titles(
+            "1. Какие гипотезы проверял Галилей?\n"
+            "2. Почему второй закон Ньютона называют\n"
+            "3. Проведите классификацию движений\n"
+            "4. Маховик приобрёл начальную угловую"
+        )
+        self.assertEqual(titles, [])
+
+    def test_single_numbered_heading_still_works(self):
+        # Обратная сторона правила выше: одиночный нумерованный заголовок в
+        # книге без «§» обязан выжить.
+        self.assertEqual(self._titles("3. Динамика"), ["Динамика"])
+
+    def test_heading_split_across_lines_is_merged(self):
+        """PDF разрывает заголовок по строкам вёрстки.
+
+        Без склейки вторая половина становилась отдельным разделом с названием
+        вроде «НАУЧНОГО ВЗГЛЯДА НА МИР».
+        """
+        titles = self._titles("ЗАРОЖДЕНИЕ И РАЗВИТИЕ\nНАУЧНОГО ВЗГЛЯДА НА МИР")
+        self.assertEqual(titles, ["ЗАРОЖДЕНИЕ И РАЗВИТИЕ НАУЧНОГО ВЗГЛЯДА НА МИР"])
+
+    def test_front_matter_code_is_not_a_heading(self):
+        # «УДК» — три заглавные буквы, то есть формально капс.
+        self.assertEqual(self._titles("УДК 373.167.1:53"), [])
+
+    def test_page_number_fragments_are_not_headings(self):
+        # «2 2» давало раздел с названием «2» — таких было 23 на книгу.
+        self.assertEqual(self._titles("2 2"), [])
+        self.assertEqual(self._titles("1 1"), [])
+
+    def test_formula_fragment_is_not_a_heading(self):
+        # Заглавные буквы вокруг знака равенства — это формула, а не заголовок.
+        self.assertEqual(self._titles("1.20 SOABC = +"), [])
+
+    def test_section_ends_where_the_next_one_starts(self):
+        """`end_page` считается по порядку, а не по `path`.
+
+        Пути не уникальны — `_next_sibling_path` повторяет «1» в разных главах.
+        Поиск по пути давал разделу на 4-й странице конец от одноимённого
+        раздела с 400-й, и почти вся книга заявляла диапазон «3–400».
+        """
+        _, sections = classify_pages(
+            [
+                PageText(1, "§ 1. ПЕРВЫЙ"),
+                PageText(2, "Обычный текст параграфа."),
+                PageText(3, "§ 2. ВТОРОЙ"),
+                PageText(9, "Ещё текст."),
+            ]
+        )
+        self.assertEqual(
+            [(s.title, s.start_page, s.end_page) for s in sections],
+            [("ПЕРВЫЙ", 1, 3), ("ВТОРОЙ", 3, 9)],
+        )
+
+
 class SolutionSeparationTests(SimpleTestCase):
     """Самое важное свойство: решение не склеивается с условием."""
 

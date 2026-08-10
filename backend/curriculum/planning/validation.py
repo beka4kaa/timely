@@ -160,11 +160,17 @@ def validate_plan(
     report.module_count = len(plan.modules)
     if not plan.modules:
         report.add(ValidationIssue("no_modules", "План не содержит ни одного модуля."))
+    # Размер плана — предупреждение, а не блокер. Толстый учебник честно даёт
+    # много модулей, и выбрасывать из-за этого весь план значит оставить ученика
+    # ни с чем после нескольких минут ожидания. Опасности в лишнем модуле нет:
+    # в отличие от выдуманного источника или цикла зависимостей, он не делает
+    # план неверным — он делает его большим, и это видно ученику.
     if len(plan.modules) > constraints.max_modules:
         report.add(
             ValidationIssue(
                 "too_many_modules",
-                f"Модулей больше допустимых {constraints.max_modules}.",
+                f"Модулей больше рекомендованных {constraints.max_modules}.",
+                severity="warning",
             )
         )
 
@@ -231,6 +237,7 @@ def validate_plan(
                     "too_many_topics",
                     f"В модуле «{module.title}» больше "
                     f"{constraints.max_topics_per_module} тем.",
+                    severity="warning",
                 )
             )
 
