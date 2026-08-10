@@ -289,6 +289,8 @@ class CourseModuleSerializer(serializers.ModelSerializer):
             "id",
             "external_id",
             "title",
+            "number_label",
+            "part_title",
             "objective",
             "order_index",
             "estimated_minutes",

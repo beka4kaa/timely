@@ -97,8 +97,13 @@ class PlanningConstraints:
     предупреждением, а не блокером (см. `validation.validate_plan`).
     """
 
-    max_modules: int = 24
-    max_topics_per_module: int = 20
+    # Значения книжные, а не «педагогически рекомендованные». Состав плана
+    # больше не выбирает модель — его задаёт оглавление (`planning/structure.py`),
+    # и в «Главе 1» Мякишева тридцать два параграфа. Предупреждение «в модуле
+    # больше 20 тем» показывало ученику проблему, которой нет и на которую он
+    # всё равно не может повлиять.
+    max_modules: int = 40
+    max_topics_per_module: int = 60
     min_topic_minutes: int = 10
     max_topic_minutes: int = 240
     # Осталось блокером: это не «многовато», а признак сломанных чисел, по
@@ -181,6 +186,11 @@ class ProposedModule:
     external_id: str
     title: str
     objective: str
+    # Номер главы, как он напечатан («Глава 3»), и часть книги, к которой глава
+    # относится («Законы сохранения в механике»). Заполняет скелет из
+    # оглавления; модель эти поля не видит и не меняет.
+    number_label: str = ""
+    part_title: str = ""
     estimated_minutes: int = 0
     completion_criteria: str = ""
     milestone: str = ""

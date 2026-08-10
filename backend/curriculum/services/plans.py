@@ -814,6 +814,8 @@ def _persist_plan(
             plan=plan,
             external_id=proposed_module.external_id[:64],
             title=proposed_module.title[:300],
+            number_label=proposed_module.number_label[:32],
+            part_title=proposed_module.part_title[:300],
             objective=proposed_module.objective,
             order_index=module_index,
             estimated_minutes=proposed_module.estimated_minutes,
@@ -1025,6 +1027,8 @@ def plan_snapshot(plan: CoursePlan) -> dict:
             {
                 "external_id": module.external_id,
                 "title": module.title,
+                "number_label": module.number_label,
+                "part_title": module.part_title,
                 "objective": module.objective,
                 "order_index": module.order_index,
                 "estimated_minutes": module.estimated_minutes,

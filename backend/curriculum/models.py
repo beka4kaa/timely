@@ -938,6 +938,16 @@ class CourseModule(models.Model):
     # Идентификатор из ответа модели — по нему связываются зависимости.
     external_id = models.CharField(max_length=64)
     title = models.CharField(max_length=300)
+    # Номер главы, как он напечатан: «Глава 3». Отдельно от названия, потому что
+    # в книге это две строки, и интерфейс печатает их по-разному. Склеенное
+    # «Глава 3. Силы в механике» рядом с собственным порядковым номером списка
+    # давало «6 Глава 3. Силы в механике».
+    number_label = models.CharField(max_length=32, blank=True, default="")
+    # Часть книги, к которой относится модуль: «Законы сохранения в механике».
+    # Отдельной таблицы нет намеренно — у части нет ни своих тем, ни критериев,
+    # ни времени сверх суммы глав. Группировка в интерфейсе идёт по идущим
+    # подряд модулям с одинаковым значением; пусто — книга без частей.
+    part_title = models.CharField(max_length=300, blank=True, default="")
     objective = models.TextField(blank=True, default="")
     order_index = models.PositiveIntegerField(default=0)
     estimated_minutes = models.PositiveIntegerField(default=0)
