@@ -68,6 +68,15 @@ _TOPIC_SCHEMA: dict[str, Any] = {
             "items": {"type": "string"},
             "description": "Только значения из available_chunk_ids.",
         },
+        "source_section_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Разделы книги, из которых собрана тема. Только значения из "
+                "available_section_ids. Тема, объединяющая три параграфа, "
+                "перечисляет все три."
+            ),
+        },
     },
 }
 _TOPIC_SCHEMA["required"] = sorted(_TOPIC_SCHEMA["properties"])

@@ -21,10 +21,15 @@ from dataclasses import asdict, dataclass, field
 # перечислял только ИМЕНА полей, а валидатор блокировал план за любое чужое
 # значение — модель не могла выполнить контракт, которого ей не сообщили.
 #
+# 2.0.0: модель получает иерархию книги (level/parent) и обязана ссылаться
+# на `source_section_ids`, а требование «покрывать оглавление» убрано. До
+# этого вход был плоским списком, и модель делала модуль на каждую строку:
+# 38 модулей ровно по одной теме на одной книге.
+#
 # 1.2.0: форма ответа переехала из прозы в JSON Schema (`planning/schema.py`),
 # и промпт похудел ровно на неё. Дублировать контракт в двух местах — способ
 # однажды их разъехать; в промпте осталось то, чего схема выразить не может.
-PROMPT_VERSION = "course-planner-1.2.0"
+PROMPT_VERSION = "course-planner-2.0.0"
 REVIEW_PROMPT_VERSION = "course-reviewer-1.0.0"
 
 
@@ -39,12 +44,35 @@ class BookMetadata:
 
 @dataclass(frozen=True)
 class TocEntry:
-    """Нормализованная строка оглавления, переданная модели."""
+    """Раздел книги, переданный модели.
+
+    `level` и `parent_path` появились не для полноты: без них модель видела
+    плоский список из полутора сотен строк и делала модуль на каждую. На
+    «Механике» Мякишева это дало 38 модулей ровно по одной теме, включая
+    шестнадцать одинаковых «Упражнений». Иерархия в базе была — до модели она
+    просто не доезжала.
+    """
 
     path: str
     title: str
     page_start: int
     page_end: int
+    # Уровень в книге: 1 — часть, 2 — глава, 3 — параграф.
+    level: int = 1
+    # Педагогическая роль раздела (`outline.contracts.Role`).
+    role: str = "section"
+    # Путь родителя. Пусто у верхнего уровня.
+    parent_path: str = ""
+    # Идентификатор раздела. Модель ссылается на него в `source_section_ids`,
+    # и он же проверяется валидатором.
+    section_id: str = ""
+    # Из профиля раздела (`curriculum.profiles`). По заголовку «§ 24. Работа
+    # силы» нельзя понять, вводит раздел новое понятие или закрепляет прошлое;
+    # понятия и навыки — то, по чему параграфы вообще можно объединять в тему.
+    # Пусто, если книга ещё не профилирована: тогда модель работает как раньше.
+    concepts: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
+    summary: str = ""
 
 
 @dataclass(frozen=True)
@@ -90,6 +118,9 @@ class CoursePlanningRequest:
     # chunk_id, на которые модели РАЗРЕШЕНО ссылаться. Всё остальное —
     # галлюцинация, и валидатор это отловит.
     available_chunk_ids: tuple[str, ...]
+    # Разделы, на которые модели РАЗРЕШЕНО ссылаться. Тот же принцип, что и
+    # у фрагментов: всё остальное — выдумка, и валидатор её отловит.
+    available_section_ids: tuple[str, ...] = ()
     source_excerpts: str = ""
     constraints: PlanningConstraints = field(default_factory=PlanningConstraints)
     schema_version: str = "1.0.0"
@@ -129,6 +160,9 @@ class ProposedTopic:
     review_strategy: str = ""
     prerequisites: list[str] = field(default_factory=list)
     source_chunk_ids: list[str] = field(default_factory=list)
+    # Разделы книги, из которых собрана тема. Именно они делают
+    # группировку проверяемой: тема из трёх параграфов перечисляет все три.
+    source_section_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

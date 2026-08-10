@@ -136,6 +136,13 @@ export interface TopicSourceRef {
   page_end: number | null;
 }
 
+export interface DurationBreakdown {
+  theory_minutes: number;
+  practice_minutes: number;
+  assessment_minutes: number;
+  total_minutes: number;
+}
+
 export interface CourseTopic {
   id: string;
   external_id: string;
@@ -144,6 +151,8 @@ export interface CourseTopic {
   order_index: number;
   difficulty: string;
   estimated_minutes: number;
+  /** Из чего сложилось время темы. Пусто у планов, созданных до расчёта. */
+  duration_breakdown: DurationBreakdown | Record<string, never>;
   suggested_lesson_count: number;
   theory_practice_balance: Balance;
   mastery_criteria: string;

@@ -21,6 +21,12 @@ from dataclasses import dataclass, field
 
 from .contracts import CoursePlanningRequest, CoursePlanningResult
 
+# Пороги, за которыми план перестаёт быть программой и становится копией
+# оглавления. Предупреждение, а не блокер: бывают книги, где глава
+# действительно равна одной теме.
+_COPIED_TITLE_WARN = 0.8
+_SINGLE_TOPIC_WARN = 0.8
+
 # Публичные: из них же собирается JSON Schema (`planning/schema.py`). Разъехавшись,
 # схема начала бы разрешать то, что валидатор запрещает, — и модель получала бы
 # отказ за ответ, о котором её сами попросили.
@@ -98,6 +104,11 @@ class ValidationReport:
     covered_sections: int = 0
     total_sections: int = 0
     total_minutes: int = 0
+    # Доля тем, чьё название дословно совпадает с разделом книги.
+    copied_title_ratio: float = 0.0
+    # Доля модулей ровно с одной темой.
+    single_topic_module_ratio: float = 0.0
+    unknown_section_count: int = 0
 
     @property
     def blockers(self) -> list[ValidationIssue]:
@@ -183,8 +194,53 @@ def validate_plan(
             )
         )
 
+    allowed_sections = set(request.available_section_ids)
+    section_titles = {
+        " ".join(_WORD_RE.findall((entry.title or "").casefold()))
+        for entry in request.toc
+    }
+
     topics = plan.all_topics()
     report.topic_count = len(topics)
+
+    # ── Признаки механического переписывания оглавления ──
+    #
+    # Оба числа появились после живого прогона, где модель отдала 38 модулей
+    # ровно по одной теме, и каждое название совпадало с разделом книги.
+    # Формально план был безупречен: ссылки на месте, циклов нет, enum'ы верные.
+    # Без этих метрик такой регресс снова прошёл бы незамеченным.
+    if topics and section_titles:
+        copied = sum(
+            1
+            for topic in topics
+            if " ".join(_WORD_RE.findall(topic.title.casefold())) in section_titles
+        )
+        report.copied_title_ratio = copied / len(topics)
+        if report.copied_title_ratio >= _COPIED_TITLE_WARN:
+            report.add(
+                ValidationIssue(
+                    "titles_copied_from_book",
+                    f"{report.copied_title_ratio:.0%} тем названы точно как разделы "
+                    "книги — программа похожа на переписанное оглавление.",
+                    severity="warning",
+                )
+            )
+
+    if plan.modules:
+        single = sum(1 for module in plan.modules if len(module.topics) == 1)
+        report.single_topic_module_ratio = single / len(plan.modules)
+        if (
+            len(plan.modules) > 3
+            and report.single_topic_module_ratio >= _SINGLE_TOPIC_WARN
+        ):
+            report.add(
+                ValidationIssue(
+                    "modules_are_single_topics",
+                    f"{report.single_topic_module_ratio:.0%} модулей состоят из одной "
+                    "темы — материал не сгруппирован.",
+                    severity="warning",
+                )
+            )
     report.total_minutes = plan.total_minutes()
 
     # ── Уникальность идентификаторов ──
@@ -312,6 +368,20 @@ def validate_plan(
                     topic_external_id=topic.external_id,
                 )
             )
+        # Раздел книги проверяется так же строго, как фрагмент: тема,
+        # сославшаяся на несуществующий раздел, выглядит подтверждённой, а на
+        # деле её содержание неизвестно откуда.
+        for section_id in topic.source_section_ids:
+            if allowed_sections and section_id not in allowed_sections:
+                report.unknown_section_count += 1
+                report.add(
+                    ValidationIssue(
+                        "unknown_source_section",
+                        f"Тема «{topic.title}» ссылается на раздел вне книги.",
+                        topic_external_id=topic.external_id,
+                    )
+                )
+
         for chunk_id in topic.source_chunk_ids:
             if chunk_id not in allowed_chunks:
                 report.hallucinated_source_count += 1
