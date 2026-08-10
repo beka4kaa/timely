@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Loader2, Plus, Check, X, Pencil, Search, ShieldCheck } from "lucide-react"
+import { Loader2, Plus, Check, X, Pencil, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -555,10 +555,6 @@ export default function AdminPage() {
 
   return (
     <CoffeePageShell
-      eyebrow="Управление Timely"
-      title="Админ-панель"
-      description="Аккаунты, рейтинг, доступы, задачи и решения."
-      icon={<ShieldCheck className="h-5 w-5" />}
       contentClassName="max-w-6xl"
     >
       <Tabs defaultValue="users">

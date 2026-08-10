@@ -11,12 +11,7 @@ export default function StudyPlannerPage() {
     const [activeTab, setActiveTab] = useState('schedule')
 
     return (
-        <CoffeePageShell
-            eyebrow="Планирование"
-            title="Учебный план"
-            description="Расписание занятий и история учебных дней в одном спокойном пространстве."
-            icon={<Calendar className="h-5 w-5" />}
-        >
+        <CoffeePageShell>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="mb-6 grid w-full grid-cols-2 rounded-full border border-[#ded8cf] bg-[#f0ece5] p-1">
                     <TabsTrigger value="schedule" className="gap-2">

@@ -6,7 +6,7 @@ import { FullAccessGate } from '@/components/full-access-gate'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Plus, List, Table2, ChevronRight, ChevronDown, Trash2, Zap } from 'lucide-react'
+import { Plus, List, Table2, ChevronRight, ChevronDown, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
@@ -139,12 +139,7 @@ export default function TopicsPage() {
 
     return (
         <FullAccessGate>
-            <CoffeePageShell
-                eyebrow="Диагностика"
-                title="Слабые темы"
-                description="Соберите темы, которым нужно уделить больше внимания, и следите за прогрессом."
-                icon={<Zap className="h-5 w-5" />}
-            >
+            <CoffeePageShell>
             <Tabs defaultValue="list">
                 <div className="flex items-center justify-between mb-3">
                     <TabsList className="h-9 rounded-full border border-[#ded8cf] bg-[#f0ece5] p-1">

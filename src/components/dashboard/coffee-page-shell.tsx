@@ -22,21 +22,24 @@ const coffeeTheme = {
   "--ring": "32 45% 50%",
 } as CSSProperties;
 
+/**
+ * Тёплая оболочка раздела: тема, фон, контейнер.
+ *
+ * Заголовка здесь больше нет. Он был буквальным дублем: `SiteHeader` печатает
+ * название раздела из `dashboard-navigation.ts` в закреплённой панели, а
+ * оболочка повторяла его же тремя сантиметрами ниже — вместе с надстрочником,
+ * иконкой в скруглённом квадрате и описанием. На двенадцати разделах.
+ *
+ * `actions` остался: это единственное, что в шапке было содержанием, а не
+ * подписью к самой себе.
+ */
 interface CoffeePageShellProps {
-  eyebrow?: string;
-  title: string;
-  description: string;
-  icon?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   contentClassName?: string;
 }
 
 export function CoffeePageShell({
-  eyebrow,
-  title,
-  description,
-  icon,
   actions,
   children,
   contentClassName = "",
@@ -59,30 +62,11 @@ export function CoffeePageShell({
       <div
         className={`relative mx-auto w-full max-w-[1240px] px-5 pb-16 pt-8 sm:px-8 lg:px-10 ${contentClassName}`}
       >
-        <header className="mb-8 flex flex-col gap-5 border-b border-[#ded8ce] pb-7 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            {eyebrow && (
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a4743f]">
-                {eyebrow}
-              </p>
-            )}
-            <div className="flex items-center gap-3">
-              {icon && (
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-[#dec9ab] bg-[#fffaf1] text-[#9a6630] shadow-[0_5px_18px_rgba(83,61,34,0.06)]">
-                  {icon}
-                </span>
-              )}
-              <h1 className="truncate font-serif text-[30px] font-medium tracking-[-0.035em] text-[#302b26] sm:text-[34px]">
-                {title}
-              </h1>
-            </div>
-            <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#7f776e]">
-              {description}
-            </p>
+        {actions && (
+          <div className="mb-6 flex justify-end border-b border-[#ded8ce] pb-5">
+            {actions}
           </div>
-
-          {actions && <div className="shrink-0">{actions}</div>}
-        </header>
+        )}
 
         {children}
       </div>

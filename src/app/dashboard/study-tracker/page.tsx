@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { StudyTimer, SessionsList } from '@/components/mind'
-import { Timer } from 'lucide-react'
 import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
 export default function StudyTrackerPage() {
@@ -10,10 +9,6 @@ export default function StudyTrackerPage() {
 
     return (
         <CoffeePageShell
-            eyebrow="Фокус"
-            title="Трекер учёбы"
-            description="Отслеживайте время, которое вы тратите на обучение."
-            icon={<Timer className="h-5 w-5" />}
             contentClassName="max-w-5xl"
         >
             <div className="space-y-8">
