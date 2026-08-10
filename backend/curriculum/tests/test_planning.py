@@ -762,7 +762,7 @@ class GroupingRegressionTests(SimpleTestCase):
         self.assertEqual(len(plan.modules), 4)
         self.assertTrue(all(len(m.topics) == 5 for m in plan.modules), plan.modules)
 
-    def test_single_topic_modules_are_reported(self):
+    def test_single_topic_modules_are_measured(self):
         request = self._book_request()
         payload = {
             "title": "Курс",
@@ -792,14 +792,17 @@ class GroupingRegressionTests(SimpleTestCase):
         report = validate_plan(parse_planning_response(json.dumps(payload)), request)
 
         codes = {issue.code for issue in report.issues}
-        self.assertIn("modules_are_single_topics", codes)
-        self.assertIn("titles_copied_from_book", codes)
         self.assertEqual(report.single_topic_module_ratio, 1.0)
         self.assertEqual(report.copied_title_ratio, 1.0)
-        # Это предупреждения, а не блокеры: бывают книги, где глава равна теме.
+        # Числа остались, предупреждения по ним ушли: состав плана теперь
+        # задаёт оглавление книги, и совпадение названий — это норма. Показывать
+        # ученику «программа похожа на переписанное оглавление» незачем, она
+        # такой и задумана.
+        self.assertNotIn("modules_are_single_topics", codes)
+        self.assertNotIn("titles_copied_from_book", codes)
         self.assertTrue(report.is_valid, report.blockers)
 
-    def test_grouped_plan_is_not_flagged(self):
+    def test_grouped_plan_lowers_the_ratios(self):
         request = self._book_request()
         payload = {
             "title": "Курс",
@@ -840,10 +843,127 @@ class GroupingRegressionTests(SimpleTestCase):
         }
         report = validate_plan(parse_planning_response(json.dumps(payload)), request)
 
-        codes = {issue.code for issue in report.issues}
-        self.assertNotIn("modules_are_single_topics", codes)
-        self.assertNotIn("titles_copied_from_book", codes)
+        self.assertLess(report.single_topic_module_ratio, 1.0)
+        self.assertLess(report.copied_title_ratio, 1.0)
         self.assertTrue(report.is_valid, report.blockers)
+
+    def test_english_prose_is_not_unsafe_content(self):
+        """Регресс: план по «Hands-On ML» отвергался целиком.
+
+        В защите от инъекций стояли маркеры `SELECT ` и `DROP `, а в книге есть
+        разделы «Select a Performance Measure» и «Select and Train a Model», и
+        цель темы «Clean the Data» говорит «drop rows with missing values». Это
+        обычный английский. Содержимое плана в сырые запросы не попадает — ORM
+        параметризует всё сам.
+        """
+        request = self._book_request(chapters=1, per_chapter=1)
+        payload = self._plan_payload(
+            [("Select a Performance Measure", "Drop rows with missing values")]
+        )
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertNotIn("unsafe_content", {i.code for i in report.issues})
+        self.assertTrue(report.is_valid, report.blockers)
+
+    def test_markup_is_still_unsafe(self):
+        """Разметку по-прежнему не пропускаем: цели показываются пользователю."""
+        request = self._book_request(chapters=1, per_chapter=1)
+        payload = self._plan_payload([("<script>alert(1)</script>", "Понять")])
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertIn("unsafe_content", {i.code for i in report.blockers})
+
+    def test_same_title_in_different_modules_is_fine(self):
+        """У «Hands-On ML» одиннадцать разделов «Exercises» — по одному на главу.
+
+        Это структура книги, а не ошибка планирования: раньше каждый такой
+        раздел давал предупреждение о дубликате.
+        """
+        request = self._book_request(chapters=2, per_chapter=1)
+        payload = {
+            "title": "Курс",
+            "objective": "Цель",
+            "modules": [
+                {
+                    "external_id": f"m{index}",
+                    "title": f"Глава {index}",
+                    "objective": "Освоить",
+                    "topics": [
+                        {
+                            "external_id": f"m{index}-t1",
+                            "title": "Exercises",
+                            "objective": "Прорешать",
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "practice",
+                            "prerequisites": [],
+                            "source_chunk_ids": [],
+                            "source_section_ids": [f"s-{index}-1"],
+                        }
+                    ],
+                }
+                for index in (1, 2)
+            ],
+        }
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertEqual(report.duplicate_topic_count, 0)
+        self.assertNotIn("duplicate_topic_title", {i.code for i in report.issues})
+
+    def test_same_title_twice_in_one_module_is_reported(self):
+        request = self._book_request(chapters=1, per_chapter=2)
+        payload = self._plan_payload([("Exercises", "Прорешать"), ("Exercises", "Ещё")])
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertEqual(report.duplicate_topic_count, 1)
+
+    def test_topic_with_a_section_has_a_source(self):
+        """Фрагментов у темы может не быть: их выдача ограничена 24 штуками.
+
+        Раздел книги — это и есть источник темы. Проверка только по фрагментам
+        помечала «без источника» все темы плана.
+        """
+        request = self._book_request(chapters=1, per_chapter=1)
+        payload = self._plan_payload([("Скорость", "Понять")])
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertEqual(report.unsourced_topic_count, 0)
+
+    def test_topic_without_any_source_is_reported(self):
+        request = self._book_request(chapters=1, per_chapter=1)
+        payload = self._plan_payload([("Скорость", "Понять")])
+        payload["modules"][0]["topics"][0]["source_section_ids"] = []
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertEqual(report.unsourced_topic_count, 1)
+
+    def _plan_payload(self, topics: list[tuple[str, str]]) -> dict:
+        """Один модуль с перечисленными темами; источники — из фикстуры книги."""
+        return {
+            "title": "Курс",
+            "objective": "Цель",
+            "modules": [
+                {
+                    "external_id": "m1",
+                    "title": "Глава 1",
+                    "objective": "Освоить",
+                    "topics": [
+                        {
+                            "external_id": f"m1-t{position}",
+                            "title": title,
+                            "objective": objective,
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "balanced",
+                            "prerequisites": [],
+                            "source_chunk_ids": [],
+                            "source_section_ids": [f"s-1-{position}"],
+                        }
+                        for position, (title, objective) in enumerate(topics, start=1)
+                    ],
+                }
+            ],
+        }
 
     def test_unknown_source_section_is_a_blocker(self):
         request = self._book_request()

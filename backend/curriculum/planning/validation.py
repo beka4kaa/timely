@@ -21,12 +21,6 @@ from dataclasses import dataclass, field
 
 from .contracts import CoursePlanningRequest, CoursePlanningResult
 
-# Пороги, за которыми план перестаёт быть программой и становится копией
-# оглавления. Предупреждение, а не блокер: бывают книги, где глава
-# действительно равна одной теме.
-_COPIED_TITLE_WARN = 0.8
-_SINGLE_TOPIC_WARN = 0.8
-
 # Публичные: из них же собирается JSON Schema (`planning/schema.py`). Разъехавшись,
 # схема начала бы разрешать то, что валидатор запрещает, — и модель получала бы
 # отказ за ответ, о котором её сами попросили.
@@ -74,8 +68,17 @@ def _titles_match(section_terms: frozenset[str], topic_terms: frozenset[str]) ->
     overlap = len(section_terms & topic_terms)
     return overlap / min(len(section_terms), len(topic_terms)) >= _TITLE_MATCH_THRESHOLD
 
-# Признаки того, что модель попыталась вернуть не семантику, а исполняемое.
-_FORBIDDEN_MARKERS = ("<script", "</script", "<svg", "foreignObject", "SELECT ", "DROP ")
+# Признаки того, что модель попыталась вернуть не семантику, а разметку.
+#
+# SQL-слов здесь больше нет. `SELECT ` и `DROP ` отвергали план по «Hands-On
+# Machine Learning» целиком: в книге есть разделы «Select a Performance Measure»
+# и «Select and Train a Model», а в цели темы «Clean the Data» написано «drop
+# rows with missing values». Это обычный английский, а не инъекция.
+#
+# Защищаться от SQL здесь и незачем: содержимое плана не попадает в сырые
+# запросы — ORM параметризует всё сам. Разметка осталась, потому что заголовки
+# и цели показываются пользователю.
+_FORBIDDEN_MARKERS = ("<script", "</script", "<svg", "foreignObject")
 
 
 @dataclass(frozen=True)
@@ -236,12 +239,16 @@ def validate_plan(
     topics = plan.all_topics()
     report.topic_count = len(topics)
 
-    # ── Признаки механического переписывания оглавления ──
+    # ── Насколько план повторяет оглавление ──
     #
-    # Оба числа появились после живого прогона, где модель отдала 38 модулей
-    # ровно по одной теме, и каждое название совпадало с разделом книги.
-    # Формально план был безупречен: ссылки на месте, циклов нет, enum'ы верные.
-    # Без этих метрик такой регресс снова прошёл бы незамеченным.
+    # Оба числа появились, когда состав плана выбирала модель: она отдавала
+    # 38 модулей ровно по одной теме, и каждое название совпадало с разделом
+    # книги. Теперь структуру задаёт само оглавление
+    # (`planning/structure.py`), и совпадение в 100% — это норма, а не регресс.
+    #
+    # Поэтому метрики остались, а предупреждения по ним ушли: benchmark по ним
+    # по-прежнему сравнивает провайдеров, но ученику показывать «программа
+    # похожа на переписанное оглавление» больше незачем — она такой и задумана.
     if topics and section_titles:
         copied = sum(
             1
@@ -249,36 +256,14 @@ def validate_plan(
             if " ".join(_WORD_RE.findall(topic.title.casefold())) in section_titles
         )
         report.copied_title_ratio = copied / len(topics)
-        if report.copied_title_ratio >= _COPIED_TITLE_WARN:
-            report.add(
-                ValidationIssue(
-                    "titles_copied_from_book",
-                    f"{report.copied_title_ratio:.0%} тем названы точно как разделы "
-                    "книги — программа похожа на переписанное оглавление.",
-                    severity="warning",
-                )
-            )
 
     if plan.modules:
         single = sum(1 for module in plan.modules if len(module.topics) == 1)
         report.single_topic_module_ratio = single / len(plan.modules)
-        if (
-            len(plan.modules) > 3
-            and report.single_topic_module_ratio >= _SINGLE_TOPIC_WARN
-        ):
-            report.add(
-                ValidationIssue(
-                    "modules_are_single_topics",
-                    f"{report.single_topic_module_ratio:.0%} модулей состоят из одной "
-                    "темы — материал не сгруппирован.",
-                    severity="warning",
-                )
-            )
     report.total_minutes = plan.total_minutes()
 
     # ── Уникальность идентификаторов ──
     seen_topic_ids: set[str] = set()
-    seen_titles: set[str] = set()
     for topic in topics:
         if not topic.external_id:
             report.add(
@@ -297,18 +282,28 @@ def validate_plan(
         else:
             seen_topic_ids.add(topic.external_id)
 
-        normalized_title = topic.title.strip().casefold()
-        if normalized_title and normalized_title in seen_titles:
-            report.duplicate_topic_count += 1
-            report.add(
-                ValidationIssue(
-                    "duplicate_topic_title",
-                    f"Тема «{topic.title}» дублируется.",
-                    severity="warning",
-                    topic_external_id=topic.external_id,
+    # Одинаковые названия проверяются ВНУТРИ модуля, а не по всему плану.
+    # Учебник называет разделы одинаково в каждой главе: у «Hands-On Machine
+    # Learning» одиннадцать разделов «Exercises», по одному на главу, и это
+    # правильная структура книги, а не ошибка планирования. Две темы с одним
+    # названием в одной главе — вот это действительно странно.
+    for module in plan.modules:
+        seen_in_module: set[str] = set()
+        for topic in module.topics:
+            normalized_title = topic.title.strip().casefold()
+            if not normalized_title:
+                continue
+            if normalized_title in seen_in_module:
+                report.duplicate_topic_count += 1
+                report.add(
+                    ValidationIssue(
+                        "duplicate_topic_title",
+                        f"В модуле «{module.title}» тема «{topic.title}» дублируется.",
+                        severity="warning",
+                        topic_external_id=topic.external_id,
+                    )
                 )
-            )
-        seen_titles.add(normalized_title)
+            seen_in_module.add(normalized_title)
 
     module_ids: set[str] = set()
     for module in plan.modules:
@@ -390,8 +385,14 @@ def validate_plan(
                 )
             )
 
-        # ── Provenance: ссылки только на переданные фрагменты ──
-        if not topic.source_chunk_ids:
+        # ── Provenance: тема обязана быть привязана к книге ──
+        #
+        # Раздел засчитывается наравне с фрагментом. Тема плана соответствует
+        # разделу книги, и это и есть её источник; фрагменты приходят из
+        # retrieval-выдачи, ограниченной `PLANNING_MAX_CHUNKS`, и у большинства
+        # тем их просто нет. Проверка только по ним помечала «без источника» все
+        # 174 темы плана, у каждой из которых раздел был указан.
+        if not topic.source_chunk_ids and not topic.source_section_ids:
             report.unsourced_topic_count += 1
             report.add(
                 ValidationIssue(
