@@ -322,6 +322,45 @@ class ValidationTests(SimpleTestCase):
         report = validate_plan(self._plan_from(self._valid_payload()), make_request())
         self.assertTrue(report.is_valid, report.blockers)
 
+    def test_oversized_plan_is_a_warning_not_a_blocker(self):
+        """Толстый учебник честно даёт много модулей.
+
+        Раньше превышение потолка выбрасывало ВЕСЬ план, и ученик после трёх
+        минут ожидания не получал ничего. На «Механике» Мякишева это случалось
+        каждый раз. Лишний модуль не делает план неверным — в отличие от
+        выдуманного источника или цикла, — поэтому теперь это предупреждение.
+        """
+        payload = self._valid_payload()
+        template = payload["modules"][0]
+        payload["modules"] = []
+        for index in range(1, 31):
+            module = json.loads(json.dumps(template))
+            module["external_id"] = f"m{index}"
+            for position, topic in enumerate(module["topics"], start=1):
+                topic["external_id"] = f"t{index}_{position}"
+                topic["title"] = f"Тема {index}.{position}"
+                topic["prerequisites"] = []
+            payload["modules"].append(module)
+
+        report = validate_plan(self._plan_from(payload), make_request())
+        codes = {issue.code for issue in report.issues}
+        self.assertIn("too_many_modules", codes)
+        self.assertNotIn(
+            "too_many_modules", {issue.code for issue in report.blockers}
+        )
+        self.assertTrue(report.is_valid, report.blockers)
+
+    def test_absurd_total_duration_is_still_a_blocker(self):
+        # Потолок длительности остался блокером: это признак сломанных чисел,
+        # по которым потом считается прогноз сроков, а не «многовато».
+        payload = self._valid_payload()
+        for topic in payload["modules"][0]["topics"]:
+            topic["estimated_minutes"] = 500_000
+        report = validate_plan(self._plan_from(payload), make_request())
+        self.assertIn(
+            "total_duration_too_large", {issue.code for issue in report.blockers}
+        )
+
     def test_hallucinated_chunk_id_is_a_blocker(self):
         payload = self._valid_payload()
         payload["modules"][0]["topics"][0]["source_chunk_ids"] = ["c999"]
