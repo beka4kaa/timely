@@ -558,6 +558,61 @@ class PlanGenerationTests(_PlanBase):
             )
 
 
+class PlanDurationTests(_PlanBase):
+    """Время темы считает backend по объёму материала.
+
+    Регресс с живого прогона: модель ставила ровно 45 минут каждой теме, и
+    «Механика» Мякишева получила 388 часов — больше двух учебных лет. Число не
+    было оценкой, модель просто заполняла обязательное поле.
+    """
+
+    def test_время_темы_не_берётся_у_модели(self):
+        outcome = self._generate()
+        topics = list(
+            CourseTopic.objects.filter(module__plan=outcome.plan).select_related(
+                "module"
+            )
+        )
+        self.assertTrue(topics)
+        # Fake-провайдер возвращает одно и то же число всем темам — ровно так,
+        # как вела себя реальная модель.
+        self.assertNotEqual(
+            {topic.estimated_minutes for topic in topics},
+            {45},
+        )
+
+    def test_разбивка_сходится_с_длительностью(self):
+        outcome = self._generate()
+        for topic in CourseTopic.objects.filter(module__plan=outcome.plan):
+            breakdown = topic.duration_breakdown
+            self.assertTrue(breakdown, f"тема {topic.title} без разбивки")
+            self.assertEqual(
+                breakdown["total_minutes"],
+                breakdown["theory_minutes"]
+                + breakdown["practice_minutes"]
+                + breakdown["assessment_minutes"],
+            )
+            self.assertEqual(topic.estimated_minutes, breakdown["total_minutes"])
+
+    def test_итог_плана_равен_сумме_тем(self):
+        """Иначе прогноз сроков считается по одному числу, а показывается другое."""
+        outcome = self._generate()
+        total = sum(
+            topic.estimated_minutes
+            for topic in CourseTopic.objects.filter(module__plan=outcome.plan)
+        )
+        outcome.plan.refresh_from_db()
+        self.assertEqual(outcome.plan.estimated_total_minutes, total)
+
+    def test_модуль_равен_сумме_своих_тем(self):
+        outcome = self._generate()
+        for module in outcome.plan.modules.all():
+            self.assertEqual(
+                module.estimated_minutes,
+                sum(topic.estimated_minutes for topic in module.topics.all()),
+            )
+
+
 class PlanRepairTests(_PlanBase):
     """Одна попытка починки при блокерах валидатора.
 

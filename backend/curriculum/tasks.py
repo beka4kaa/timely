@@ -37,6 +37,7 @@ from .models import PROCESSING_VERSION, Document, IngestionAttempt, IngestionJob
 from .observability import log_ingestion_event
 from .services.dispatch import claim_failed_retry, mark_queue_unavailable
 from .services.ingestion import ingest_document
+from .services.section_profiles import profile_document_sections
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,7 @@ def ingest_document_task(
     if not outcome.claimed:
         return
     if job.status != Document.Status.FAILED:
+        _enqueue_profiling(document_id, processing_version)
         return
 
     if job.error_code not in TRANSIENT_ERROR_CODES:
@@ -324,3 +326,57 @@ def _mark_quota_denied(
         error_code=QUOTA_ERROR_CODE,
     )
     return True
+
+
+@shared_task(
+    bind=True,
+    name="curriculum.profile_document_sections",
+    acks_late=True,
+    reject_on_worker_lost=False,
+    ignore_result=True,
+    max_retries=0,
+)
+def profile_document_sections_task(
+    self, document_id: str, processing_version: str = PROCESSING_VERSION
+):
+    """Профилирует разделы обработанной книги.
+
+    Отдельной задачей, а не частью ingestion: профилирование ходит в модель
+    десятки раз, и его отказ не должен превращать успешно разобранную книгу в
+    непригодную. Без профилей план строится по заголовкам — как строился до
+    появления этого шага.
+
+    Повторов нет намеренно. Кэш по содержимому делает следующий запуск дешёвым,
+    а профили пересобираются при следующем обращении к книге; автоматический
+    повтор здесь означал бы вторую оплату тех же вызовов.
+    """
+    document = Document.objects.filter(pk=document_id).first()
+    if document is None:
+        return
+
+    with usage_scope(
+        user_email=document.user_email, feature="curriculum_section_profiling"
+    ):
+        report = profile_document_sections(
+            document, processing_version=processing_version
+        )
+
+    logger.info(
+        "Профилирование документа %s: %s", document_id, report.as_dict()
+    )
+
+
+def _enqueue_profiling(document_id: str, processing_version: str) -> None:
+    """Ставит профилирование в очередь. Отказ брокера здесь не критичен.
+
+    Книга уже обработана и пригодна к планированию. Уронить успешную ingestion
+    из-за недоступного Redis на необязательном шаге нельзя.
+    """
+    try:
+        profile_document_sections_task.delay(str(document_id), processing_version)
+    except Exception as exc:  # noqa: BLE001 — брокер, сеть, конфигурация
+        logger.warning(
+            "Профилирование документа %s не поставлено в очередь: %s",
+            document_id,
+            exc,
+        )

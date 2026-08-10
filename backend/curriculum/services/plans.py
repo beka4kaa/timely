@@ -49,12 +49,19 @@ from ..models import (
     DocumentSection,
     KnowledgeChunk,
     LearningGoal,
+    SectionProfile,
 )
 from ..planning.contracts import (
     BookMetadata,
     CoursePlanningRequest,
     PlanningConstraints,
     TocEntry,
+)
+from ..planning.duration import (
+    Duration,
+    covered_pages,
+    estimate_topic_minutes,
+    split_total,
 )
 from ..planning.providers import get_planning_provider, get_review_provider
 from ..planning.validation import ValidationReport, topological_order, validate_plan
@@ -323,6 +330,14 @@ _TYPE_PRIORITY = {
 }
 
 
+def _profile_list(profile, attribute: str) -> list[str]:
+    """Список из профиля, устойчивый к его отсутствию и к мусору в JSON."""
+    values = getattr(profile, attribute, None) or []
+    if not isinstance(values, list):
+        return []
+    return [str(item).strip() for item in values if str(item or "").strip()]
+
+
 def build_planning_request(
     goal: LearningGoal, document: Document, bundle: RetrievalBundle
 ) -> CoursePlanningRequest:
@@ -332,13 +347,34 @@ def build_planning_request(
     оглавления точным совпадением строк (case-folded), поэтому любая
     «причёсанная» здесь формулировка обнулила бы метрику покрытия.
     """
-    sections = DocumentSection.objects.filter(document=document).order_by("order_index")
+    # Только то, по чему можно учить. Упражнения, ответы и указатель остаются
+    # в структуре книги, но программе не нужны: раньше фильтра не было вовсе, и
+    # шестнадцать разделов «Упражнение» становились шестнадцатью модулями.
+    sections = list(
+        DocumentSection.objects.filter(document=document, is_teachable=True)
+        .select_related("parent")
+        .order_by("order_index")
+    )
+    # Профили — то, что вычитано из текста разделов. Их может не быть: книга
+    # профилируется отдельным шагом, и план обязан строиться и без них, просто
+    # по заголовкам, как раньше.
+    profiles = {
+        profile.section_id: profile
+        for profile in SectionProfile.objects.filter(document=document)
+    }
     toc = tuple(
         TocEntry(
             path=section.path,
             title=section.title,
             page_start=section.start_page,
             page_end=section.end_page,
+            level=section.level or 1,
+            role=section.structural_role,
+            parent_path=section.parent.path if section.parent_id else "",
+            section_id=str(section.pk),
+            concepts=tuple(_profile_list(profiles.get(section.pk), "concepts")),
+            skills=tuple(_profile_list(profiles.get(section.pk), "skills")),
+            summary=getattr(profiles.get(section.pk), "summary", "") or "",
         )
         for section in sections
     )
@@ -361,6 +397,7 @@ def build_planning_request(
         ),
         toc=toc,
         available_chunk_ids=tuple(bundle.chunk_ids),
+        available_section_ids=tuple(entry.section_id for entry in toc),
         source_excerpts="",
         constraints=PlanningConstraints(required_language=goal.preferred_language),
         schema_version=PLANNING_SCHEMA_VERSION,
@@ -728,6 +765,15 @@ def _persist_plan(
         current_version=1,
     )
 
+    # Страницы каждого раздела берутся из того же snapshot'а, что ушёл в модель:
+    # id уже прошли allowlist валидатора, и повторный поход в базу ничего не
+    # уточнит, зато способен разойтись с тем, что модель видела на входе.
+    pages_by_section = {
+        entry.section_id: (entry.page_start, entry.page_end)
+        for entry in request.toc
+        if entry.section_id
+    }
+
     topics_by_external: dict[str, CourseTopic] = {}
     for module_index, proposed_module in enumerate(result.modules):
         module = CourseModule.objects.create(
@@ -747,7 +793,11 @@ def _persist_plan(
                 description="",
                 order_index=module_index,
             )
+        module_minutes = 0
         for topic_index, proposed_topic in enumerate(proposed_module.topics):
+            duration = _estimate_topic_duration(
+                proposed_topic, goal=goal, pages_by_section=pages_by_section
+            )
             topic = CourseTopic.objects.create(
                 module=module,
                 external_id=proposed_topic.external_id[:64],
@@ -755,13 +805,29 @@ def _persist_plan(
                 objective=proposed_topic.objective,
                 order_index=topic_index,
                 difficulty=proposed_topic.difficulty[:24],
-                estimated_minutes=proposed_topic.estimated_minutes,
+                estimated_minutes=duration.total,
                 suggested_lesson_count=proposed_topic.suggested_lesson_count,
                 theory_practice_balance=proposed_topic.theory_practice_balance[:16],
                 mastery_criteria=proposed_topic.mastery_criteria,
                 review_strategy=proposed_topic.review_strategy[:64],
+                duration_breakdown=duration.to_payload(),
             )
+            # Модель тоже перестаёт распоряжаться временем: её `estimated_minutes`
+            # для модуля разошлось бы с суммой пересчитанных тем, а расхождение
+            # между строкой модуля и строками внутри него ученик читает как
+            # ошибку приложения.
+            module_minutes += duration.total
+            proposed_topic.estimated_minutes = duration.total
             topics_by_external[proposed_topic.external_id] = topic
+
+        if module_minutes != module.estimated_minutes:
+            module.estimated_minutes = module_minutes
+            module.save(update_fields=["estimated_minutes"])
+
+    recomputed_total = result.total_minutes()
+    if recomputed_total != plan.estimated_total_minutes:
+        plan.estimated_total_minutes = recomputed_total
+        plan.save(update_fields=["estimated_total_minutes"])
 
     # Зависимости — вторым проходом: тема может ссылаться на более позднюю.
     for proposed_topic in result.all_topics():
@@ -786,6 +852,31 @@ def _persist_plan(
         )
 
     return plan
+
+
+def _estimate_topic_duration(
+    proposed_topic,
+    *,
+    goal: LearningGoal,
+    pages_by_section: dict[str, tuple[int, int]],
+) -> Duration:
+    """Время темы — из объёма её разделов, а не из ответа модели.
+
+    Модель не умеет оценивать длительность: у неё на входе заголовки, поэтому
+    она ставит одно и то же число всем темам подряд. Страницы, сложность и
+    уровень ученика у backend'а есть — считает он.
+    """
+    ranges = [
+        pages_by_section[section_id]
+        for section_id in getattr(proposed_topic, "source_section_ids", []) or []
+        if section_id in pages_by_section
+    ]
+    return estimate_topic_minutes(
+        page_count=covered_pages(ranges),
+        difficulty=proposed_topic.difficulty,
+        current_level=goal.current_level,
+        balance=proposed_topic.theory_practice_balance,
+    )
 
 
 def _bind_sources(
@@ -928,6 +1019,7 @@ def plan_snapshot(plan: CoursePlan) -> dict:
                         "order_index": topic.order_index,
                         "difficulty": topic.difficulty,
                         "estimated_minutes": topic.estimated_minutes,
+                        "duration_breakdown": topic.duration_breakdown,
                         "suggested_lesson_count": topic.suggested_lesson_count,
                         "theory_practice_balance": topic.theory_practice_balance,
                         "mastery_criteria": topic.mastery_criteria,
@@ -1143,6 +1235,12 @@ def apply_structure(plan: CoursePlan, modules: list[dict]) -> list[str]:
                     topic.estimated_minutes = max(
                         0, int(topic_data["estimated_minutes"])
                     )
+                    # Ученик вправе переспорить оценку, но разбивка обязана
+                    # соответствовать его числу: иначе теория плюс практика
+                    # перестанут сходиться с длительностью темы.
+                    topic.duration_breakdown = split_total(
+                        topic.estimated_minutes, topic.theory_practice_balance
+                    ).to_payload()
                 topic.order_index = topic_index
                 topic.save(
                     update_fields=[
@@ -1150,6 +1248,7 @@ def apply_structure(plan: CoursePlan, modules: list[dict]) -> list[str]:
                         "title",
                         "objective",
                         "estimated_minutes",
+                        "duration_breakdown",
                         "order_index",
                     ]
                 )

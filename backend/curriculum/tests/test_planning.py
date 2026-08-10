@@ -678,3 +678,178 @@ class CoursePlanSchemaTests(SimpleTestCase):
         # Схема уходит в тело HTTP-запроса: несериализуемый узел (frozenset из
         # валидатора вместо списка) сломал бы вызов уже в проде.
         json.dumps(COURSE_PLAN_SCHEMA)
+
+
+class GroupingRegressionTests(SimpleTestCase):
+    """Планировщик не должен переписывать оглавление в модули.
+
+    Регресс снят с живого прогона: по «Механике» Мякишева модель вернула 38
+    модулей ровно по одной теме, и каждое название совпадало с разделом книги.
+    Формально план был безупречен — ссылки на месте, циклов нет, enum'ы верные.
+    Именно поэтому нужны отдельные метрики: без них такой результат проходит
+    валидацию молча.
+    """
+
+    def _book_request(self, chapters: int = 4, per_chapter: int = 5):
+        """Книга из глав, у каждой несколько параграфов."""
+        toc: list[TocEntry] = []
+        sections: list[str] = []
+        for chapter in range(1, chapters + 1):
+            chapter_path = f"Глава {chapter}"
+            toc.append(
+                TocEntry(
+                    path=chapter_path,
+                    title=f"Глава {chapter}. Механика",
+                    page_start=chapter * 10,
+                    page_end=chapter * 10 + 9,
+                    level=2,
+                    role="chapter",
+                    section_id=f"s-ch{chapter}",
+                )
+            )
+            sections.append(f"s-ch{chapter}")
+            for item in range(1, per_chapter + 1):
+                section_id = f"s-{chapter}-{item}"
+                toc.append(
+                    TocEntry(
+                        path=f"§ {chapter}.{item}",
+                        title=f"Параграф {chapter}.{item}",
+                        page_start=chapter * 10 + item,
+                        page_end=chapter * 10 + item,
+                        level=3,
+                        role="section",
+                        parent_path=chapter_path,
+                        section_id=section_id,
+                    )
+                )
+                sections.append(section_id)
+        return make_request(
+            toc=tuple(toc), available_section_ids=tuple(sections)
+        )
+
+    def test_fake_planner_groups_sections_under_chapters(self):
+        """Опора теста: группировка по уровню, а не по точкам в пути.
+
+        Пути теперь несут номер из книги («§ 1.14»), и вложенность из них не
+        читается — раньше fake резал именно по точкам.
+        """
+        request = self._book_request()
+        plan = FakeCoursePlanningProvider().generate_plan(request, RetrievalBundle())
+
+        self.assertEqual(len(plan.modules), 4)
+        self.assertTrue(all(len(m.topics) == 5 for m in plan.modules), plan.modules)
+
+    def test_single_topic_modules_are_reported(self):
+        request = self._book_request()
+        payload = {
+            "title": "Курс",
+            "objective": "Цель",
+            "modules": [
+                {
+                    "external_id": f"m{i}",
+                    "title": f"Параграф 1.{i}",
+                    "objective": "Освоить",
+                    "topics": [
+                        {
+                            "external_id": f"t{i}",
+                            "title": f"Параграф 1.{i}",
+                            "objective": "Понять",
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "balanced",
+                            "prerequisites": [],
+                            "source_chunk_ids": [],
+                            "source_section_ids": [f"s-1-{i}"],
+                        }
+                    ],
+                }
+                for i in range(1, 6)
+            ],
+        }
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        codes = {issue.code for issue in report.issues}
+        self.assertIn("modules_are_single_topics", codes)
+        self.assertIn("titles_copied_from_book", codes)
+        self.assertEqual(report.single_topic_module_ratio, 1.0)
+        self.assertEqual(report.copied_title_ratio, 1.0)
+        # Это предупреждения, а не блокеры: бывают книги, где глава равна теме.
+        self.assertTrue(report.is_valid, report.blockers)
+
+    def test_grouped_plan_is_not_flagged(self):
+        request = self._book_request()
+        payload = {
+            "title": "Курс",
+            "objective": "Цель",
+            "modules": [
+                {
+                    "external_id": "m1",
+                    "title": "Кинематика прямолинейного движения",
+                    "objective": "Освоить",
+                    "topics": [
+                        {
+                            "external_id": "t1",
+                            "title": "Скорость и её измерение",
+                            "objective": "Понять",
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "balanced",
+                            "prerequisites": [],
+                            "source_chunk_ids": [],
+                            # Тема собрана из трёх параграфов — ровно то, ради
+                            # чего затевалась группировка.
+                            "source_section_ids": ["s-1-1", "s-1-2", "s-1-3"],
+                        },
+                        {
+                            "external_id": "t2",
+                            "title": "Ускорение",
+                            "objective": "Понять",
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "balanced",
+                            "prerequisites": ["t1"],
+                            "source_chunk_ids": [],
+                            "source_section_ids": ["s-1-4", "s-1-5"],
+                        },
+                    ],
+                }
+            ],
+        }
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        codes = {issue.code for issue in report.issues}
+        self.assertNotIn("modules_are_single_topics", codes)
+        self.assertNotIn("titles_copied_from_book", codes)
+        self.assertTrue(report.is_valid, report.blockers)
+
+    def test_unknown_source_section_is_a_blocker(self):
+        request = self._book_request()
+        payload = {
+            "title": "Курс",
+            "objective": "Цель",
+            "modules": [
+                {
+                    "external_id": "m1",
+                    "title": "Модуль",
+                    "objective": "Освоить",
+                    "topics": [
+                        {
+                            "external_id": "t1",
+                            "title": "Тема",
+                            "objective": "Понять",
+                            "estimated_minutes": 45,
+                            "difficulty": "medium",
+                            "theory_practice_balance": "balanced",
+                            "prerequisites": [],
+                            "source_chunk_ids": [],
+                            "source_section_ids": ["выдуманный-раздел"],
+                        }
+                    ],
+                }
+            ],
+        }
+        report = validate_plan(parse_planning_response(json.dumps(payload)), request)
+
+        self.assertIn(
+            "unknown_source_section", {issue.code for issue in report.blockers}
+        )

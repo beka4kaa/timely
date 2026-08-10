@@ -657,6 +657,50 @@ class ExtractedSolution(models.Model):
         ordering = ["page_start"]
 
 
+class SectionProfile(models.Model):
+    """Что содержит раздел книги — по его тексту, а не по заголовку.
+
+    Кэш, а не журнал: на раздел приходится одна строка. Ключом служит
+    `content_hash`, в который входят версия обработки, состав фрагментов и
+    версия промпта. Совпал хеш — профиль актуален и вызывать модель не нужно;
+    разошёлся — раздел переиндексировали или мы стали спрашивать другое.
+
+    Это делает планирование по одной книге дешёвым: первый план платит за
+    профилирование, все следующие переиспользуют результат.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    section = models.OneToOneField(
+        DocumentSection, on_delete=models.CASCADE, related_name="profile"
+    )
+    # Дубль ради выборки «все профили книги» одним запросом: без него пришлось
+    # бы идти через разделы на каждой сборке плана.
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="section_profiles"
+    )
+
+    summary = models.TextField(blank=True, default="")
+    concepts = models.JSONField(default=list, blank=True)
+    skills = models.JSONField(default=list, blank=True)
+    prerequisites = models.JSONField(default=list, blank=True)
+    difficulty = models.CharField(max_length=24, default="medium")
+    is_teachable = models.BooleanField(default=True)
+    content_statistics = models.JSONField(default=dict, blank=True)
+
+    content_hash = models.CharField(max_length=64, db_index=True)
+    processing_version = models.CharField(max_length=16, default=PROCESSING_VERSION)
+    prompt_version = models.CharField(max_length=32, blank=True, default="")
+    model = models.CharField(max_length=160, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["document", "content_hash"])]
+
+    def __str__(self) -> str:
+        return f"Профиль {self.section_id}"
+
+
 # ───────────────────────────── PHASE 6. Чанки ────────────────────────────────
 
 
@@ -919,6 +963,11 @@ class CourseTopic(models.Model):
     theory_practice_balance = models.CharField(max_length=16, default="balanced")
     mastery_criteria = models.TextField(blank=True, default="")
     review_strategy = models.CharField(max_length=64, blank=True, default="")
+    # Из чего сложились `estimated_minutes`: теория, практика, проверка и число
+    # страниц книги, по которому считалось. Ученику важно не только «45 минут»,
+    # но и что за ними стоит; нам — возможность проверить оценку, не повторяя
+    # расчёт. Пустой словарь у планов, сохранённых до детерминированного счёта.
+    duration_breakdown = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["order_index"]

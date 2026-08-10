@@ -252,6 +252,7 @@ class CourseTopicSerializer(serializers.ModelSerializer):
             "order_index",
             "difficulty",
             "estimated_minutes",
+            "duration_breakdown",
             "suggested_lesson_count",
             "theory_practice_balance",
             "mastery_criteria",
