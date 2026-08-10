@@ -98,6 +98,68 @@ class TextModel:
         )
         return _TextResponse(response.choices[0].message.content or "")
 
+    def stream_content(
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int = 1200,
+        timeout: int = 90,
+        feature: str = "text_stream",
+    ):
+        """Отдаёт ответ по мере генерации. Генератор кусочков текста.
+
+        Нужен там, где ученик ждёт вживую: боковая панель молчит 20–60 секунд,
+        если печатать ответ целиком в конце.
+
+        Отдельного клиента для стрима не заводим — тот же ключ, тот же адрес и
+        та же модель, что у остальных текстовых вызовов. `BOARD_LLM_*` это
+        доска, и её настройки сюда не относятся.
+        """
+        if not TEXT_LLM_API_KEY:
+            raise TextLLMNotConfigured(
+                "OPENROUTER_API_KEY (или TEXT_LLM_API_KEY) не задан — "
+                "текстовые AI-функции работать не будут."
+            )
+
+        client = OpenAI(
+            api_key=TEXT_LLM_API_KEY, base_url=TEXT_LLM_BASE_URL, max_retries=0
+        )
+        logger.info("[text_llm] поток от %s (%s)", self.model, feature)
+        stream = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=self.temperature,
+            timeout=timeout,
+            stream=True,
+            # Без include_usage последний чанк приходит без usage, и учёт
+            # токенов для стримящего пути молча обнуляется — это уже было
+            # пройдено в `skills/router.py`.
+            stream_options={"include_usage": True},
+        )
+
+        usage_chunk = None
+        for chunk in stream:
+            if getattr(chunk, "usage", None):
+                # Чанк с usage приходит последним и НЕ содержит choices.
+                usage_chunk = chunk
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            content = getattr(delta, "content", None) if delta else None
+            if content:
+                yield content
+
+        if usage_chunk is not None:
+            record_model_usage(
+                usage_chunk,
+                model=self.model,
+                provider=provider_from_base_url(TEXT_LLM_BASE_URL),
+                feature=feature,
+                input_payload=messages,
+            )
+
     def generate_json_content(
         self,
         *,

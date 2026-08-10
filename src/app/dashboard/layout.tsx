@@ -5,6 +5,8 @@ import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
+import { ActiveSubjectProvider } from "@/contexts/active-subject"
+import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
 
 export const metadata: Metadata = {
   title: {
@@ -26,6 +28,7 @@ export default function DashboardLayout({
   return (
     <AuthGuard requireAuth={true}>
       <DiaryHeaderProvider>
+        <ActiveSubjectProvider>
         <div
           className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light]"
         style={
@@ -66,7 +69,13 @@ export default function DashboardLayout({
           <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-[95] overflow-auto md:left-[58px]">
             {children}
           </main>
+          {/* Вопросы по книге предмета. Живёт в layout по той же причине, что и
+              PomodoroSync: панель нужна на любой странице дашборда. Оверлеем, а
+              не колонкой — чтобы `main` выше не менял ширину и вёрстка страниц
+              осталась прежней. */}
+          <SubjectAskRail />
         </div>
+        </ActiveSubjectProvider>
       </DiaryHeaderProvider>
     </AuthGuard>
   )
