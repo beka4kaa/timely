@@ -16,6 +16,10 @@ from curriculum.planning.contracts import (
     PlanningConstraints,
     TocEntry,
 )
+from curriculum.planning.enrichment import (
+    FakeChapterEnrichmentProvider,
+    get_enrichment_provider,
+)
 from curriculum.planning.providers import (
     _MODULE_FIELDS,
     _ROOT_FIELDS,
@@ -26,6 +30,7 @@ from curriculum.planning.providers import (
     MalformedPlanResponse,
     OpenRouterCourseReviewProvider,
     ProviderNotConfigured,
+    SkeletonCoursePlanningProvider,
     get_planning_provider,
     get_review_provider,
     parse_planning_response,
@@ -108,11 +113,27 @@ class FakeProviderTests(SimpleTestCase):
             for chunk_id in topic.source_chunk_ids:
                 self.assertIn(chunk_id, CHUNKS)
 
-    def test_default_provider_is_fake_without_configured_role(self):
-        # Роли не настроены в тестовом окружении — платный путь выбираться не должен.
+    def test_default_provider_builds_structure_from_the_book(self):
+        """Структуру строит оглавление, поэтому провайдер по умолчанию — скелет.
+
+        Модель больше не выбирает, что считать модулем: по «Механике» она
+        выбирала части книги и давала пять модулей на девять глав.
+        """
         with mock.patch.dict("os.environ", {}, clear=True):
             provider = get_planning_provider()
-        self.assertIsInstance(provider, FakeCoursePlanningProvider)
+        self.assertIsInstance(provider, SkeletonCoursePlanningProvider)
+
+    def test_no_paid_call_without_configured_role(self):
+        """Гарантия та же, что и раньше, но теперь на уровне обогащения.
+
+        Скелет в сеть не ходит вовсе; платить может только заполнение смысла, и
+        без настроенной роли оно берёт детерминированный fake. Забытая
+        переменная окружения по-прежнему не приводит к платному вызову.
+        """
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertIsInstance(
+                get_enrichment_provider(), FakeChapterEnrichmentProvider
+            )
 
     def test_reviewer_flags_unsourced_topic(self):
         request = make_request(available_chunk_ids=())

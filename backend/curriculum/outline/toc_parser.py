@@ -161,6 +161,7 @@ def parse_toc_lines(lines: list[str]) -> list[OutlineNode]:
                 role=_role_for(title, printed is not None, is_container),
                 number_label=number_label,
                 printed_page=printed,
+                is_container=is_container,
                 source=Source.TABLE_OF_CONTENTS,
                 confidence=CONFIDENCE_HIGH,
             )
@@ -177,7 +178,7 @@ def _assign_levels(nodes: list[OutlineNode]) -> None:
     за которым сразу идёт другой контейнер, — часть (уровень 1). Раздел всегда
     лежит под ближайшим контейнером.
     """
-    containers = [i for i, node in enumerate(nodes) if node.printed_page is None]
+    containers = [i for i, node in enumerate(nodes) if node.is_container]
     container_set = set(containers)
 
     for index in containers:

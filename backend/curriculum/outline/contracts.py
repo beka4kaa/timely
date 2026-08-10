@@ -117,6 +117,12 @@ class OutlineNode:
     confidence: float = 0.0
     verified: bool = False
     is_teachable: bool = True
+    # Строка оглавления БЕЗ номера страницы и без номера параграфа — заголовок,
+    # под которым идут записи: «Глава 1», «Кинематика». Решение принимается при
+    # разборе строки и дальше не пересчитывается: вывод «нет страницы — значит
+    # контейнер» ошибался на параграфах, чей номер не удалось прочитать, и
+    # превращал их в главы.
+    is_container: bool = False
     order_index: int = 0
     parent_index: int | None = None
     signals: list[str] = field(default_factory=list)
