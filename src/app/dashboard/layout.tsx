@@ -6,6 +6,8 @@ import { AuthGuard } from "@/components/auth-guard"
 import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 import { ActiveSubjectProvider } from "@/contexts/active-subject"
+import { AskRailProvider } from "@/contexts/ask-rail"
+import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
 
 export const metadata: Metadata = {
@@ -29,6 +31,7 @@ export default function DashboardLayout({
     <AuthGuard requireAuth={true}>
       <DiaryHeaderProvider>
         <ActiveSubjectProvider>
+        <AskRailProvider>
         <div
           className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light]"
         style={
@@ -66,15 +69,14 @@ export default function DashboardLayout({
           <PomodoroSync />
           <SiteHeader />
           <AppSidebar />
-          <main className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-[95] overflow-auto md:left-[58px]">
-            {children}
-          </main>
+          <DashboardMain>{children}</DashboardMain>
           {/* Вопросы по книге предмета. Живёт в layout по той же причине, что и
-              PomodoroSync: панель нужна на любой странице дашборда. Оверлеем, а
-              не колонкой — чтобы `main` выше не менял ширину и вёрстка страниц
-              осталась прежней. */}
+              PomodoroSync: панель нужна на любой странице дашборда. Открытая,
+              она сдвигает `DashboardMain`, а не ложится поверх, — так же, как
+              чат доски сдвигает холст. */}
           <SubjectAskRail />
         </div>
+        </AskRailProvider>
         </ActiveSubjectProvider>
       </DiaryHeaderProvider>
     </AuthGuard>
