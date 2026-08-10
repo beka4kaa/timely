@@ -47,7 +47,10 @@ function PlanPageBody({
   const { plan, document: book, goal, sections, degraded } = data;
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
 
-  const { fromGeneration, reviewFindings } = useGenerationContext(planId);
+  // `fromGeneration` здесь больше не нужен: перестройка стала действием
+  // сервера и доступна с любой страницы программы, а не только сразу после
+  // мастера.
+  const { reviewFindings } = useGenerationContext(planId);
   const { approve, busy, error } = useApprovePlan(planId, onPlanChange);
 
   const ribbon = useMemo(
@@ -177,10 +180,10 @@ function PlanPageBody({
       <div className="mt-8 border-t border-[#ded8ce] pt-6">
         <PlanActions
           plan={plan}
-          canRegenerate={fromGeneration}
           approving={busy}
           approveError={error}
           onApprove={() => void approve()}
+          onPlanChange={onPlanChange}
         />
       </div>
     </CoffeePageShell>

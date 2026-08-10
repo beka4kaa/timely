@@ -49,6 +49,8 @@ from .serializers import (
     IngestionJobSerializer,
     KnowledgeChunkSerializer,
     LearningGoalSerializer,
+    PlanPaceSerializer,
+    PlanStructureSerializer,
 )
 from .services import dispatch
 from .services import goals as goals_service
@@ -127,7 +129,14 @@ class DocumentViewSet(_UserScopedViewSet):
         email = self._user_email()
         if not email:
             return Document.objects.none()
-        return Document.objects.filter(user_email=email).select_related("file")
+        queryset = Document.objects.filter(user_email=email).select_related("file")
+        # Каталог спрашивает книги одного предмета. Фильтр по `goal` безопасен
+        # без дополнительной проверки владельца: выборка уже сужена до книг
+        # этого ученика, и чужая цель просто ничего не найдёт.
+        goal_id = (self.request.query_params.get("goal") or "").strip()
+        if goal_id:
+            queryset = queryset.filter(goal_id=goal_id)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(user_email=self._user_email())
@@ -156,6 +165,19 @@ class DocumentViewSet(_UserScopedViewSet):
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
 
+        # Предмет проверяется по владельцу, а не просто по существованию:
+        # иначе ученик привязал бы свою книгу к чужой цели и увидел бы её
+        # название в каталоге.
+        goal = None
+        goal_id = payload.validated_data.get("goal_id")
+        if goal_id:
+            goal = LearningGoal.objects.filter(pk=goal_id, user_email=email).first()
+            if goal is None:
+                return Response(
+                    {"error": "Предмет не найден.", "code": "goal_not_found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         try:
             # Формат определяется по содержимому: расширение приходит от
             # пользователя, и `книга.pdf` с ZIP внутри — обычное дело.
@@ -173,6 +195,7 @@ class DocumentViewSet(_UserScopedViewSet):
         title = (payload.validated_data.get("title") or "").strip()
         document = Document.objects.create(
             user_email=email,
+            goal=goal,
             title=(title or validated.sanitized_filename)[:400],
             language=payload.validated_data.get("language") or "ru",
             document_type=payload.validated_data.get("document_type")
@@ -360,7 +383,24 @@ class CoursePlanViewSet(_UserScopedViewSet):
         email = self._user_email()
         if not email:
             return CoursePlan.objects.none()
-        return CoursePlan.objects.filter(user_email=email).prefetch_related(
+        queryset = CoursePlan.objects.filter(user_email=email)
+        goal_id = (self.request.query_params.get("goal") or "").strip()
+        if goal_id:
+            queryset = queryset.filter(goal_id=goal_id)
+        if self.action == "list" and self.request.query_params.get("archived") != "1":
+            # Архивная программа — это вытесненная перестройкой предыдущая
+            # версия. В каталоге она была бы шумом: ученик видел бы две записи
+            # по одной книге и не понимал, какая из них действующая. По прямой
+            # ссылке она остаётся доступной, а `?archived=1` возвращает её и в
+            # список — история никуда не девается.
+            queryset = queryset.exclude(status=CoursePlan.Status.ARCHIVED)
+        if self.action == "list":
+            # Списку модули и темы не нужны: `CoursePlanListSerializer` их не
+            # читает. Каталог показывает у ученика все планы сразу, и тянуть под
+            # каждый из них дерево тем с зависимостями и провенансом означало бы
+            # платить за данные, которые тут же выбрасываются.
+            return queryset
+        return queryset.prefetch_related(
             "modules__topics__dependencies__depends_on",
             "modules__topics__source_bindings",
             "milestones",
@@ -427,6 +467,82 @@ class CoursePlanViewSet(_UserScopedViewSet):
                 "provenance_coverage": coverage.to_payload(),
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def rebuild(self, request, pk=None):
+        """Строит программу заново по той же книге, прежнюю — в архив."""
+        plan = self.get_object()
+        try:
+            outcome = plans_service.rebuild_plan(plan)
+        except plans_service.PlanRejected as exc:
+            return Response(
+                {
+                    "error": exc.message,
+                    "code": "plan_rejected",
+                    "issues": _issues_payload(exc.report),
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        coverage = plans_service.provenance_coverage(outcome.plan)
+        return Response(
+            {
+                "plan": CoursePlanSerializer(outcome.plan).data,
+                "warnings": outcome.warnings,
+                "review_findings": outcome.review_findings,
+                "coverage_ratio": coverage.ratio,
+                "provenance_coverage": coverage.to_payload(),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["patch"], url_path="pace")
+    def pace(self, request, pk=None):
+        """Меняет темп и срок. Модель не вызывается — считается только прогноз."""
+        plan = self.get_object()
+        payload = PlanPaceSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        data = payload.validated_data
+
+        warnings = plans_service.repace_plan(
+            plan,
+            sessions_per_week=data.get("sessions_per_week"),
+            minutes_per_session=data.get("minutes_per_session"),
+            desired_finish_date=(
+                data["desired_finish_date"]
+                if "desired_finish_date" in data
+                else plans_service.UNSET
+            ),
+        )
+        return Response(
+            {"plan": CoursePlanSerializer(plan).data, "warnings": warnings}
+        )
+
+    @action(detail=True, methods=["put"], url_path="structure")
+    def structure(self, request, pk=None):
+        """Заменяет состав программы присланным деревом."""
+        plan = self.get_object()
+        payload = PlanStructureSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        try:
+            warnings = plans_service.apply_structure(
+                plan, payload.validated_data["modules"]
+            )
+        except plans_service.PlanNotEditable as exc:
+            return Response(
+                {"error": str(exc), "code": "plan_not_editable"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except ValueError as exc:
+            return Response(
+                {"error": str(exc), "code": "invalid_structure"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {"plan": CoursePlanSerializer(plan).data, "warnings": warnings}
         )
 
     @action(detail=True, methods=["post"])

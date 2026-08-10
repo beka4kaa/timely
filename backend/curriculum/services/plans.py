@@ -841,19 +841,30 @@ def _uuid_like(values) -> list[str]:
 
 
 def _apply_forecast(
-    plan: CoursePlan, goal: LearningGoal, *, start_date: date | None = None
+    plan: CoursePlan,
+    goal: LearningGoal,
+    *,
+    start_date: date | None = None,
+    sessions_per_week: int | None = None,
+    minutes_per_session: int | None = None,
 ) -> list[str]:
-    """Считает прогноз и пишет его в план. Календарь — только backend."""
+    """Считает прогноз и пишет его в план. Календарь — только backend.
+
+    Темп по умолчанию подбирается автоматически (`suggest_intensity`). Явно
+    заданный побеждает: ученик знает про свои вечера больше, чем формула,
+    и «сделай занятия короче, но чаще» должно работать буквально.
+    """
     start = start_date or timezone.localdate()
     total = plan.estimated_total_minutes
     if total <= 0:
         return ["forecast_skipped_zero_duration"]
 
-    sessions_per_week, minutes_per_session = suggest_intensity(
-        total_estimated_minutes=total,
-        desired_finish_date=goal.desired_finish_date,
-        start_date=start,
-    )
+    if sessions_per_week is None or minutes_per_session is None:
+        sessions_per_week, minutes_per_session = suggest_intensity(
+            total_estimated_minutes=total,
+            desired_finish_date=goal.desired_finish_date,
+            start_date=start,
+        )
     try:
         result = compute_forecast(
             ForecastInput(
@@ -944,6 +955,212 @@ def plan_snapshot(plan: CoursePlan) -> dict:
         "target_level": plan.target_level,
         "modules": modules,
     }
+
+
+# ───────────────────────── Перестройка и темп ────────────────────────────────
+
+# Отличает «поле не прислали» от «прислали null, убери дедлайн».
+UNSET = object()
+
+
+def rebuild_plan(
+    plan: CoursePlan,
+    *,
+    planning_provider=None,
+    review_provider=None,
+    start_date: date | None = None,
+) -> PlanGenerationOutcome:
+    """Строит программу заново по той же паре цель+книга.
+
+    Прежний план архивируется ПОСЛЕ успеха, а не до него. Порядок здесь —
+    не мелочь: генерация занимает минуты и вполне может не удаться, и ученик,
+    нажавший «перестроить», не должен в этом случае остаться вообще без
+    программы. Пока новая не готова, старая — единственное, что у него есть.
+
+    Архивация, а не удаление: по плану могли уже заниматься, и `CourseEnrollment`
+    держит версию через `PROTECT`.
+    """
+    document = plan.document
+    if document is None:
+        raise PlanRejected(
+            None, "Книга удалена — перестроить программу по ней нельзя."
+        )
+
+    outcome = generate_plan(
+        plan.goal,
+        document,
+        planning_provider=planning_provider,
+        review_provider=review_provider,
+        start_date=start_date,
+    )
+
+    CoursePlan.objects.filter(pk=plan.pk).update(
+        status=CoursePlan.Status.ARCHIVED, updated_at=timezone.now()
+    )
+    return outcome
+
+
+def repace_plan(
+    plan: CoursePlan,
+    *,
+    sessions_per_week: int | None = None,
+    minutes_per_session: int | None = None,
+    desired_finish_date=UNSET,
+    start_date: date | None = None,
+) -> list[str]:
+    """Меняет темп и срок, пересчитывая ТОЛЬКО прогноз.
+
+    Модель здесь не вызывается вовсе: состав тем не меняется, меняется
+    расписание. Это принципиально дешевле перестройки и потому доступно на
+    любом плане, включая активный, — темп занятий не влияет на то, чему учат.
+
+    Желаемая дата живёт на цели, а не на плане: это свойство предмета, и следующая
+    программа по той же цели должна его унаследовать.
+    """
+    goal = plan.goal
+    if desired_finish_date is not UNSET:
+        goal.desired_finish_date = desired_finish_date
+        goal.save(update_fields=["desired_finish_date", "updated_at"])
+
+    warnings = _apply_forecast(
+        plan,
+        goal,
+        start_date=start_date,
+        sessions_per_week=sessions_per_week,
+        minutes_per_session=minutes_per_session,
+    )
+    plan.refresh_from_db()
+    return warnings
+
+
+# ──────────────────────── Ручная правка структуры ────────────────────────────
+
+
+class PlanNotEditable(RuntimeError):
+    """Программу в этом состоянии править нельзя."""
+
+
+def apply_structure(plan: CoursePlan, modules: list[dict]) -> list[str]:
+    """Заменяет состав программы присланным деревом.
+
+    Дерево приходит ЦЕЛИКОМ, а не набором точечных операций. Причина не в
+    удобстве клиента: правка обязана быть атомарной, давать ровно одну новую
+    версию и один пересчёт прогноза. Шесть отдельных ручек создавали бы
+    промежуточные состояния, в которых порядок изучения и сроки не согласованы
+    между собой, и ученик успевал бы их увидеть.
+
+    Что разрешено: переименовать, переставить, изменить длительность, удалить,
+    перенести тему в другой модуль. Что запрещено: добавить тему, которой не
+    было. У новой темы неоткуда взяться `CourseSourceBinding`, а тема без
+    провенанса неотличима от выдуманной моделью — валидатор блокирует именно
+    такие.
+
+    Возвращает предупреждения прогноза.
+    """
+    if plan.status == CoursePlan.Status.ACTIVE:
+        # По активной программе уже занимаются, и `CourseEnrollment` держит
+        # конкретную версию через PROTECT. Менять её состав из-под ученика
+        # нельзя — для этого есть «построить заново».
+        raise PlanNotEditable(
+            "Программа уже активна. Чтобы изменить состав, постройте её заново."
+        )
+    if plan.status == CoursePlan.Status.ARCHIVED:
+        raise PlanNotEditable("Это архивная версия программы.")
+
+    existing_modules = {m.external_id: m for m in plan.modules.all()}
+    existing_topics = {
+        topic.external_id: topic
+        for topic in CourseTopic.objects.filter(module__plan=plan)
+    }
+
+    kept_modules: set[str] = set()
+    kept_topics: set[str] = set()
+    for module_data in modules:
+        module_id = str(module_data.get("external_id") or "")
+        if module_id not in existing_modules:
+            raise ValueError(f"Модуля «{module_id}» нет в программе.")
+        if module_id in kept_modules:
+            raise ValueError(f"Модуль «{module_id}» встречается дважды.")
+        kept_modules.add(module_id)
+        for topic_data in module_data.get("topics") or []:
+            topic_id = str(topic_data.get("external_id") or "")
+            if topic_id not in existing_topics:
+                raise ValueError(f"Темы «{topic_id}» нет в программе.")
+            if topic_id in kept_topics:
+                raise ValueError(f"Тема «{topic_id}» встречается дважды.")
+            kept_topics.add(topic_id)
+
+    if not kept_topics:
+        raise ValueError("В программе должна остаться хотя бы одна тема.")
+
+    with transaction.atomic():
+        for module_index, module_data in enumerate(modules):
+            module = existing_modules[str(module_data["external_id"])]
+            module.title = str(module_data.get("title") or module.title)[:300]
+            module.objective = str(
+                module_data.get("objective", module.objective) or ""
+            )
+            module.order_index = module_index
+
+            topics_total = 0
+            for topic_index, topic_data in enumerate(module_data.get("topics") or []):
+                topic = existing_topics[str(topic_data["external_id"])]
+                topic.module = module
+                topic.title = str(topic_data.get("title") or topic.title)[:300]
+                topic.objective = str(
+                    topic_data.get("objective", topic.objective) or ""
+                )
+                if "estimated_minutes" in topic_data:
+                    topic.estimated_minutes = max(
+                        0, int(topic_data["estimated_minutes"])
+                    )
+                topic.order_index = topic_index
+                topic.save(
+                    update_fields=[
+                        "module",
+                        "title",
+                        "objective",
+                        "estimated_minutes",
+                        "order_index",
+                    ]
+                )
+                topics_total += topic.estimated_minutes
+
+            # Длительность модуля считается, а не принимается на веру: иначе
+            # превью показало бы ученику одно число, а прогноз посчитал бы по
+            # другому — ровно то расхождение, которое ловит `module_duration_mismatch`.
+            module.estimated_minutes = topics_total
+            module.save(
+                update_fields=[
+                    "title",
+                    "objective",
+                    "order_index",
+                    "estimated_minutes",
+                ]
+            )
+
+        # Удаление в конце: связи `CourseDependency` и `CourseSourceBinding`
+        # уходят каскадом, поэтому висящих prerequisites не остаётся по
+        # устройству схемы, а не по отдельной проверке.
+        CourseTopic.objects.filter(module__plan=plan).exclude(
+            external_id__in=kept_topics
+        ).delete()
+        plan.modules.exclude(external_id__in=kept_modules).delete()
+
+        plan.estimated_total_minutes = sum(
+            topic.estimated_minutes
+            for topic in CourseTopic.objects.filter(module__plan=plan)
+        )
+        plan.current_version += 1
+        plan.save(
+            update_fields=["estimated_total_minutes", "current_version", "updated_at"]
+        )
+
+        warnings = _apply_forecast(plan, plan.goal)
+        _snapshot_version(plan, None, reason="manual_edit")
+
+    plan.refresh_from_db()
+    return warnings
 
 
 # ────────────────────────── Подтверждение и запись ───────────────────────────
