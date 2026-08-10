@@ -1,10 +1,13 @@
 // Каталог предметов: с чего начинается раздел «Курс по книге».
 //
-// Форма — таблица, а не карточки. Карточка оправдана, когда у элемента есть
-// содержание, которое нужно рассматривать; здесь у предмета три факта —
-// название, книга и состояние, — и десяток предметов в карточках превращается
-// в километр прокрутки, где одинаковые строки «Хочу…» неотличимы друг от друга.
-// Таблица ставит эти факты в колонки, и глаз сравнивает их по вертикали.
+// Форма — сгруппированный список, а не таблица. Таблица здесь уже была и
+// ломалась предсказуемо: у предмета без книг и у книги с программой разное
+// число значимых полей, поэтому самая широкая колонка стояла заполненная
+// прочерками, а строки без учебника выглядели одинаково.
+//
+// Строка отвечает на вопрос «что у меня есть», а есть у ученика либо
+// программа, либо пока только книга. Поэтому главным в строке стоит результат,
+// а книга уходит в подпись под ним.
 //
 // Данные собираются тремя существующими list-запросами и соединяются чистой
 // функцией `buildCatalog`. Отдельного эндпоинта у каталога нет намеренно: он
@@ -12,7 +15,7 @@
 
 "use client";
 
-import { AlertTriangle, Loader2, Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -28,45 +31,30 @@ import {
   listPlans,
 } from "@/lib/curriculum-api";
 import {
+  type CatalogBook,
   type CatalogSubject,
   buildCatalog,
-  subjectState,
 } from "@/lib/curriculum-catalog";
 import { PHASES, phaseIndexFor } from "@/lib/curriculum-progress";
+import { cleanDocumentTitle } from "@/lib/curriculum-title";
 
-import { paperCaption, paperFocus, paperPrimaryButton } from "./paper";
+import { paperFocus, paperNumber, paperPrimaryButton } from "./paper";
 
 interface CatalogProps {
   onAddSubject: () => void;
   onAddBook: (goalId: string) => void;
-  /** Вернуться к подтверждению разбора цели, если оно не пройдено. */
   onContinueSetup: (goal: LearningGoal) => void;
-  /** Экран обработки книги или построения программы. */
   onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
 }
 
-const STATE_LABEL: Record<ReturnType<typeof subjectState>, string> = {
-  empty: "нет учебника",
-  failed: "ошибка",
-  processing: "обработка",
-  ready_to_plan: "готово к построению",
-  has_plan: "программа готова",
-};
+// Толщина книги: 800 страниц — полная ширина засечки. Потолок выбран по
+// верхней границе школьного учебника, а не по максимуму в данных: иначе одна
+// толстая книга сплющила бы все остальные в невидимые чёрточки.
+const THICKNESS_FULL_PAGES = 800;
+const THICKNESS_MIN_PERCENT = 6;
 
-// Состояние — единственное цветное пятно в таблице. Цвет здесь несёт смысл:
-// красное требует внимания, зелёное его не требует, остальное нейтрально.
-const STATE_TONE: Record<ReturnType<typeof subjectState>, string> = {
-  empty: "text-[#a1978b]",
-  failed: "text-[#a35c48]",
-  processing: "text-[#8a7a5e]",
-  ready_to_plan: "text-[#8a5b24]",
-  has_plan: "text-[#5c7a52]",
-};
-
-const ROW = "border-t border-[#e7e1d7]";
-const CELL = "py-3 pr-4 align-top";
-const LINK = `text-[#8a5b24] underline-offset-2 hover:underline ${paperFocus} rounded-sm`;
-const ACTION = `text-[12px] text-[#9b9186] underline-offset-2 hover:text-[#6f675e] hover:underline ${paperFocus} rounded-sm`;
+const ACTION = `text-[12px] text-[#9b9186] underline-offset-2 transition-colors hover:text-[#6f675e] hover:underline ${paperFocus} rounded-sm`;
+const LINK = `font-serif text-[15px] text-[#8a5b24] underline-offset-4 hover:underline ${paperFocus} rounded-sm`;
 
 export function CurriculumCatalog({
   onAddSubject,
@@ -120,71 +108,68 @@ export function CurriculumCatalog({
     );
   }
 
+  const bookCount = subjects.reduce(
+    (sum, subject) => sum + subject.books.length,
+    0,
+  );
+  const namedSubjects = subjects.filter((subject) => subject.goalId).length;
+
   return (
-    <div className="space-y-5">
+    <div>
+      {/* Вместо заголовка страницы — строка, которая работает: слева счёт,
+          справа единственное главное действие. Название раздела печатает
+          верхняя панель приложения, и повторять его здесь незачем. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
+        <p className="text-[13px] text-[#8d857b]">
+          {namedSubjects > 0 ? (
+            <>
+              <span className={paperNumber}>{namedSubjects}</span>{" "}
+              {plural(namedSubjects, "предмет", "предмета", "предметов")}
+              {bookCount > 0 ? (
+                <>
+                  {" · "}
+                  <span className={paperNumber}>{bookCount}</span>{" "}
+                  {plural(bookCount, "книга", "книги", "книг")}
+                </>
+              ) : null}
+            </>
+          ) : (
+            "Пока пусто"
+          )}
+        </p>
+        <button type="button" className={paperPrimaryButton} onClick={onAddSubject}>
+          <Plus className="h-4 w-4" />
+          Добавить предмет
+        </button>
+      </div>
+
       {error ? (
-        <p className="flex items-start gap-2 text-[13px] text-[#a35c48]">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="border-t border-[#e7e1d7] py-4 text-[13px] text-[#a35c48]">
           {error}
         </p>
       ) : null}
 
       {subjects.length === 0 ? (
-        <EmptyCatalog />
+        <p className="border-t border-[#e7e1d7] py-12 text-center text-[14px] text-[#8d857b]">
+          Загрузите учебник — программа построится по его разделам.
+        </p>
       ) : (
-        <table className="w-full border-collapse text-[14px]">
-          <thead>
-            <tr className="text-left">
-              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Предмет</th>
-              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Учебник</th>
-              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Состояние</th>
-              <th className={`${paperCaption} pb-2 font-medium`} />
-            </tr>
-          </thead>
-          <tbody>
-            {subjects.map((subject) => (
-              <SubjectRows
-                key={subject.goalId || "unsorted"}
-                subject={subject}
-                onAddBook={onAddBook}
-                onContinueSetup={onContinueSetup}
-                onShowProgress={onShowProgress}
-                onChanged={load}
-              />
-            ))}
-          </tbody>
-        </table>
+        subjects.map((subject) => (
+          <SubjectSection
+            key={subject.goalId || "unsorted"}
+            subject={subject}
+            onAddBook={onAddBook}
+            onContinueSetup={onContinueSetup}
+            onShowProgress={onShowProgress}
+            onChanged={load}
+          />
+        ))
       )}
-
-      <button type="button" className={paperPrimaryButton} onClick={onAddSubject}>
-        <Plus className="h-4 w-4" />
-        Добавить предмет
-      </button>
     </div>
   );
 }
 
-function EmptyCatalog() {
-  return (
-    <div className="py-10 text-center">
-      <p className="text-[15px] text-[#4b453e]">
-        Здесь появятся предметы, которые вы изучаете.
-      </p>
-      <p className="mt-1 text-[13px] text-[#8d857b]">
-        Начните с одного: загрузите учебник — программа построится по его разделам.
-      </p>
-    </div>
-  );
-}
-
-/**
- * Предмет — это одна строка плюс по строке на каждую книгу сверх первой.
- *
- * Название предмета не повторяется в дочерних строках: повтор в таблице читается
- * как другой предмет с тем же именем. Пустая ячейка вместо него — обычный приём
- * для сгруппированных строк.
- */
-function SubjectRows({
+function SubjectSection({
   subject,
   onAddBook,
   onContinueSetup,
@@ -197,218 +182,226 @@ function SubjectRows({
   onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
   onChanged: () => Promise<void>;
 }) {
-  const state = subjectState(subject);
   const needsSetup = Boolean(
     subject.goal && !subject.goal.normalization_confirmed,
   );
-  const rows = Math.max(1, subject.books.length);
 
   return (
-    <>
-      {subject.books.length === 0 ? (
-        <tr className={ROW}>
-          <SubjectCell subject={subject} rowSpan={1} />
-          <td className={CELL}>
-            <span className="text-[#a1978b]">—</span>
-          </td>
-          <td className={`${CELL} ${STATE_TONE[state]}`}>{STATE_LABEL[state]}</td>
-          <td className={`${CELL} text-right`}>
-            <SubjectActions
-              subject={subject}
-              needsSetup={needsSetup}
-              onAddBook={onAddBook}
-              onContinueSetup={onContinueSetup}
-              onChanged={onChanged}
-            />
-          </td>
-        </tr>
-      ) : (
-        subject.books.map((book, index) => {
-          const { document, plans } = book;
-          const ready = document.ingestion_status === "ready";
-          const failed = document.ingestion_status === "failed";
-          return (
-            <tr key={document.id} className={ROW}>
-              {index === 0 ? (
-                <SubjectCell subject={subject} rowSpan={rows} />
-              ) : null}
-              <td className={CELL}>
-                <span className="text-[#3b352f]">{document.title}</span>
-                {plans.length > 0 ? (
-                  <span className="mt-1 flex flex-col gap-0.5">
-                    {plans.map((plan) => (
-                      <Link
-                        key={plan.id}
-                        href={`/dashboard/curriculum/plan/${plan.id}`}
-                        className={`${LINK} text-[13px]`}
-                      >
-                        {plan.title}
-                      </Link>
-                    ))}
-                  </span>
-                ) : null}
-              </td>
-              <td className={CELL}>
-                <BookState document={document} />
-              </td>
-              <td className={`${CELL} text-right`}>
-                <span className="inline-flex flex-wrap justify-end gap-x-3 gap-y-1">
-                  {!ready ? (
-                    <button
-                      type="button"
-                      className={ACTION}
-                      onClick={() => onShowProgress(subject.goalId, document)}
-                    >
-                      {failed ? "разобраться" : "подробнее"}
-                    </button>
-                  ) : plans.length === 0 ? (
-                    <button
-                      type="button"
-                      className={ACTION}
-                      onClick={() => onShowProgress(subject.goalId, document)}
-                    >
-                      построить программу
-                    </button>
-                  ) : null}
-                  <ConfirmingAction
-                    label="убрать книгу"
-                    confirm="точно убрать?"
-                    onRun={async () => {
-                      await deleteDocument(document.id);
-                      await onChanged();
-                    }}
-                  />
-                  {index === 0 ? (
-                    <SubjectActions
-                      subject={subject}
-                      needsSetup={needsSetup}
-                      onAddBook={onAddBook}
-                      onContinueSetup={onContinueSetup}
-                      onChanged={onChanged}
-                    />
-                  ) : null}
-                </span>
-              </td>
-            </tr>
-          );
-        })
-      )}
+    <section className="border-t border-[#e7e1d7] py-5">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="min-w-0 font-serif text-[17px] text-[#2f2a25]">
+          {subject.title}
+          {subject.direction ? (
+            <span className="text-[#a1978b]"> · </span>
+          ) : null}
+          {subject.direction ? (
+            <span className="text-[15px] text-[#8d857b]">
+              {subject.direction}
+            </span>
+          ) : null}
+        </h2>
 
-      {/* Программа, чья книга удалена: план живёт, ссылка обязана остаться. */}
-      {subject.orphanPlans.map((plan) => (
-        <tr key={plan.id} className={ROW}>
-          <td className={CELL} />
-          <td className={CELL}>
-            <OrphanPlan plan={plan} />
-          </td>
-          <td className={`${CELL} text-[#a1978b]`}>книга удалена</td>
-          <td className={`${CELL} text-right`}>
+        {/* У группы «Без предмета» цели нет: ни добавлять книгу, ни удалять
+            нечего — там лежат книги, потерявшие владельца. */}
+        {subject.goalId ? (
+          <span className="flex shrink-0 gap-x-3">
+            {needsSetup && subject.goal ? (
+              <button
+                type="button"
+                className={ACTION}
+                onClick={() => onContinueSetup(subject.goal as LearningGoal)}
+              >
+                уточнить цель
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={ACTION}
+              onClick={() => onAddBook(subject.goalId as string)}
+            >
+              добавить книгу
+            </button>
             <ConfirmingAction
               label="удалить"
-              confirm="точно удалить?"
+              confirm="удалить со всем содержимым?"
               onRun={async () => {
-                await deletePlan(plan.id);
+                await deleteGoal(subject.goalId as string);
                 await onChanged();
               }}
             />
-          </td>
-        </tr>
-      ))}
-    </>
+          </span>
+        ) : null}
+      </header>
+
+      {subject.books.length === 0 && subject.orphanPlans.length === 0 ? (
+        <p className="mt-3 text-[13px] text-[#a1978b]">Учебника пока нет</p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {subject.books.map((book) => (
+            <BookRow
+              key={book.document.id}
+              book={book}
+              goalId={subject.goalId}
+              onShowProgress={onShowProgress}
+              onChanged={onChanged}
+            />
+          ))}
+          {subject.orphanPlans.map((plan) => (
+            <li key={plan.id} className="flex flex-wrap items-baseline gap-x-4">
+              <Link
+                href={`/dashboard/curriculum/plan/${plan.id}`}
+                className={`${LINK} min-w-0 flex-1`}
+              >
+                {plan.title}
+              </Link>
+              <span className="text-[12px] text-[#a1978b]">книга удалена</span>
+              <ConfirmingAction
+                label="удалить"
+                confirm="точно?"
+                onRun={async () => {
+                  await deletePlan(plan.id);
+                  await onChanged();
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function SubjectCell({
-  subject,
-  rowSpan,
-}: {
-  subject: CatalogSubject;
-  rowSpan: number;
-}) {
-  return (
-    <td className={`${CELL} w-[34%]`} rowSpan={rowSpan}>
-      <span className="block text-[#2f2a25]">{subject.title}</span>
-      {subject.direction ? (
-        <span className="mt-0.5 block text-[13px] text-[#8d857b]">
-          {subject.direction}
-        </span>
-      ) : null}
-    </td>
-  );
-}
-
-function BookState({ document }: { document: CurriculumDocument }) {
-  if (document.ingestion_status === "failed") {
-    return <span className="text-[#a35c48]">ошибка</span>;
-  }
-  if (document.ingestion_status === "ready") {
-    return (
-      <span className="text-[#8d857b]">
-        {document.page_count > 0 ? `${document.page_count} стр.` : "готов"}
-      </span>
-    );
-  }
-  return (
-    <span className="text-[#8a7a5e]">
-      {PHASES[phaseIndexFor(document.ingestion_status)]?.label || "обработка"}
-    </span>
-  );
-}
-
-function OrphanPlan({ plan }: { plan: CoursePlanSummary }) {
-  return (
-    <Link
-      href={`/dashboard/curriculum/plan/${plan.id}`}
-      className={`${LINK} text-[13px]`}
-    >
-      {plan.title}
-    </Link>
-  );
-}
-
-function SubjectActions({
-  subject,
-  needsSetup,
-  onAddBook,
-  onContinueSetup,
+function BookRow({
+  book,
+  goalId,
+  onShowProgress,
   onChanged,
 }: {
-  subject: CatalogSubject;
-  needsSetup: boolean;
-  onAddBook: (goalId: string) => void;
-  onContinueSetup: (goal: LearningGoal) => void;
+  book: CatalogBook;
+  goalId: string | null;
+  onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
   onChanged: () => Promise<void>;
 }) {
-  // У группы «Без предмета» цели нет: ни добавлять книгу, ни удалять нечего.
-  if (!subject.goalId) return null;
+  const { document, plans } = book;
+  const ready = document.ingestion_status === "ready";
+  const failed = document.ingestion_status === "failed";
+  const title = cleanDocumentTitle(document.title);
+
+  const remove = (
+    <ConfirmingAction
+      label="убрать"
+      confirm="убрать книгу?"
+      onRun={async () => {
+        await deleteDocument(document.id);
+        await onChanged();
+      }}
+    />
+  );
 
   return (
-    <>
-      {needsSetup && subject.goal ? (
-        <button
-          type="button"
-          className={ACTION}
-          onClick={() => onContinueSetup(subject.goal as LearningGoal)}
+    <li>
+      {plans.map((plan) => (
+        <div
+          key={plan.id}
+          className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5"
         >
-          уточнить цель
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className={ACTION}
-        onClick={() => onAddBook(subject.goalId as string)}
+          <Link
+            href={`/dashboard/curriculum/plan/${plan.id}`}
+            className={`${LINK} min-w-0 flex-1`}
+          >
+            {plan.title}
+          </Link>
+          <ConfirmingAction
+            label="удалить программу"
+            confirm="точно?"
+            onRun={async () => {
+              await deletePlan(plan.id);
+              await onChanged();
+            }}
+          />
+        </div>
+      ))}
+
+      <div
+        className={`flex flex-wrap items-baseline gap-x-4 gap-y-1 ${
+          plans.length > 0 ? "mt-0.5" : ""
+        }`}
       >
-        добавить книгу
-      </button>
-      <ConfirmingAction
-        label="удалить предмет"
-        confirm="удалить со всем содержимым?"
-        onRun={async () => {
-          await deleteGoal(subject.goalId as string);
-          await onChanged();
-        }}
-      />
-    </>
+        <span
+          className={`min-w-0 flex-1 truncate ${
+            plans.length > 0 ? "text-[13px] text-[#8d857b]" : "text-[14px] text-[#3b352f]"
+          }`}
+          title={document.title}
+        >
+          {title}
+        </span>
+
+        <Thickness pages={document.page_count} />
+
+        {failed ? (
+          <span className="text-[12px] text-[#a35c48]">не удалось обработать</span>
+        ) : !ready ? (
+          <span className="text-[12px] text-[#8a7a5e]">
+            {PHASES[phaseIndexFor(document.ingestion_status)]?.label ||
+              "обработка"}
+          </span>
+        ) : null}
+
+        <span className="flex shrink-0 gap-x-3">
+          {!ready ? (
+            <button
+              type="button"
+              className={ACTION}
+              onClick={() => onShowProgress(goalId, document)}
+            >
+              {failed ? "разобраться" : "подробнее"}
+            </button>
+          ) : plans.length === 0 ? (
+            <button
+              type="button"
+              className={ACTION}
+              onClick={() => onShowProgress(goalId, document)}
+            >
+              построить программу
+            </button>
+          ) : null}
+          {remove}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Толщина книги: полоса, длина которой пропорциональна числу страниц.
+ *
+ * Не украшение. Учебник на 513 страниц и случайно залитый файл на 2 страницы в
+ * списке выглядели одинаково, и отличить их можно было только вчитавшись в
+ * цифру. Полоса показывает разницу раньше, чем глаз доходит до числа, — а само
+ * число остаётся рядом, потому что «примерно вот столько» тут недостаточно.
+ */
+function Thickness({ pages }: { pages: number }) {
+  if (!pages || pages <= 0) return null;
+  const percent = Math.max(
+    THICKNESS_MIN_PERCENT,
+    Math.min(100, (pages / THICKNESS_FULL_PAGES) * 100),
+  );
+
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <span
+        aria-hidden
+        className="block h-[3px] w-16 rounded-full bg-[#ece7de]"
+      >
+        <span
+          className="block h-full rounded-full bg-[#c2b7a6]"
+          style={{ width: `${percent}%` }}
+        />
+      </span>
+      <span className={`${paperNumber} text-[12px] text-[#8d857b]`}>
+        {pages} стр.
+      </span>
+    </span>
   );
 }
 
@@ -416,9 +409,9 @@ function SubjectActions({
  * Опасное действие в два нажатия.
  *
  * Модального окна нет намеренно: удаляется своё, и второе нажатие ровно там же,
- * где первое, честнее диалога, который закрывают не глядя. Ошибка при этом
- * показывается на месте — раньше отказ сервера просто ничего не делал, и кнопка
- * выглядела сломанной.
+ * где первое, честнее диалога, который закрывают не глядя. Отказ сервера
+ * показывается на месте — раньше кнопка просто гасла, и это выглядело как
+ * поломка (сервер и правда отвечал 500 на удаление предмета с занятиями).
  */
 function ConfirmingAction({
   label,
@@ -478,4 +471,14 @@ function ConfirmingAction({
       {busy ? "…" : armed ? confirm : label}
     </button>
   );
+}
+
+/** Русское склонение по числу. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }

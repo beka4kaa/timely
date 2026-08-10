@@ -6,11 +6,11 @@
 
 "use client";
 
-import { BookMarked } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
 import { buildRibbon } from "@/lib/curriculum-ribbon";
+import { cleanDocumentTitle } from "@/lib/curriculum-title";
 import { PlanActions } from "./plan-actions";
 import { PlanForecastRail } from "./plan-forecast-rail";
 import { PlanModules } from "./plan-modules";
@@ -90,22 +90,36 @@ function PlanPageBody({
     allTopicsCount > 0 && ribbon.unsourcedTopicIds.length === allTopicsCount;
 
   return (
-    <CoffeePageShell
-      eyebrow="Курс по книге"
-      title={plan.title}
-      description={plan.objective}
-      icon={<BookMarked className="h-5 w-5" />}
-      actions={
-        book && (
-          <div className="rounded-[18px] border border-[#ded7cd] bg-[#fbfaf7] px-4 py-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)]">
+    <CoffeePageShell>
+      {/* Название программы — это СОДЕРЖАНИЕ страницы, а не её подпись, и
+          поэтому оно живёт здесь, а не в оболочке. Верхняя панель приложения
+          печатает статичное «Программа», одинаковое для всех курсов; какой
+          именно курс открыт, отвечает только эта строка. */}
+      <header className="mb-7 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-[#ded8ce] pb-6">
+        <div className="min-w-0">
+          <h1 className="font-serif text-[26px] leading-tight tracking-[-0.02em] text-[#302b26] sm:text-[30px]">
+            {plan.title}
+          </h1>
+          {plan.objective ? (
+            <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-[#7f776e]">
+              {plan.objective}
+            </p>
+          ) : null}
+        </div>
+
+        {book && (
+          <div className="shrink-0 text-right">
             <p className={paperCaption}>Учебник</p>
-            <p className="mt-0.5 max-w-[240px] truncate text-[13px] text-[#3a3530]">
-              {book.title}
+            <p
+              className="mt-0.5 max-w-[240px] truncate text-[13px] text-[#3a3530]"
+              title={book.title}
+            >
+              {cleanDocumentTitle(book.title)}
             </p>
           </div>
-        )
-      }
-    >
+        )}
+      </header>
+
       {plan.status === "rejected" && (
         <div className="mb-5 rounded-[14px] border border-[#e0cba8] bg-[#fdf6e8] px-4 py-3 text-[12px] leading-5 text-[#8b6a2f]">
           Эту программу забраковал рецензент, поэтому начать по ней занятия

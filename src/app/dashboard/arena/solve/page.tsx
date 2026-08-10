@@ -1,18 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ArrowUpRight,
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Crown,
-  Medal,
-  Swords,
-  Trophy,
-  Users,
-} from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Clock3, Crown, Medal, Trophy, Users } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   CoffeePageShell,
@@ -317,10 +306,6 @@ function ContestList() {
 export default function ContestsPage() {
   return (
     <CoffeePageShell
-      eyebrow="Соревнования Timely"
-      title="Contests"
-      description="Еженедельные задачи, спокойный соревновательный ритм и единый рейтинг по всем дисциплинам."
-      icon={<Swords className="h-5 w-5" />}
       actions={
         <span className="inline-flex items-center gap-2 rounded-full border border-[#d9d1c6] bg-[#fffdfa] px-3 py-2 text-[11px] text-[#726a61]">
           <CalendarDays className="h-3.5 w-3.5 text-[#9a6833]" />

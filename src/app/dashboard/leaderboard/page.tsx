@@ -353,12 +353,7 @@ export default function LeaderboardPage() {
   );
 
   return (
-    <CoffeePageShell
-      eyebrow="Рейтинг Timely"
-      title="Leaderboard"
-      description="Общий прогресс по математике, физике и программированию — без визуального шума."
-      icon={<Trophy className="h-5 w-5" />}
-    >
+    <CoffeePageShell>
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex w-fit rounded-full border border-[#ddd6cb] bg-[#eee9e1] p-1">
           <button

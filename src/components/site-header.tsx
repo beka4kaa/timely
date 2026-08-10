@@ -68,11 +68,16 @@ export function SiteHeader() {
           <span className="hidden h-6 w-px bg-[#d8d4cc] sm:block" />
         </Link>
 
+        {/* На узком экране остаётся ОДНО имя — раздела, а не продукта: логотип
+            слева уже говорит, где человек находится, а название страницы теперь
+            больше нигде не печатается (шапку внутри страницы убрали). До этого
+            здесь было наоборот, и телефон показывал «Timely» без ответа на
+            вопрос, что за экран открыт. */}
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="font-serif text-[15px] font-semibold tracking-[-0.02em] text-[#8a5b24]">
+          <span className="hidden font-serif text-[15px] font-semibold tracking-[-0.02em] text-[#8a5b24] sm:inline">
             Timely
           </span>
-          <span className="hidden truncate font-serif text-[14px] text-[#34302b] sm:inline">
+          <span className="truncate font-serif text-[14px] text-[#34302b]">
             {meta.title}
           </span>
         </div>

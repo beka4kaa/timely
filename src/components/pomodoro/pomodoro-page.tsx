@@ -1,6 +1,6 @@
 "use client";
 
-import { Flame, Timer } from "lucide-react";
+import { Flame } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 
@@ -184,10 +184,6 @@ export function PomodoroPage() {
 
   return (
     <CoffeePageShell
-      eyebrow="Фокус"
-      title="Помодоро"
-      description="Выберите ритм, запустите таймер и следите, сколько времени вы отучились за день."
-      icon={<Timer className="h-5 w-5" />}
       actions={
         <div className="flex items-center gap-2.5 rounded-[18px] border border-[#ded7cd] bg-[#fbfaf7] px-4 py-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)]">
           <Flame className="h-4 w-4 text-[#a76b22]" />

@@ -15,17 +15,7 @@ import {
     SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import {
-    User,
-    Target,
-    Clock,
-    Brain,
-    Loader2,
-    Save,
-    Trash2,
-    Plus,
-    Sparkles,
-} from 'lucide-react'
+import { User, Target, Brain, Loader2, Save, Trash2, Plus, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 
@@ -157,10 +147,6 @@ export default function ProfilePage() {
 
     return (
         <CoffeePageShell
-            eyebrow="Личные настройки"
-            title="Профиль для AI"
-            description="Расскажите о себе, чтобы рекомендации были точнее и полезнее."
-            icon={<User className="h-5 w-5" />}
             contentClassName="max-w-5xl"
         >
             <div className="grid gap-6">

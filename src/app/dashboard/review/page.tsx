@@ -4,17 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import {
-    Play,
-    ThumbsUp,
-    ThumbsDown,
-    Zap,
-    Clock,
-    AlertTriangle,
-    Calendar,
-    Loader2,
-    RefreshCwIcon,
-} from 'lucide-react'
+import { Play, Zap, Clock, AlertTriangle, Calendar, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
     Topic,
@@ -119,10 +109,6 @@ export default function ReviewPage() {
     if (reviewingTopic) {
         return (
             <CoffeePageShell
-                eyebrow="Активное повторение"
-                title={reviewingTopic.name}
-                description="Оцените, насколько уверенно вы помните эту тему."
-                icon={<Play className="h-5 w-5" />}
                 contentClassName="max-w-3xl"
             >
                 <Card className="border-[#d8cbb8] bg-[#fbfaf7]">
@@ -188,10 +174,6 @@ export default function ReviewPage() {
 
     return (
         <CoffeePageShell
-            eyebrow="Интервальная практика"
-            title="Повторение"
-            description="Темы, которые стоит повторить сегодня и в ближайшие дни."
-            icon={<RefreshCwIcon className="h-5 w-5" />}
             contentClassName="max-w-5xl"
         >
             <div className="space-y-8">

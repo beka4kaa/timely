@@ -5,7 +5,6 @@
 
 "use client";
 
-import { BookMarked } from "lucide-react";
 import Link from "next/link";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
@@ -14,12 +13,7 @@ import { paperButton, paperCard, paperPrimaryButton } from "./paper";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <CoffeePageShell
-      eyebrow="Курс по книге"
-      title="Программа"
-      description="Модули, темы и страницы учебника, по которым построен курс."
-      icon={<BookMarked className="h-5 w-5" />}
-    >
+    <CoffeePageShell>
       {children}
     </CoffeePageShell>
   );
