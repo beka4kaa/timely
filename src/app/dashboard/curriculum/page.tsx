@@ -1,6 +1,6 @@
 import { BookMarked } from 'lucide-react'
 
-import { CurriculumWizard } from '@/components/curriculum/curriculum-wizard'
+import { CurriculumSection } from '@/components/curriculum/curriculum-section'
 import { CoffeePageShell } from '@/components/dashboard/coffee-page-shell'
 import { FullAccessGate } from '@/components/full-access-gate'
 
@@ -20,11 +20,9 @@ export default function CurriculumPage() {
         description="Загрузите учебник — построим программу по его разделам, со ссылками на конкретные страницы."
         icon={<BookMarked className="h-5 w-5" />}
       >
-        {/* Мастер — это форма, и на всю ширину листа её растягивать незачем:
-            строка длиннее ~70 символов перестаёт читаться. */}
-        <div className="w-full max-w-[760px]">
-          <CurriculumWizard />
-        </div>
+        {/* Ширину задаёт сам раздел: каталогу нужен лист шире, чем форме
+            мастера, где строка длиннее ~70 символов перестаёт читаться. */}
+        <CurriculumSection />
       </CoffeePageShell>
     </FullAccessGate>
   )

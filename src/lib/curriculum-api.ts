@@ -67,6 +67,8 @@ export interface DocumentFileInfo {
 
 export interface CurriculumDocument {
   id: string;
+  /** Предмет книги. `null` у книг, загруженных до появления каталога. */
+  goal: string | null;
   title: string;
   authors: string[];
   language: string;
@@ -175,6 +177,19 @@ export type PlanStatus =
   | "active"
   | "rejected"
   | "archived";
+
+/** То, что реально приходит из списка планов (`CoursePlanListSerializer`). */
+export interface CoursePlanSummary {
+  id: string;
+  goal: string;
+  document: string | null;
+  title: string;
+  status: PlanStatus;
+  estimated_total_minutes: number;
+  forecast_finish_date: string | null;
+  current_version: number;
+  created_at: string;
+}
 
 export interface CoursePlan {
   id: string;
@@ -389,6 +404,8 @@ export function uploadDocument(
   options: {
     title?: string;
     language?: string;
+    /** Предмет, в карточку которого попадёт книга. */
+    goalId?: string | null;
     onProgress?: (fraction: number) => void;
     signal?: AbortSignal;
   } = {},
@@ -401,6 +418,7 @@ export function uploadDocument(
       const form = new FormData();
       form.append("file", file);
       if (options.title) form.append("title", options.title);
+      if (options.goalId) form.append("goal_id", options.goalId);
       form.append("language", options.language || "ru");
 
       const xhr = new XMLHttpRequest();
@@ -465,9 +483,16 @@ export async function getIngestionState(documentId: string): Promise<IngestionSt
 
 // ──────────────────────────────── План ───────────────────────────────────────
 
-export async function listPlans(): Promise<CoursePlan[]> {
+/**
+ * Список планов приходит в КОМПАКТНОЙ форме: `CoursePlanListSerializer` не
+ * отдаёт ни модулей, ни тем. Раньше здесь стоял полный `CoursePlan`, и тип врал
+ * — обращение к `plan.modules` из списка молча дало бы `undefined`.
+ */
+export async function listPlans(): Promise<CoursePlanSummary[]> {
   const response = await authFetch(`${BASE}/plans/`);
-  const body = await unwrap<CoursePlan[] | { results: CoursePlan[] }>(response);
+  const body = await unwrap<
+    CoursePlanSummary[] | { results: CoursePlanSummary[] }
+  >(response);
   return Array.isArray(body) ? body : body.results;
 }
 
@@ -499,4 +524,103 @@ export async function approvePlan(planId: string): Promise<{ plan: CoursePlan }>
     method: "POST",
   });
   return unwrap(response);
+}
+
+/** Строит программу заново по той же книге; прежняя уходит в архив. */
+export async function rebuildPlan(
+  planId: string,
+  signal?: AbortSignal,
+): Promise<GeneratePlanResponse> {
+  const response = await authFetch(`${BASE}/plans/${planId}/rebuild/`, {
+    method: "POST",
+    signal,
+  });
+  return unwrap<GeneratePlanResponse>(response);
+}
+
+export interface PacePatch {
+  sessions_per_week?: number;
+  minutes_per_session?: number;
+  /** `null` убирает срок; отсутствие поля его не трогает. */
+  desired_finish_date?: string | null;
+}
+
+/**
+ * Меняет темп и срок. Модель не вызывается — пересчитывается только прогноз,
+ * поэтому это быстро и работает даже на подтверждённой программе.
+ */
+export async function updatePlanPace(
+  planId: string,
+  patch: PacePatch,
+): Promise<{ plan: CoursePlan; warnings: string[] }> {
+  const response = await authFetch(`${BASE}/plans/${planId}/pace/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  return unwrap(response);
+}
+
+export interface StructureTopicPatch {
+  external_id: string;
+  title?: string;
+  objective?: string;
+  estimated_minutes?: number;
+}
+
+export interface StructureModulePatch {
+  external_id: string;
+  title?: string;
+  objective?: string;
+  topics: StructureTopicPatch[];
+}
+
+/**
+ * Заменяет состав программы целиком.
+ *
+ * Дерево уходит полностью: чего в нём нет — то удалено. Точечных операций нет
+ * намеренно — правка обязана быть атомарной и давать одну новую версию.
+ * Добавить тему нельзя: у неё неоткуда взяться ссылкам на страницы книги.
+ */
+export async function updatePlanStructure(
+  planId: string,
+  modules: StructureModulePatch[],
+): Promise<{ plan: CoursePlan; warnings: string[] }> {
+  const response = await authFetch(`${BASE}/plans/${planId}/structure/`, {
+    method: "PUT",
+    body: JSON.stringify({ modules }),
+  });
+  return unwrap(response);
+}
+
+// ─────────────────────────────── Удаление ────────────────────────────────────
+//
+// `unwrap` здесь не годится: DELETE отвечает 204 без тела, и попытка разобрать
+// пустой ответ как JSON упадёт. Поэтому статус проверяется напрямую.
+
+async function remove(path: string): Promise<void> {
+  const response = await authFetch(path, { method: "DELETE" });
+  if (response.ok || response.status === 404) return;
+  let code = "";
+  let message = `Не удалось удалить (${response.status}).`;
+  try {
+    const body = await response.json();
+    code = body?.code || "";
+    message = body?.error || body?.detail || message;
+  } catch {
+    // Тела нет — оставляем сообщение по статусу.
+  }
+  throw new CurriculumApiError(message, response.status, code, null);
+}
+
+/** Удаляет предмет вместе с его книгами и планами. */
+export async function deleteGoal(goalId: string): Promise<void> {
+  return remove(`${BASE}/goals/${goalId}/`);
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  return remove(`${BASE}/documents/${documentId}/`);
+}
+
+export async function deletePlan(planId: string): Promise<void> {
+  return remove(`${BASE}/plans/${planId}/`);
 }

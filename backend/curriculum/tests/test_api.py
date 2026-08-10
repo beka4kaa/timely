@@ -4,13 +4,16 @@ import tempfile
 from datetime import timedelta
 from unittest import mock
 
+from django.db import models
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from curriculum import storage as storage_module
 from curriculum.models import (
+    CourseDependency,
     CoursePlan,
+    CourseTopic,
     Document,
     DocumentFile,
     ExtractedSolution,
@@ -214,6 +217,7 @@ class UploadEndpointTests(_ApiBase):
         name: str = "book.pdf",
         email: str = OWNER,
         content_type: str | None = None,
+        goal_id: str | None = None,
     ):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -222,13 +226,14 @@ class UploadEndpointTests(_ApiBase):
             if name.lower().endswith(".epub")
             else "application/pdf"
         )
+        payload: dict = {
+            "file": SimpleUploadedFile(name, content, content_type=declared_type)
+        }
+        if goal_id is not None:
+            payload["goal_id"] = goal_id
         return self.client.post(
             "/api/curriculum/documents/upload/",
-            {
-                "file": SimpleUploadedFile(
-                    name, content, content_type=declared_type
-                )
-            },
+            payload,
             **_auth(email),
         )
 
@@ -476,6 +481,113 @@ class UploadEndpointTests(_ApiBase):
         self.assertEqual(response.json()["title"], "Новое название")
 
 
+class CatalogTests(_ApiBase):
+    """Каталог предметов: книга знает свой предмет.
+
+    До этого документ соединялся с целью только через уже построенный план,
+    поэтому книга в обработке в карточке предмета показаться не могла — ровно в
+    тот момент, когда ученику и нужно видеть, что происходит.
+    """
+
+    def _upload(self, goal_id=None, email: str = OWNER):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        payload: dict = {
+            "file": SimpleUploadedFile(
+                "book.pdf", textbook_pdf(), content_type="application/pdf"
+            )
+        }
+        if goal_id is not None:
+            payload["goal_id"] = str(goal_id)
+        return self.client.post(
+            "/api/curriculum/documents/upload/", payload, **_auth(email)
+        )
+
+    def test_upload_attaches_book_to_subject(self):
+        goal = self._make_goal()
+        response = self._upload(goal_id=goal.pk)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["document"]["goal"], str(goal.pk))
+
+    def test_upload_without_subject_still_works(self):
+        # Загрузка вне каталога остаётся рабочей: предмет необязателен.
+        response = self._upload()
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.json()["document"]["goal"])
+
+    def test_cannot_attach_book_to_someone_elses_subject(self):
+        """Проверяется владелец, а не факт существования цели.
+
+        Иначе чужой предмет можно было бы «занять» своей книгой и увидеть его в
+        своём каталоге.
+        """
+        stranger_goal = self._make_goal(email=INTRUDER)
+        response = self._upload(goal_id=stranger_goal.pk, email=OWNER)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "goal_not_found")
+        self.assertEqual(Document.objects.filter(user_email=OWNER).count(), 0)
+
+    def test_subject_cannot_be_reassigned_through_patch(self):
+        """`goal` только для чтения.
+
+        Обычный `PATCH` брал бы queryset из всех целей подряд, и книгу можно
+        было бы привязать к чужому предмету в обход проверки при загрузке.
+        """
+        goal = self._make_goal()
+        stranger_goal = self._make_goal(email=INTRUDER)
+        document = Document.objects.get(pk=self._upload(goal_id=goal.pk).json()["document"]["id"])
+
+        response = self.client.patch(
+            f"/api/curriculum/documents/{document.pk}/",
+            {"goal": str(stranger_goal.pk)},
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        document.refresh_from_db()
+        self.assertEqual(document.goal_id, goal.pk)
+
+    def test_books_can_be_filtered_by_subject(self):
+        first = self._make_goal()
+        second = goals_service.create_goal(
+            user_email=OWNER, original_text="алгебра производные"
+        )
+        self._upload(goal_id=first.pk)
+        self._upload(goal_id=second.pk)
+
+        response = self.client.get(
+            f"/api/curriculum/documents/?goal={first.pk}", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        rows = body["results"] if isinstance(body, dict) else body
+        self.assertEqual([row["goal"] for row in rows], [str(first.pk)])
+
+    def test_deleting_a_subject_takes_its_books(self):
+        # Предмет — единица, которой управляет ученик: удаляя его, он
+        # рассчитывает, что книги и планы уйдут вместе с ним.
+        goal = self._make_goal()
+        self._upload(goal_id=goal.pk)
+        self.assertEqual(Document.objects.filter(goal=goal).count(), 1)
+
+        response = self.client.delete(
+            f"/api/curriculum/goals/{goal.pk}/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(Document.objects.count(), 0)
+
+    def test_book_without_subject_survives_subject_deletion(self):
+        # `null=True` — книги, загруженные до каталога, ничьи. Удаление чужого
+        # предмета не должно их задевать.
+        goal = self._make_goal()
+        self._upload()
+        self.client.delete(f"/api/curriculum/goals/{goal.pk}/", **_auth(OWNER))
+        self.assertEqual(Document.objects.count(), 1)
+
+
 class SolutionLeakageTests(_ApiBase):
     """Самая важная группа: решения не должны утечь ни одним endpoint'ом."""
 
@@ -680,6 +792,354 @@ class PlanEndpointTests(_ApiBase):
             ).json(),
             [],
         )
+
+
+class PlanRebuildAndPaceTests(_ApiBase):
+    """Что делать, если программа не понравилась."""
+
+    def setUp(self):
+        super().setUp()
+        self.goal = self._make_goal(OWNER)
+        self.document = self._make_document(OWNER)
+        self.document.goal = self.goal
+        self.document.save(update_fields=["goal"])
+        self.plan = self._generate_plan()
+
+    def _generate_plan(self):
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=FakeCoursePlanningProvider(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=FakeCourseReviewProvider(),
+        ):
+            response = self.client.post(
+                "/api/curriculum/plans/generate/",
+                {"goal_id": str(self.goal.pk), "document_id": str(self.document.pk)},
+                **_auth(OWNER),
+            )
+        self.assertEqual(response.status_code, 201)
+        return CoursePlan.objects.get(pk=response.json()["plan"]["id"])
+
+    def _rebuild(self):
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=FakeCoursePlanningProvider(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=FakeCourseReviewProvider(),
+        ):
+            return self.client.post(
+                f"/api/curriculum/plans/{self.plan.pk}/rebuild/", **_auth(OWNER)
+            )
+
+    def test_rebuild_archives_the_previous_plan(self):
+        response = self._rebuild()
+
+        self.assertEqual(response.status_code, 201)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.status, CoursePlan.Status.ARCHIVED)
+        fresh = CoursePlan.objects.get(pk=response.json()["plan"]["id"])
+        self.assertNotEqual(fresh.pk, self.plan.pk)
+        self.assertNotEqual(fresh.status, CoursePlan.Status.ARCHIVED)
+
+    def test_catalog_shows_only_the_current_plan(self):
+        """Иначе по одной книге видно две записи и непонятно, какая живая."""
+        self._rebuild()
+
+        response = self.client.get("/api/curriculum/plans/", **_auth(OWNER))
+        body = response.json()
+        rows = body["results"] if isinstance(body, dict) else body
+        self.assertEqual([row["id"] for row in rows].count(str(self.plan.pk)), 0)
+        self.assertEqual(len(rows), 1)
+
+    def test_archived_plan_is_still_reachable(self):
+        # История не пропадает: она скрыта из списка, а не удалена.
+        self._rebuild()
+
+        by_link = self.client.get(
+            f"/api/curriculum/plans/{self.plan.pk}/", **_auth(OWNER)
+        )
+        self.assertEqual(by_link.status_code, 200)
+
+        listed = self.client.get("/api/curriculum/plans/?archived=1", **_auth(OWNER))
+        body = listed.json()
+        rows = body["results"] if isinstance(body, dict) else body
+        self.assertEqual(len(rows), 2)
+
+    def test_failed_rebuild_leaves_the_old_plan_alone(self):
+        """Ученик, нажавший «перестроить», не должен остаться без программы.
+
+        Генерация идёт минутами и вполне может не удаться — архивировать
+        прежнюю до успеха значит отобрать единственное, что у него есть.
+        """
+
+        class Broken:
+            name = "broken"
+
+            def generate_plan(self, request, context):
+                raise RuntimeError("модель недоступна")
+
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider", return_value=Broken()
+        ):
+            response = self.client.post(
+                f"/api/curriculum/plans/{self.plan.pk}/rebuild/", **_auth(OWNER)
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.plan.refresh_from_db()
+        self.assertNotEqual(self.plan.status, CoursePlan.Status.ARCHIVED)
+        self.assertEqual(CoursePlan.objects.count(), 1)
+
+    def test_rebuild_without_book_is_refused(self):
+        self.plan.document = None
+        self.plan.save(update_fields=["document"])
+
+        response = self.client.post(
+            f"/api/curriculum/plans/{self.plan.pk}/rebuild/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Книга удалена", response.json()["error"])
+
+    def test_pace_changes_forecast_without_calling_the_model(self):
+        # Состав тем не меняется — меняется расписание. Вызов модели здесь был
+        # бы платой ни за что.
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider"
+        ) as planner, mock.patch(
+            "curriculum.services.plans.get_review_provider"
+        ) as reviewer:
+            response = self.client.patch(
+                f"/api/curriculum/plans/{self.plan.pk}/pace/",
+                {"sessions_per_week": 5, "minutes_per_session": 30},
+                content_type="application/json",
+                **_auth(OWNER),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        planner.assert_not_called()
+        reviewer.assert_not_called()
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.recommended_sessions_per_week, 5)
+        self.assertEqual(self.plan.recommended_session_minutes, 30)
+
+    def test_pace_deadline_lands_on_the_subject(self):
+        # Срок — свойство предмета: следующая программа по той же цели должна
+        # его унаследовать.
+        response = self.client.patch(
+            f"/api/curriculum/plans/{self.plan.pk}/pace/",
+            {"desired_finish_date": "2027-05-20"},
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.goal.refresh_from_db()
+        self.assertEqual(self.goal.desired_finish_date.isoformat(), "2027-05-20")
+
+    def test_half_a_pace_is_refused(self):
+        """Иначе вторая половина молча ушла бы в автоподбор."""
+        response = self.client.patch(
+            f"/api/curriculum/plans/{self.plan.pk}/pace/",
+            {"sessions_per_week": 5},
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_pace_works_on_an_active_plan(self):
+        # Темп занятий не меняет того, чему учат, поэтому запрет на правку
+        # подтверждённой программы сюда не распространяется.
+        self.plan.status = CoursePlan.Status.ACTIVE
+        self.plan.save(update_fields=["status"])
+
+        response = self.client.patch(
+            f"/api/curriculum/plans/{self.plan.pk}/pace/",
+            {"sessions_per_week": 2, "minutes_per_session": 60},
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_stranger_cannot_rebuild_someone_elses_plan(self):
+        response = self.client.post(
+            f"/api/curriculum/plans/{self.plan.pk}/rebuild/", **_auth(INTRUDER)
+        )
+        self.assertEqual(response.status_code, 404)
+
+
+class PlanStructureTests(_ApiBase):
+    """Ручная правка состава программы."""
+
+    def setUp(self):
+        super().setUp()
+        self.goal = self._make_goal(OWNER)
+        self.document = self._make_document(OWNER)
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=FakeCoursePlanningProvider(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=FakeCourseReviewProvider(),
+        ):
+            response = self.client.post(
+                "/api/curriculum/plans/generate/",
+                {"goal_id": str(self.goal.pk), "document_id": str(self.document.pk)},
+                **_auth(OWNER),
+            )
+        self.plan = CoursePlan.objects.get(pk=response.json()["plan"]["id"])
+
+    def _tree(self) -> list[dict]:
+        """Текущий состав в том виде, в каком его принимает эндпоинт."""
+        return [
+            {
+                "external_id": module.external_id,
+                "title": module.title,
+                "objective": module.objective,
+                "topics": [
+                    {
+                        "external_id": topic.external_id,
+                        "title": topic.title,
+                        "objective": topic.objective,
+                        "estimated_minutes": topic.estimated_minutes,
+                    }
+                    for topic in module.topics.all().order_by("order_index")
+                ],
+            }
+            for module in self.plan.modules.all().order_by("order_index")
+        ]
+
+    def _put(self, modules: list[dict], email: str = OWNER):
+        return self.client.put(
+            f"/api/curriculum/plans/{self.plan.pk}/structure/",
+            {"modules": modules},
+            content_type="application/json",
+            **_auth(email),
+        )
+
+    def test_rename_is_saved_and_makes_a_new_version(self):
+        before = self.plan.current_version
+        tree = self._tree()
+        tree[0]["title"] = "Переименованный модуль"
+
+        response = self._put(tree)
+
+        self.assertEqual(response.status_code, 200)
+        self.plan.refresh_from_db()
+        self.assertEqual(
+            self.plan.modules.order_by("order_index").first().title,
+            "Переименованный модуль",
+        )
+        # Версия обязана вырасти: по ней `CourseEnrollment` отличает, чему
+        # именно учился ученик.
+        self.assertEqual(self.plan.current_version, before + 1)
+        self.assertTrue(
+            self.plan.versions.filter(version=self.plan.current_version).exists()
+        )
+
+    def test_dropping_a_topic_removes_it_and_its_dependencies(self):
+        tree = self._tree()
+        removed = tree[0]["topics"].pop(0)["external_id"]
+
+        response = self._put(tree)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            CourseTopic.objects.filter(
+                module__plan=self.plan, external_id=removed
+            ).exists()
+        )
+        # Ни одна зависимость не должна ссылаться на удалённую тему.
+        self.assertEqual(
+            CourseDependency.objects.filter(plan=self.plan)
+            .filter(
+                models.Q(topic__external_id=removed)
+                | models.Q(depends_on__external_id=removed)
+            )
+            .count(),
+            0,
+        )
+
+    def test_duration_of_module_and_plan_is_recomputed(self):
+        # Числа считаются, а не принимаются на веру: иначе превью показало бы
+        # ученику одно, а прогноз посчитал бы по другому.
+        tree = self._tree()
+        for topic in tree[0]["topics"]:
+            topic["estimated_minutes"] = 20
+
+        self._put(tree)
+
+        self.plan.refresh_from_db()
+        first = self.plan.modules.order_by("order_index").first()
+        self.assertEqual(first.estimated_minutes, 20 * first.topics.count())
+        self.assertEqual(
+            self.plan.estimated_total_minutes,
+            sum(
+                topic.estimated_minutes
+                for topic in CourseTopic.objects.filter(module__plan=self.plan)
+            ),
+        )
+
+    def test_order_follows_the_array(self):
+        # Порядок задаётся положением в массиве, а не отдельным полем: клиент
+        # перетаскивает строки, и требовать от него ещё и пересчёт индексов
+        # значит завести второй источник истины о порядке.
+        tree = self._tree()
+        first = tree[0]
+        self.assertGreaterEqual(len(first["topics"]), 2, "нужны хотя бы две темы")
+        first["topics"].reverse()
+        expected = [topic["external_id"] for topic in first["topics"]]
+
+        self._put(tree)
+
+        self.plan.refresh_from_db()
+        module = self.plan.modules.order_by("order_index").first()
+        self.assertEqual(
+            [t.external_id for t in module.topics.order_by("order_index")],
+            expected,
+        )
+
+    def test_inventing_a_topic_is_refused(self):
+        """У новой темы неоткуда взяться провенансу.
+
+        Тема без `CourseSourceBinding` неотличима от выдуманной моделью —
+        валидатор блокирует ровно такие.
+        """
+        tree = self._tree()
+        tree[0]["topics"].append(
+            {"external_id": "выдуманная", "title": "Новая тема"}
+        )
+
+        response = self._put(tree)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "invalid_structure")
+
+    def test_emptying_the_plan_is_refused(self):
+        tree = self._tree()
+        for module in tree:
+            module["topics"] = []
+
+        response = self._put(tree)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_active_plan_is_not_editable(self):
+        # По активной программе уже занимаются, и версия защищена PROTECT.
+        self.plan.status = CoursePlan.Status.ACTIVE
+        self.plan.save(update_fields=["status"])
+
+        response = self._put(self._tree())
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "plan_not_editable")
+
+    def test_stranger_cannot_edit_someone_elses_plan(self):
+        response = self._put(self._tree(), email=INTRUDER)
+        self.assertEqual(response.status_code, 404)
 
 
 class RouteRegistrationTests(TestCase):

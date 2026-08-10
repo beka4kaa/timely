@@ -111,6 +111,11 @@ interface CurriculumState {
   clearError: () => void;
   reset: () => void;
 
+  /** Новый предмет с нуля. */
+  startNewSubject: () => void;
+  /** Ещё одна книга к уже существующему предмету. */
+  addBookToSubject: (goalId: string) => void;
+
   hydrateFromServer: () => Promise<void>;
 
   submitGoal: (text: string) => Promise<void>;
@@ -203,6 +208,24 @@ export const useCurriculumStore = create<CurriculumState>()(
       clearError: () => set({ error: null }),
       reset: () => set({ ...INITIAL, hydrated: true }),
 
+      startNewSubject: () => set({ ...INITIAL, hydrated: true }),
+
+      /**
+       * Мастер для уже существующего предмета.
+       *
+       * Цель не создаётся заново и не переспрашивается — она уже подтверждена,
+       * поэтому вход сразу на шаг загрузки. Всё, что осталось от предыдущей
+       * книги (документ, прогресс обработки, план), обнуляется: иначе мастер
+       * покажет чужой прогресс, пока не придёт первый ответ сервера.
+       */
+      addBookToSubject: (goalId) =>
+        set({
+          ...INITIAL,
+          hydrated: true,
+          goalId,
+          step: "upload",
+        }),
+
       /**
        * Восстановление после перезагрузки страницы.
        *
@@ -275,6 +298,10 @@ export const useCurriculumStore = create<CurriculumState>()(
         try {
           const { document } = await uploadDocument(file, {
             title,
+            // Предмет проставляется здесь, а не отдельным запросом после
+            // загрузки: иначе книга успевала бы показаться в каталоге как
+            // «ничья», а при обрыве связи такой и осталась бы.
+            goalId: get().goalId,
             onProgress: (fraction) => set({ uploadProgress: fraction }),
           });
           // Постановка в обработку отвечает сразу: прогресс забирается опросом.

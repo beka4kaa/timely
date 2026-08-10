@@ -111,6 +111,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         model = Document
         fields = [
             "id",
+            "goal",
             "title",
             "authors",
             "language",
@@ -127,6 +128,11 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            # Только для чтения СОЗНАТЕЛЬНО. Писать сюда через обычный PATCH
+            # нельзя: DRF взял бы queryset из всех целей подряд, и ученик смог
+            # бы привязать свою книгу к чужому предмету. Предмет назначается
+            # при загрузке, где вьюха проверяет владельца цели.
+            "goal",
             "page_count",
             "ingestion_status",
             "processing_version",
@@ -141,6 +147,10 @@ class DocumentUploadSerializer(serializers.Serializer):
     """Загрузка PDF/EPUB. Проверку содержимого делает `upload_validation`."""
 
     file = serializers.FileField()
+    # Предмет, в карточку которого попадёт книга. Необязателен: загрузка вне
+    # каталога остаётся рабочей, а принадлежность цели проверяет вьюха — здесь
+    # только форма значения.
+    goal_id = serializers.UUIDField(required=False, allow_null=True)
     title = serializers.CharField(max_length=400, required=False, allow_blank=True)
     language = serializers.CharField(max_length=8, required=False)
     document_type = serializers.ChoiceField(
@@ -399,3 +409,61 @@ class CourseEnrollmentSerializer(serializers.ModelSerializer):
 class GeneratePlanSerializer(serializers.Serializer):
     goal_id = serializers.UUIDField()
     document_id = serializers.UUIDField()
+
+
+class PlanStructureTopicSerializer(serializers.Serializer):
+    external_id = serializers.CharField(max_length=64)
+    title = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    objective = serializers.CharField(required=False, allow_blank=True)
+    estimated_minutes = serializers.IntegerField(
+        required=False, min_value=0, max_value=100_000
+    )
+
+
+class PlanStructureModuleSerializer(serializers.Serializer):
+    external_id = serializers.CharField(max_length=64)
+    title = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    objective = serializers.CharField(required=False, allow_blank=True)
+    topics = PlanStructureTopicSerializer(many=True)
+
+
+class PlanStructureSerializer(serializers.Serializer):
+    """Состав программы целиком.
+
+    Дерево присылается полностью: чего в нём нет — то удалено. Точечных
+    операций нет намеренно, см. `services.plans.apply_structure`.
+    """
+
+    modules = PlanStructureModuleSerializer(many=True, allow_empty=False)
+
+
+class PlanPaceSerializer(serializers.Serializer):
+    """Темп занятий и желаемый срок.
+
+    Границы совпадают с тем, что считает осмысленным `forecast`: меньше одного
+    занятия в неделю — это не темп, а его отсутствие; больше семи не бывает
+    физически. Длительность занятия ограничена сверху не арифметикой, а тем,
+    что четырёхчасовой блок школьник не выдержит, и прогноз по нему соврёт.
+    """
+
+    sessions_per_week = serializers.IntegerField(
+        required=False, min_value=1, max_value=7
+    )
+    minutes_per_session = serializers.IntegerField(
+        required=False, min_value=10, max_value=240
+    )
+    # `allow_null` — это «убрать дедлайн»; отсутствие поля — «не трогать его».
+    desired_finish_date = serializers.DateField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        has_sessions = "sessions_per_week" in attrs
+        has_minutes = "minutes_per_session" in attrs
+        if has_sessions != has_minutes:
+            # Половина пары молча ушла бы в автоподбор, и ученик увидел бы не то
+            # число, которое ввёл.
+            raise serializers.ValidationError(
+                "Занятий в неделю и длительность задаются вместе."
+            )
+        if not attrs:
+            raise serializers.ValidationError("Нечего менять.")
+        return attrs

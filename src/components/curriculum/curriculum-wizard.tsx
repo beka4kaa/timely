@@ -9,7 +9,7 @@
 
 "use client";
 
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -27,7 +27,7 @@ const RAIL: { key: string; label: string; steps: WizardStep[] }[] = [
   { key: "plan", label: "Программа", steps: ["planning", "plan_review", "done"] },
 ];
 
-export function CurriculumWizard() {
+export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   const router = useRouter();
   const step = useCurriculumStore((s) => s.step);
   const planId = useCurriculumStore((s) => s.planId);
@@ -35,14 +35,10 @@ export function CurriculumWizard() {
   const error = useCurriculumStore((s) => s.error);
   const clearError = useCurriculumStore((s) => s.clearError);
   const reset = useCurriculumStore((s) => s.reset);
-  const hydrateFromServer = useCurriculumStore((s) => s.hydrateFromServer);
 
-  // Восстанавливаем состояние по сохранённым id. В localStorage лежат только
-  // они, поэтому после перезагрузки страницы человек возвращается ровно туда,
-  // где был, и видит НАСТОЯЩИЙ прогресс, а не тот, что был на момент ухода.
-  useEffect(() => {
-    void hydrateFromServer();
-  }, [hydrateFromServer]);
+  // `hydrateFromServer` зовёт `CurriculumSection` — она же выбирает, показать
+  // мастер или каталог, и обязана знать состояние раньше. Второй вызов отсюда
+  // означал бы удвоенный запрос за теми же тремя объектами.
 
   // Готовая программа показывается на своём роуте. Проверка `hydrated`
   // обязательна: без неё протухший `planId` из localStorage уводил бы на
@@ -69,6 +65,22 @@ export function CurriculumWizard() {
 
   return (
     <div className="space-y-7">
+      {onClose ? (
+        <button
+          type="button"
+          onClick={() => {
+            // Сеанс сбрасывается вместе с уходом: иначе каталог откроется, а
+            // при следующем заходе `CurriculumSection` снова утащит в мастер по
+            // сохранённым идентификаторам.
+            reset();
+            onClose();
+          }}
+          className={`${paperFocus} -mb-2 inline-flex items-center gap-1.5 rounded-full text-[12px] text-[#9b9186] underline-offset-4 hover:text-[#6f675e] hover:underline`}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />К предметам
+        </button>
+      ) : null}
+
       <ol className="flex items-center gap-2.5 text-[11px]">
         {RAIL.map((item, index) => (
           <li key={item.key} className="flex items-center gap-2.5">

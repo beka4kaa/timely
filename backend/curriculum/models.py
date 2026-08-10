@@ -265,6 +265,25 @@ class Document(TimestampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_email = models.EmailField(db_index=True)
 
+    # Предмет, к которому относится книга.
+    #
+    # До каталога связи не было вовсе: документ соединялся с целью только через
+    # уже построенный `CoursePlan`. Из-за этого книга, которая ещё
+    # обрабатывается, не могла показаться в карточке предмета — а именно в этот
+    # момент ученику и нужно видеть, что происходит.
+    #
+    # `null=True` — у книг, загруженных до каталога, цели нет и взяться ей
+    # неоткуда. CASCADE — удаление предмета уносит его книги, ровно как уже
+    # уносит планы (`CoursePlan.goal`): предмет здесь и есть единица, которой
+    # ученик управляет.
+    goal = models.ForeignKey(
+        LearningGoal,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="documents",
+    )
+
     title = models.CharField(max_length=400)
     authors = models.JSONField(default=list, blank=True)
     language = models.CharField(max_length=8, default="ru")
@@ -292,6 +311,8 @@ class Document(TimestampedModel):
         indexes = [
             models.Index(fields=["user_email", "-created_at"]),
             models.Index(fields=["user_email", "ingestion_status"]),
+            # Каталог всегда спрашивает «книги этого предмета».
+            models.Index(fields=["user_email", "goal"]),
         ]
 
     def __str__(self) -> str:
