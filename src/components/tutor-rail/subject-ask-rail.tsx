@@ -20,7 +20,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  X,
 } from "lucide-react";
 
 import {
@@ -47,6 +46,7 @@ import {
 } from "@/lib/curriculum-api";
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { readSse } from "@/lib/sse";
+import { RAIL_WIDTH } from "./dashboard-main";
 
 interface Turn extends AskMessage {
   citations?: AskCitation[];
@@ -214,36 +214,31 @@ export function SubjectAskRail() {
 
   return (
     <>
-      {/* ── Ползунок сворачивания ───────────────────────────────────────── */}
-      {/* На узком экране открытая панель занимает экран целиком, и кнопка
-          легла бы на её шапку — там закрывает крестик внутри панели. */}
-      <div
-        hidden={isMobile && open}
-        className="fixed top-[60px] z-[120] transition-[right] duration-300 ease-in-out"
-        style={{ right: open && !isMobile ? "calc(25% + 16px)" : 16 }}
-      >
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label={open ? "Скрыть панель" : "Спросить по книге"}
-                className="grid h-10 w-10 place-items-center rounded-xl border border-[#dedbd4] bg-[#fbfaf7]/90 text-[#8a827a] shadow-[0_8px_24px_rgba(67,57,45,0.10)] outline-none backdrop-blur-md transition-all hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
-              >
-                {open ? (
-                  <PanelRightClose className="h-[18px] w-[18px]" />
-                ) : (
-                  <PanelRightOpen className="h-[18px] w-[18px]" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="left" className="text-xs">
-              {open ? "Скрыть панель" : "Спросить по книге"}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+      {/* ── Кнопка открытия ─────────────────────────────────────────────── */}
+      {/* Только открывает. Свернуть можно из шапки, рядом с «Новым разговором»:
+          две кнопки одного назначения в разных углах экрана — это лишний
+          поиск глазами. */}
+      {!open && (
+        <div className="fixed right-4 top-[60px] z-[120]">
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggle}
+                  aria-label="Спросить по книге"
+                  className="grid h-9 w-9 place-items-center rounded-xl border border-[#dedbd4] bg-[#fbfaf7]/90 text-[#8a827a] shadow-[0_8px_24px_rgba(67,57,45,0.10)] outline-none backdrop-blur-md transition-colors hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                >
+                  <PanelRightOpen className="h-[17px] w-[17px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="text-xs">
+                Спросить по книге
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
 
       {/* ── Затемнение на узком экране ──────────────────────────────────── */}
       {isMobile && open && (
@@ -255,7 +250,8 @@ export function SubjectAskRail() {
 
       {/* ── Панель ──────────────────────────────────────────────────────── */}
       <aside
-        className={`fixed bottom-0 right-0 top-12 z-[115] w-full min-w-[280px] border-l border-[#dedbd4] transition-transform duration-300 ease-in-out md:w-[25%] ${
+        style={{ width: isMobile ? "100%" : RAIL_WIDTH }}
+        className={`fixed bottom-0 right-0 top-12 z-[115] border-l border-[#dedbd4] transition-transform duration-300 ease-in-out ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!open}
@@ -324,18 +320,7 @@ export function SubjectAskRail() {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="flex items-center gap-0.5">
-            {isMobile && (
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label="Закрыть"
-                title="Закрыть"
-                className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="flex items-center gap-0.5 text-[#918b82]">
             <button
               type="button"
               onClick={startNew}
@@ -344,6 +329,15 @@ export function SubjectAskRail() {
               className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
             >
               <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label="Свернуть панель"
+              title="Свернуть панель"
+              className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
             </button>
             </div>
           </header>
@@ -382,7 +376,11 @@ export function SubjectAskRail() {
             className="shrink-0 px-3 pt-2"
             style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
           >
-            <div className="flex flex-col rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] px-3 pb-2 pt-3 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#c79a5b] focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)]">
+            {/* Кнопка стоит В ОДНОЙ строке с полем, а не под ним.
+                Двухрядная раскладка досталась от чата доски, где нижний ряд
+                занимали четыре пилюли генерации. Здесь их нет, и ряд оставался
+                пустым — поле ввода выходило вдвое выше нужного. */}
+            <div className="flex items-end gap-2 rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] px-3 py-2 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#c79a5b] focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)]">
               <textarea
                 ref={textareaRef}
                 placeholder="Спроси по книге…"
@@ -402,34 +400,30 @@ export function SubjectAskRail() {
                     void ask();
                   }
                 }}
-                className="mb-2 max-h-[160px] min-h-[30px] w-full resize-none bg-transparent px-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
+                className="max-h-[160px] min-h-[24px] flex-1 resize-none self-center bg-transparent py-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
               />
-              <div className="flex items-center">
-                <div className="ml-auto flex shrink-0 items-center gap-1">
-                  <TooltipProvider delayDuration={300}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => void ask()}
-                          disabled={busy || !draft.trim() || !selected}
-                          aria-label="Отправить"
-                          className="ml-1 grid h-8 w-8 place-items-center rounded-full bg-[#c9a16c] text-white outline-none transition-colors hover:bg-[#af7d3d] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b]"
-                        >
-                          {busy ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ArrowUp className="h-4 w-4" />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Отправить (Enter)
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </div>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => void ask()}
+                      disabled={busy || !draft.trim() || !selected}
+                      aria-label="Отправить"
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#c9a16c] text-white outline-none transition-colors hover:bg-[#af7d3d] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b]"
+                    >
+                      {busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ArrowUp className="h-4 w-4" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    Отправить (Enter)
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </div>
         </div>
