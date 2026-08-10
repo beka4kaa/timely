@@ -29,6 +29,11 @@ import uuid
 from django.db import models
 from pgvector.django import VectorField
 
+from .outline.contracts import ALL_ROLES as _ALL_ROLES
+from .outline.contracts import SOURCE_CONFIDENCE as _SOURCE_CONFIDENCE
+from .outline.contracts import Role as _Role
+from .outline.contracts import Source as _Source
+
 # Размерность эмбеддинга. Константа, а НЕ переменная окружения: она попадает в
 # миграцию (`vector(1536)`), и вычислять её из окружения значило бы получать
 # разную схему на разных машинах. Смена размерности — это отдельная миграция
@@ -52,7 +57,11 @@ EMBEDDING_DIMENSIONS = 1536
 # строкам заголовки не склеивались, а `end_page` считался по неуникальному
 # `path` и почти у всех разделов равнялся концу книги. Меняются и границы
 # блоков, и `section_path`, поэтому книги нужно переобработать.
-PROCESSING_VERSION = "1.2.0"
+# 1.3.0 — структура книги строится по её собственному оглавлению, а не по
+# догадкам о вёрстке. Меняются уровни, роли, диапазоны страниц и связи
+# `parent`, поэтому старые разделы несовместимы с новыми и книги нужно
+# переобработать.
+PROCESSING_VERSION = "1.3.0"
 
 # Версия схемы обмена с моделью-планировщиком. Отдельна от PROCESSING_VERSION:
 # промпт может измениться без переобработки книг.
@@ -389,8 +398,23 @@ class DocumentPage(models.Model):
         indexes = [models.Index(fields=["document", "page_number"])]
 
 
+# Словари ролей и источников живут в `outline.contracts` — там же, где логика,
+# которая их проставляет. Дублировать их здесь значило бы однажды разойтись:
+# модель разрешала бы значение, которого сборщик структуры уже не выдаёт.
+_ROLE_CHOICES = tuple((value, value) for value in sorted(_ALL_ROLES))
+_DEFAULT_ROLE = _Role.UNKNOWN
+_SOURCE_CHOICES = tuple((value, value) for value in sorted(_SOURCE_CONFIDENCE))
+_DEFAULT_SOURCE = _Source.HEURISTIC
+
+
 class DocumentSection(models.Model):
-    """Узел оглавления: глава → раздел → подраздел."""
+    """Узел структуры книги: часть → глава → раздел.
+
+    Это ФИЗИЧЕСКАЯ структура документа, а не учебная программа. Заголовок узла
+    не обязан становиться названием модуля, а сам узел не обязан попадать в
+    программу: одна глава книги может дать несколько тем, объединиться с
+    соседней или не войти в курс вовсе.
+    """
 
     class Kind(models.TextChoices):
         CHAPTER = "chapter", "Глава"
@@ -406,11 +430,41 @@ class DocumentSection(models.Model):
     )
     kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.SECTION)
     title = models.CharField(max_length=400)
-    # Материализованный путь «1.2.3» — быстрее рекурсии и стабилен в citations.
+    # Материализованный путь «1.2.3» — для показа, цитат и сортировки.
+    #
+    # ВНИМАНИЕ: путь НЕ является идентичностью и НЕ является источником уровня.
+    # Раньше был и тем и другим, и оба раза неверно: разные разделы получали
+    # один и тот же путь (136 разделов на 118 путей), а глубина считалась по
+    # числу точек — из-за чего строка «1. Вектор o» из списка упражнений
+    # оказывалась главой. Идентичность — `id`, иерархия — `parent` и `level`.
     path = models.CharField(max_length=120, default="")
     order_index = models.PositiveIntegerField(default=0)
     start_page = models.PositiveIntegerField(default=0)
     end_page = models.PositiveIntegerField(default=0)
+
+    # ── Структура: что это за узел и чем он доказан ──────────────────────────
+
+    # Уровень вложенности, независимый от строки пути.
+    level = models.PositiveSmallIntegerField(default=1)
+    # Номер, напечатанный в книге: «§ 1.2», «Глава 4».
+    number_label = models.CharField(max_length=32, blank=True, default="")
+    # Педагогическая роль. Отдельно от `kind`, который описывает иерархию:
+    # «Ответы» — тоже раздел, но учить по нему нельзя.
+    structural_role = models.CharField(
+        max_length=24, choices=_ROLE_CHOICES, default=_DEFAULT_ROLE
+    )
+    # Номер страницы, НАПЕЧАТАННЫЙ в книге. Со `start_page` (страница PDF) он не
+    # совпадает: у обычного учебника разница в один-два листа обложки.
+    printed_page = models.PositiveIntegerField(null=True, blank=True)
+    source = models.CharField(
+        max_length=24, choices=_SOURCE_CHOICES, default=_DEFAULT_SOURCE
+    )
+    confidence = models.FloatField(null=True, blank=True)
+    # Заголовок действительно нашёлся в теле книги на обещанной странице.
+    verified = models.BooleanField(default=False)
+    # Годится ли раздел в учебную программу. Упражнения, ответы, указатель и
+    # титульные страницы — нет, хотя они остаются частью структуры.
+    is_teachable = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["order_index"]

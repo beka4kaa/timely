@@ -49,6 +49,8 @@ from ..models import (
     KnowledgeChunk,
 )
 from ..observability import log_ingestion_event
+from ..outline.builder import build_outline
+from ..outline.contracts import Source as OutlineSource
 from ..epub_extraction import EpubExtractionError
 from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
 from ..parsers import UnsupportedDocumentType, resolve_parser
@@ -60,6 +62,9 @@ logger = logging.getLogger(__name__)
 
 # Предохранитель синхронного пути. `upload_validation.MAX_PAGES` разрешает 1500.
 MAX_PAGES_PER_RUN = 400
+# Сколько страниц дочитываем с конца книги ради оглавления, когда обработка
+# упёрлась в лимит. Оглавление занимает единицы страниц, а стоит дёшево.
+TAIL_PAGES_FOR_OUTLINE = 15
 
 
 class IngestionError(RuntimeError):
@@ -422,12 +427,22 @@ def _run_pipeline(
         raise IngestionError("no_pages", "В PDF не найдено ни одной страницы")
 
     true_total = len(pages)
+    tail_texts: dict[int, str] = {}
     if parsed.has_pages:
         true_total = extraction.real_page_count(pdf_bytes)
         if len(pages) < true_total:
             outcome.warnings.append(
                 f"processed_only_{len(pages)}_of_{true_total}_pages"
             )
+            # Оглавление часто печатают в конце книги, а обработка обрезана
+            # предохранителем на `max_pages`. Дочитываем только хвост и только
+            # ради структуры: это десяток страниц текста, а не второй проход.
+            tail_texts = {
+                page.page_number: page.text
+                for page in extraction.extract_page_range(
+                    pdf_bytes, true_total - TAIL_PAGES_FOR_OUTLINE + 1, true_total
+                )
+            }
 
     # 3. classifying_pages — какие страницы уходят в OCR.
     recorder.advance(Document.Status.CLASSIFYING)
@@ -472,6 +487,7 @@ def _run_pipeline(
     # выбросить достоверные данные ради догадки. PDF не даёт, и структуру
     # приходится восстанавливать из текста.
     recorder.advance(Document.Status.RECONSTRUCTING)
+    outline = None
     if parsed.has_structure:
         source_blocks, sections = parsed.blocks, parsed.sections
     else:
@@ -485,6 +501,18 @@ def _run_pipeline(
         source_blocks, sections = classify_pages(
             page_texts, document_id=str(document.pk)
         )
+        # Структуру книги берём из её собственного оглавления, если оно есть.
+        # Разметка тела остаётся источником БЛОКОВ — она для этого и нужна, —
+        # но перестаёт быть источником глав: именно оттуда в программу попадали
+        # «1. Вектор o» и «Шарик неподвижен» как разделы верхнего уровня.
+        outline_pages = {p.page_number: p.text for p in page_texts}
+        outline_pages.update(tail_texts)
+        outline = build_outline(outline_pages)
+        del outline_pages
+        if outline.source == OutlineSource.HEURISTIC:
+            # Оглавления нет — структура остаётся догадкой по телу, и честнее
+            # оставить прежний путь, чем выдать пустую иерархию.
+            outline = None
         del page_texts
     del parsed
 
@@ -522,7 +550,11 @@ def _run_pipeline(
             raise SupersededIngestion
         _replace_derived_rows(document)
         page_rows = _write_pages(document, pages, ocr_texts, true_total)
-        section_rows = _write_sections(document, sections)
+        section_rows = (
+            _write_outline_sections(document, outline)
+            if outline is not None
+            else _write_sections(document, sections)
+        )
         block_rows = _write_blocks(
             document, source_blocks, page_rows, section_rows, processing_version
         )
@@ -664,14 +696,64 @@ def _write_pages(
     return {row.page_number: row for row in rows}
 
 
+class SectionIndex:
+    """Поиск раздела для блока: сначала по странице, потом по пути.
+
+    По странице — потому что источник структуры и источник блоков теперь
+    разные. Разделы приходят из оглавления книги, а блоки размечаются по телу,
+    и общего идентификатора у них нет. Зато есть страница, и она надёжна: блок
+    со страницы 34 лежит в том разделе, чей диапазон её накрывает.
+
+    По пути — для EPUB и старого пути, где структуру и блоки строит один и тот
+    же проход и `section_path` осмыслен. Раньше поиск был только по пути, и это
+    молча ломалось: пути не уникальны, словарь схлопывал разные разделы в один,
+    и 87% блоков книги привязывались к чужой секции.
+    """
+
+    def __init__(self, rows: list[DocumentSection]) -> None:
+        self.rows = rows
+        self._by_path: dict[str, DocumentSection] = {}
+        for row in rows:
+            # Побеждает первый: при коллизии путей поздний раздел не должен
+            # забирать себе блоки раннего.
+            self._by_path.setdefault(row.path, row)
+        # Сортировка по началу и по убыванию уровня: у вложенных диапазонов
+        # выигрывает самый глубокий, то есть параграф, а не часть.
+        self._by_page = sorted(
+            (r for r in rows if r.start_page),
+            key=lambda r: (r.start_page, -r.level),
+        )
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def get(self, path: str) -> DocumentSection | None:
+        return self._by_path.get(path)
+
+    def for_page(self, page: int | None) -> DocumentSection | None:
+        if not page:
+            return None
+        found = None
+        for row in self._by_page:
+            if row.start_page > page:
+                break
+            if row.end_page >= page:
+                found = row
+        return found
+
+    def resolve(self, page: int | None, path: str = "") -> DocumentSection | None:
+        return self.for_page(page) or (self.get(path) if path else None)
+
+
 def _write_sections(
     document: Document, sections: list[SectionNode]
-) -> dict[str, DocumentSection]:
+) -> SectionIndex:
     rows: dict[str, DocumentSection] = {}
+    created: list[DocumentSection] = []
     # Сначала создаём все узлы, потом связываем parent: родитель может встретиться
     # в списке позже ребёнка, если у книги «рваная» нумерация.
     for node in sections:
-        rows[node.path] = DocumentSection.objects.create(
+        row = DocumentSection.objects.create(
             document=document,
             kind=node.kind,
             title=node.title[:400],
@@ -679,20 +761,69 @@ def _write_sections(
             order_index=node.order_index,
             start_page=node.start_page,
             end_page=node.end_page,
+            level=(node.path.count(".") + 1) if node.path else 1,
         )
-    for node in sections:
-        if node.parent_path and node.parent_path in rows:
-            row = rows[node.path]
-            row.parent = rows[node.parent_path]
+        rows.setdefault(node.path, row)
+        created.append(row)
+    for node, row in zip(sections, created):
+        parent = rows.get(node.parent_path) if node.parent_path else None
+        if parent is not None and parent.pk != row.pk:
+            row.parent = parent
             row.save(update_fields=["parent"])
-    return rows
+    return SectionIndex(created)
+
+
+def _write_outline_sections(document: Document, outline) -> SectionIndex:
+    """Записывает структуру, построенную по оглавлению книги.
+
+    Родитель берётся по позиции в списке, а не по строке пути: путь остаётся
+    только для показа и цитат, а иерархию держат `parent` и `level`.
+    """
+    created: list[DocumentSection] = []
+    for index, node in enumerate(outline.nodes):
+        created.append(
+            DocumentSection.objects.create(
+                document=document,
+                kind=_KIND_BY_LEVEL.get(node.level, DocumentSection.Kind.SUBSECTION),
+                title=node.title[:400],
+                path=node.number_label[:120] or str(index + 1),
+                order_index=index,
+                start_page=node.start_page,
+                end_page=node.end_page,
+                level=node.level,
+                number_label=node.number_label[:32],
+                structural_role=node.role,
+                printed_page=node.printed_page,
+                source=node.source,
+                confidence=node.confidence,
+                verified=node.verified,
+                is_teachable=node.is_teachable,
+            )
+        )
+
+    for index, node in enumerate(outline.nodes):
+        if node.parent_index is None:
+            continue
+        parent = created[node.parent_index]
+        row = created[index]
+        if parent.pk != row.pk:
+            row.parent = parent
+            row.save(update_fields=["parent"])
+
+    return SectionIndex(created)
+
+
+_KIND_BY_LEVEL = {
+    1: DocumentSection.Kind.CHAPTER,
+    2: DocumentSection.Kind.SECTION,
+}
 
 
 def _write_blocks(
     document: Document,
     source_blocks,
     page_rows: dict[int, DocumentPage],
-    section_rows: dict[str, DocumentSection],
+    section_rows: SectionIndex,
     processing_version: str,
 ) -> dict[str, DocumentBlock]:
     # Пары собираются вместе с строками, а не зипуются потом: блок со страницей
@@ -715,7 +846,7 @@ def _write_blocks(
                 DocumentBlock(
                     document=document,
                     page=page_row,
-                    section=section_rows.get(block.section_path),
+                    section=section_rows.resolve(block.page, block.section_path),
                     kind=block.kind,
                     reading_order=block.reading_order,
                     raw_text=block.text,
@@ -740,7 +871,7 @@ def _write_tasks_and_solutions(
     document: Document,
     pairs,
     block_rows: dict[str, DocumentBlock],
-    section_rows: dict[str, DocumentSection],
+    section_rows: SectionIndex,
 ) -> tuple[dict[str, ExtractedTask], int]:
     tasks: dict[str, ExtractedTask] = {}
     solutions = 0
@@ -791,7 +922,7 @@ def _row_pk(row):
 def _write_chunks(
     document: Document,
     chunks,
-    section_rows: dict[str, DocumentSection],
+    section_rows: SectionIndex,
     task_rows: dict[str, ExtractedTask],
     processing_version: str,
 ) -> tuple[int, tuple[UUID, ...]]:
@@ -807,7 +938,9 @@ def _write_chunks(
         created.append(
             KnowledgeChunk.objects.create(
                 document_id=document.pk,
-                section_id=_row_pk(section_rows.get(chunk.section_path)),
+                section_id=_row_pk(
+                    section_rows.resolve(chunk.page_start, chunk.section_path)
+                ),
                 chunk_type=chunk.chunk_type,
                 section_path=chunk.section_path,
                 page_start=chunk.page_start,
