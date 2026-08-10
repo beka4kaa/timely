@@ -27,17 +27,32 @@ export function PlanModules({
 
   return (
     <div className="space-y-4">
-      {plan.modules.map((courseModule, index) => (
-        <PlanModuleStrip
-          key={courseModule.id}
-          courseModule={courseModule}
-          index={index}
-          moduleCount={plan.modules.length}
-          titles={titles}
-          hoveredTopicId={hoveredTopicId}
-          onHoverTopic={onHoverTopic}
-        />
-      ))}
+      {plan.modules.map((courseModule, index) => {
+        // Заголовок части печатается там же, где в книге: перед первой её
+        // главой. Модули идут в порядке книги, поэтому достаточно сравнить с
+        // предыдущим — отдельная группировка ничего бы не добавила.
+        const partStarts =
+          Boolean(courseModule.part_title) &&
+          courseModule.part_title !== plan.modules[index - 1]?.part_title;
+
+        return (
+          <div key={courseModule.id} className={partStarts && index > 0 ? "pt-4" : ""}>
+            {partStarts && (
+              <h3 className="mb-3 font-serif text-[13px] uppercase tracking-[0.14em] text-[#a1978b]">
+                {courseModule.part_title}
+              </h3>
+            )}
+            <PlanModuleStrip
+              courseModule={courseModule}
+              index={index}
+              moduleCount={plan.modules.length}
+              titles={titles}
+              hoveredTopicId={hoveredTopicId}
+              onHoverTopic={onHoverTopic}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

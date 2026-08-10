@@ -92,17 +92,40 @@ class SkeletonTests(SimpleTestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(len({m.external_id for m in modules}), len(modules))
 
-    def test_номер_главы_попадает_в_название(self):
-        modules = build_skeleton(
-            [chapter("ch1", "Силы в механике", label="Глава 3")]
-        )
-        self.assertEqual(modules[0].title, "Глава 3. Силы в механике")
+    def test_номер_главы_хранится_отдельно_от_названия(self):
+        """В книге это две строки, и интерфейс печатает их по-разному.
 
-    def test_номер_не_дублируется_если_уже_в_названии(self):
-        modules = build_skeleton(
-            [chapter("ch1", "Глава 3. Силы в механике", label="Глава 3")]
+        Склеенное «Глава 3. Силы в механике» рядом с порядковым номером списка
+        давало «6 Глава 3. Силы в механике».
+        """
+        modules = build_skeleton([chapter("ch1", "Силы в механике", label="Глава 3")])
+        self.assertEqual(modules[0].title, "Силы в механике")
+        self.assertEqual(modules[0].number_label, "Глава 3")
+
+    def test_глава_знает_свою_часть(self):
+        toc = [
+            part("p1", "Законы сохранения в механике"),
+            chapter("ch1", "Закон сохранения импульса", parent="p1", label="Глава 5"),
+        ]
+        self.assertEqual(
+            build_skeleton(toc)[0].part_title, "Законы сохранения в механике"
         )
-        self.assertEqual(modules[0].title, "Глава 3. Силы в механике")
+
+    def test_часть_ищется_через_промежуточный_контейнер(self):
+        toc = [
+            part("p1", "Динамика"),
+            TocEntry(
+                path="mid", title="Промежуточный", page_start=1, page_end=40, level=2,
+                role="chapter", section_id="mid", parent_section_id="p1",
+            ),
+            chapter("ch1", "Силы в механике", parent="mid", label="Глава 3"),
+        ]
+        by_title = {m.title: m for m in build_skeleton(toc)}
+        self.assertEqual(by_title["Силы в механике"].part_title, "Динамика")
+
+    def test_у_книги_без_частей_часть_пуста(self):
+        modules = build_skeleton([chapter("ch1", "Силы в механике", label="Глава 3")])
+        self.assertEqual(modules[0].part_title, "")
 
     def test_глава_без_параграфов_сама_себе_тема(self):
         """Пустой модуль читается как потерянный материал."""
@@ -142,6 +165,26 @@ class SkeletonTests(SimpleTestCase):
         for module in modules:
             for topic in module.topics:
                 self.assertEqual(topic.estimated_minutes, 0)
+
+    def test_упражнение_становится_темой_и_считается_практикой(self):
+        """«Упражнение 8» завершает главу в книге — значит, и в модуле.
+
+        Баланс знает оглавление, а не модель: упражнение — это практика
+        целиком, и расчёт времени должен развернуться в пользу решения задач.
+        """
+        toc = [
+            chapter("ch1", "Силы в механике", label="Глава 3"),
+            section("s1", "Силы в природе", parent="ch1", label="§ 3.1"),
+            TocEntry(
+                path="Упражнение 8", title="Упражнение 8", page_start=271,
+                page_end=273, level=3, role="exercise_set", section_id="ex8",
+                parent_section_id="ch1",
+            ),
+        ]
+        topics = build_skeleton(toc)[0].topics
+        self.assertEqual([t.title for t in topics], ["Силы в природе", "Упражнение 8"])
+        self.assertEqual(topics[1].theory_practice_balance, "practice")
+        self.assertEqual(topics[0].theory_practice_balance, "balanced")
 
     def test_цель_темы_заполнена_даже_без_модели(self):
         """Обогащение может не сработать — тема не должна остаться пустой."""

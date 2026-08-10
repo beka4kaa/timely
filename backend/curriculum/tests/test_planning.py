@@ -354,7 +354,9 @@ class ValidationTests(SimpleTestCase):
         payload = self._valid_payload()
         template = payload["modules"][0]
         payload["modules"] = []
-        for index in range(1, 31):
+        # На один больше `max_modules`: пределы книжные (40), потому что состав
+        # плана задаёт оглавление, а в толстом учебнике глав действительно много.
+        for index in range(1, 42):
             module = json.loads(json.dumps(template))
             module["external_id"] = f"m{index}"
             for position, topic in enumerate(module["topics"], start=1):

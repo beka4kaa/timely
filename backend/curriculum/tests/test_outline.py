@@ -118,8 +118,23 @@ class TocParsingTests(SimpleTestCase):
 
     def test_service_roles_are_recognised(self):
         roles = {node.title: node.role for node in self.nodes}
-        self.assertEqual(roles["Упражнение"], Role.EXERCISE_SET)
+        self.assertEqual(roles["Упражнение 1"], Role.EXERCISE_SET)
         self.assertEqual(roles["Ответы"], Role.ANSWERS)
+
+    def test_exercise_keeps_its_number(self):
+        """Иначе все шестнадцать упражнений книги называются одинаково.
+
+        Хвостовое число срезалось дважды: сначала вместе с выносками уходил
+        номер страницы, потом второй проход съедал номер самого упражнения.
+        """
+        node = next(n for n in self.nodes if n.role == Role.EXERCISE_SET)
+        self.assertEqual(node.title, "Упражнение 1")
+
+    def test_page_number_without_leaders_is_still_stripped(self):
+        """Послабление для номеров не должно оставить страницу в названии."""
+        node = parse_toc_lines(["Закон Архимеда   459"])[0]
+        self.assertEqual(node.title, "Закон Архимеда")
+        self.assertEqual(node.printed_page, 459)
 
     def test_paragraph_without_dot_leaders_keeps_its_page(self):
         """Длинное название вытесняет выноски, и перед номером остаётся пробел.
@@ -209,12 +224,26 @@ class OutlineBuildTests(SimpleTestCase):
         outline = build_outline({1: TOC_PAGE, 2: BODY_PAGE})
         self.assertEqual(outline.source, Source.TABLE_OF_CONTENTS)
 
-    def test_service_sections_are_not_teachable(self):
+    def test_answers_stay_out_of_the_programme(self):
+        """Готовые ответы шагом обучения быть не могут.
+
+        Тьютор строит контекст по разделам плана; «Ответы» среди них означают,
+        что решение может приехать ученику до попытки решить самому.
+        """
         outline = build_outline({1: TOC_PAGE})
         teachable = {node.title for node in outline.teachable()}
         self.assertNotIn("Ответы", teachable)
-        self.assertNotIn("Упражнение", teachable)
         self.assertIn("Необходимость познания природы", teachable)
+
+    def test_exercises_are_part_of_the_programme(self):
+        """«Упражнение 8» завершает главу в книге — значит, и в плане.
+
+        Раньше роль лежала в `NON_TEACHABLE_ROLES`, и шестнадцать упражнений
+        «Механики» в программу не попадали: план не совпадал с оглавлением.
+        """
+        outline = build_outline({1: TOC_PAGE})
+        teachable = {node.title for node in outline.teachable()}
+        self.assertIn("Упражнение 1", teachable)
 
     def test_without_toc_structure_is_not_confirmed(self):
         """Без оглавления структура остаётся догадкой и честно помечена такой."""

@@ -52,8 +52,10 @@ export function PlanModuleStrip({
         />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
-            <span className={`${paperNumber} text-[13px] text-[#a1978b]`}>
-              {index + 1}
+            <span className={`${paperNumber} shrink-0 text-[13px] text-[#a1978b]`}>
+              {/* Номер главы из книги, если он есть: рядом с «Глава 3» свой
+                  порядковый номер списка читался бы как «6 Глава 3». */}
+              {courseModule.number_label || index + 1}
             </span>
             <span className="truncate font-serif text-[17px] tracking-[-0.02em] text-[#302b26]">
               {courseModule.title}

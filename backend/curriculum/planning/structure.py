@@ -27,10 +27,12 @@
 
 from __future__ import annotations
 
+from ..outline.contracts import Role
 from .contracts import ProposedModule, ProposedTopic, TocEntry
 
-# Уровни книги. Часть (1) — контейнер над главами, в план как модуль не идёт:
-# «Кинематика» это не программа, а корешок раздела.
+# Уровни книги. Часть (1) — контейнер над главами; собственным модулем она не
+# становится, но её название печатается над группой глав, как в оглавлении.
+PART_LEVEL = 1
 CHAPTER_LEVEL = 2
 SECTION_LEVEL = 3
 
@@ -67,12 +69,31 @@ def build_skeleton(toc: tuple[TocEntry, ...] | list[TocEntry]) -> list[ProposedM
         modules.append(
             ProposedModule(
                 external_id=f"m{index}",
-                title=_module_title(chapter),
+                title=chapter.title.strip() or chapter.path,
                 objective="",
+                number_label=(chapter.number_label or "").strip(" ."),
+                part_title=_part_title(chapter, by_id),
                 topics=topics,
             )
         )
     return modules
+
+
+def _part_title(chapter: TocEntry, by_id: dict[str, TocEntry]) -> str:
+    """Часть книги, под которой стоит глава. Пусто у книг без частей.
+
+    Поднимаемся по родителям до уровня 1: между главой и частью может оказаться
+    промежуточный контейнер, и тогда прямой родитель — не часть.
+    """
+    current = chapter
+    for _ in range(8):
+        parent = by_id.get(current.parent_section_id)
+        if parent is None:
+            return ""
+        if parent.level <= PART_LEVEL:
+            return parent.title.strip()
+        current = parent
+    return ""
 
 
 def _owning_chapter(
@@ -95,25 +116,23 @@ def _owning_chapter(
     return ""
 
 
-def _module_title(chapter: TocEntry) -> str:
-    """«Глава 3. Силы в механике» — номер помогает сверяться с книгой."""
-    label = (chapter.number_label or "").strip(" .")
-    title = chapter.title.strip()
-    if label and not title.lower().startswith(label.lower()):
-        return f"{label}. {title}"
-    return title or chapter.path
-
-
 def _topic(entry: TocEntry, *, external_id: str) -> ProposedTopic:
+    title = entry.title.strip()
+    exercise = entry.role == Role.EXERCISE_SET
     return ProposedTopic(
         external_id=external_id,
-        title=entry.title.strip() or entry.path,
+        title=title or entry.path,
         # Заполняется обогащением; при отказе вызова остаётся детерминированная
         # формулировка, а не пустая строка.
-        objective=f"Разобраться в теме «{entry.title.strip()}»",
-        # Считается по объёму материала в `_persist_plan`; модель к длительности
-        # отношения не имеет.
+        objective=(
+            f"Прорешать «{title}»" if exercise else f"Разобраться в теме «{title}»"
+        ),
+        # Считается по объёму материала в `services.plans.apply_durations`;
+        # модель к длительности отношения не имеет.
         estimated_minutes=0,
+        # Упражнение — это практика целиком, и знает об этом оглавление, а не
+        # модель. Дальше баланс развернёт расчёт времени в пользу решения задач.
+        theory_practice_balance="practice" if exercise else "balanced",
         # Провенанс точный: тема — это раздел книги, а не догадка модели о том,
         # из чего она собрана.
         source_section_ids=[entry.section_id] if entry.section_id else [],

@@ -165,6 +165,10 @@ export interface CourseModule {
   id: string;
   external_id: string;
   title: string;
+  /** Номер главы, как он напечатан: «Глава 3». Пусто у модулей без номера. */
+  number_label: string;
+  /** Часть книги над главой: «Законы сохранения в механике». Пусто — частей нет. */
+  part_title: string;
   objective: string;
   order_index: number;
   estimated_minutes: number;
