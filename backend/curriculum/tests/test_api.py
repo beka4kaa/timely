@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from curriculum import storage as storage_module
 from curriculum.models import (
+    CourseEnrollment,
     CourseDependency,
     CoursePlan,
     CourseTopic,
@@ -578,6 +579,72 @@ class CatalogTests(_ApiBase):
 
         self.assertEqual(response.status_code, 204)
         self.assertEqual(Document.objects.count(), 0)
+
+    def test_deleting_a_subject_with_active_studies(self):
+        """Регрессия: кнопка «Удалить предмет» отвечала 500.
+
+        `CourseEnrollment.version` — FK с `PROTECT`, и каскад от цели упирался
+        в него: ученик, подтвердивший программу, больше не мог удалить свой
+        собственный предмет. Воспроизведено на боевых данных.
+        """
+        goal = self._make_goal()
+        document = self._make_document(OWNER)
+        document.goal = goal
+        document.save(update_fields=["goal"])
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=FakeCoursePlanningProvider(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=FakeCourseReviewProvider(),
+        ):
+            created = self.client.post(
+                "/api/curriculum/plans/generate/",
+                {"goal_id": str(goal.pk), "document_id": str(document.pk)},
+                **_auth(OWNER),
+            )
+        plan_id = created.json()["plan"]["id"]
+        self.client.post(f"/api/curriculum/plans/{plan_id}/approve/", **_auth(OWNER))
+        self.assertEqual(CourseEnrollment.objects.count(), 1)
+
+        response = self.client.delete(
+            f"/api/curriculum/goals/{goal.pk}/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(LearningGoal.objects.count(), 0)
+        self.assertEqual(CoursePlan.objects.count(), 0)
+        self.assertEqual(CourseEnrollment.objects.count(), 0)
+        self.assertEqual(Document.objects.count(), 0)
+
+    def test_deleting_a_plan_with_active_studies(self):
+        goal = self._make_goal()
+        document = self._make_document(OWNER)
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=FakeCoursePlanningProvider(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=FakeCourseReviewProvider(),
+        ):
+            created = self.client.post(
+                "/api/curriculum/plans/generate/",
+                {"goal_id": str(goal.pk), "document_id": str(document.pk)},
+                **_auth(OWNER),
+            )
+        plan_id = created.json()["plan"]["id"]
+        self.client.post(f"/api/curriculum/plans/{plan_id}/approve/", **_auth(OWNER))
+
+        response = self.client.delete(
+            f"/api/curriculum/plans/{plan_id}/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(CoursePlan.objects.count(), 0)
+        self.assertEqual(CourseEnrollment.objects.count(), 0)
+        # Книга и предмет — не часть программы и остаются на месте.
+        self.assertEqual(Document.objects.count(), 1)
+        self.assertEqual(LearningGoal.objects.count(), 1)
 
     def test_book_without_subject_survives_subject_deletion(self):
         # `null=True` — книги, загруженные до каталога, ничьи. Удаление чужого

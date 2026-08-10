@@ -1,9 +1,10 @@
 // Каталог предметов: с чего начинается раздел «Курс по книге».
 //
-// Раньше здесь сразу открывался мастер, и построенные программы были доступны
-// только по прямой ссылке: второй предмет начать было нельзя — мастер затирал
-// текущий сеанс. Каталог делает видимым всё, что у ученика есть, и оставляет
-// мастеру ровно одну роль — добавление.
+// Форма — таблица, а не карточки. Карточка оправдана, когда у элемента есть
+// содержание, которое нужно рассматривать; здесь у предмета три факта —
+// название, книга и состояние, — и десяток предметов в карточках превращается
+// в километр прокрутки, где одинаковые строки «Хочу…» неотличимы друг от друга.
+// Таблица ставит эти факты в колонки, и глаз сравнивает их по вертикали.
 //
 // Данные собираются тремя существующими list-запросами и соединяются чистой
 // функцией `buildCatalog`. Отдельного эндпоинта у каталога нет намеренно: он
@@ -11,14 +12,7 @@
 
 "use client";
 
-import {
-  AlertTriangle,
-  BookPlus,
-  Loader2,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -34,37 +28,45 @@ import {
   listPlans,
 } from "@/lib/curriculum-api";
 import {
-  type CatalogBook,
   type CatalogSubject,
   buildCatalog,
   subjectState,
 } from "@/lib/curriculum-catalog";
 import { PHASES, phaseIndexFor } from "@/lib/curriculum-progress";
 
-import {
-  paperButton,
-  paperCaption,
-  paperCard,
-  paperPrimaryButton,
-  paperTile,
-} from "./paper";
+import { paperCaption, paperFocus, paperPrimaryButton } from "./paper";
 
 interface CatalogProps {
   onAddSubject: () => void;
   onAddBook: (goalId: string) => void;
   /** Вернуться к подтверждению разбора цели, если оно не пройдено. */
   onContinueSetup: (goal: LearningGoal) => void;
-  /** Подробный экран обработки книги. */
+  /** Экран обработки книги или построения программы. */
   onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
 }
 
 const STATE_LABEL: Record<ReturnType<typeof subjectState>, string> = {
-  empty: "Нет учебника",
-  failed: "Ошибка обработки",
-  processing: "Идёт обработка",
-  ready_to_plan: "Готово к построению",
-  has_plan: "Программа готова",
+  empty: "нет учебника",
+  failed: "ошибка",
+  processing: "обработка",
+  ready_to_plan: "готово к построению",
+  has_plan: "программа готова",
 };
+
+// Состояние — единственное цветное пятно в таблице. Цвет здесь несёт смысл:
+// красное требует внимания, зелёное его не требует, остальное нейтрально.
+const STATE_TONE: Record<ReturnType<typeof subjectState>, string> = {
+  empty: "text-[#a1978b]",
+  failed: "text-[#a35c48]",
+  processing: "text-[#8a7a5e]",
+  ready_to_plan: "text-[#8a5b24]",
+  has_plan: "text-[#5c7a52]",
+};
+
+const ROW = "border-t border-[#e7e1d7]";
+const CELL = "py-3 pr-4 align-top";
+const LINK = `text-[#8a5b24] underline-offset-2 hover:underline ${paperFocus} rounded-sm`;
+const ACTION = `text-[12px] text-[#9b9186] underline-offset-2 hover:text-[#6f675e] hover:underline ${paperFocus} rounded-sm`;
 
 export function CurriculumCatalog({
   onAddSubject,
@@ -119,60 +121,42 @@ export function CurriculumCatalog({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {error ? (
-        <div
-          className={`${paperCard} flex items-start gap-3 px-5 py-4 text-[13px] text-[#7a4a3a]`}
-        >
+        <p className="flex items-start gap-2 text-[13px] text-[#a35c48]">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
+          {error}
+        </p>
       ) : null}
 
       {subjects.length === 0 ? (
-        <EmptyCatalog onAddSubject={onAddSubject} />
+        <EmptyCatalog />
       ) : (
-        subjects.map((subject) => (
-          <SubjectCard
-            key={subject.goalId || "unsorted"}
-            subject={subject}
-            onAddBook={onAddBook}
-            onContinueSetup={onContinueSetup}
-            onShowProgress={onShowProgress}
-            onChanged={load}
-          />
-        ))
+        <table className="w-full border-collapse text-[14px]">
+          <thead>
+            <tr className="text-left">
+              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Предмет</th>
+              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Учебник</th>
+              <th className={`${paperCaption} pb-2 pr-4 font-medium`}>Состояние</th>
+              <th className={`${paperCaption} pb-2 font-medium`} />
+            </tr>
+          </thead>
+          <tbody>
+            {subjects.map((subject) => (
+              <SubjectRows
+                key={subject.goalId || "unsorted"}
+                subject={subject}
+                onAddBook={onAddBook}
+                onContinueSetup={onContinueSetup}
+                onShowProgress={onShowProgress}
+                onChanged={load}
+              />
+            ))}
+          </tbody>
+        </table>
       )}
 
-      {subjects.length > 0 ? (
-        <button
-          type="button"
-          className={paperPrimaryButton}
-          onClick={onAddSubject}
-        >
-          <Plus className="h-4 w-4" />
-          Добавить предмет
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function EmptyCatalog({ onAddSubject }: { onAddSubject: () => void }) {
-  return (
-    <div className={`${paperCard} px-6 py-10 text-center`}>
-      <p className="text-[15px] text-[#4b453e]">
-        Здесь появятся предметы, которые вы изучаете.
-      </p>
-      <p className="mt-1 text-[13px] text-[#8d857b]">
-        Начните с одного: загрузите учебник — программа построится по его
-        разделам.
-      </p>
-      <button
-        type="button"
-        className={`${paperPrimaryButton} mt-5`}
-        onClick={onAddSubject}
-      >
+      <button type="button" className={paperPrimaryButton} onClick={onAddSubject}>
         <Plus className="h-4 w-4" />
         Добавить предмет
       </button>
@@ -180,7 +164,27 @@ function EmptyCatalog({ onAddSubject }: { onAddSubject: () => void }) {
   );
 }
 
-function SubjectCard({
+function EmptyCatalog() {
+  return (
+    <div className="py-10 text-center">
+      <p className="text-[15px] text-[#4b453e]">
+        Здесь появятся предметы, которые вы изучаете.
+      </p>
+      <p className="mt-1 text-[13px] text-[#8d857b]">
+        Начните с одного: загрузите учебник — программа построится по его разделам.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Предмет — это одна строка плюс по строке на каждую книгу сверх первой.
+ *
+ * Название предмета не повторяется в дочерних строках: повтор в таблице читается
+ * как другой предмет с тем же именем. Пустая ячейка вместо него — обычный приём
+ * для сгруппированных строк.
+ */
+function SubjectRows({
   subject,
   onAddBook,
   onContinueSetup,
@@ -194,223 +198,258 @@ function SubjectCard({
   onChanged: () => Promise<void>;
 }) {
   const state = subjectState(subject);
-  // Цель, разбор которой ученик не подтвердил, — это незаконченная настройка.
-  // Программу по ней построить можно, но формулировку он поправить не успел.
   const needsSetup = Boolean(
     subject.goal && !subject.goal.normalization_confirmed,
   );
+  const rows = Math.max(1, subject.books.length);
 
   return (
-    <section className={`${paperCard} px-5 py-4`}>
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="font-serif text-[19px] tracking-[-0.01em] text-[#2f2a25]">
-            {subject.title}
-          </h2>
-          {subject.direction ? (
-            <p className="mt-0.5 text-[13px] text-[#8d857b]">
-              {subject.direction}
-            </p>
-          ) : null}
-        </div>
-        <span className={paperCaption}>{STATE_LABEL[state]}</span>
-      </header>
+    <>
+      {subject.books.length === 0 ? (
+        <tr className={ROW}>
+          <SubjectCell subject={subject} rowSpan={1} />
+          <td className={CELL}>
+            <span className="text-[#a1978b]">—</span>
+          </td>
+          <td className={`${CELL} ${STATE_TONE[state]}`}>{STATE_LABEL[state]}</td>
+          <td className={`${CELL} text-right`}>
+            <SubjectActions
+              subject={subject}
+              needsSetup={needsSetup}
+              onAddBook={onAddBook}
+              onContinueSetup={onContinueSetup}
+              onChanged={onChanged}
+            />
+          </td>
+        </tr>
+      ) : (
+        subject.books.map((book, index) => {
+          const { document, plans } = book;
+          const ready = document.ingestion_status === "ready";
+          const failed = document.ingestion_status === "failed";
+          return (
+            <tr key={document.id} className={ROW}>
+              {index === 0 ? (
+                <SubjectCell subject={subject} rowSpan={rows} />
+              ) : null}
+              <td className={CELL}>
+                <span className="text-[#3b352f]">{document.title}</span>
+                {plans.length > 0 ? (
+                  <span className="mt-1 flex flex-col gap-0.5">
+                    {plans.map((plan) => (
+                      <Link
+                        key={plan.id}
+                        href={`/dashboard/curriculum/plan/${plan.id}`}
+                        className={`${LINK} text-[13px]`}
+                      >
+                        {plan.title}
+                      </Link>
+                    ))}
+                  </span>
+                ) : null}
+              </td>
+              <td className={CELL}>
+                <BookState document={document} />
+              </td>
+              <td className={`${CELL} text-right`}>
+                <span className="inline-flex flex-wrap justify-end gap-x-3 gap-y-1">
+                  {!ready ? (
+                    <button
+                      type="button"
+                      className={ACTION}
+                      onClick={() => onShowProgress(subject.goalId, document)}
+                    >
+                      {failed ? "разобраться" : "подробнее"}
+                    </button>
+                  ) : plans.length === 0 ? (
+                    <button
+                      type="button"
+                      className={ACTION}
+                      onClick={() => onShowProgress(subject.goalId, document)}
+                    >
+                      построить программу
+                    </button>
+                  ) : null}
+                  <ConfirmingAction
+                    label="убрать книгу"
+                    confirm="точно убрать?"
+                    onRun={async () => {
+                      await deleteDocument(document.id);
+                      await onChanged();
+                    }}
+                  />
+                  {index === 0 ? (
+                    <SubjectActions
+                      subject={subject}
+                      needsSetup={needsSetup}
+                      onAddBook={onAddBook}
+                      onContinueSetup={onContinueSetup}
+                      onChanged={onChanged}
+                    />
+                  ) : null}
+                </span>
+              </td>
+            </tr>
+          );
+        })
+      )}
 
-      <div className="mt-4 space-y-2">
-        {subject.books.map((book) => (
-          <BookRow
-            key={book.document.id}
-            book={book}
-            goalId={subject.goalId}
-            onShowProgress={onShowProgress}
-            onChanged={onChanged}
-          />
-        ))}
-        {subject.orphanPlans.map((plan) => (
-          <PlanRow key={plan.id} plan={plan} onChanged={onChanged} bookGone />
-        ))}
-        {subject.books.length === 0 && subject.orphanPlans.length === 0 ? (
-          <p className="text-[13px] text-[#8d857b]">
-            Учебника пока нет — добавьте книгу, чтобы построить программу.
-          </p>
-        ) : null}
-      </div>
-
-      {/* У группы «Без предмета» цели нет, добавлять книгу некуда. */}
-      {subject.goalId ? (
-        <footer className="mt-4 flex flex-wrap gap-2">
-          {needsSetup && subject.goal ? (
-            <button
-              type="button"
-              className={paperButton}
-              onClick={() => onContinueSetup(subject.goal as LearningGoal)}
-            >
-              <Pencil className="h-4 w-4" />
-              Уточнить цель
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={paperButton}
-            onClick={() => onAddBook(subject.goalId as string)}
-          >
-            <BookPlus className="h-4 w-4" />
-            Добавить книгу
-          </button>
-          <ConfirmingDelete
-            label="Удалить предмет"
-            confirm="Удалить вместе с книгами и программами?"
-            onDelete={async () => {
-              await deleteGoal(subject.goalId as string);
-              await onChanged();
-            }}
-          />
-        </footer>
-      ) : null}
-    </section>
+      {/* Программа, чья книга удалена: план живёт, ссылка обязана остаться. */}
+      {subject.orphanPlans.map((plan) => (
+        <tr key={plan.id} className={ROW}>
+          <td className={CELL} />
+          <td className={CELL}>
+            <OrphanPlan plan={plan} />
+          </td>
+          <td className={`${CELL} text-[#a1978b]`}>книга удалена</td>
+          <td className={`${CELL} text-right`}>
+            <ConfirmingAction
+              label="удалить"
+              confirm="точно удалить?"
+              onRun={async () => {
+                await deletePlan(plan.id);
+                await onChanged();
+              }}
+            />
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }
 
-function BookRow({
-  book,
-  goalId,
-  onShowProgress,
-  onChanged,
+function SubjectCell({
+  subject,
+  rowSpan,
 }: {
-  book: CatalogBook;
-  goalId: string | null;
-  onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
-  onChanged: () => Promise<void>;
+  subject: CatalogSubject;
+  rowSpan: number;
 }) {
-  const { document, plans } = book;
-  const ready = document.ingestion_status === "ready";
-  const failed = document.ingestion_status === "failed";
-
   return (
-    <div className={`${paperTile} px-4 py-3`}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-[14px] text-[#3b352f]">{document.title}</span>
-        <span className="text-[12px] text-[#8d857b]">
-          {failed
-            ? "Не удалось обработать"
-            : ready
-              ? `${document.page_count} стр.`
-              : PHASES[phaseIndexFor(document.ingestion_status)]?.label ||
-                "Обработка"}
+    <td className={`${CELL} w-[34%]`} rowSpan={rowSpan}>
+      <span className="block text-[#2f2a25]">{subject.title}</span>
+      {subject.direction ? (
+        <span className="mt-0.5 block text-[13px] text-[#8d857b]">
+          {subject.direction}
         </span>
-      </div>
-
-      {plans.length > 0 ? (
-        <div className="mt-2 space-y-1">
-          {plans.map((plan) => (
-            <PlanRow key={plan.id} plan={plan} onChanged={onChanged} />
-          ))}
-        </div>
       ) : null}
-
-      <div className="mt-2 flex flex-wrap gap-2">
-        {/* Строка каталога говорит, на каком этапе книга; подробный экран
-            показывает фазы и умеет перезапустить застрявшую обработку. */}
-        {!ready ? (
-          <button
-            type="button"
-            className={`${paperButton} !px-3 !py-1 !text-[12px]`}
-            onClick={() => onShowProgress(goalId, document)}
-          >
-            {failed ? "Разобраться с ошибкой" : "Показать обработку"}
-          </button>
-        ) : plans.length === 0 ? (
-          <button
-            type="button"
-            className={`${paperButton} !px-3 !py-1 !text-[12px]`}
-            onClick={() => onShowProgress(goalId, document)}
-          >
-            Построить программу
-          </button>
-        ) : null}
-        <ConfirmingDelete
-          label="Удалить книгу"
-          confirm="Удалить книгу и её программы?"
-          onDelete={async () => {
-            await deleteDocument(document.id);
-            await onChanged();
-          }}
-        />
-      </div>
-    </div>
+    </td>
   );
 }
 
-function PlanRow({
-  plan,
-  onChanged,
-  bookGone = false,
-}: {
-  plan: CoursePlanSummary;
-  onChanged: () => Promise<void>;
-  bookGone?: boolean;
-}) {
+function BookState({ document }: { document: CurriculumDocument }) {
+  if (document.ingestion_status === "failed") {
+    return <span className="text-[#a35c48]">ошибка</span>;
+  }
+  if (document.ingestion_status === "ready") {
+    return (
+      <span className="text-[#8d857b]">
+        {document.page_count > 0 ? `${document.page_count} стр.` : "готов"}
+      </span>
+    );
+  }
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <Link
-        href={`/dashboard/curriculum/plan/${plan.id}`}
-        className="text-[13px] text-[#8a5b24] underline-offset-2 hover:underline"
+    <span className="text-[#8a7a5e]">
+      {PHASES[phaseIndexFor(document.ingestion_status)]?.label || "обработка"}
+    </span>
+  );
+}
+
+function OrphanPlan({ plan }: { plan: CoursePlanSummary }) {
+  return (
+    <Link
+      href={`/dashboard/curriculum/plan/${plan.id}`}
+      className={`${LINK} text-[13px]`}
+    >
+      {plan.title}
+    </Link>
+  );
+}
+
+function SubjectActions({
+  subject,
+  needsSetup,
+  onAddBook,
+  onContinueSetup,
+  onChanged,
+}: {
+  subject: CatalogSubject;
+  needsSetup: boolean;
+  onAddBook: (goalId: string) => void;
+  onContinueSetup: (goal: LearningGoal) => void;
+  onChanged: () => Promise<void>;
+}) {
+  // У группы «Без предмета» цели нет: ни добавлять книгу, ни удалять нечего.
+  if (!subject.goalId) return null;
+
+  return (
+    <>
+      {needsSetup && subject.goal ? (
+        <button
+          type="button"
+          className={ACTION}
+          onClick={() => onContinueSetup(subject.goal as LearningGoal)}
+        >
+          уточнить цель
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={ACTION}
+        onClick={() => onAddBook(subject.goalId as string)}
       >
-        {plan.title}
-      </Link>
-      <div className="flex items-center gap-3">
-        {bookGone ? (
-          <span className="text-[12px] text-[#8d857b]">книга удалена</span>
-        ) : null}
-        <ConfirmingDelete
-          label="Удалить"
-          confirm="Удалить программу?"
-          onDelete={async () => {
-            await deletePlan(plan.id);
-            await onChanged();
-          }}
-        />
-      </div>
-    </div>
+        добавить книгу
+      </button>
+      <ConfirmingAction
+        label="удалить предмет"
+        confirm="удалить со всем содержимым?"
+        onRun={async () => {
+          await deleteGoal(subject.goalId as string);
+          await onChanged();
+        }}
+      />
+    </>
   );
 }
 
 /**
- * Удаление в два нажатия.
+ * Опасное действие в два нажатия.
  *
- * Отдельного диалога нет намеренно: удаляется своё и восстановлению не
- * подлежит, но и цена ошибки — не потеря месяцев работы. Второе нажатие рядом с
- * первым честнее модального окна, которое всё равно закрывают не глядя.
+ * Модального окна нет намеренно: удаляется своё, и второе нажатие ровно там же,
+ * где первое, честнее диалога, который закрывают не глядя. Ошибка при этом
+ * показывается на месте — раньше отказ сервера просто ничего не делал, и кнопка
+ * выглядела сломанной.
  */
-function ConfirmingDelete({
+function ConfirmingAction({
   label,
   confirm,
-  onDelete,
+  onRun,
 }: {
   label: string;
   confirm: string;
-  onDelete: () => Promise<void>;
+  onRun: () => Promise<void>;
 }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  // Взведённое состояние снимается само: иначе кнопка так и останется красной
-  // до перезагрузки, и следующее случайное нажатие удалит без вопросов.
   useEffect(() => {
     if (!armed) return;
     const timer = setTimeout(() => setArmed(false), 5000);
     return () => clearTimeout(timer);
   }, [armed]);
 
-  if (!armed) {
+  if (failed) {
     return (
       <button
         type="button"
-        className={`${paperButton} !px-3 !py-1 !text-[12px]`}
-        onClick={() => setArmed(true)}
+        className={`${ACTION} !text-[#a35c48]`}
+        onClick={() => {
+          setFailed(false);
+          setArmed(true);
+        }}
       >
-        <Trash2 className="h-3.5 w-3.5" />
-        {label}
+        не удалось, ещё раз?
       </button>
     );
   }
@@ -419,23 +458,24 @@ function ConfirmingDelete({
     <button
       type="button"
       disabled={busy}
-      className={`${paperButton} !px-3 !py-1 !text-[12px] !border-[#b4785f] !text-[#7a4a3a]`}
+      className={armed ? `${ACTION} !text-[#a35c48]` : ACTION}
       onClick={async () => {
+        if (!armed) {
+          setArmed(true);
+          return;
+        }
         setBusy(true);
         try {
-          await onDelete();
+          await onRun();
+        } catch {
+          setFailed(true);
         } finally {
           setBusy(false);
           setArmed(false);
         }
       }}
     >
-      {busy ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <Trash2 className="h-3.5 w-3.5" />
-      )}
-      {confirm}
+      {busy ? "…" : armed ? confirm : label}
     </button>
   );
 }

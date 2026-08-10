@@ -93,6 +93,12 @@ class LearningGoalViewSet(_UserScopedViewSet):
             user_email=self._user_email(), status=LearningGoal.Status.DRAFT
         )
 
+    def perform_destroy(self, instance):
+        # Не `instance.delete()`: каскад упирается в `PROTECT` у версии, по
+        # которой ученик занимается, и отвечает 500 на собственную кнопку
+        # удаления. Подробности — в `services.plans.delete_goal`.
+        plans_service.delete_goal(instance)
+
     def create(self, request, *args, **kwargs):
         if not self._user_email():
             return _no_user()
@@ -410,6 +416,11 @@ class CoursePlanViewSet(_UserScopedViewSet):
         if self.action == "list":
             return CoursePlanListSerializer
         return CoursePlanSerializer
+
+    def perform_destroy(self, instance):
+        # См. `LearningGoalViewSet.perform_destroy`: запись о занятиях защищает
+        # версию плана, и обычный каскад на ней падает.
+        plans_service.delete_plan(instance)
 
     # План создаётся только через `generate`: собрать его POST'ом руками нельзя,
     # иначе в БД появится курс, не прошедший валидатор.
