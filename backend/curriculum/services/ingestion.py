@@ -51,17 +51,29 @@ from ..models import (
 from ..observability import log_ingestion_event
 from ..outline.builder import build_outline
 from ..outline.contracts import Source as OutlineSource
+from ..outline.embedded import nodes_from_bookmarks
 from ..epub_extraction import EpubExtractionError
 from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
 from ..parsers import UnsupportedDocumentType, resolve_parser
 from ..storage import get_storage
 from ..tokenizer import get_tokenizer
+from ..upload_validation import MAX_PAGES as MAX_UPLOAD_PAGES
 from .embedding_index import index_document_chunks
 
 logger = logging.getLogger(__name__)
 
-# Предохранитель синхронного пути. `upload_validation.MAX_PAGES` разрешает 1500.
-MAX_PAGES_PER_RUN = 400
+# Сколько страниц книги обрабатываем за прогон. Совпадает с гейтом загрузки:
+# всё, что прошло `upload_validation`, обрабатывается целиком.
+#
+# Раньше здесь стояло 400 — предохранитель синхронного пути, когда пайплайн
+# держал поток веб-сервера. Обработка давно в Celery, а цена оставалась: у
+# книги на 682 страницы главы с 482-й не получали ни одного фрагмента. План по
+# ним строился (структура приходит из закладок), но текста за ним не было, и
+# тьютор по этим главам не находил ничего.
+#
+# Предохранитель стоимости остался там, где он и должен быть, — на платном OCR
+# (`ocr.MAX_OCR_PAGES_PER_RUN`). Извлечение нативного текста считается локально.
+MAX_PAGES_PER_RUN = MAX_UPLOAD_PAGES
 # Сколько страниц дочитываем с конца книги ради оглавления, когда обработка
 # упёрлась в лимит. Оглавление занимает единицы страниц, а стоит дёшево.
 TAIL_PAGES_FOR_OUTLINE = 15
@@ -428,7 +440,14 @@ def _run_pipeline(
 
     true_total = len(pages)
     tail_texts: dict[int, str] = {}
+    # Закладки читаются здесь, пока байты PDF ещё под рукой: ниже они
+    # освобождаются вместе со страницами. Это самый надёжный источник структуры
+    # — разметка самого издателя, — и стоит он одного обращения к дереву
+    # закладок, без чтения страниц.
+    bookmarks: list[tuple[int, str, int]] = []
+    bookmark_total = 0
     if parsed.has_pages:
+        bookmarks, bookmark_total = extraction.read_bookmarks(pdf_bytes)
         true_total = extraction.real_page_count(pdf_bytes)
         if len(pages) < true_total:
             outcome.warnings.append(
@@ -507,7 +526,12 @@ def _run_pipeline(
         # «1. Вектор o» и «Шарик неподвижен» как разделы верхнего уровня.
         outline_pages = {p.page_number: p.text for p in page_texts}
         outline_pages.update(tail_texts)
-        outline = build_outline(outline_pages)
+        outline = build_outline(
+            outline_pages,
+            embedded=nodes_from_bookmarks(
+                bookmarks, total_pages=bookmark_total or true_total
+            ),
+        )
         del outline_pages
         if outline.source == OutlineSource.HEURISTIC:
             # Оглавления нет — структура остаётся догадкой по телу, и честнее
@@ -761,7 +785,7 @@ def _write_sections(
             order_index=node.order_index,
             start_page=node.start_page,
             end_page=node.end_page,
-            level=(node.path.count(".") + 1) if node.path else 1,
+            level=_LEVEL_BY_KIND.get(node.kind, node.path.count(".") + 2),
         )
         rows.setdefault(node.path, row)
         created.append(row)
@@ -813,9 +837,23 @@ def _write_outline_sections(document: Document, outline) -> SectionIndex:
     return SectionIndex(created)
 
 
+# Уровень книги ↔ `DocumentSection.Kind`. Уровень 1 — часть, 2 — глава, 3 —
+# раздел; отдельного вида «часть» у модели нет, и часть показывается главой.
 _KIND_BY_LEVEL = {
     1: DocumentSection.Kind.CHAPTER,
-    2: DocumentSection.Kind.SECTION,
+    2: DocumentSection.Kind.CHAPTER,
+    3: DocumentSection.Kind.SECTION,
+}
+
+# Обратное отображение для форматов, которые сами дают вид узла (EPUB размечает
+# заголовки автором книги). Раньше уровень выводился из числа точек в пути, и
+# глава оказывалась на уровне 1 — там, где `planning.structure` ждёт ЧАСТЬ.
+# Из-за этого модулями плана становились разделы глав, а сами главы не попадали
+# в план вовсе.
+_LEVEL_BY_KIND = {
+    DocumentSection.Kind.CHAPTER: 2,
+    DocumentSection.Kind.SECTION: 3,
+    DocumentSection.Kind.SUBSECTION: 4,
 }
 
 

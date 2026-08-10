@@ -17,12 +17,34 @@ from .contracts import NON_TEACHABLE_ROLES, Outline, OutlineNode, Role
 from .thresholds import CONFIDENCE_MEDIUM
 
 # Служебные части книги: они идут до или после учебного материала.
+#
+# Английские правила здесь не для полноты. Без них «About the Author» и «Brief
+# Table of Contents (Not Yet Final)» становились модулями программы, а «How to
+# Contact Us» и «Acknowledgments» — темами: в англоязычной книге всё это
+# закладки того же уровня, что и главы.
+#
+# «Preface» отнесён к служебному, а русское «Введение» — нет, и это не
+# небрежность. В англоязычной традиции preface — это про книгу: как ей
+# пользоваться, кого благодарит автор, где брать код. Русское введение обычно
+# содержит настоящий материал: у Мякишева под ним три главы с параграфами.
 _FRONT_MATTER = re.compile(
-    r"^\s*(удк|ббк|isbn|issn|содержание|оглавление|contents|титул)", re.I
+    r"^\s*("
+    r"удк|ббк|isbn|issn|содержание|оглавление|титул"
+    r"|(brief\s+)?(table\s+of\s+)?contents"
+    r"|preface|foreword|acknowledg|dedication|colophon|errata"
+    r"|about\s+the\s+(author|cover)"
+    r"|copyright|how\s+to\s+contact"
+    r")",
+    re.I,
 )
-_ANSWERS = re.compile(r"^\s*(ответы|решения\s+задач)\b", re.I)
-_BIBLIOGRAPHY = re.compile(r"^\s*(литератур|библиограф|список\s+литератур)", re.I)
-_INDEX = re.compile(r"^\s*(алфавитный|предметный|именной)\s+указатель", re.I)
+_ANSWERS = re.compile(r"^\s*(ответы|решения\s+задач|answers?\s+to)\b", re.I)
+_BIBLIOGRAPHY = re.compile(
+    r"^\s*(литератур|библиограф|список\s+литератур|bibliography|further\s+reading)",
+    re.I,
+)
+_INDEX = re.compile(
+    r"^\s*((алфавитный|предметный|именной)\s+указатель|index\s*$|glossary)", re.I
+)
 
 
 def infer_role(node: OutlineNode) -> str:

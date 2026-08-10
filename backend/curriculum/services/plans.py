@@ -325,6 +325,26 @@ _TYPE_PRIORITY = {
 }
 
 
+def _tokens_by_section(document: Document) -> dict:
+    """Объём текста каждого раздела в токенах — одним запросом.
+
+    Нужен только там, где нет страниц (EPUB), но считается всегда: отдельная
+    ветка «а есть ли у книги страницы» стоила бы дороже одного `GROUP BY`.
+    """
+    from django.db.models import Sum
+
+    rows = (
+        KnowledgeChunk.objects.filter(
+            document_id=document.pk,
+            processing_version=document.processing_version,
+        )
+        .exclude(section_id=None)
+        .values("section_id")
+        .annotate(total=Sum("token_count"))
+    )
+    return {row["section_id"]: int(row["total"] or 0) for row in rows}
+
+
 def _profile_list(profile, attribute: str) -> list[str]:
     """Список из профиля, устойчивый к его отсутствию и к мусору в JSON."""
     values = getattr(profile, attribute, None) or []
@@ -357,6 +377,7 @@ def build_planning_request(
         profile.section_id: profile
         for profile in SectionProfile.objects.filter(document=document)
     }
+    tokens_by_section = _tokens_by_section(document)
     toc = tuple(
         TocEntry(
             path=section.path,
@@ -372,6 +393,7 @@ def build_planning_request(
             concepts=tuple(_profile_list(profiles.get(section.pk), "concepts")),
             skills=tuple(_profile_list(profiles.get(section.pk), "skills")),
             summary=getattr(profiles.get(section.pk), "summary", "") or "",
+            content_tokens=tokens_by_section.get(section.pk, 0),
         )
         for section in sections
     )
@@ -507,21 +529,20 @@ def apply_durations(result, *, goal: LearningGoal, toc) -> None:
     ставила одно и то же число всем темам подряд — 45 минут и двухстраничному
     параграфу, и сорокастраничной главе.
     """
-    pages_by_section = {
-        entry.section_id: (entry.page_start, entry.page_end)
-        for entry in toc
-        if entry.section_id
-    }
+    by_section = {entry.section_id: entry for entry in toc if entry.section_id}
     for module in result.modules:
         module_minutes = 0
         for topic in module.topics:
-            ranges = [
-                pages_by_section[section_id]
+            sources = [
+                by_section[section_id]
                 for section_id in getattr(topic, "source_section_ids", None) or []
-                if section_id in pages_by_section
+                if section_id in by_section
             ]
             duration = estimate_topic_minutes(
-                page_count=covered_pages(ranges),
+                page_count=covered_pages(
+                    [(e.page_start, e.page_end) for e in sources]
+                ),
+                content_tokens=sum(e.content_tokens for e in sources),
                 difficulty=topic.difficulty,
                 current_level=goal.current_level,
                 balance=topic.theory_practice_balance,

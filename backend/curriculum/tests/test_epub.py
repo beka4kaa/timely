@@ -14,9 +14,10 @@ from django.test import SimpleTestCase, TestCase
 
 from curriculum import storage as storage_module
 from curriculum.epub_extraction import EpubExtractionError, extract_epub
-from curriculum.models import Document, DocumentFile
+from curriculum.models import Document, DocumentFile, DocumentSection
 from curriculum.ocr import NullOcrProvider
 from curriculum.models import KnowledgeChunk
+from curriculum.planning.structure import CHAPTER_LEVEL
 from curriculum.parsers import (
     FORMAT_EPUB,
     FORMAT_PDF,
@@ -372,3 +373,34 @@ class EpubEndToEndIngestionTests(TestCase):
         self.assertTrue(
             all(chunk.page_start == 0 and chunk.page_end == 0 for chunk in KnowledgeChunk.objects.filter(document_id=document.pk))
         )
+
+    def test_epub_chapter_becomes_a_plan_module(self):
+        """Регресс: уровни EPUB съезжали на единицу.
+
+        Уровень выводился из числа точек в пути, и глава оказывалась на первом
+        уровне — там, где `planning.structure` ждёт ЧАСТЬ книги. Модулями плана
+        становились разделы внутри глав, а сами главы не попадали в план вовсе.
+        """
+        document = Document.objects.create(user_email="a@b.c", title="EPUB")
+        key = storage_module.build_storage_key(
+            user_email=document.user_email,
+            document_id=str(document.pk),
+            filename="book.epub",
+        )
+        storage_module.get_storage().save(key, SIMPLE)
+        DocumentFile.objects.create(
+            document=document,
+            original_filename="book.epub",
+            sanitized_filename="book.epub",
+            storage_key=key,
+            mime_type="application/epub+zip",
+            byte_size=len(SIMPLE),
+            content_hash=storage_module.content_hash(SIMPLE),
+        )
+
+        ingest_document(document, ocr_provider=NullOcrProvider())
+
+        chapters = document.sections.filter(kind=DocumentSection.Kind.CHAPTER)
+        self.assertGreater(chapters.count(), 0)
+        for chapter in chapters:
+            self.assertEqual(chapter.level, CHAPTER_LEVEL, chapter.title)

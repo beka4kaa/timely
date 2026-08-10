@@ -143,7 +143,40 @@ class SkeletonTests(SimpleTestCase):
         ]
         modules = build_skeleton(toc)
         sources = [sid for t in modules[0].topics for sid in t.source_section_ids]
-        self.assertEqual(sources, ["s1", "s1a"])
+        self.assertIn("s1a", sources)
+
+    def test_раздел_с_подразделами_сам_темой_не_становится(self):
+        """Его страницы — это ровно страницы его детей.
+
+        В английских книгах третий уровень обычный: «Types of Machine Learning
+        Systems» на стр. 35–67 и три подраздела внутри тех же страниц. Все
+        четверо темами — это удвоенное время курса на таком участке.
+        """
+        toc = [
+            chapter("ch1", "The Machine Learning Landscape", label="1"),
+            section("s1", "What Is Machine Learning?", parent="ch1"),
+            section("s2", "Types of Machine Learning Systems", parent="ch1"),
+            section("s2a", "Training Supervision", parent="s2", level=4),
+            section("s2b", "Batch Versus Online Learning", parent="s2", level=4),
+        ]
+        titles = [t.title for t in build_skeleton(toc)[0].topics]
+
+        self.assertEqual(
+            titles,
+            [
+                "What Is Machine Learning?",
+                "Training Supervision",
+                "Batch Versus Online Learning",
+            ],
+        )
+
+    def test_раздел_без_подразделов_темой_остаётся(self):
+        toc = [
+            chapter("ch1", "Статика", label="Глава 8"),
+            section("s1", "Равновесие твёрдых тел", parent="ch1", label="§ 8.1"),
+        ]
+        titles = [t.title for t in build_skeleton(toc)[0].topics]
+        self.assertEqual(titles, ["Равновесие твёрдых тел"])
 
     def test_плоская_книга_без_глав(self):
         """Модулями становится верхний уровень, а не пустота."""

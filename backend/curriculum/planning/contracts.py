@@ -81,6 +81,10 @@ class TocEntry:
     concepts: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
     summary: str = ""
+    # Объём текста раздела в токенах. Нужен там, где нет страниц: у EPUB
+    # `page_start` и `page_end` всегда нули, и без этого поля каждая тема
+    # электронной книги получала умолчание в 45 минут.
+    content_tokens: int = 0
 
 
 @dataclass(frozen=True)
