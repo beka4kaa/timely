@@ -6,6 +6,7 @@
 
 "use client";
 
+import { usePageSubject } from "@/contexts/active-subject";
 import { useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
@@ -46,6 +47,8 @@ function PlanPageBody({
 }) {
   const { plan, document: book, goal, sections, degraded } = data;
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
+  // Панель вопросов справа спрашивает по той книге, которая открыта.
+  usePageSubject(goal?.id ?? plan.goal);
 
   // `fromGeneration` здесь больше не нужен: перестройка стала действием
   // сервера и доступна с любой страницы программы, а не только сразу после

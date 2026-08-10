@@ -637,3 +637,51 @@ export async function deleteDocument(documentId: string): Promise<void> {
 export async function deletePlan(planId: string): Promise<void> {
   return remove(`${BASE}/plans/${planId}/`);
 }
+
+// ───────────────────────── Вопрос по книгам предмета ─────────────────────────
+
+export interface AskCitation {
+  /** Готовая подпись: «Механика, §5.2, стр. 292». Собирает backend. */
+  label: string;
+  document_id: string;
+  section_path: string;
+  page_start: number;
+  page_end: number;
+}
+
+export interface AskMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Спрашивает по книгам предмета. Ответ приходит потоком.
+ *
+ * Возвращается сырой `Response`: события читает `readSse`, а панель решает,
+ * что с ними делать. Обёртка вокруг потока прятала бы возможность прервать
+ * запрос — а прервать нужно, когда ученик закрыл панель.
+ */
+export async function askSubjectStream(
+  body: { goal_id: string; message: string; history?: AskMessage[] },
+  signal?: AbortSignal,
+): Promise<Response> {
+  const response = await authFetch(`${BASE}/ask/stream/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) {
+    // До первого события ошибка ещё приходит кодом и телом — показываем её,
+    // а не молчаливый пустой поток.
+    let message = `Не удалось спросить (${response.status}).`;
+    try {
+      const failure = await response.json();
+      message = failure?.error || message;
+    } catch {
+      // Тела нет — оставляем сообщение по статусу.
+    }
+    throw new CurriculumApiError(message, response.status, "", null);
+  }
+  return response;
+}
