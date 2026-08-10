@@ -100,7 +100,9 @@ class AskStreamTests(TestCase):
 
         self.assertEqual(response["Content-Type"], "text/event-stream")
         names = [name for name, _ in events]
-        self.assertEqual(names[0], "stage")
+        # Три стадии подряд: ищу → нашёл → отвечаю. Ученик видит, что делается,
+        # а не одну крутилку на всё время ожидания.
+        self.assertEqual(names[:3], ["stage", "stage", "stage"])
         self.assertEqual(names[-1], "done")
         self.assertIn("content", names)
         self.assertIn("citations", names)
@@ -115,6 +117,18 @@ class AskStreamTests(TestCase):
 
         self.assertIn("no-transform", response["Cache-Control"])
         self.assertEqual(response["X-Accel-Buffering"], "no")
+
+    def test_стадии_приходят_по_порядку(self):
+        _, events = self._ask("ответ")
+        stages = [d.get("stage") for n, d in events if n == "stage"]
+        self.assertEqual(stages, ["retrieving", "found", "answering"])
+
+    def test_цитата_несёт_название_книги_отдельно(self):
+        """Панель показывает книгу один раз над списком, а не в каждой ссылке."""
+        _, events = self._ask("ответ")
+        item = dict(events)["citations"]["items"][0]
+        self.assertEqual(item["document_title"], "Механика")
+        self.assertEqual(item["section_path"], "§ 5.2")
 
     def test_ответ_по_книге_приходит_с_цитатами(self):
         _, events = self._ask("Импульс — это произведение массы на скорость.")
@@ -181,8 +195,11 @@ class AskStreamTests(TestCase):
             question="что такое моль",
             goal=empty_goal,
         )
+        # События `stage` приходят тройкой, поэтому берём нужное по имени, а не
+        # схлопываем всё в словарь: там побеждало бы последнее.
+        found = next(d for n, d in events if n == "stage" and "found" in d)
         by_name = dict(events)
-        self.assertEqual(by_name["stage"]["found"], 0)
+        self.assertEqual(found["found"], 0)
         self.assertFalse(by_name["citations"]["grounded"])
         self.assertEqual(by_name["done"]["grounded"], False)
 

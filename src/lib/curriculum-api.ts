@@ -643,6 +643,8 @@ export async function deletePlan(planId: string): Promise<void> {
 export interface AskCitation {
   /** Готовая подпись: «Механика, §5.2, стр. 292». Собирает backend. */
   label: string;
+  /** Название книги отдельно: панель показывает его один раз над списком. */
+  document_title: string;
   document_id: string;
   section_path: string;
   page_start: number;
