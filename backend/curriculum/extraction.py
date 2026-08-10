@@ -25,11 +25,14 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 
 import cv2
 import pypdfium2 as pdfium
+
+logger = logging.getLogger(__name__)
 
 # Ниже этого числа символов нативного текста страница считается сканом и
 # отправляется в OCR. Ноль символов — очевидный скан; несколько десятков это,
@@ -214,6 +217,40 @@ def extract_page_range(
     finally:
         doc.close()
     return extracted
+
+
+def read_bookmarks(pdf_bytes: bytes) -> tuple[list[tuple[int, str, int]], int]:
+    """Закладки PDF: `[(уровень с нуля, название, страница с единицы)]` и объём.
+
+    Издательская разметка книги — самый надёжный источник структуры, лучше и
+    печатного оглавления, и наших догадок по тексту. У «Hands-On Machine
+    Learning» здесь 234 записи с точными страницами; пока их не читали, главами
+    курса становились подписи врезок `WARNING` и `NOTE`.
+
+    Пустой список — обычное дело: у сканов и у многих пиратских перекодировок
+    закладок нет, и тогда работает разбор оглавления.
+    """
+    doc = _open(pdf_bytes)
+    try:
+        total = len(doc)
+        items: list[tuple[int, str, int]] = []
+        for item in doc.get_toc():
+            title = (getattr(item, "title", "") or "").strip()
+            if not title:
+                continue
+            page_index = getattr(item, "page_index", None)
+            if page_index is None:
+                # Закладка без цели: ссылается на именованный узел, который
+                # pdfium не разрешил. Страницы у неё нет, и придумывать её
+                # нельзя — раздел открылся бы не там.
+                continue
+            items.append((int(item.level), title, int(page_index) + 1))
+    except Exception as exc:  # noqa: BLE001 — битое дерево закладок не фатально
+        logger.warning("Закладки PDF не прочитаны: %s", exc)
+        return [], 0
+    finally:
+        doc.close()
+    return items, total
 
 
 def render_page_png(

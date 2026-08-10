@@ -154,6 +154,41 @@ class EstimateTopicMinutesTests(SimpleTestCase):
         self.assertGreater(total / 60, 30)
 
 
+class TokenVolumeTests(SimpleTestCase):
+    """Книги без страниц: EPUB — это поток текста, а не развороты."""
+
+    def test_объём_считается_по_токенам_когда_страниц_нет(self):
+        """Регресс: у EPUB `page_start` всегда ноль.
+
+        `covered_pages` давал ноль, и каждая тема электронной книги получала
+        умолчание в 45 минут — ровно то число, ради ухода от которого расчёт и
+        делался.
+        """
+        duration = estimate_topic_minutes(page_count=0, content_tokens=6000)
+        self.assertNotEqual(duration.total, FALLBACK_TOPIC_MINUTES)
+        self.assertGreater(duration.total, 45)
+
+    def test_больше_текста_больше_времени(self):
+        short = estimate_topic_minutes(page_count=0, content_tokens=1200)
+        long = estimate_topic_minutes(page_count=0, content_tokens=12000)
+        self.assertLess(short.total, long.total)
+
+    def test_страницы_важнее_токенов(self):
+        """У PDF страницы точнее: они и есть объём материала."""
+        with_pages = estimate_topic_minutes(page_count=3, content_tokens=99999)
+        self.assertEqual(with_pages, estimate_topic_minutes(page_count=3))
+
+    def test_совсем_короткий_раздел_это_одна_страница(self):
+        self.assertEqual(
+            estimate_topic_minutes(page_count=0, content_tokens=50),
+            estimate_topic_minutes(page_count=1),
+        )
+
+    def test_без_страниц_и_без_текста_остаётся_умолчание(self):
+        duration = estimate_topic_minutes(page_count=0, content_tokens=0)
+        self.assertEqual(duration.total, FALLBACK_TOPIC_MINUTES)
+
+
 class SplitTotalTests(SimpleTestCase):
     def test_manual_override_is_split_consistently(self):
         duration = split_total(90, "balanced")

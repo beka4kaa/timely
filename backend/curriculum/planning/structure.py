@@ -48,9 +48,15 @@ def build_skeleton(toc: tuple[TocEntry, ...] | list[TocEntry]) -> list[ProposedM
 
     chapter_ids = {c.section_id for c in chapters if c.section_id}
     by_id = {e.section_id: e for e in entries if e.section_id}
+    # Раздел, у которого есть свои подразделы, темой не становится: его страницы
+    # — это ровно страницы его детей. Иначе «Types of Machine Learning Systems»
+    # (стр. 35–67) и три его подраздела попадают в план вчетвером на один и тот
+    # же материал, и время курса удваивается на таких участках.
+    with_children = {e.parent_section_id for e in entries if e.parent_section_id}
+
     sections_by_parent: dict[str, list[TocEntry]] = {}
     for entry in entries:
-        if entry.section_id in chapter_ids:
+        if entry.section_id in chapter_ids or entry.section_id in with_children:
             continue
         parent = _owning_chapter(entry, by_id, chapter_ids)
         if parent:
