@@ -44,7 +44,11 @@ import {
   type CurriculumDocument,
   type LearningGoal,
 } from "@/lib/curriculum-api";
+import { bookLabel, citationSpot } from "@/lib/book-label";
 import { subjectTitle } from "@/lib/curriculum-catalog";
+import { MarkdownMessage } from "@/components/chat/markdown-message";
+import { ThinkingNote, type ThinkingStage } from "@/components/chat/thinking-note";
+import "katex/dist/katex.min.css";
 import { readSse } from "@/lib/sse";
 import { RAIL_WIDTH } from "./dashboard-main";
 
@@ -52,8 +56,34 @@ interface Turn extends AskMessage {
   citations?: AskCitation[];
   /** false — модель ответила от себя: в книге ответа не нашлось. */
   grounded?: boolean;
-  pending?: boolean;
   error?: string;
+  /** Этап, на котором находится ответ. Пусто — работа окончена. */
+  stage?: string;
+  /** Сколько фрагментов нашлось: попадает в сводку под ответом. */
+  found?: number;
+  /** Длительность работы, мс. */
+  durationMs?: number;
+}
+
+// Этапы в порядке прохождения. Больше трёх не бывает намеренно: длинный список
+// превращает заметку на полях в чеклист.
+const STAGE_ORDER = ["retrieving", "found", "answering"] as const;
+
+function stageLabel(stage: string, found?: number): string {
+  if (stage === "retrieving") return "Ищу в книге";
+  if (stage === "found") {
+    return found ? `Нашёл ${found} ${fragmentWord(found)}` : "В книге не нашлось";
+  }
+  return "Отвечаю";
+}
+
+function fragmentWord(count: number): string {
+  const tens = count % 100;
+  const ones = count % 10;
+  if (tens >= 11 && tens <= 14) return "фрагментов";
+  if (ones === 1) return "фрагмент";
+  if (ones >= 2 && ones <= 4) return "фрагмента";
+  return "фрагментов";
 }
 
 interface Subject {
@@ -141,10 +171,11 @@ export function SubjectAskRail() {
       setDraft("");
       if (textareaRef.current) textareaRef.current.style.height = "auto";
       setBusy(true);
+      const startedAt = Date.now();
       setTurns((prev) => [
         ...prev,
         { role: "user", content: question },
-        { role: "assistant", content: "", pending: true },
+        { role: "assistant", content: "", stage: "retrieving" },
       ]);
 
       const patchLast = (patch: Partial<Turn>) =>
@@ -161,23 +192,32 @@ export function SubjectAskRail() {
         );
         let answer = "";
         for await (const { event, data } of readSse(response)) {
-          if (event === "content") {
+          if (event === "stage") {
+            patchLast({
+              stage: String(data.stage ?? ""),
+              ...(typeof data.found === "number" ? { found: data.found } : {}),
+            });
+          } else if (event === "content") {
             answer += String(data.delta ?? "");
-            patchLast({ content: answer, pending: false });
+            patchLast({ content: answer, stage: "answering" });
           } else if (event === "citations") {
             patchLast({
               citations: (data.items as AskCitation[]) ?? [],
               grounded: Boolean(data.grounded),
             });
+          } else if (event === "done") {
+            patchLast({ stage: "", durationMs: Date.now() - startedAt });
           } else if (event === "error") {
-            patchLast({ pending: false, error: String(data.error ?? "Ошибка") });
+            patchLast({ stage: "", error: String(data.error ?? "Ошибка") });
           }
         }
-        if (!answer) patchLast({ pending: false, error: "Пустой ответ." });
+        if (!answer) {
+          patchLast({ stage: "", error: "Пустой ответ." });
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           patchLast({
-            pending: false,
+            stage: "",
             error:
               error instanceof Error ? error.message : "Не удалось спросить.",
           });
@@ -452,43 +492,95 @@ function EmptyState({ subject }: { subject: Subject | null }) {
 function TurnView({ turn }: { turn: Turn }) {
   const isUser = turn.role === "user";
 
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className="flex max-w-[94%] flex-col gap-1.5">
-        <div
-          className={`flex flex-col gap-2 whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.55] ${
-            isUser
-              ? "rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
-              : "rounded-[16px] border border-[#dedad3] bg-white/62 text-[#514b43]"
-          }`}
-        >
-          {turn.pending && (
-            <span className="flex items-center gap-2 text-[12px] text-[#8f887f]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Ищу в книге…
-            </span>
-          )}
-          {turn.error && <span className="text-[#b0473e]">{turn.error}</span>}
-          {turn.grounded === false && !!turn.content && (
-            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
-              В книге этого нет
-            </span>
-          )}
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[94%] whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-[#302d2a] px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#fffdf9]">
           {turn.content}
         </div>
+      </div>
+    );
+  }
 
-        {!!turn.citations?.length && (
-          <ul className="space-y-1 px-1">
-            {turn.citations.map((citation, index) => (
-              <li
-                key={index}
-                className="flex items-start gap-1.5 text-[10px] leading-4 text-[#8e877e]"
-              >
-                <BookOpen className="mt-0.5 h-3 w-3 shrink-0 text-[#b98343]" />
-                {citation.label}
-              </li>
-            ))}
-          </ul>
+  const working = Boolean(turn.stage);
+  const stages = buildStages(turn);
+  const summary =
+    turn.found === undefined
+      ? undefined
+      : turn.found
+        ? `${turn.found} ${fragmentWord(turn.found)}`
+        : "в книге не нашлось";
+
+  return (
+    <div className="flex justify-start">
+      <div className="flex max-w-[94%] flex-col gap-1.5">
+        {(working || turn.durationMs) && (
+          <ThinkingNote
+            stages={stages}
+            streaming={working}
+            durationMs={turn.durationMs}
+            summary={summary}
+          />
         )}
+
+        {(turn.content || turn.error) && (
+          <div className="rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]">
+            {turn.error && <span className="text-[#b0473e]">{turn.error}</span>}
+            {turn.grounded === false && !!turn.content && (
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+                В книге этого нет
+              </div>
+            )}
+            {turn.content && <MarkdownMessage content={turn.content} />}
+          </div>
+        )}
+
+        {!!turn.citations?.length && <Citations items={turn.citations} />}
+      </div>
+    </div>
+  );
+}
+
+/** Этапы для заметки: пройденные гаснут, текущий остаётся живым. */
+function buildStages(turn: Turn): ThinkingStage[] {
+  const current = STAGE_ORDER.indexOf(turn.stage as (typeof STAGE_ORDER)[number]);
+  if (current < 0) return [];
+  return STAGE_ORDER.slice(0, current + 1).map((key, index) => ({
+    key,
+    label: stageLabel(key, turn.found),
+    done: index < current,
+  }));
+}
+
+/**
+ * Ссылки на книгу.
+ *
+ * Название книги стоит ОДИН раз над списком. Раньше оно повторялось в каждой из
+ * восьми ссылок, и вместе с длинным именем файла цитаты занимали больше места,
+ * чем сам ответ.
+ */
+function Citations({ items }: { items: AskCitation[] }) {
+  const title = bookLabel(items[0]?.document_title ?? "");
+  // Одна книга может дать несколько ссылок на одно место — показываем раз.
+  const spots = Array.from(
+    new Set(items.map((item) => citationSpot(item)).filter(Boolean)),
+  );
+
+  return (
+    <div className="px-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[#a09890]">
+        <BookOpen className="h-3 w-3 shrink-0 text-[#b98343]" />
+        <span className="truncate">{title || "Источник"}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {spots.map((spot) => (
+          <span
+            key={spot}
+            className="rounded-full border border-[#e4e0d8] bg-[#fbfaf7] px-2 py-[2px] text-[10.5px] tabular-nums text-[#8a8177]"
+          >
+            {spot}
+          </span>
+        ))}
       </div>
     </div>
   );

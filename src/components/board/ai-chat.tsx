@@ -64,7 +64,10 @@ import {
   type LessonPlan,
 } from "./lesson-plan";
 import { authFetch } from "@/lib/auth-fetch";
-import { ReasoningBlock } from "./reasoning-block";
+import { MarkdownMessage } from "@/components/chat/markdown-message";
+import { ThinkingNote } from "@/components/chat/thinking-note";
+import { boardStages } from "@/components/chat/board-stages";
+import "katex/dist/katex.min.css";
 import {
   AIUsageIndicator,
   type AIUsageSummary,
@@ -1780,20 +1783,28 @@ export function AIChat({
                 >
                   <div className="flex max-w-[94%] flex-col gap-1.5">
                     {msg.reasoning && (
-                      <ReasoningBlock
+                      <ThinkingNote
+                        stages={[]}
                         reasoning={msg.reasoning}
                         streaming={false}
                         durationMs={msg.reasoningMs}
                       />
                     )}
                   <div
-                    className={`flex flex-col gap-3 whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.55] ${
+                    className={`flex flex-col gap-3 px-3.5 py-2.5 text-[13px] leading-[1.55] ${
                       msg.role === "assistant"
                         ? "rounded-[16px] border border-[#dedad3] bg-white/62 text-[#514b43]"
-                        : "rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
+                        : "whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
                     }`}
                   >
-                    {msg.content}
+                    {/* Markdown только у ответа: реплика ученика — это то, что
+                        он набрал сам, и превращать её звёздочки в разметку
+                        значит показать ему не его текст. */}
+                    {msg.role === "assistant" ? (
+                      <MarkdownMessage content={msg.content} />
+                    ) : (
+                      msg.content
+                    )}
 
                     {msg.board && (
                       <LessonFlow
@@ -1866,14 +1877,14 @@ export function AIChat({
               // ход мысли и текст по мере генерации, поэтому показываем
               // реальное состояние, а не заглушку.
               <div className="flex flex-col gap-1.5">
-                <ReasoningBlock
+                <ThinkingNote
+                  stages={boardStages(streamingStage)}
                   reasoning={streamingReasoning}
                   streaming
-                  stage={streamingStage}
                 />
                 {streamingContent && (
-                  <div className="max-w-[94%] whitespace-pre-wrap rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]">
-                    {streamingContent}
+                  <div className="max-w-[94%] rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]">
+                    <MarkdownMessage content={streamingContent} />
                   </div>
                 )}
               </div>

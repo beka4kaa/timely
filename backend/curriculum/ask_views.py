@@ -76,6 +76,10 @@ class SubjectAskStreamView(APIView):
         citations = [
             {
                 "label": citation.render(),
+                # Название книги отдельным полем: панель показывает его ОДИН
+                # раз над списком, а не в каждой из восьми ссылок. С длинным
+                # именем файла восемь цитат занимали больше места, чем ответ.
+                "document_title": citation.document_title,
                 "document_id": citation.document_id,
                 "section_path": citation.section_path,
                 "page_start": citation.page_start,
@@ -88,7 +92,13 @@ class SubjectAskStreamView(APIView):
             from ai_engine.text_llm import TextModel
 
             with usage_scope(user_email=user_email, feature="subject_ask"):
-                yield _sse("stage", {"stage": "retrieving", "found": len(citations)})
+                # Три события, а не одно: ученик видит, ЧТО происходит, пока
+                # ждёт. Поиск к этому моменту уже сделан — он идёт до открытия
+                # потока, — поэтому первые два уходят подряд, и «нашёл»
+                # остаётся на экране как результат, а не как обещание.
+                yield _sse("stage", {"stage": "retrieving"})
+                yield _sse("stage", {"stage": "found", "found": len(citations)})
+                yield _sse("stage", {"stage": "answering"})
                 try:
                     head = ""
                     marker_resolved = False
