@@ -171,6 +171,51 @@ def extract_pages(
     return pages
 
 
+def extract_page_range(
+    pdf_bytes: bytes, first: int, last: int
+) -> list[ExtractedPage]:
+    """Текст произвольного диапазона страниц (1-based, границы включительно).
+
+    Нужен для поиска оглавления. `extract_pages` умеет только «первые N», а
+    предохранитель `MAX_PAGES_PER_RUN` обрезает книгу на 400-й странице — у
+    Мякишева оглавление напечатано на 508-й, то есть за этой границей, и
+    структура книги оставалась невидимой. Дешевле прочитать десяток страниц с
+    конца, чем поднимать лимит на всю обработку.
+    """
+    doc = _open(pdf_bytes)
+    extracted: list[ExtractedPage] = []
+    try:
+        total = len(doc)
+        start = max(1, first)
+        stop = min(total, last)
+        for number in range(start, stop + 1):
+            page = doc[number - 1]
+            try:
+                width, height = page.get_size()
+                textpage = page.get_textpage()
+                try:
+                    raw = textpage.get_text_bounded()
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+            text = _normalize_newlines(raw)
+            extracted.append(
+                ExtractedPage(
+                    page_number=number,
+                    width=float(width),
+                    height=float(height),
+                    native_text=text,
+                    native_text_length=len(text.strip()),
+                    needs_ocr=False,
+                    extraction_method=EXTRACTION_NATIVE,
+                )
+            )
+    finally:
+        doc.close()
+    return extracted
+
+
 def render_page_png(
     pdf_bytes: bytes, page_number: int, *, scale: float = OCR_RENDER_SCALE
 ) -> bytes:
