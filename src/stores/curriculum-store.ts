@@ -1,17 +1,19 @@
-// Состояние мастера «Курс по книге».
+// Состояние мастера «Курс по книге» — ОДИН сеанс добавления, живущий в памяти.
 //
-// Ключевое решение: в localStorage сохраняются ТОЛЬКО шаг и идентификаторы,
-// никогда серверные объекты. Обработка учебника идёт минутами — человек за это
-// время перезагружает страницу, уходит на другую вкладку и закрывает ноутбук.
-// Если бы мы сохраняли документ целиком, после возврата он показывал бы
-// состояние на момент сохранения, а не настоящее. Поэтому на маунте
-// `hydrateFromServer()` перезапрашивает всё по id, и источником правды остаётся
-// бэкенд.
+// Раньше шаг и идентификаторы сохранялись в localStorage, чтобы «вернуть
+// человека туда, где он был». На практике это означало, что заход на
+// /curriculum молча уводил на страницу давно построенной программы: сеанс с
+// прошлой недели восстанавливался и сам себя доигрывал до редиректа. Адрес
+// раздела обязан показывать раздел.
+//
+// Незаконченная работа при этом не теряется, потому что она не здесь: цель,
+// книга и программа лежат на сервере с первого же шага и видны в каталоге.
+// Сеанс мастера — это только «где сейчас курсор», и переживать перезагрузку
+// ему незачем.
 
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 import {
   type CoursePlan,
@@ -26,18 +28,13 @@ import {
   confirmGoal,
   createGoal,
   generatePlan,
-  getDocument,
-  getGoal,
   getIngestionState,
-  getPlan,
   normalizeGoal,
   startIngestion,
   updateGoal,
   uploadDocument,
 } from "@/lib/curriculum-api";
 import { isTerminal } from "@/lib/curriculum-progress";
-
-const STORAGE_KEY = "timely:curriculum:v1";
 
 /**
  * Сколько ждать генерацию плана.
@@ -104,7 +101,6 @@ interface CurriculumState {
   reviewFindings: ReviewFinding[];
 
   busy: boolean;
-  hydrated: boolean;
   error: WizardError | null;
 
   setStep: (step: WizardStep) => void;
@@ -115,8 +111,13 @@ interface CurriculumState {
   startNewSubject: () => void;
   /** Ещё одна книга к уже существующему предмету. */
   addBookToSubject: (goalId: string) => void;
-
-  hydrateFromServer: () => Promise<void>;
+  /** Вернуться к подтверждению разбора цели. */
+  openSubjectSetup: (goal: LearningGoal) => void;
+  /** Открыть подробный прогресс обработки книги. */
+  openBookProgress: (
+    goalId: string | null,
+    document: CurriculumDocument,
+  ) => void;
 
   submitGoal: (text: string) => Promise<void>;
   saveGoalDetails: (
@@ -147,7 +148,6 @@ const INITIAL = {
   planIssues: [] as PlanIssue[],
   reviewFindings: [] as ReviewFinding[],
   busy: false,
-  hydrated: false,
   error: null as WizardError | null,
 };
 
@@ -171,7 +171,8 @@ function toWizardError(error: unknown): WizardError {
       message: "Не удалось связаться с сервером. Проверьте соединение.",
     };
   }
-  if (error instanceof Error) return { code: "unexpected", message: error.message };
+  if (error instanceof Error)
+    return { code: "unexpected", message: error.message };
   return { code: "unexpected", message: "Что-то пошло не так." };
 }
 
@@ -184,232 +185,190 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-/** Куда должен встать мастер, судя по реальному состоянию на сервере. */
-function stepFromServerState(
-  goal: LearningGoal | null,
-  document: CurriculumDocument | null,
-  plan: CoursePlan | null,
-): WizardStep {
-  if (plan) return plan.status === "active" ? "done" : "plan_review";
-  if (document) {
-    if (document.ingestion_status === "ready") return "planning";
-    return "processing";
-  }
-  if (goal) return goal.normalization_confirmed ? "upload" : "goal_confirm";
-  return "goal";
-}
+export const useCurriculumStore = create<CurriculumState>()((set, get) => ({
+  ...INITIAL,
 
-export const useCurriculumStore = create<CurriculumState>()(
-  persist(
-    (set, get) => ({
+  setStep: (step) => set({ step, error: null }),
+  clearError: () => set({ error: null }),
+  reset: () => set({ ...INITIAL }),
+
+  startNewSubject: () => set({ ...INITIAL }),
+
+  /**
+   * Мастер для уже существующего предмета.
+   *
+   * Цель не создаётся заново и не переспрашивается — она уже подтверждена,
+   * поэтому вход сразу на шаг загрузки. Всё, что осталось от предыдущей
+   * книги (документ, прогресс обработки, план), обнуляется: иначе мастер
+   * покажет чужой прогресс, пока не придёт первый ответ сервера.
+   */
+  addBookToSubject: (goalId) =>
+    set({
       ...INITIAL,
-
-      setStep: (step) => set({ step, error: null }),
-      clearError: () => set({ error: null }),
-      reset: () => set({ ...INITIAL, hydrated: true }),
-
-      startNewSubject: () => set({ ...INITIAL, hydrated: true }),
-
-      /**
-       * Мастер для уже существующего предмета.
-       *
-       * Цель не создаётся заново и не переспрашивается — она уже подтверждена,
-       * поэтому вход сразу на шаг загрузки. Всё, что осталось от предыдущей
-       * книги (документ, прогресс обработки, план), обнуляется: иначе мастер
-       * покажет чужой прогресс, пока не придёт первый ответ сервера.
-       */
-      addBookToSubject: (goalId) =>
-        set({
-          ...INITIAL,
-          hydrated: true,
-          goalId,
-          step: "upload",
-        }),
-
-      /**
-       * Восстановление после перезагрузки страницы.
-       *
-       * Ошибки здесь намеренно не показываются пользователю: если сохранённый id
-       * протух (документ удалён, другой аккаунт), правильное поведение — начать
-       * заново, а не показать «404» на пустом экране.
-       */
-      hydrateFromServer: async () => {
-        const { goalId, documentId, planId } = get();
-        if (!goalId && !documentId && !planId) {
-          set({ hydrated: true });
-          return;
-        }
-
-        const [goal, document, plan] = await Promise.all([
-          goalId ? getGoal(goalId).catch(() => null) : Promise.resolve(null),
-          documentId ? getDocument(documentId).catch(() => null) : Promise.resolve(null),
-          planId ? getPlan(planId).catch(() => null) : Promise.resolve(null),
-        ]);
-
-        set({
-          goal,
-          goalId: goal ? goalId : null,
-          document,
-          documentId: document ? documentId : null,
-          plan,
-          planId: plan ? planId : null,
-          step: stepFromServerState(goal, document, plan),
-          hydrated: true,
-        });
-
-        if (document && document.ingestion_status !== "ready") {
-          await get().refreshIngestion();
-        }
-      },
-
-      submitGoal: async (text) => {
-        set({ busy: true, error: null });
-        try {
-          const created = await createGoal(text);
-          // Нормализация может не удаться (нет сети до модели) — это не повод
-          // ронять сценарий: ученик просто заполнит предмет сам.
-          const normalized = await normalizeGoal(created.id).catch(() => created);
-          set({
-            goalId: normalized.id,
-            goal: normalized,
-            step: "goal_confirm",
-            busy: false,
-          });
-        } catch (error) {
-          set({ busy: false, error: toWizardError(error) });
-        }
-      },
-
-      saveGoalDetails: async (patch, edits) => {
-        const goalId = get().goalId;
-        if (!goalId) return;
-        set({ busy: true, error: null });
-        try {
-          await updateGoal(goalId, patch);
-          const goal = await confirmGoal(goalId, edits);
-          set({ goal, step: "upload", busy: false });
-        } catch (error) {
-          set({ busy: false, error: toWizardError(error) });
-        }
-      },
-
-      upload: async (file, title) => {
-        set({ busy: true, error: null, uploadProgress: 0 });
-        try {
-          const { document } = await uploadDocument(file, {
-            title,
-            // Предмет проставляется здесь, а не отдельным запросом после
-            // загрузки: иначе книга успевала бы показаться в каталоге как
-            // «ничья», а при обрыве связи такой и осталась бы.
-            goalId: get().goalId,
-            onProgress: (fraction) => set({ uploadProgress: fraction }),
-          });
-          // Постановка в обработку отвечает сразу: прогресс забирается опросом.
-          await startIngestion(document.id);
-          set({
-            documentId: document.id,
-            document,
-            step: "processing",
-            busy: false,
-            uploadProgress: 1,
-          });
-          await get().refreshIngestion();
-        } catch (error) {
-          set({ busy: false, uploadProgress: 0, error: toWizardError(error) });
-        }
-      },
-
-      /**
-       * Один опрос статуса. Планировщик интервалов живёт в компоненте — стор не
-       * должен владеть таймерами, иначе их нельзя остановить при размонтировании.
-       *
-       * Ошибку сети наверх пробрасываем: экран ожидания сам решает, показывать ли
-       * «связь потеряна» или молча повторить.
-       */
-      refreshIngestion: async () => {
-        const documentId = get().documentId;
-        if (!documentId) return null;
-        const state = await getIngestionState(documentId);
-        set((current) => ({
-          ingestion: state,
-          document: current.document
-            ? { ...current.document, ingestion_status: state.ingestion_status }
-            : current.document,
-        }));
-        if (isTerminal(state.ingestion_status) && state.ingestion_status === "ready") {
-          set({ step: "planning" });
-        }
-        return state;
-      },
-
-      restartIngestion: async () => {
-        const documentId = get().documentId;
-        if (!documentId) return;
-        set({ busy: true, error: null });
-        try {
-          await startIngestion(documentId);
-          set({ busy: false });
-          await get().refreshIngestion();
-        } catch (error) {
-          set({ busy: false, error: toWizardError(error) });
-        }
-      },
-
-      requestPlan: async () => {
-        const { goalId, documentId } = get();
-        if (!goalId || !documentId) return;
-
-        set({ busy: true, error: null, planIssues: [] });
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS);
-        try {
-          const result: GeneratePlanResponse = await generatePlan(
-            goalId,
-            documentId,
-            controller.signal,
-          );
-          set({
-            planId: result.plan.id,
-            plan: result.plan,
-            coverageRatio: result.coverage_ratio,
-            planWarnings: result.warnings || [],
-            reviewFindings: result.review_findings || [],
-            step: "plan_review",
-            busy: false,
-          });
-        } catch (error) {
-          // Отказ валидатора — это не поломка, а результат: показываем претензии
-          // и оставляем человека на шаге генерации с кнопкой «попробовать снова».
-          const issues = error instanceof CurriculumApiError ? error.issues : [];
-          set({ busy: false, planIssues: issues, error: toWizardError(error) });
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-
-      approve: async () => {
-        const planId = get().planId;
-        if (!planId) return;
-        set({ busy: true, error: null });
-        try {
-          const { plan } = await approvePlan(planId);
-          set({ plan, step: "done", busy: false });
-        } catch (error) {
-          set({ busy: false, error: toWizardError(error) });
-        }
-      },
+      goalId,
+      step: "upload",
     }),
-    {
-      name: STORAGE_KEY,
-      // Только шаг и идентификаторы. Всё остальное перезапрашивается на маунте:
-      // сохранённый серверный объект неизбежно расходится с реальностью, а в
-      // этом сценарии расхождение измеряется минутами обработки.
-      partialize: (state) => ({
-        step: state.step,
-        goalId: state.goalId,
-        documentId: state.documentId,
-        planId: state.planId,
-      }),
-    },
-  ),
-);
+
+  // Объект цели передаётся из каталога, а не запрашивается заново: он там
+  // уже загружен, и лишний round-trip дал бы пустой экран на его время.
+  openSubjectSetup: (goal) =>
+    set({
+      ...INITIAL,
+      goalId: goal.id,
+      goal,
+      step: "goal_confirm",
+    }),
+
+  // Шаг выбирается по состоянию книги, а не задаётся вызывающим: у готовой
+  // книги следующее осмысленное действие — построить программу, у
+  // остальных — смотреть обработку. Держать это знание в двух местах
+  // значит однажды показать экран ожидания над готовой книгой.
+  openBookProgress: (goalId, document) =>
+    set({
+      ...INITIAL,
+      goalId,
+      documentId: document.id,
+      document,
+      step: document.ingestion_status === "ready" ? "planning" : "processing",
+    }),
+
+  submitGoal: async (text) => {
+    set({ busy: true, error: null });
+    try {
+      const created = await createGoal(text);
+      // Нормализация может не удаться (нет сети до модели) — это не повод
+      // ронять сценарий: ученик просто заполнит предмет сам.
+      const normalized = await normalizeGoal(created.id).catch(() => created);
+      set({
+        goalId: normalized.id,
+        goal: normalized,
+        step: "goal_confirm",
+        busy: false,
+      });
+    } catch (error) {
+      set({ busy: false, error: toWizardError(error) });
+    }
+  },
+
+  saveGoalDetails: async (patch, edits) => {
+    const goalId = get().goalId;
+    if (!goalId) return;
+    set({ busy: true, error: null });
+    try {
+      await updateGoal(goalId, patch);
+      const goal = await confirmGoal(goalId, edits);
+      set({ goal, step: "upload", busy: false });
+    } catch (error) {
+      set({ busy: false, error: toWizardError(error) });
+    }
+  },
+
+  upload: async (file, title) => {
+    set({ busy: true, error: null, uploadProgress: 0 });
+    try {
+      const { document } = await uploadDocument(file, {
+        title,
+        // Предмет проставляется здесь, а не отдельным запросом после
+        // загрузки: иначе книга успевала бы показаться в каталоге как
+        // «ничья», а при обрыве связи такой и осталась бы.
+        goalId: get().goalId,
+        onProgress: (fraction) => set({ uploadProgress: fraction }),
+      });
+      // Постановка в обработку отвечает сразу: прогресс забирается опросом.
+      await startIngestion(document.id);
+      set({
+        documentId: document.id,
+        document,
+        step: "processing",
+        busy: false,
+        uploadProgress: 1,
+      });
+      await get().refreshIngestion();
+    } catch (error) {
+      set({ busy: false, uploadProgress: 0, error: toWizardError(error) });
+    }
+  },
+
+  /**
+   * Один опрос статуса. Планировщик интервалов живёт в компоненте — стор не
+   * должен владеть таймерами, иначе их нельзя остановить при размонтировании.
+   *
+   * Ошибку сети наверх пробрасываем: экран ожидания сам решает, показывать ли
+   * «связь потеряна» или молча повторить.
+   */
+  refreshIngestion: async () => {
+    const documentId = get().documentId;
+    if (!documentId) return null;
+    const state = await getIngestionState(documentId);
+    set((current) => ({
+      ingestion: state,
+      document: current.document
+        ? { ...current.document, ingestion_status: state.ingestion_status }
+        : current.document,
+    }));
+    if (
+      isTerminal(state.ingestion_status) &&
+      state.ingestion_status === "ready"
+    ) {
+      set({ step: "planning" });
+    }
+    return state;
+  },
+
+  restartIngestion: async () => {
+    const documentId = get().documentId;
+    if (!documentId) return;
+    set({ busy: true, error: null });
+    try {
+      await startIngestion(documentId);
+      set({ busy: false });
+      await get().refreshIngestion();
+    } catch (error) {
+      set({ busy: false, error: toWizardError(error) });
+    }
+  },
+
+  requestPlan: async () => {
+    const { goalId, documentId } = get();
+    if (!goalId || !documentId) return;
+
+    set({ busy: true, error: null, planIssues: [] });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PLAN_TIMEOUT_MS);
+    try {
+      const result: GeneratePlanResponse = await generatePlan(
+        goalId,
+        documentId,
+        controller.signal,
+      );
+      set({
+        planId: result.plan.id,
+        plan: result.plan,
+        coverageRatio: result.coverage_ratio,
+        planWarnings: result.warnings || [],
+        reviewFindings: result.review_findings || [],
+        step: "plan_review",
+        busy: false,
+      });
+    } catch (error) {
+      // Отказ валидатора — это не поломка, а результат: показываем претензии
+      // и оставляем человека на шаге генерации с кнопкой «попробовать снова».
+      const issues = error instanceof CurriculumApiError ? error.issues : [];
+      set({ busy: false, planIssues: issues, error: toWizardError(error) });
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  approve: async () => {
+    const planId = get().planId;
+    if (!planId) return;
+    set({ busy: true, error: null });
+    try {
+      const { plan } = await approvePlan(planId);
+      set({ plan, step: "done", busy: false });
+    } catch (error) {
+      set({ busy: false, error: toWizardError(error) });
+    }
+  },
+}));
