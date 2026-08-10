@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   BookPlus,
   Loader2,
+  Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -51,6 +52,10 @@ import {
 interface CatalogProps {
   onAddSubject: () => void;
   onAddBook: (goalId: string) => void;
+  /** Вернуться к подтверждению разбора цели, если оно не пройдено. */
+  onContinueSetup: (goal: LearningGoal) => void;
+  /** Подробный экран обработки книги. */
+  onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
 }
 
 const STATE_LABEL: Record<ReturnType<typeof subjectState>, string> = {
@@ -61,7 +66,12 @@ const STATE_LABEL: Record<ReturnType<typeof subjectState>, string> = {
   has_plan: "Программа готова",
 };
 
-export function CurriculumCatalog({ onAddSubject, onAddBook }: CatalogProps) {
+export function CurriculumCatalog({
+  onAddSubject,
+  onAddBook,
+  onContinueSetup,
+  onShowProgress,
+}: CatalogProps) {
   const [subjects, setSubjects] = useState<CatalogSubject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,13 +137,19 @@ export function CurriculumCatalog({ onAddSubject, onAddBook }: CatalogProps) {
             key={subject.goalId || "unsorted"}
             subject={subject}
             onAddBook={onAddBook}
+            onContinueSetup={onContinueSetup}
+            onShowProgress={onShowProgress}
             onChanged={load}
           />
         ))
       )}
 
       {subjects.length > 0 ? (
-        <button type="button" className={paperPrimaryButton} onClick={onAddSubject}>
+        <button
+          type="button"
+          className={paperPrimaryButton}
+          onClick={onAddSubject}
+        >
           <Plus className="h-4 w-4" />
           Добавить предмет
         </button>
@@ -149,7 +165,8 @@ function EmptyCatalog({ onAddSubject }: { onAddSubject: () => void }) {
         Здесь появятся предметы, которые вы изучаете.
       </p>
       <p className="mt-1 text-[13px] text-[#8d857b]">
-        Начните с одного: загрузите учебник — программа построится по его разделам.
+        Начните с одного: загрузите учебник — программа построится по его
+        разделам.
       </p>
       <button
         type="button"
@@ -166,13 +183,22 @@ function EmptyCatalog({ onAddSubject }: { onAddSubject: () => void }) {
 function SubjectCard({
   subject,
   onAddBook,
+  onContinueSetup,
+  onShowProgress,
   onChanged,
 }: {
   subject: CatalogSubject;
   onAddBook: (goalId: string) => void;
+  onContinueSetup: (goal: LearningGoal) => void;
+  onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
   onChanged: () => Promise<void>;
 }) {
   const state = subjectState(subject);
+  // Цель, разбор которой ученик не подтвердил, — это незаконченная настройка.
+  // Программу по ней построить можно, но формулировку он поправить не успел.
+  const needsSetup = Boolean(
+    subject.goal && !subject.goal.normalization_confirmed,
+  );
 
   return (
     <section className={`${paperCard} px-5 py-4`}>
@@ -182,7 +208,9 @@ function SubjectCard({
             {subject.title}
           </h2>
           {subject.direction ? (
-            <p className="mt-0.5 text-[13px] text-[#8d857b]">{subject.direction}</p>
+            <p className="mt-0.5 text-[13px] text-[#8d857b]">
+              {subject.direction}
+            </p>
           ) : null}
         </div>
         <span className={paperCaption}>{STATE_LABEL[state]}</span>
@@ -190,7 +218,13 @@ function SubjectCard({
 
       <div className="mt-4 space-y-2">
         {subject.books.map((book) => (
-          <BookRow key={book.document.id} book={book} onChanged={onChanged} />
+          <BookRow
+            key={book.document.id}
+            book={book}
+            goalId={subject.goalId}
+            onShowProgress={onShowProgress}
+            onChanged={onChanged}
+          />
         ))}
         {subject.orphanPlans.map((plan) => (
           <PlanRow key={plan.id} plan={plan} onChanged={onChanged} bookGone />
@@ -205,6 +239,16 @@ function SubjectCard({
       {/* У группы «Без предмета» цели нет, добавлять книгу некуда. */}
       {subject.goalId ? (
         <footer className="mt-4 flex flex-wrap gap-2">
+          {needsSetup && subject.goal ? (
+            <button
+              type="button"
+              className={paperButton}
+              onClick={() => onContinueSetup(subject.goal as LearningGoal)}
+            >
+              <Pencil className="h-4 w-4" />
+              Уточнить цель
+            </button>
+          ) : null}
           <button
             type="button"
             className={paperButton}
@@ -229,9 +273,13 @@ function SubjectCard({
 
 function BookRow({
   book,
+  goalId,
+  onShowProgress,
   onChanged,
 }: {
   book: CatalogBook;
+  goalId: string | null;
+  onShowProgress: (goalId: string | null, document: CurriculumDocument) => void;
   onChanged: () => Promise<void>;
 }) {
   const { document, plans } = book;
@@ -261,6 +309,25 @@ function BookRow({
       ) : null}
 
       <div className="mt-2 flex flex-wrap gap-2">
+        {/* Строка каталога говорит, на каком этапе книга; подробный экран
+            показывает фазы и умеет перезапустить застрявшую обработку. */}
+        {!ready ? (
+          <button
+            type="button"
+            className={`${paperButton} !px-3 !py-1 !text-[12px]`}
+            onClick={() => onShowProgress(goalId, document)}
+          >
+            {failed ? "Разобраться с ошибкой" : "Показать обработку"}
+          </button>
+        ) : plans.length === 0 ? (
+          <button
+            type="button"
+            className={`${paperButton} !px-3 !py-1 !text-[12px]`}
+            onClick={() => onShowProgress(goalId, document)}
+          >
+            Построить программу
+          </button>
+        ) : null}
         <ConfirmingDelete
           label="Удалить книгу"
           confirm="Удалить книгу и её программы?"

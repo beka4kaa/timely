@@ -24,33 +24,29 @@ import { paperFocus } from "./paper";
 const RAIL: { key: string; label: string; steps: WizardStep[] }[] = [
   { key: "goal", label: "Цель", steps: ["goal", "goal_confirm"] },
   { key: "book", label: "Учебник", steps: ["upload", "processing"] },
-  { key: "plan", label: "Программа", steps: ["planning", "plan_review", "done"] },
+  {
+    key: "plan",
+    label: "Программа",
+    steps: ["planning", "plan_review", "done"],
+  },
 ];
 
 export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   const router = useRouter();
   const step = useCurriculumStore((s) => s.step);
   const planId = useCurriculumStore((s) => s.planId);
-  const hydrated = useCurriculumStore((s) => s.hydrated);
   const error = useCurriculumStore((s) => s.error);
   const clearError = useCurriculumStore((s) => s.clearError);
   const reset = useCurriculumStore((s) => s.reset);
 
-  // `hydrateFromServer` зовёт `CurriculumSection` — она же выбирает, показать
-  // мастер или каталог, и обязана знать состояние раньше. Второй вызов отсюда
-  // означал бы удвоенный запрос за теми же тремя объектами.
-
-  // Готовая программа показывается на своём роуте. Проверка `hydrated`
-  // обязательна: без неё протухший `planId` из localStorage уводил бы на
-  // несуществующую страницу и обратно — `hydrateFromServer` обнуляет его при
-  // 404, но только после первого запроса.
-  const readyToRedirect =
-    hydrated && planId && (step === "plan_review" || step === "done");
+  // Готовая программа показывается на своём роуте: это экран, на который
+  // возвращаются каждый день, и на него нужна ссылка.
+  const readyToRedirect = planId && (step === "plan_review" || step === "done");
   useEffect(() => {
     if (readyToRedirect) router.replace(`/dashboard/curriculum/plan/${planId}`);
   }, [readyToRedirect, planId, router]);
 
-  if (!hydrated || readyToRedirect) {
+  if (readyToRedirect) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="h-5 w-5 animate-spin text-[#a1978b]" />
@@ -69,9 +65,8 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
         <button
           type="button"
           onClick={() => {
-            // Сеанс сбрасывается вместе с уходом: иначе каталог откроется, а
-            // при следующем заходе `CurriculumSection` снова утащит в мастер по
-            // сохранённым идентификаторам.
+            // Сеанс сбрасывается вместе с уходом: он живёт в памяти и нужен
+            // ровно до возвращения в каталог, где то же самое видно с сервера.
             reset();
             onClose();
           }}

@@ -1,9 +1,13 @@
 // Что показывает раздел «Курс по книге»: каталог или мастер добавления.
 //
-// Раньше страница открывала мастер сразу, и это делало раздел одноразовым:
-// второй предмет затирал первый, а построенные программы жили только по прямой
-// ссылке. Теперь по умолчанию виден каталог, а мастер — это действие внутри
-// него.
+// Раздел ВСЕГДА открывается каталогом. Это не мелочь оформления: мастер хранит
+// последний сеанс в localStorage, и попытка «вернуть человека туда, где он был»
+// приводила к тому, что заход на /curriculum молча уводил на страницу давно
+// построенной программы. Адрес раздела обязан показывать раздел.
+//
+// Незаконченная работа при этом не теряется — она видна в каталоге: предмет без
+// книги, книга в обработке, программа без подтверждения. Вернуться в мастер
+// можно, но только нажав на это самому.
 //
 // Решение «что показать» живёт здесь, а не в сторе: стор описывает ОДИН сеанс
 // добавления, и подмешивать в него режим экрана значило бы сохранять этот режим
@@ -11,7 +15,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { CurriculumCatalog } from "@/components/curriculum/catalog";
 import { CurriculumWizard } from "@/components/curriculum/curriculum-wizard";
@@ -21,23 +25,10 @@ type Mode = "catalog" | "wizard";
 
 export function CurriculumSection() {
   const [mode, setMode] = useState<Mode>("catalog");
-  const hydrated = useCurriculumStore((s) => s.hydrated);
-  const goalId = useCurriculumStore((s) => s.goalId);
-  const step = useCurriculumStore((s) => s.step);
-  const hydrateFromServer = useCurriculumStore((s) => s.hydrateFromServer);
   const startNewSubject = useCurriculumStore((s) => s.startNewSubject);
   const addBookToSubject = useCurriculumStore((s) => s.addBookToSubject);
-
-  // Состояние мастера восстанавливается ДО выбора режима: незаконченное
-  // добавление переживает перезагрузку, и человек должен вернуться в него, а не
-  // в каталог, где его книги ещё нет.
-  useEffect(() => {
-    void hydrateFromServer();
-  }, [hydrateFromServer]);
-
-  useEffect(() => {
-    if (hydrated && goalId && step !== "goal") setMode("wizard");
-  }, [hydrated, goalId, step]);
+  const openSubjectSetup = useCurriculumStore((s) => s.openSubjectSetup);
+  const openBookProgress = useCurriculumStore((s) => s.openBookProgress);
 
   if (mode === "wizard") {
     return (
@@ -54,8 +45,16 @@ export function CurriculumSection() {
           startNewSubject();
           setMode("wizard");
         }}
-        onAddBook={(id) => {
-          addBookToSubject(id);
+        onAddBook={(goalId) => {
+          addBookToSubject(goalId);
+          setMode("wizard");
+        }}
+        onContinueSetup={(goal) => {
+          openSubjectSetup(goal);
+          setMode("wizard");
+        }}
+        onShowProgress={(goalId, document) => {
+          openBookProgress(goalId, document);
           setMode("wizard");
         }}
       />
