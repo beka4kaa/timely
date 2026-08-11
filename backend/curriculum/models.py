@@ -1052,6 +1052,39 @@ class CourseSourceBinding(models.Model):
     page_end = models.PositiveIntegerField(default=0)
 
 
+class SubjectChat(TimestampedModel):
+    """Разговор с панелью вопросов по книгам предмета.
+
+    Отдельно от `ai_engine.ChatSession` намеренно. Та по своему же docstring —
+    «a saved AI Tutor conversation FOR THE WHITEBOARD»: в ней `lesson_plan` и
+    `canvas`, то есть доска и её содержимое. Разговор по книге ни того ни
+    другого не имеет, и класть его туда значит смешать две сущности ради
+    экономии одной таблицы.
+
+    `messages` хранит реплики в том виде, в каком их держит панель: текст,
+    цитаты, признак «в книге этого нет». Тот же приём, что у `ChatSession`, и по
+    той же причине — форма разговора принадлежит интерфейсу, а не серверу,
+    который её не интерпретирует.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_email = models.EmailField(db_index=True)
+    # Предмет — это папка чата. Удалили предмет — уходят и разговоры по нему:
+    # отвечать им больше не по чему.
+    goal = models.ForeignKey(
+        LearningGoal, on_delete=models.CASCADE, related_name="chats"
+    )
+    title = models.CharField(max_length=200, blank=True, default="")
+    messages = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["user_email", "goal", "-updated_at"])]
+
+    def __str__(self) -> str:
+        return self.title or f"Чат {self.pk}"
+
+
 class CourseEnrollment(TimestampedModel):
     """Факт того, что ученик начал заниматься по подтверждённой версии."""
 

@@ -37,13 +37,21 @@ import { useActiveSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import {
   askSubjectStream,
+  createChat,
+  deleteChat,
+  getChat,
+  listChats,
   listDocuments,
   listGoals,
+  renameChatAutomatically,
+  updateChat,
   type AskCitation,
   type AskMessage,
   type CurriculumDocument,
   type LearningGoal,
+  type SubjectChatSummary,
 } from "@/lib/curriculum-api";
+import { ChatTree } from "./chat-tree";
 import { bookLabel, citationSpot } from "@/lib/book-label";
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { MarkdownMessage } from "@/components/chat/markdown-message";
@@ -93,6 +101,7 @@ interface Subject {
 }
 
 const STORAGE_PREFIX = "timely.ask.";
+const LEGACY_TITLE = "Прежний разговор";
 // Сколько реплик храним. Панель живёт на всех страницах и открыта неделями —
 // без потолка localStorage наберёт мегабайты.
 const MAX_STORED_TURNS = 40;
@@ -105,6 +114,8 @@ export function SubjectAskRail() {
   const [subjects, setSubjects] = useState<Subject[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [chats, setChats] = useState<SubjectChatSummary[]>([]);
+  const [chatId, setChatId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -142,12 +153,27 @@ export function SubjectAskRail() {
     setSelected((known ?? subjects[0]).goalId);
   }, [subjects, selected]);
 
-  // История — своя у каждого предмета: вопросы по механике не должны
+  // Чаты — свои у каждого предмета: вопросы по механике не должны
   // подмешиваться в разговор про машинное обучение.
   useEffect(() => {
     if (!selected) return;
     window.localStorage.setItem(`${STORAGE_PREFIX}subject`, selected);
-    setTurns(loadTurns(selected));
+
+    let alive = true;
+    void (async () => {
+      // Разговор, накопленный до появления чатов, переносится в базу, а не
+      // стирается молча: ему три дня, но это сообщения ученика.
+      await migrateLegacyTurns(selected);
+      const rows = await listChats(selected).catch(() => []);
+      if (!alive) return;
+      setChats(rows);
+      const first = rows[0] ?? null;
+      setChatId(first?.id ?? null);
+      setTurns(first ? await loadChatTurns(first.id) : []);
+    })();
+    return () => {
+      alive = false;
+    };
   }, [selected]);
 
   useEffect(() => {
@@ -232,12 +258,25 @@ export function SubjectAskRail() {
     [draft, selected, busy, turns],
   );
 
-  // Сохраняем после каждого изменения ленты, а не только по завершении: ученик
-  // может уйти со страницы посреди ответа.
+  // Сохраняем после завершённого ответа, а не на каждую букву потока: иначе на
+  // один вопрос уходит сотня запросов.
   useEffect(() => {
-    if (!selected || busy) return;
-    storeTurns(selected, turns);
-  }, [selected, turns, busy]);
+    if (!selected || busy || !turns.length) return;
+    let alive = true;
+    void (async () => {
+      const saved = await persistTurns({ chatId, goalId: selected, turns });
+      if (!alive || !saved) return;
+      if (saved.id !== chatId) setChatId(saved.id);
+      setChats((prev) =>
+        prev.some((row) => row.id === saved.id)
+          ? prev.map((row) => (row.id === saved.id ? { ...row, ...saved } : row))
+          : [saved, ...prev],
+      );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [selected, turns, busy, chatId]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -246,11 +285,38 @@ export function SubjectAskRail() {
     [subjects, selected],
   );
 
+  /** Название текущего чата для шапки. Пусто у ещё не сохранённого. */
+  const currentChatTitle = useMemo(
+    () => chats.find((row) => row.id === chatId)?.title ?? "",
+    [chats, chatId],
+  );
+
+  /** Чистое состояние. Строка в базе появится с первым вопросом. */
   const startNew = useCallback(() => {
     abortRef.current?.abort();
+    setChatId(null);
     setTurns([]);
-    if (selected) storeTurns(selected, []);
-  }, [selected]);
+    setPickerOpen(false);
+  }, []);
+
+  const openChat = useCallback(async (id: string) => {
+    abortRef.current?.abort();
+    setPickerOpen(false);
+    setChatId(id);
+    setTurns(await loadChatTurns(id));
+  }, []);
+
+  const removeChat = useCallback(
+    async (id: string) => {
+      await deleteChat(id).catch(() => undefined);
+      setChats((prev) => prev.filter((row) => row.id !== id));
+      if (id === chatId) {
+        setChatId(null);
+        setTurns([]);
+      }
+    },
+    [chatId],
+  );
 
   return (
     <>
@@ -304,68 +370,45 @@ export function SubjectAskRail() {
       >
         <div className="flex h-full min-h-0 flex-col bg-[#f8f6f2] text-[#37322c]">
           <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#dedbd4] bg-[#fbfaf7] px-3.5">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <h2 className="shrink-0 font-serif text-[14px] font-semibold tracking-[-0.015em] text-[#37322c]">
-                По книге
-              </h2>
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    title="Предмет"
-                    className="flex min-w-0 items-center gap-1 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2 py-[3px] text-[10px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#d3cdc2] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
-                  >
-                    <span className="truncate">
-                      {current?.title ?? "Предмет"}
-                    </span>
-                    <ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="w-64 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+            {/* Заголовок «По книге» убран: имя чата само называет, что на
+                экране, а книга видна по плашке предмета и подсказке в поле
+                ввода. В панели этой ширины освободившиеся ~70 px заметны. */}
+            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Чаты"
+                  className="flex min-w-0 flex-1 items-center gap-1 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2.5 py-[3px] text-[11px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#d3cdc2] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
                 >
-                  <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
-                    Предмет
-                  </div>
-                  <div className="max-h-72 overflow-y-auto py-1">
-                    {!subjects?.length && (
-                      <div className="px-3 py-4 text-[12px] text-[#8f887f]">
-                        Предметов пока нет
-                      </div>
-                    )}
-                    {(subjects ?? []).map((subject) => (
-                      <button
-                        key={subject.goalId}
-                        type="button"
-                        onClick={() => {
-                          setSelected(subject.goalId);
-                          setPickerOpen(false);
-                        }}
-                        className={`block w-full px-3 py-2 text-left transition-colors hover:bg-[#f1ede6] ${
-                          subject.goalId === selected ? "bg-[#f4f0e9]" : ""
-                        }`}
-                      >
-                        <div className="truncate text-[12px] font-medium text-[#37322c]">
-                          {subject.title}
-                        </div>
-                        <div className="mt-0.5 text-[10px] leading-snug text-[#8f887f]">
-                          {subject.books
-                            ? `${subject.books} ${bookWord(subject.books)}`
-                            : "книг пока нет"}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  <span className="truncate">
+                    {current?.title ?? "Предмет"}
+                    {currentChatTitle ? ` › ${currentChatTitle}` : ""}
+                  </span>
+                  <ChevronDown className="ml-auto h-2.5 w-2.5 shrink-0 opacity-60" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-72 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+              >
+                <ChatTree
+                  subjects={subjects ?? []}
+                  chats={chats}
+                  selectedGoalId={selected}
+                  selectedChatId={chatId}
+                  onSelectSubject={setSelected}
+                  onSelectChat={(id) => void openChat(id)}
+                  onCreate={startNew}
+                  onDelete={(id) => void removeChat(id)}
+                />
+              </PopoverContent>
+            </Popover>
             <div className="flex items-center gap-0.5 text-[#918b82]">
             <button
               type="button"
               onClick={startNew}
-              aria-label="Новый разговор"
-              title="Новый разговор"
+              aria-label="Новый чат"
+              title="Новый чат"
               className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -611,24 +654,68 @@ function buildSubjects(
   }));
 }
 
-function loadTurns(goalId: string): Turn[] {
+async function loadChatTurns(chatId: string): Promise<Turn[]> {
   try {
-    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${goalId}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    const chat = await getChat(chatId);
+    return (chat.messages as Turn[]) ?? [];
   } catch {
-    // Испорченная запись не должна ломать панель — начинаем разговор заново.
+    // Чат мог быть удалён с другого устройства — показываем пустой, а не
+    // роняем панель.
     return [];
   }
 }
 
-function storeTurns(goalId: string, turns: Turn[]) {
+/**
+ * Пишет разговор в базу. Возвращает строку списка или `null` при отказе.
+ *
+ * Чат создаётся здесь, а не при нажатии «Новый чат»: иначе список зарастал бы
+ * пустыми строками от каждого случайного нажатия.
+ */
+async function persistTurns({
+  chatId,
+  goalId,
+  turns,
+}: {
+  chatId: string | null;
+  goalId: string;
+  turns: Turn[];
+}): Promise<SubjectChatSummary | null> {
+  const messages = turns.slice(-MAX_STORED_TURNS);
   try {
-    window.localStorage.setItem(
-      `${STORAGE_PREFIX}${goalId}`,
-      JSON.stringify(turns.slice(-MAX_STORED_TURNS)),
-    );
+    if (chatId) {
+      const updated = await updateChat(chatId, { messages });
+      return { ...updated, message_count: messages.length };
+    }
+    const created = await createChat(goalId, { messages });
+    // Название придумывается после первого ответа и отдельным запросом: внутри
+    // потока ученик ждал бы ещё и заголовок, которого не видит.
+    const title = await renameChatAutomatically(created.id);
+    return {
+      ...created,
+      title: title || created.title,
+      message_count: messages.length,
+    };
   } catch {
-    // Квота исчерпана — история не сохранится, но разговор продолжается.
+    // Разговор на экране остаётся; сохранится со следующим ответом.
+    return null;
+  }
+}
+
+/** Переносит разговор, накопленный в браузере до появления чатов. */
+async function migrateLegacyTurns(goalId: string): Promise<void> {
+  const key = `${STORAGE_PREFIX}${goalId}`;
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return;
+  // Ключ убирается в любом случае: повторный перенос создал бы дубли.
+  window.localStorage.removeItem(key);
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return;
+    await createChat(goalId, {
+      title: LEGACY_TITLE,
+      messages: parsed.slice(-MAX_STORED_TURNS),
+    });
+  } catch {
+    // Испорченная запись переносу не подлежит.
   }
 }

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+from django.http import Http404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -32,8 +33,10 @@ from .models import (
     IngestionJob,
     KnowledgeChunk,
     LearningGoal,
+    SubjectChat,
 )
 from .retrieval import RetrievalPolicy
+from .chat_title import generate_chat_title
 from .serializers import (
     CourseEnrollmentSerializer,
     CoursePlanListSerializer,
@@ -51,6 +54,8 @@ from .serializers import (
     LearningGoalSerializer,
     PlanPaceSerializer,
     PlanStructureSerializer,
+    SubjectChatListSerializer,
+    SubjectChatSerializer,
 )
 from .services import dispatch
 from .services import goals as goals_service
@@ -600,6 +605,58 @@ class CourseEnrollmentViewSet(viewsets.ReadOnlyModelViewSet):
         return CourseEnrollment.objects.filter(user_email=email).select_related(
             "version"
         )
+
+
+class SubjectChatViewSet(viewsets.ModelViewSet):
+    """Чаты внутри предмета: папка — предмет, разговоры — внутри.
+
+    Изоляция по `user_email`, как у соседних вьюсетов раздела. Предмет
+    проверяется отдельно при создании: без этого чат можно было бы завести в
+    чужой цели, просто подставив её идентификатор.
+    """
+
+    def get_serializer_class(self):
+        return (
+            SubjectChatListSerializer
+            if self.action == "list"
+            else SubjectChatSerializer
+        )
+
+    def get_queryset(self):
+        email = getattr(self.request, "user_email", None)
+        if not email:
+            return SubjectChat.objects.none()
+        queryset = SubjectChat.objects.filter(user_email=email)
+        goal_id = self.request.query_params.get("goal")
+        if goal_id:
+            queryset = queryset.filter(goal_id=goal_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        email = getattr(self.request, "user_email", None)
+        goal = serializer.validated_data.get("goal")
+        if goal is None or goal.user_email != email:
+            # 404, а не 403: чужой предмет не должен подтверждать, что он есть.
+            raise Http404("Предмет не найден.")
+        serializer.save(user_email=email)
+
+    @action(detail=True, methods=["post"])
+    def title(self, request, pk=None):
+        """Придумывает чату короткое название по началу разговора.
+
+        Отдельным запросом, а не внутри потока ответа: иначе ученик ждал бы ещё
+        и заголовок, которого в этот момент не видит.
+        """
+        chat = self.get_object()
+        generated = generate_chat_title(chat.messages)
+        if not generated:
+            return Response(
+                {"error": "Не удалось придумать название.", "title": chat.title},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        chat.title = generated[:200]
+        chat.save(update_fields=["title", "updated_at"])
+        return Response({"title": chat.title})
 
 
 class KnowledgeSearchView(APIView):

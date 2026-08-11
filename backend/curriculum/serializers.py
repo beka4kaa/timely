@@ -26,6 +26,7 @@ from .models import (
     IngestionJob,
     KnowledgeChunk,
     LearningGoal,
+    SubjectChat,
 )
 
 # ─────────────────────────────── Цель ────────────────────────────────────────
@@ -470,3 +471,34 @@ class PlanPaceSerializer(serializers.Serializer):
         if not attrs:
             raise serializers.ValidationError("Нечего менять.")
         return attrs
+
+
+# ─────────────────────────── Чаты по предмету ────────────────────────────────
+
+
+class SubjectChatListSerializer(serializers.ModelSerializer):
+    """Список чатов БЕЗ сообщений.
+
+    Сорок реплик на чат при пяти чатах — это мегабайты на каждое открытие
+    панели, тогда как в списке видно только название. Тот же приём, что у
+    `ai_engine.ChatSessionListSerializer`.
+    """
+
+    message_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubjectChat
+        fields = ["id", "goal", "title", "message_count", "created_at", "updated_at"]
+        read_only_fields = fields
+
+    def get_message_count(self, chat: SubjectChat) -> int:
+        return len(chat.messages or [])
+
+
+class SubjectChatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubjectChat
+        fields = ["id", "goal", "title", "messages", "created_at", "updated_at"]
+        # `goal` пишется только при создании: перенос чата в другой предмет
+        # означал бы цитаты из другой книги в старых ответах.
+        read_only_fields = ["id", "created_at", "updated_at"]
