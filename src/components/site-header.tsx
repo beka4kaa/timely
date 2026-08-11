@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useTheme } from "next-themes";
 import {
@@ -22,9 +21,12 @@ import {
   getDashboardPageMeta,
 } from "@/config/dashboard-navigation";
 import { useMe } from "@/lib/contest-api";
+import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 export function SiteHeader() {
-  const pathname = usePathname();
+  // Канонический путь, а не адресная строка: на app-хосте она чистая
+  // (`/chat`), и заголовком любого раздела оставалось «Рабочее пространство».
+  const pathname = useDashboardPath();
   const { setTheme } = useTheme();
   const { actions } = useDiaryHeader();
   const { me } = useMe();

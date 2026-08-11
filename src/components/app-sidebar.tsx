@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import { LogOut, UserRound } from "lucide-react";
@@ -23,9 +22,12 @@ import {
 } from "@/components/ui/tooltip";
 import { getDashboardNavigation } from "@/config/dashboard-navigation";
 import { useMe } from "@/lib/contest-api";
+import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 export function AppSidebar() {
-  const pathname = usePathname();
+  // Канонический путь: на app-хосте в адресной строке `/whiteboard`, и
+  // рельс не убирался с доски, у которой есть собственный.
+  const pathname = useDashboardPath();
   const { data: session } = useSession();
   const { me } = useMe();
 
