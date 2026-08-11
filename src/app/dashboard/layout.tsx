@@ -6,6 +6,7 @@ import { AuthGuard } from "@/components/auth-guard"
 import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
 import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 import { ActiveSubjectProvider } from "@/contexts/active-subject"
+import { ActiveScheduleProvider } from "@/contexts/active-schedule"
 import { AskRailProvider } from "@/contexts/ask-rail"
 import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
@@ -31,6 +32,7 @@ export default function DashboardLayout({
     <AuthGuard requireAuth={true}>
       <DiaryHeaderProvider>
         <ActiveSubjectProvider>
+        <ActiveScheduleProvider>
         <AskRailProvider>
         <div
           className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light]"
@@ -70,13 +72,17 @@ export default function DashboardLayout({
           <SiteHeader />
           <AppSidebar />
           <DashboardMain>{children}</DashboardMain>
-          {/* Вопросы по книге предмета. Живёт в layout по той же причине, что и
+          {/* Разговор справа. Живёт в layout по той же причине, что и
               PomodoroSync: панель нужна на любой странице дашборда. Открытая,
               она сдвигает `DashboardMain`, а не ложится поверх, — так же, как
-              чат доски сдвигает холст. */}
+              чат доски сдвигает холст.
+
+              На «Плане» это помощник по расписанию, на остальных страницах —
+              вопросы по книге предмета; выбор режима внутри самой панели. */}
           <SubjectAskRail />
         </div>
         </AskRailProvider>
+        </ActiveScheduleProvider>
         </ActiveSubjectProvider>
       </DiaryHeaderProvider>
     </AuthGuard>
