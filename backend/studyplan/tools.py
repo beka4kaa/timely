@@ -43,6 +43,8 @@ DEFAULT_WINDOW_DAYS = 14
 # Потолок, чтобы один вызов не вытащил в контекст модели три месяца календаря.
 MAX_WINDOW_DAYS = 60
 MAX_BLOCKS_IN_ANSWER = 120
+# Программ у ученика единицы, но список идёт в контекст модели на каждый вызов.
+MAX_COURSES_IN_ANSWER = 20
 
 _WEEKDAY_NAMES = (
     "понедельник",
@@ -507,6 +509,106 @@ def _handle_propose_fixed_commitments(
     }
 
 
+def _handle_list_courses(
+    args: dict[str, Any], context: ScheduleToolContext
+) -> dict[str, Any]:
+    """Какие учебные программы есть у ученика и какие уже в календаре."""
+    from curriculum.models import CoursePlan
+
+    plans = CoursePlan.objects.filter(user_email=context.user_email).order_by(
+        "created_at"
+    )[:MAX_COURSES_IN_ANSWER]
+
+    scheduled = set(
+        StudySchedule.objects.filter(user_email=context.user_email)
+        .exclude(status=StudySchedule.Status.ARCHIVED)
+        .values_list("course_plan_id", flat=True)
+    )
+
+    return {
+        "ok": True,
+        "courses": [
+            {
+                "course_plan_id": str(plan.id),
+                "title": plan.title,
+                "in_schedule": plan.id in scheduled,
+            }
+            for plan in plans
+        ],
+    }
+
+
+def _handle_add_course_to_schedule(
+    args: dict[str, Any], context: ScheduleToolContext
+) -> dict[str, Any]:
+    """Построить календарь по учебной программе.
+
+    Результат — расписание в статусе PROPOSED, ровно как у кнопки, которую этот
+    инструмент заменил. Правило «предлагаю, применяешь ты» не нарушено:
+    занятия появятся в календаре предложением, а ученик подтвердит программу.
+    """
+    from curriculum.models import CoursePlan
+
+    from . import services
+
+    plan_id = str(args.get("course_plan_id") or "").strip()
+    if not plan_id:
+        return _fail("course_required", "Не сказано, какую программу добавлять.")
+
+    plan = CoursePlan.objects.filter(
+        pk=plan_id, user_email=context.user_email
+    ).first()
+    if plan is None:
+        # Ровно как в `views.generate`: чужая программа неотличима от
+        # несуществующей, и подсказывать разницу нельзя.
+        return _fail("plan_not_found", "Такой учебной программы нет.")
+
+    existing = (
+        StudySchedule.objects.filter(
+            user_email=context.user_email, course_plan_id=plan.id
+        )
+        .exclude(status=StudySchedule.Status.ARCHIVED)
+        .first()
+    )
+    if existing is not None:
+        return _fail(
+            "already_scheduled",
+            f"«{plan.title}» уже в календаре. Двигать её занятия можно "
+            "обычными инструментами.",
+        )
+
+    try:
+        start_date = _parse_date(args.get("start_date"), context.current_date())
+    except ToolValidationError:
+        return _fail("bad_date", "Дата начала должна быть в формате ГГГГ-ММ-ДД.")
+
+    timezone_name = context.schedule.timezone if context.schedule else "UTC"
+
+    try:
+        outcome = services.generate_schedule(
+            plan=plan,
+            start_date=start_date,
+            timezone_name=timezone_name,
+        )
+    except services.ScheduleGenerationError as exc:
+        return _fail("cannot_generate", str(exc))
+
+    return {
+        "ok": True,
+        "course_plan_id": str(plan.id),
+        "title": plan.title,
+        "schedule_id": str(outcome.schedule.id),
+        "feasible": outcome.feasible,
+        "blocks_created": len(outcome.blocks),
+        "warnings": list(outcome.warnings)[:5],
+        "note": (
+            "Программа ПРЕДЛОЖЕНА и ждёт подтверждения ученика. Скажи, сколько "
+            "занятий добавилось, и если не помещается — предложи продлить курс "
+            "или разгрузить дни."
+        ),
+    }
+
+
 # ─────────────────────────────── Реестр ──────────────────────────────────────
 
 _DATE_RANGE_PROPERTIES = {
@@ -638,9 +740,48 @@ SCHEDULE_TOOLS: dict[str, ScheduleTool] = {
         },
         handler=_handle_propose_fixed_commitments,
     ),
+    "list_courses": ScheduleTool(
+        name="list_courses",
+        description=(
+            "Показать учебные программы ученика и то, какие уже стоят в "
+            "календаре. Вызывай ПЕРЕД add_course_to_schedule: идентификатор "
+            "программы можно взять только отсюда."
+        ),
+        parameters={"type": "object", "properties": {}},
+        handler=_handle_list_courses,
+    ),
+    "add_course_to_schedule": ScheduleTool(
+        name="add_course_to_schedule",
+        description=(
+            "Поставить учебную программу в календарь: разложить её занятия по "
+            "свободному времени. Занятия появятся ПРЕДЛОЖЕНИЕМ, которое ученик "
+            "подтверждает. Используй, когда просят добавить курс, начать "
+            "программу или запланировать книгу."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "course_plan_id": {
+                    "type": "string",
+                    "description": "Идентификатор программы из list_courses.",
+                },
+                "start_date": {
+                    "type": "string",
+                    "description": "С какого дня начинать, YYYY-MM-DD. По умолчанию — сегодня.",
+                },
+            },
+            "required": ["course_plan_id"],
+        },
+        handler=_handle_add_course_to_schedule,
+    ),
 }
 
-READ_ONLY_TOOLS = ("get_schedule", "find_free_slots", "explain_schedule")
+READ_ONLY_TOOLS = (
+    "get_schedule",
+    "find_free_slots",
+    "explain_schedule",
+    "list_courses",
+)
 ALL_TOOL_NAMES = tuple(SCHEDULE_TOOLS)
 
 

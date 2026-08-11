@@ -182,49 +182,39 @@ export function StudyPlanPage() {
 
   const data = schedule.data;
   const planById = new Map(data.plans.map((plan) => [plan.id, plan]));
-  const visibleByPlan = new Map(
-    data.schedules.map((item) => [item.course_plan, item]),
-  );
-  const proposalByPlan = new Map(
-    data.proposals.map((item) => [item.course_plan, item]),
-  );
   // Цвета программ раздаются по порядку списка, а не по хешу: иначе два курса
   // могли достаться одному цвету, и правило «цвет = предмет» ломалось бы ровно
   // там, где оно нужнее всего.
   const accents = buildCourseAccents(data.plans.map((plan) => plan.id));
 
-  /** Что предложить добавить, когда календарь пуст. */
-  const firstUnscheduledPlan =
-    data.plans.find(
-      (plan) => !visibleByPlan.has(plan.id) && !proposalByPlan.has(plan.id),
-    ) ?? null;
-
   return (
     <CoffeePageShell fillHeight maxWidthClassName="max-w-none">
       <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className={paperCaption}>Моё время · неделя</div>
-            <h1 className="mt-0.5 text-[19px] text-[#312c27]">
+        {/* Одна строка вместо четырёх. Раньше над календарём стояли надстрочник,
+            заголовок, сводка и отдельная полоса программ — пять блоков, из-за
+            которых неделя начиналась только на трети экрана. Всё, что осталось,
+            стоит в один ряд: дата, сводка, легенда, навигация. */}
+        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-[18px] tracking-[-0.02em] text-[#312c27]">
               {weekLabel(schedule.days)}
             </h1>
-            <p className="mt-1 text-[12.5px] text-[#7b7168]">
+            <p className="text-[12px] text-[#8d857b]">
               {weekMinutes > 0 ? (
                 <>
-                  {durationLabel(weekMinutes)} учёбы на этой неделе
+                  {durationLabel(weekMinutes)} учёбы
                   {peakColumn ? (
                     <>
-                      {" · плотнее всего "}
-                      <span className="text-[#5f584f]">
-                        {weekdayOnLabel(peakColumn.weekday)}
-                      </span>
+                      {" · плотнее "}
+                      {weekdayOnLabel(peakColumn.weekday)}
                     </>
                   ) : null}
                 </>
               ) : (
-                "Неделя пока свободна"
+                "свободна"
               )}
             </p>
+            <ProgramsLegend plans={data.plans} accents={accents} />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -278,15 +268,6 @@ export function StudyPlanPage() {
             </div>
           </div>
         </header>
-
-        <ProgramsStrip
-          plans={data.plans}
-          visibleByPlan={visibleByPlan}
-          proposalByPlan={proposalByPlan}
-          busy={schedule.busy}
-          accents={accents}
-          onBuild={(planId) => void schedule.build(planId)}
-        />
 
         {data.proposals.map((proposal) => (
           <ProposalNotice
@@ -358,21 +339,6 @@ export function StudyPlanPage() {
                     void schedule.move(entry, startAt, duration);
                   }
                 }}
-                // Единственная главная кнопка экрана стоит здесь, в пустом
-                // календаре, — там, где ученик и упирается в вопрос «а что
-                // дальше». В списке программ кнопки при этом тихие.
-                emptyAction={
-                  firstUnscheduledPlan ? (
-                    <button
-                      type="button"
-                      className={paperPrimaryButton}
-                      disabled={schedule.busy}
-                      onClick={() => void schedule.build(firstUnscheduledPlan.id)}
-                    >
-                      Добавить программу в расписание
-                    </button>
-                  ) : null
-                }
             />
           </div>
 
@@ -448,21 +414,25 @@ function ProposalNotice({
 }) {
   const conflict = schedule.conflict_report;
 
+  // Одна строка вместо карточки на пять. Полное имя программы, две суммы и
+  // список советов занимали над календарём больше места, чем сам разбор
+  // проблемы того стоит: что делать дальше, ученик спрашивает у помощника.
   if (!schedule.feasible) {
     return (
-      <div className={`${paperTile} px-4 py-3`}>
-        <div className={paperCaption}>{title} · не помещается</div>
-        <p className="mt-1 text-[13px] text-[#5f584f]">
-          Нужно {durationLabel(conflict?.required_minutes ?? 0)}, а в расписании
-          есть {durationLabel(conflict?.available_minutes ?? 0)}.
-        </p>
-        {(conflict?.suggestions ?? []).length > 0 ? (
-          <ul className="mt-2 space-y-1 text-[13px] text-[#4a443d]">
-            {(conflict?.suggestions ?? []).map((suggestion) => (
-              <li key={suggestion}>— {suggestion}</li>
-            ))}
-          </ul>
-        ) : null}
+      <div
+        className={`${paperTile} flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-[12.5px]`}
+      >
+        <span className="min-w-0 max-w-[280px] truncate font-medium text-[#3d382f]">
+          {title}
+        </span>
+        <span className="text-[#a2543a]">не помещается:</span>
+        <span className="text-[#5f584f]">
+          нужно {durationLabel(conflict?.required_minutes ?? 0)}, есть{" "}
+          {durationLabel(conflict?.available_minutes ?? 0)}
+        </span>
+        <span className="text-[#8d857b]">
+          · спроси помощника, что подвинуть
+        </span>
       </div>
     );
   }
@@ -488,79 +458,38 @@ function ProposalNotice({
 }
 
 /**
- * Программы одной строкой над календарём.
+ * Легенда календаря: какой цвет какому предмету.
  *
- * Раньше это была карточка в колонке 320 px справа. Колонка забирала шестую
- * часть ширины экрана ради списка из двух строк, а календарь — то, ради чего
- * страницу открывают, — жался. Легенда календаря и должна читаться как
- * легенда: цвет, название, состояние.
+ * Только чтение. Кнопок здесь нет намеренно: программу в календарь ставит
+ * помощник справа (`add_course_to_schedule`), и держать рядом вторую дорогу
+ * значило бы снова разложить одну задачу по двум местам экрана — ровно то, из
+ * чего эту страницу уже вытаскивали.
  */
-function ProgramsStrip({
+function ProgramsLegend({
   plans,
-  visibleByPlan,
-  proposalByPlan,
-  busy,
-  onBuild,
   accents,
 }: {
   plans: Array<{ id: string; title: string }>;
-  visibleByPlan: Map<string, StudySchedule>;
-  proposalByPlan: Map<string, StudySchedule>;
-  busy: boolean;
-  onBuild: (planId: string) => void;
   accents: Map<string, string>;
 }) {
-  if (plans.length === 0) {
-    return (
-      <p className="text-[12.5px] text-[#8d857b]">
-        Пока нет учебных программ. Создай программу в разделе «Курс по книге».
-      </p>
-    );
-  }
+  if (plans.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-      <span className={`${paperCaption} mr-1`}>Программы</span>
-      {plans.map((plan) => {
-        const current = visibleByPlan.get(plan.id);
-        const proposal = proposalByPlan.get(plan.id);
-        const pending = proposal && proposal.feasible;
-        const blocked = proposal && !proposal.feasible;
-        const status = blocked
-          ? "нужно освободить время"
-          : pending
-            ? "ждёт подтверждения"
-            : null;
-
-        return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      {plans.map((plan) => (
+        <span
+          key={plan.id}
+          className="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-[#8d857b]"
+          title={plan.title}
+        >
           <span
-            key={plan.id}
-            className={`${paperTile} inline-flex max-w-[280px] items-center gap-1.5 py-1 pl-2.5 pr-2 text-[12px]`}
-          >
-            <span
-              className="h-2 w-2 shrink-0 rounded-full"
-              style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
-              aria-hidden
-            />
-            <span className="truncate text-[#4a443d]">{plan.title}</span>
-            {status ? (
-              <span className="shrink-0 text-[11px] text-[#8d857b]">
-                · {status}
-              </span>
-            ) : null}
-            {!current && !proposal ? (
-              <button
-                type="button"
-                className={`${paperButton} ml-0.5 shrink-0 px-2 py-0.5 text-[11px]`}
-                disabled={busy}
-                onClick={() => onBuild(plan.id)}
-              >
-                В расписание
-              </button>
-            ) : null}
-          </span>
-        );
-      })}
-    </div>
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
+            aria-hidden
+          />
+          <span className="max-w-[180px] truncate">{plan.title}</span>
+        </span>
+      ))}
+    </span>
   );
 }

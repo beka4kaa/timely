@@ -63,6 +63,8 @@ export const initialAssistantState: AssistantState = {
 /** Человеческие названия инструментов: «get_schedule» ученику ничего не говорит. */
 const STAGE_LABELS: Record<string, string> = {
   get_schedule: "Смотрю расписание",
+  list_courses: "Смотрю программы",
+  add_course_to_schedule: "Ставлю программу в календарь",
   find_free_slots: "Ищу свободные окна",
   explain_schedule: "Разбираю день",
   propose_move_blocks: "Готовлю перенос",
