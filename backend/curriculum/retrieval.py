@@ -354,15 +354,34 @@ class SimpleLexicalRetriever:
         return scored[:limit]
 
 
-class PgRussianLexicalRetriever:
-    """PostgreSQL FTS с русской морфологией и границей доступа до rank.
+# Язык книги → конфигурация полнотекстового поиска PostgreSQL.
+#
+# Незнакомый язык уходит в `simple`: он не стеммит вовсе, но и не калечит слова
+# чужой морфологией. Это честнее, чем притвориться, что французский — русский.
+_FTS_CONFIG = {"ru": "russian", "en": "english"}
+_FTS_DEFAULT = "simple"
+
+
+def fts_config(language: str) -> str:
+    """Конфигурация FTS для языка документа."""
+    return _FTS_CONFIG.get((language or "").strip().lower()[:2], _FTS_DEFAULT)
+
+
+class PgLexicalRetriever:
+    """PostgreSQL FTS с морфологией ЯЗЫКА КНИГИ и границей доступа до rank.
 
     В SQL попадают только UUID из `candidates`: этот список уже прошёл owner,
-    document, language и solution policy. `plain` не интерпретирует пользовательский
-    ввод как tsquery-синтаксис, а конфигурация `russian` приводит словоформы к основе.
+    document, language и solution policy. `plain` не интерпретирует
+    пользовательский ввод как tsquery-синтаксис.
+
+    Конфигурация выбирается по языку, а не зашита русской, как было раньше. На
+    «Hands-On Machine Learning» русская морфология работала поверх английского
+    текста: `learning` и `learn` не сходились к одной основе, а английские
+    стоп-слова не отбрасывались. Лексическая половина гибрида при этом молча
+    теряла в качестве — ошибки не было, был только слабый результат.
     """
 
-    name = "postgres-russian-fts"
+    name = "postgres-fts"
 
     def search(
         self, query: str, candidates: Sequence[RetrievableChunk], *, limit: int
@@ -370,13 +389,35 @@ class PgRussianLexicalRetriever:
         if not query.strip() or not candidates or limit <= 0:
             return []
 
+        by_language: dict[str, list[RetrievableChunk]] = {}
+        for chunk in candidates:
+            by_language.setdefault(fts_config(chunk.language), []).append(chunk)
+
+        scored: list[tuple[RetrievableChunk, float]] = []
+        for config, group in by_language.items():
+            # Один запрос на язык. У книги язык обычно один, поэтому запрос
+            # остаётся одним, как и раньше; несколько языков в выдаче — редкий
+            # случай, ради которого не стоит терять морфологию у обоих.
+            scored.extend(self._search_one(query, group, limit=limit, config=config))
+
+        scored.sort(key=lambda row: (-row[1], row[0].chunk_id))
+        return scored[:limit]
+
+    def _search_one(
+        self,
+        query: str,
+        candidates: Sequence[RetrievableChunk],
+        *,
+        limit: int,
+        config: str,
+    ) -> list[tuple[RetrievableChunk, float]]:
         from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 
         from .models import KnowledgeChunk
 
         by_id = {chunk.chunk_id: chunk for chunk in candidates}
-        vector = SearchVector("normalized_text", config="russian")
-        search_query = SearchQuery(query, config="russian", search_type="plain")
+        vector = SearchVector("normalized_text", config=config)
+        search_query = SearchQuery(query, config=config, search_type="plain")
         rank = SearchRank(vector, search_query, normalization=32)
         rows = (
             KnowledgeChunk.objects.filter(pk__in=list(by_id))
@@ -394,12 +435,12 @@ class PgRussianLexicalRetriever:
 
 
 def get_lexical_retriever() -> LexicalRetriever:
-    """Русский FTS на PostgreSQL, детерминированный fallback на SQLite."""
+    """FTS на PostgreSQL по языку книги, детерминированный fallback на SQLite."""
     from django.db import connection
 
     if connection.vendor != "postgresql":
         return SimpleLexicalRetriever()
-    return PgRussianLexicalRetriever()
+    return PgLexicalRetriever()
 
 
 class InMemoryDenseRetriever:

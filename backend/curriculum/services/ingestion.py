@@ -79,6 +79,34 @@ MAX_PAGES_PER_RUN = MAX_UPLOAD_PAGES
 TAIL_PAGES_FOR_OUTLINE = 15
 
 
+# Доля кириллицы, выше которой книга считается русской. Порог намеренно
+# низкий: в русском учебнике полно латиницы — формулы, обозначения, ссылки на
+# литературу, — а в английском кириллицы не бывает почти никогда.
+CYRILLIC_SHARE_FOR_RU = 0.15
+# Сколько символов хватает для решения. Первые страницы — это титул и
+# оглавление, они на языке книги.
+LANGUAGE_SAMPLE_CHARS = 20_000
+
+
+def detect_language(text: str) -> str:
+    """Язык книги по доле кириллицы. `ru`, `en` или пусто, если букв нет.
+
+    Дешёвая эвристика вместо библиотеки определения языка: различать нужно ровно
+    те два языка, на которых приходят учебники, и делать это на этапе, где
+    лишняя зависимость дороже пользы.
+
+    Язык нужен полнотекстовому поиску: до этого он был зашит русским, и
+    английский учебник разбирался русской морфологией.
+    """
+    sample = (text or "")[:LANGUAGE_SAMPLE_CHARS]
+    cyrillic = sum(1 for ch in sample if "\u0400" <= ch <= "\u04ff")
+    latin = sum(1 for ch in sample if ("a" <= ch <= "z") or ("A" <= ch <= "Z"))
+    letters = cyrillic + latin
+    if not letters:
+        return ""
+    return "ru" if cyrillic / letters >= CYRILLIC_SHARE_FOR_RU else "en"
+
+
 class IngestionError(RuntimeError):
     """Ошибка с машинным кодом для `IngestionJob.error_code`."""
 
@@ -499,6 +527,17 @@ def _run_pipeline(
         del scanned
     outcome.ocr_pages = len(ocr_texts)
 
+    # Язык книги. Определяется по уже извлечённому тексту, до разбора структуры:
+    # от него зависит морфология полнотекстового поиска, а раньше она была зашита
+    # русской для любой книги.
+    detected_language = detect_language(
+        "\n".join(
+            ocr_texts.get(page.page_number, (page.native_text, ""))[0]
+            for page in pages[:20]
+        )
+        or "".join(block.text for block in (parsed.blocks or [])[:200])
+    )
+
     # 5. reconstructing_structure — разделы и блоки.
     #
     # Ветка ровно одна: дал ли формат готовую структуру. EPUB даёт — заголовки
@@ -645,11 +684,16 @@ def _run_pipeline(
             jobs = jobs.filter(celery_task_id=run_token)
         if not jobs.update(finished_at=finished_at, updated_at=finished_at):
             raise SupersededIngestion
-        Document.objects.filter(pk=document.pk).update(
-            page_count=true_total,
-            processing_version=processing_version,
-            updated_at=finished_at,
-        )
+        updates = {
+            "page_count": true_total,
+            "processing_version": processing_version,
+            "updated_at": finished_at,
+        }
+        if detected_language:
+            # Пустой результат означает «букв не нашлось» — прежнее значение
+            # тогда честнее выдуманного.
+            updates["language"] = detected_language
+        Document.objects.filter(pk=document.pk).update(**updates)
     job.finished_at = finished_at
     job.updated_at = finished_at
 

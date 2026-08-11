@@ -3,7 +3,7 @@
 import tempfile
 from unittest import mock
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from ai_engine.usage import AIUsageLimitExceeded
 
@@ -22,7 +22,7 @@ from curriculum.models import (
 )
 from curriculum.ocr import NullOcrProvider, OcrResult
 from curriculum.services.embedding_index import IndexOutcome
-from curriculum.services.ingestion import ingest_document
+from curriculum.services.ingestion import detect_language, ingest_document
 from curriculum.tests.pdf_fixtures import scanned_pdf, textbook_pdf
 
 EMAIL = "student@example.com"
@@ -66,6 +66,38 @@ class _IngestionBase(TestCase):
             content_hash=storage_module.content_hash(pdf),
         )
         return document
+
+
+class LanguageDetectionTests(SimpleTestCase):
+    """Язык книги нужен полнотекстовому поиску.
+
+    До этого конфигурация FTS была зашита русской, и английский учебник
+    разбирался русской морфологией: `learning` и `learn` не сходились к одной
+    основе, а английские стоп-слова не отбрасывались.
+    """
+
+    def test_русский_текст(self):
+        self.assertEqual(
+            detect_language("Импульсом тела называется произведение массы"),
+            "ru",
+        )
+
+    def test_английский_текст(self):
+        self.assertEqual(
+            detect_language("Machine learning is the science of programming"),
+            "en",
+        )
+
+    def test_русский_с_формулами_и_латиницей(self):
+        # В русском учебнике полно латиницы: обозначения, формулы, ссылки.
+        # Порог низкий именно поэтому.
+        text = "Импульс p = mv, где m — масса, v — velocity (LaTeX: \\vec{p})"
+        self.assertEqual(detect_language(text), "ru")
+
+    def test_текст_без_букв_не_даёт_языка(self):
+        # Пустой ответ означает «не знаю», и прежнее значение честнее выдумки.
+        self.assertEqual(detect_language("123 456 — 789"), "")
+        self.assertEqual(detect_language(""), "")
 
 
 class HappyPathTests(_IngestionBase):

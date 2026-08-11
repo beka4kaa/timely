@@ -42,6 +42,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Разрешить query embeddings; без флага только dry-run",
         )
+        parser.add_argument(
+            "--with-answers",
+            action="store_true",
+            help="Дополнительно спросить модель и померить попадание цитат",
+        )
         parser.add_argument("--max-usd", type=float, default=0.01)
         parser.add_argument("--usd-per-million-tokens", type=float, default=0.02)
 
@@ -108,6 +113,56 @@ class Command(BaseCommand):
                 limit=max(1, min(int(options["limit"]), 50)),
             )
         self.stdout.write(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+        if options["with_answers"]:
+            self._score_answers(document, cases)
+
+    def _score_answers(self, document: Document, cases) -> None:
+        """Мерит то, что видит ученик: попала ли цитата в размеченный раздел.
+
+        Поиск и ответ — разные вещи: найти нужный раздел мало, его надо ещё
+        донести до модели и получить ссылку именно на него.
+        """
+        from curriculum.answer_eval import AnswerCase, score_answers
+        from curriculum.ask import build_ask_context
+
+        goal = document.goal
+        if goal is None:
+            raise CommandError(
+                "У книги нет предмета: ответы строятся по предмету, а не по "
+                "документу."
+            )
+
+        answered: list[AnswerCase] = []
+        with usage_scope(user_email=document.user_email, feature="answer_eval"):
+            for case in cases:
+                context = build_ask_context(goal=goal, question=case.query)
+                answered.append(
+                    AnswerCase(
+                        query=case.query,
+                        relevant_section_paths=case.relevant_section_paths,
+                        cited_section_paths=tuple(
+                            citation.section_path for citation in context.citations
+                        ),
+                        # Контекст пуст — модель ответила бы «в книге этого
+                        # нет». Спрашивать её ради этого незачем: признак уже
+                        # известен, а вызов стоит денег.
+                        outside_book=not context.grounded,
+                    )
+                )
+
+        report = score_answers(answered)
+        self.stdout.write(
+            json.dumps(report.as_dict(), ensure_ascii=False, sort_keys=True)
+        )
+        for miss in report.misses()[:10]:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  мимо: {miss.query} →"
+                    f" ждали {sorted(miss.relevant_section_paths)},"
+                    f" получили {list(miss.cited_section_paths)[:3]}"
+                )
+            )
 
     def _cases(self, document: Document, gold_path: str | None) -> list[RetrievalQueryCase]:
         if gold_path:

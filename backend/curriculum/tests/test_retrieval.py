@@ -6,7 +6,8 @@ from django.test import SimpleTestCase
 
 from curriculum.retrieval import (
     KnowledgeRetrievalService,
-    PgRussianLexicalRetriever,
+    PgLexicalRetriever,
+    fts_config,
     RetrievableChunk,
     RetrievalPolicy,
     apply_access_policy,
@@ -281,12 +282,29 @@ class PostgresLexicalRetrieverContractTests(SimpleTestCase):
         with mock.patch.object(
             KnowledgeChunk.objects, "filter", return_value=queryset
         ) as filtered:
-            rows = PgRussianLexicalRetriever().search("Ньютон", [allowed], limit=5)
+            rows = PgLexicalRetriever().search("Ньютон", [allowed], limit=5)
 
         self.assertEqual(filtered.call_args.kwargs["pk__in"], [allowed.chunk_id])
         self.assertIn("search_vector", queryset.annotate.call_args.kwargs)
         self.assertIn("search_vector", first_annotation.filter.call_args.kwargs)
         self.assertEqual(rows, [(allowed, 0.7)])
+
+    def test_fts_config_follows_the_book_language(self):
+        """Регресс: конфигурация была зашита русской для любой книги.
+
+        На «Hands-On Machine Learning» это означало русскую морфологию поверх
+        английского текста: `learning` и `learn` не сходились к одной основе, а
+        английские стоп-слова не отбрасывались.
+        """
+        self.assertEqual(fts_config("ru"), "russian")
+        self.assertEqual(fts_config("en"), "english")
+        self.assertEqual(fts_config("en-US"), "english")
+
+    def test_unknown_language_does_not_borrow_foreign_morphology(self):
+        # `simple` не стеммит вовсе — это честнее, чем притвориться, что
+        # французский текст русский.
+        self.assertEqual(fts_config("fr"), "simple")
+        self.assertEqual(fts_config(""), "simple")
 
     def test_default_service_uses_backend_specific_lexical_factory(self):
         selected = mock.Mock()
