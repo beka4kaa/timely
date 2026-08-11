@@ -13,7 +13,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { LearningBlock } from "@/lib/studyplan-api";
+import {
+  commitmentKindLabel,
+  courseAccent,
+  isCommitmentEntry,
+} from "@/lib/studyplan-calendar-entries";
 import {
   HOUR_HEIGHT,
   type DayColumn,
@@ -37,6 +41,8 @@ import {
 } from "@/lib/studyplan-visuals";
 import { paperCaption, paperFocus } from "@/components/curriculum/paper";
 
+import type { CalendarEntry } from "./use-schedule";
+
 /** На сколько двигают блок стрелками с Alt. */
 const KEYBOARD_STEP_MINUTES = 15;
 
@@ -56,14 +62,14 @@ interface DragState {
 }
 
 export interface WeekGridProps {
-  columns: DayColumn<LearningBlock>[];
+  columns: DayColumn<CalendarEntry>[];
   range: VisibleRange;
   timeZone: string;
   todayKey: string;
   selectedId: string | null;
   busy?: boolean;
-  onSelect: (block: LearningBlock) => void;
-  onMove: (blockId: string, startAt: Date, durationMinutes?: number) => void;
+  onSelect: (block: CalendarEntry) => void;
+  onMove: (block: CalendarEntry, startAt: Date, durationMinutes?: number) => void;
 }
 
 export function WeekGrid({
@@ -88,6 +94,7 @@ export function WeekGrid({
   const marks = useMemo(() => hourMarks(range), [range]);
   const bodyHeight = ((range.endMinutes - range.startMinutes) / 60) * HOUR_HEIGHT;
   const days = useMemo(() => columns.map((column) => column.dateKey), [columns]);
+  const empty = columns.every((column) => column.blocks.length === 0);
 
   // Метка «сейчас» живёт своей жизнью и не должна ждать перезагрузки данных.
   useEffect(() => {
@@ -155,7 +162,7 @@ export function WeekGrid({
   const beginDrag = useCallback(
     (
       event: React.PointerEvent,
-      block: LearningBlock,
+      block: CalendarEntry,
       startMinutes: number,
       dateKey: string,
       mode: "move" | "resize",
@@ -228,8 +235,12 @@ export function WeekGrid({
 
       if (current.mode === "resize") {
         if (current.previewDuration !== current.durationMinutes) {
+          const source = columns
+            .flatMap((column) => column.blocks)
+            .find((item) => item.block.id === current.blockId)?.block;
+          if (!source) return;
           onMove(
-            current.blockId,
+            source,
             toInstant(current.originDateKey, current.originStartMinutes, timeZone),
             current.previewDuration,
           );
@@ -249,15 +260,18 @@ export function WeekGrid({
         timeZone,
         durationMinutes: current.durationMinutes,
       });
-      onMove(current.blockId, target.startAt);
+      const source = columns
+        .flatMap((column) => column.blocks)
+        .find((item) => item.block.id === current.blockId)?.block;
+      if (source) onMove(source, target.startAt);
     },
-    [drag, onMove, range, timeZone],
+    [columns, drag, onMove, range, timeZone],
   );
 
   const handleKey = useCallback(
     (
       event: React.KeyboardEvent,
-      block: LearningBlock,
+      block: CalendarEntry,
       startMinutes: number,
       dateKey: string,
     ) => {
@@ -283,7 +297,7 @@ export function WeekGrid({
         0,
         Math.min(nextMinutes, 24 * 60 - block.duration_minutes),
       );
-      onMove(block.id, toInstant(nextDate, nextMinutes, timeZone));
+      onMove(block, toInstant(nextDate, nextMinutes, timeZone));
     },
     [busy, onMove, onSelect, timeZone],
   );
@@ -365,6 +379,17 @@ export function WeekGrid({
                   const block = positioned.block;
                   const dragging = drag?.blockId === block.id;
                   const look = blockAppearance(block);
+                  const commitment = isCommitmentEntry(block);
+                  const sourceLabel = commitment
+                    ? commitmentKindLabel(block.commitment_kind)
+                    : block.course_plan_title;
+                  const sourceAccent = commitment
+                    ? courseAccent(`commitment:${block.commitment_kind}`)
+                    : courseAccent(block.course_plan);
+                  const isProposal =
+                    !commitment &&
+                    (block.schedule_status === "proposed" ||
+                      block.schedule_status === "draft");
 
                   // Растягивание меняет высоту на месте, перенос — нет: блок
                   // остаётся на исходном месте бледной тенью, а результат
@@ -385,9 +410,11 @@ export function WeekGrid({
                       tabIndex={0}
                       aria-label={`${block.title}, ${formatMinutes(
                         positioned.startMinutes,
-                      )}, ${durationLabel(block.duration_minutes)}${
+                      )}, ${sourceLabel}, ${durationLabel(block.duration_minutes)}${
                         look.statusLabel ? `, ${look.statusLabel}` : ""
-                      }${block.fixed ? ", закреплено" : ""}`}
+                      }${block.fixed ? ", закреплено" : ""}${
+                        isProposal ? ", предложенное расписание" : ""
+                      }`}
                       onPointerDown={(event) =>
                         beginDrag(
                           event,
@@ -404,7 +431,7 @@ export function WeekGrid({
                         handleKey(event, block, positioned.startMinutes, column.dateKey)
                       }
                       onClick={() => {
-                        if (drag || draggedRef.current) {
+                        if (draggedRef.current) {
                           draggedRef.current = false;
                           return;
                         }
@@ -422,12 +449,12 @@ export function WeekGrid({
                         width: `calc(${width}% - 4px)`,
                         background: look.background,
                         borderColor: look.ring ?? look.border,
-                        borderStyle: look.dashed ? "dashed" : "solid",
+                        borderStyle: look.dashed || isProposal ? "dashed" : "solid",
                         borderWidth: look.ring ? 2 : 1,
                         color: look.text,
                         opacity:
                           dragging && !resizing ? 0.3 : look.faded ? 0.55 : 1,
-                        boxShadow: `inset 3px 0 0 ${look.accent}`,
+                        boxShadow: `inset 3px 0 0 ${sourceAccent}`,
                       }}
                     >
                       <div
@@ -439,10 +466,15 @@ export function WeekGrid({
                       </div>
                       {height > 34 ? (
                         <div className="mt-0.5 truncate text-[11px] tabular-nums opacity-70">
-                          {formatMinutes(positioned.startMinutes)} · {look.label}
+                          {formatMinutes(positioned.startMinutes)} · {sourceLabel}
                         </div>
                       ) : null}
-                      {look.statusLabel && height > 52 ? (
+                      {height > 62 ? (
+                        <div className="mt-0.5 truncate text-[10px] opacity-60">
+                          {commitment ? "Занято" : look.label}
+                        </div>
+                      ) : null}
+                      {look.statusLabel && height > 78 ? (
                         <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.12em] opacity-60">
                           {look.statusLabel}
                         </div>
@@ -491,6 +523,21 @@ export function WeekGrid({
                 </div>
                 <div className="mt-0.5 text-[11px] tabular-nums opacity-75">
                   {formatMinutes(preview.startMinutes)}
+                </div>
+              </div>
+            ) : null}
+
+            {empty ? (
+              <div
+                className="pointer-events-none absolute inset-x-6 top-24 z-30 rounded-[16px] border border-dashed border-[#d8d1c7] bg-[#fffdfa]/90 px-4 py-5 text-center"
+                aria-live="polite"
+              >
+                <div className="text-[13.5px] text-[#5f584f]">
+                  Свободная неделя
+                </div>
+                <div className="mt-1 text-[12px] text-[#8d857b]">
+                  Добавь учебную программу — её занятия появятся здесь вместе
+                  с остальным занятым временем.
                 </div>
               </div>
             ) : null}

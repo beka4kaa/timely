@@ -56,7 +56,7 @@ def _error(message: str, code: str = "invalid") -> Response:
     )
 
 
-def _boundary(raw: str | None, schedule) -> datetime | None:
+def _boundary_in_timezone(raw: str | None, timezone_name: str) -> datetime | None:
     """Граница диапазона из query-параметра в момент времени с зоной.
 
     Наивную дату нельзя отдавать в фильтр как есть: при `USE_TZ = True` Django
@@ -71,14 +71,18 @@ def _boundary(raw: str | None, schedule) -> datetime | None:
         return (
             moment
             if moment.tzinfo
-            else moment.replace(tzinfo=resolve_zone(schedule.timezone))
+            else moment.replace(tzinfo=resolve_zone(timezone_name))
         )
 
     day = parse_date(raw)
     if day is None:
         raise ValueError(raw)
-    local, _ = local_to_utc(day, time(0, 0), resolve_zone(schedule.timezone))
+    local, _ = local_to_utc(day, time(0, 0), resolve_zone(timezone_name))
     return local
+
+
+def _boundary(raw: str | None, schedule) -> datetime | None:
+    return _boundary_in_timezone(raw, schedule.timezone)
 
 
 class _UserScopedViewSet(viewsets.ModelViewSet):
@@ -251,7 +255,7 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
         спрашивает «неделю ученика», а не «неделю по Гринвичу».
         """
         schedule = self.get_object()
-        queryset = schedule.blocks.all()
+        queryset = schedule.blocks.select_related("schedule", "course_plan")
 
         try:
             start = _boundary(request.query_params.get("from"), schedule)
@@ -326,11 +330,48 @@ class LearningBlockViewSet(viewsets.ReadOnlyModelViewSet):
         email = self._user_email()
         if not email:
             return LearningBlock.objects.none()
-        queryset = LearningBlock.objects.filter(user_email=email)
+        queryset = LearningBlock.objects.filter(user_email=email).select_related(
+            "schedule", "course_plan"
+        )
         schedule = self.request.query_params.get("schedule")
         if schedule:
             queryset = queryset.filter(schedule_id=schedule)
+        elif self.action == "list":
+            # Общий календарь: одна текущая версия каждого курса. Архив и
+            # завершённые расписания доступны через их detail endpoint, но не
+            # смешиваются с рабочей недельной сеткой.
+            queryset = queryset.filter(
+                schedule__in=services.calendar_schedules(email)
+            )
+
+        if self.action != "list":
+            return queryset
+
+        timezone_name = self.request.query_params.get("timezone") or "UTC"
+        start = _boundary_in_timezone(
+            self.request.query_params.get("from"), timezone_name
+        )
+        end = _boundary_in_timezone(
+            self.request.query_params.get("to"), timezone_name
+        )
+        if start is not None and end is not None and start >= end:
+            raise ValueError("range")
+        # Пересечение с полуоткрытым [from, to): начавшийся раньше длинный
+        # блок всё равно должен быть виден, а соседний ровно на границе — нет.
+        if start is not None:
+            queryset = queryset.filter(end_at__gt=start)
+        if end is not None:
+            queryset = queryset.filter(start_at__lt=end)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except ValueError:
+            return _error(
+                "Границы диапазона нужно задать корректными датами, from раньше to.",
+                code="bad_range",
+            )
 
     def partial_update(self, request, pk=None):
         """Ручной перенос блока — перетаскивание в календаре.

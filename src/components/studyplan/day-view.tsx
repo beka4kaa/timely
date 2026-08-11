@@ -6,7 +6,11 @@
 
 "use client";
 
-import type { LearningBlock } from "@/lib/studyplan-api";
+import {
+  commitmentKindLabel,
+  courseAccent,
+  isCommitmentEntry,
+} from "@/lib/studyplan-calendar-entries";
 import {
   type DayColumn,
   formatMinutes,
@@ -25,12 +29,14 @@ import {
   paperTile,
 } from "@/components/curriculum/paper";
 
+import type { CalendarEntry } from "./use-schedule";
+
 interface DayViewProps {
-  column: DayColumn<LearningBlock> | undefined;
+  column: DayColumn<CalendarEntry> | undefined;
   dateKey: string;
   todayKey: string;
   selectedId: string | null;
-  onSelect: (block: LearningBlock) => void;
+  onSelect: (block: CalendarEntry) => void;
   onChangeDay: (dateKey: string) => void;
 }
 
@@ -76,17 +82,28 @@ export function DayView({
 
       {blocks.length === 0 ? (
         <div className={`${paperTile} px-4 py-6 text-center text-[13px] text-[#7b7168]`}>
-          В этот день занятий нет. Это не пропуск, а запланированный отдых.
+          В этот день пока ничего нет. Время свободно.
         </div>
       ) : (
         <>
           <div className={paperCaption}>
-            {blocks.length} занятий · {durationLabel(total)}
+            {blocks.length} {blockWord(blocks.length)} · {durationLabel(total)}
           </div>
           <ul className="space-y-2">
             {blocks.map((positioned) => {
               const block = positioned.block;
               const look = blockAppearance(block);
+              const commitment = isCommitmentEntry(block);
+              const sourceLabel = commitment
+                ? commitmentKindLabel(block.commitment_kind)
+                : block.course_plan_title;
+              const sourceAccent = commitment
+                ? courseAccent(`commitment:${block.commitment_kind}`)
+                : courseAccent(block.course_plan);
+              const isProposal =
+                !commitment &&
+                (block.schedule_status === "proposed" ||
+                  block.schedule_status === "draft");
               return (
                 <li key={block.id}>
                   <button
@@ -97,11 +114,11 @@ export function DayView({
                     style={{
                       background: look.background,
                       borderColor: look.ring ?? look.border,
-                      borderStyle: look.dashed ? "dashed" : "solid",
+                      borderStyle: look.dashed || isProposal ? "dashed" : "solid",
                       borderWidth: look.ring ? 2 : 1,
                       color: look.text,
                       opacity: look.faded ? 0.6 : 1,
-                      boxShadow: `inset 3px 0 0 ${look.accent}`,
+                      boxShadow: `inset 3px 0 0 ${sourceAccent}`,
                     }}
                   >
                     <div className="w-14 shrink-0 pt-0.5">
@@ -121,8 +138,10 @@ export function DayView({
                         {block.title}
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-[11px] opacity-70">
-                        <span>{look.label}</span>
+                        <span>{sourceLabel}</span>
+                        {!commitment ? <span>· {look.label}</span> : null}
                         {block.fixed ? <span>· закреплено</span> : null}
+                        {isProposal ? <span>· предложение</span> : null}
                         {look.statusLabel ? <span>· {look.statusLabel}</span> : null}
                       </div>
                     </div>
@@ -135,4 +154,13 @@ export function DayView({
       )}
     </div>
   );
+}
+
+function blockWord(count: number): string {
+  const tens = count % 100;
+  if (tens >= 11 && tens <= 14) return "блоков";
+  const units = count % 10;
+  if (units === 1) return "блок";
+  if (units >= 2 && units <= 4) return "блока";
+  return "блоков";
 }

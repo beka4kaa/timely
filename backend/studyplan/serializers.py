@@ -125,12 +125,33 @@ class FixedCommitmentSerializer(serializers.ModelSerializer):
 
 
 class LearningBlockSerializer(serializers.ModelSerializer):
+    # Общему календарю не нужно отдельно загружать каждое расписание перед
+    # drag-and-drop: версия и зона едут рядом с блоком, а название курса нужно
+    # для подписи/цвета. Идентификаторы `schedule`/`course_plan` остаются
+    # прежними, поэтому контракт обратно совместим.
+    schedule_version = serializers.IntegerField(
+        source="schedule.version", read_only=True
+    )
+    schedule_status = serializers.CharField(
+        source="schedule.status", read_only=True
+    )
+    schedule_timezone = serializers.CharField(
+        source="schedule.timezone", read_only=True
+    )
+    course_plan_title = serializers.CharField(
+        source="course_plan.title", read_only=True
+    )
+
     class Meta:
         model = LearningBlock
         fields = [
             "id",
             "schedule",
+            "schedule_version",
+            "schedule_status",
+            "schedule_timezone",
             "course_plan",
+            "course_plan_title",
             "module",
             "topic",
             "title",
@@ -252,13 +273,17 @@ class StudyScheduleListSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "course_plan",
+            "template",
             "start_date",
             "end_date",
             "timezone",
             "status",
             "version",
+            "conflict_report",
+            "warnings",
             "feasible",
             "created_at",
+            "updated_at",
         ]
         read_only_fields = fields
 

@@ -272,6 +272,16 @@ class StudySchedule(TimestampedModel):
         COMPLETED = "completed", "Завершено"
         ARCHIVED = "archived", "В архиве"
 
+    # Один общий календарь показывает текущую рабочую версию каждого курса.
+    # Завершённые и архивные версии остаются в истории, но не занимают время
+    # нового плана и не попадают в обычную календарную ленту.
+    CALENDAR_STATUSES = (
+        Status.DRAFT,
+        Status.PROPOSED,
+        Status.CONFIRMED,
+        Status.ACTIVE,
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_email = models.EmailField(db_index=True)
     course_plan = models.ForeignKey(

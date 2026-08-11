@@ -16,7 +16,12 @@ from datetime import date, datetime, timedelta
 from .models import LearningBlock, StudySchedule
 from .scheduling.contracts import MIN_PART_MINUTES, FreeSlot
 from .scheduling.slots import expand_free_slots, resolve_zone
-from .services import commitment_specs, template_spec
+from .services import (
+    calendar_learning_blocks,
+    commitment_specs,
+    learning_block_commitment_specs,
+    template_spec,
+)
 
 # Статусы, которые больше не занимают время: отменённое и перенесённое место в
 # календаре не держит.
@@ -79,9 +84,17 @@ def free_windows(
     которое этот же блок и занимает.
     """
     template = schedule.template
+    other_course_blocks = calendar_learning_blocks(
+        schedule.user_email,
+        exclude_course_plan_id=str(schedule.course_plan_id),
+        include_released=False,
+    )
     slots, _ = expand_free_slots(
         template_spec(template),
-        commitment_specs(schedule.user_email),
+        (
+            *commitment_specs(schedule.user_email),
+            *learning_block_commitment_specs(other_course_blocks),
+        ),
         start_date=start_date,
         end_date=end_date,
         timezone_name=schedule.timezone,

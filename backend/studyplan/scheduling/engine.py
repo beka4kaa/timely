@@ -83,13 +83,26 @@ class SlotPool:
         max_minutes_per_day: int = 0,
         max_minutes_per_week: int = 0,
         buffer_percentage: float = 0.0,
+        existing_study_minutes: tuple[tuple[date, int], ...] = (),
     ) -> None:
         self._slots = list(slots)
         # Следующий свободный момент внутри каждого окна.
         self._cursor = [slot.start for slot in self._slots]
         self._day_used: dict[date, int] = {}
         self._week_used: dict[tuple[int, int], int] = {}
+        self._existing_day_used: dict[date, int] = {}
+        for day, minutes in existing_study_minutes:
+            self._existing_day_used[day] = (
+                self._existing_day_used.get(day, 0) + max(0, int(minutes))
+            )
+        self._existing_week_used: dict[tuple[int, int], int] = {}
+        for day, minutes in self._existing_day_used.items():
+            key = _week_key(day)
+            self._existing_week_used[key] = (
+                self._existing_week_used.get(key, 0) + minutes
+            )
         self._max_day = max(0, int(max_minutes_per_day))
+        self._max_week = max(0, int(max_minutes_per_week))
 
         # Буфер применяется к недельной ёмкости, а не выбрасыванием окон:
         # выбросить окно целиком значит зарезервировать 45 минут там, где нужно
@@ -105,7 +118,12 @@ class SlotPool:
         for key, total in week_total.items():
             cap = int(total * (1.0 - buffer))
             if max_minutes_per_week:
-                cap = min(cap, int(max_minutes_per_week))
+                remaining_global_limit = max(
+                    0,
+                    int(max_minutes_per_week)
+                    - self._existing_week_used.get(key, 0),
+                )
+                cap = min(cap, remaining_global_limit)
             self._week_cap[key] = max(0, cap)
 
     @property
@@ -150,7 +168,10 @@ class SlotPool:
                 continue
 
             if self._max_day:
-                used = self._day_used.get(slot.local_date, 0)
+                used = (
+                    self._existing_day_used.get(slot.local_date, 0)
+                    + self._day_used.get(slot.local_date, 0)
+                )
                 if used + duration_minutes > self._max_day:
                     continue
 
@@ -158,6 +179,13 @@ class SlotPool:
             cap = self._week_cap.get(key, 0)
             if self._week_used.get(key, 0) + duration_minutes > cap:
                 continue
+            if self._max_week:
+                global_used = (
+                    self._existing_week_used.get(key, 0)
+                    + self._week_used.get(key, 0)
+                )
+                if global_used + duration_minutes > self._max_week:
+                    continue
 
             self._cursor[index] = end
             self._day_used[slot.local_date] = (
@@ -200,6 +228,7 @@ def build_schedule(request: ScheduleGenerationRequest) -> ScheduleDraft:
         max_minutes_per_day=request.template.max_minutes_per_day,
         max_minutes_per_week=request.template.max_minutes_per_week,
         buffer_percentage=request.pacing.buffer_percentage,
+        existing_study_minutes=request.existing_study_minutes,
     )
 
     if not free_slots:

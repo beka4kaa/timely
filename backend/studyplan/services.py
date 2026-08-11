@@ -12,6 +12,8 @@ from dataclasses import dataclass, replace
 from datetime import date, time, timedelta
 
 from django.db import transaction
+from django.db.models import Case, F, IntegerField, OuterRef, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone as django_timezone
 
 from curriculum.models import (
@@ -48,6 +50,7 @@ from .scheduling.pacing import (
     default_template,
     weekly_pattern_from_template,
 )
+from .scheduling.slots import busy_intervals, local_to_utc, resolve_zone
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,11 @@ logger = logging.getLogger(__name__)
 # планом и становится гаданием.
 DEFAULT_HORIZON_DAYS = 90
 MAX_HORIZON_DAYS = 120
+
+_RELEASED_BLOCK_STATUSES = (
+    LearningBlock.Status.CANCELLED,
+    LearningBlock.Status.RESCHEDULED,
+)
 
 
 class ScheduleGenerationError(RuntimeError):
@@ -109,6 +117,129 @@ def commitment_specs(user_email: str) -> tuple[CommitmentSpec, ...]:
         )
         for item in FixedCommitment.objects.filter(user_email=user_email)
     )
+
+
+def calendar_schedules(user_email: str):
+    """Одна рабочая версия расписания на курс для общего календаря.
+
+    Новая выполнимая proposal-версия заменяет старую active-версию в preview.
+    Невыполнимое предложение старый рабочий календарь не скрывает. Если же у
+    курса ещё нет ни одной выполнимой версии, возвращается его новейший
+    proposal с частичными блоками и conflict report.
+
+    Выбор вынесен сюда, чтобы API, генератор и проверки конфликтов видели
+    ровно одну и ту же картину занятости.
+    """
+    candidates = StudySchedule.objects.filter(
+        user_email=user_email,
+        status__in=StudySchedule.CALENDAR_STATUSES,
+    )
+    same_course = StudySchedule.objects.filter(
+        user_email=user_email,
+        course_plan_id=OuterRef("course_plan_id"),
+        status__in=StudySchedule.CALENDAR_STATUSES,
+    ).annotate(
+        _status_priority=Case(
+            When(status=StudySchedule.Status.PROPOSED, then=Value(4)),
+            When(status=StudySchedule.Status.DRAFT, then=Value(3)),
+            When(status=StudySchedule.Status.ACTIVE, then=Value(2)),
+            When(status=StudySchedule.Status.CONFIRMED, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+    )
+    ordering = ("-created_at", "-_status_priority", "id")
+    newest_feasible = same_course.filter(conflict_report={}).order_by(*ordering)
+    newest_any = same_course.order_by(*ordering)
+    chosen_id = Coalesce(
+        Subquery(newest_feasible.values("id")[:1]),
+        Subquery(newest_any.values("id")[:1]),
+    )
+    return candidates.annotate(_calendar_schedule_id=chosen_id).filter(
+        id=F("_calendar_schedule_id")
+    )
+
+
+def calendar_learning_blocks(
+    user_email: str,
+    *,
+    exclude_course_plan_id: str | None = None,
+    include_released: bool = True,
+):
+    """Блоки того же календаря, который отдаётся пользовательскому API."""
+    schedules = calendar_schedules(user_email)
+    if exclude_course_plan_id is not None:
+        schedules = schedules.exclude(course_plan_id=exclude_course_plan_id)
+    blocks = LearningBlock.objects.filter(
+        user_email=user_email,
+        schedule__in=schedules,
+    )
+    if not include_released:
+        blocks = blocks.exclude(status__in=_RELEASED_BLOCK_STATUSES)
+    return blocks
+
+
+def learning_block_commitment_specs(blocks) -> tuple[CommitmentSpec, ...]:
+    """Представить уже стоящие уроки как разовую занятость scheduler-а."""
+    return tuple(
+        CommitmentSpec(
+            title=block.title,
+            start_at=block.start_at,
+            end_at=block.end_at,
+        )
+        for block in blocks
+    )
+
+
+def _study_minutes_by_local_day(
+    blocks: list[LearningBlock], timezone_name: str
+) -> tuple[tuple[date, int], ...]:
+    """Разнести даже пересекающий полночь блок по локальным дням."""
+    zone = resolve_zone(timezone_name)
+    daily: dict[date, int] = {}
+    for block in blocks:
+        day = block.start_at.astimezone(zone).date()
+        last_day = block.end_at.astimezone(zone).date()
+        while day <= last_day:
+            day_start, _ = local_to_utc(day, time(0, 0), zone)
+            day_end, _ = local_to_utc(
+                day + timedelta(days=1), time(0, 0), zone
+            )
+            overlap_start = max(block.start_at, day_start)
+            overlap_end = min(block.end_at, day_end)
+            minutes = max(
+                0, int((overlap_end - overlap_start).total_seconds() // 60)
+            )
+            if minutes:
+                daily[day] = daily.get(day, 0) + minutes
+            day += timedelta(days=1)
+    return tuple(sorted(daily.items()))
+
+
+def _calendar_occupancy(
+    *,
+    user_email: str,
+    exclude_course_plan_id: str,
+    start_date: date,
+    end_date: date,
+    timezone_name: str,
+) -> tuple[tuple[CommitmentSpec, ...], tuple[tuple[date, int], ...]]:
+    """Занятость и учебная нагрузка других курсов в нужном горизонте."""
+    zone = resolve_zone(timezone_name)
+    range_start, _ = local_to_utc(start_date, time(0, 0), zone)
+    range_end, _ = local_to_utc(end_date + timedelta(days=1), time(0, 0), zone)
+    blocks = list(
+        calendar_learning_blocks(
+            user_email,
+            exclude_course_plan_id=exclude_course_plan_id,
+            include_released=False,
+        )
+        .filter(end_at__gt=range_start, start_at__lt=range_end)
+        .only("title", "start_at", "end_at", "duration_minutes")
+    )
+
+    specs = learning_block_commitment_specs(blocks)
+    return specs, _study_minutes_by_local_day(blocks, timezone_name)
 
 
 def topic_inputs(plan: CoursePlan) -> list[TopicInput]:
@@ -379,6 +510,13 @@ def build_request(
         buffer_percentage=buffer_percentage,
         provider_key=provider_key,
     )
+    occupied_specs, existing_study_minutes = _calendar_occupancy(
+        user_email=plan.user_email,
+        exclude_course_plan_id=str(plan.id),
+        start_date=start_date,
+        end_date=end_date,
+        timezone_name=timezone_name,
+    )
 
     request = ScheduleGenerationRequest(
         user_email=plan.user_email,
@@ -388,7 +526,8 @@ def build_request(
         start_date=start_date,
         end_date=end_date,
         timezone=timezone_name,
-        commitments=commitment_specs(plan.user_email),
+        commitments=(*commitment_specs(plan.user_email), *occupied_specs),
+        existing_study_minutes=existing_study_minutes,
         prerequisites=prerequisites,
         desired_finish_date=plan.goal.desired_finish_date if plan.goal_id else None,
         detailed_horizon_days=detailed_horizon_days,
@@ -431,6 +570,9 @@ def generate_schedule(
     template = template or ensure_template(
         user_email=plan.user_email, plan=plan, timezone_name=timezone_name
     )
+    # У существующего ритма зона уже является частью обещания ученику
+    # («вторник в 17:00»). Зона браузера в поездке не должна сдвигать его.
+    schedule_timezone = template.timezone
     horizon_end = resolve_horizon(plan, start_date, end_date)
 
     request, pacing_warnings, pacing_snapshot = build_request(
@@ -438,7 +580,7 @@ def generate_schedule(
         template=template,
         start_date=start_date,
         end_date=horizon_end,
-        timezone_name=timezone_name,
+        timezone_name=schedule_timezone,
         buffer_percentage=buffer_percentage,
         detailed_horizon_days=detailed_horizon_days,
         provider_key=provider_key,
@@ -451,7 +593,7 @@ def generate_schedule(
         template=template,
         start_date=start_date,
         end_date=horizon_end,
-        timezone=timezone_name,
+        timezone=schedule_timezone,
         status=StudySchedule.Status.PROPOSED,
         generation_source=pacing_snapshot.get("provider", "deterministic"),
         pacing_snapshot={
@@ -503,6 +645,66 @@ class ScheduleNotConfirmable(RuntimeError):
     """Расписание нельзя подтвердить в его текущем состоянии."""
 
 
+def _first_cross_course_collision(
+    schedule: StudySchedule,
+) -> tuple[LearningBlock, LearningBlock] | None:
+    own = list(
+        schedule.blocks.exclude(status__in=_RELEASED_BLOCK_STATUSES).order_by(
+            "start_at", "id"
+        )
+    )
+    if not own:
+        return None
+    other = list(
+        calendar_learning_blocks(
+            schedule.user_email,
+            exclude_course_plan_id=str(schedule.course_plan_id),
+            include_released=False,
+        )
+        .filter(
+            end_at__gt=own[0].start_at,
+            start_at__lt=max(item.end_at for item in own),
+        )
+        .order_by("start_at", "id")
+    )
+
+    left = right = 0
+    while left < len(own) and right < len(other):
+        current = own[left]
+        external = other[right]
+        if current.start_at < external.end_at and external.start_at < current.end_at:
+            return current, external
+        if current.end_at <= external.start_at:
+            left += 1
+        else:
+            right += 1
+    return None
+
+
+def _first_fixed_commitment_collision(
+    schedule: StudySchedule,
+) -> tuple[LearningBlock, str] | None:
+    own = list(
+        schedule.blocks.exclude(status__in=_RELEASED_BLOCK_STATUSES).order_by(
+            "start_at", "id"
+        )
+    )
+    if not own:
+        return None
+    zone = resolve_zone(schedule.timezone)
+    first_day = own[0].start_at.astimezone(zone).date()
+    last_day = max(item.end_at for item in own).astimezone(zone).date()
+    for commitment in commitment_specs(schedule.user_email):
+        intervals = busy_intervals(
+            (commitment,), start_date=first_day, end_date=last_day, zone=zone
+        )
+        for block in own:
+            for busy_start, busy_end in intervals:
+                if block.start_at < busy_end and busy_start < block.end_at:
+                    return block, commitment.title
+    return None
+
+
 @transaction.atomic
 def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
     """Ученик принял предложенный календарь: он становится активным.
@@ -511,6 +713,19 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
     календарей по одному курсу быть не может — иначе экран «Сейчас» не сможет
     ответить, какое занятие следующее.
     """
+    # Подтверждения разных курсов сериализуются общим пользовательским lock:
+    # версия одного StudySchedule не замечает движение во втором.
+    list(
+        StudySchedule.objects.select_for_update()
+        .filter(
+            user_email=schedule.user_email,
+            status__in=StudySchedule.CALENDAR_STATUSES,
+        )
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+    schedule = StudySchedule.objects.get(pk=schedule.pk)
+
     if schedule.status in {
         StudySchedule.Status.COMPLETED,
         StudySchedule.Status.ARCHIVED,
@@ -520,10 +735,25 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
         raise ScheduleNotConfirmable(
             "Расписание не вмещает программу — сначала нужно разрешить конфликт."
         )
+    fixed_collision = _first_fixed_commitment_collision(schedule)
+    if fixed_collision is not None:
+        block, commitment_title = fixed_collision
+        raise ScheduleNotConfirmable(
+            f"«{block.title}» пересекается с занятостью «{commitment_title}». "
+            "Обнови предложение расписания."
+        )
+    collision = _first_cross_course_collision(schedule)
+    if collision is not None:
+        own, other = collision
+        raise ScheduleNotConfirmable(
+            f"«{own.title}» пересекается с «{other.title}» из другого курса. "
+            "Обнови предложение расписания."
+        )
 
     StudySchedule.objects.filter(
         course_plan=schedule.course_plan,
         status__in=[
+            StudySchedule.Status.DRAFT,
             StudySchedule.Status.ACTIVE,
             StudySchedule.Status.CONFIRMED,
             StudySchedule.Status.PROPOSED,

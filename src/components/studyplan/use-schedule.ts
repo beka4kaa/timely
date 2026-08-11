@@ -1,9 +1,4 @@
-// Данные страницы «План»: расписание, блоки недели, изменения.
-//
-// Свой хук, а не общий стор: страница читает ровно одно расписание и живёт
-// неделей, которую сейчас смотрит ученик. Класть это в Zustand с `persist`
-// значило бы хранить чужой календарь между сессиями и однажды показать
-// расписание другой программы по сохранённому идентификатору.
+// Данные общего календаря: все программы и занятое время одной недели.
 
 "use client";
 
@@ -11,32 +6,47 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listPlans, type CoursePlanSummary } from "@/lib/curriculum-api";
 import {
+  type CommitmentCalendarEntry,
+  type LearningCalendarEntryFields,
+  type StudyCalendarEntry,
+  calendarTimeZone,
+  compareCalendarSchedules,
+  expandCommitments,
+  selectVisibleSchedules,
+} from "@/lib/studyplan-calendar-entries";
+import {
   StudyplanApiError,
-  type LearningBlock,
+  type CalendarLearningBlock,
   type ScheduleRevision,
   type StudySchedule,
   confirmSchedule,
   generateSchedule,
-  getSchedule,
-  listBlocks,
+  listCalendarBlocks,
+  listCommitments,
   listSchedules,
   moveBlock,
   undoRevision,
 } from "@/lib/studyplan-api";
 import { shiftDateKey, weekDays, zonedDateKey } from "@/lib/studyplan-calendar";
 
+export type LearningCalendarEntry = CalendarLearningBlock &
+  LearningCalendarEntryFields;
+export type CalendarEntry = StudyCalendarEntry<CalendarLearningBlock>;
+
 export type ScheduleState =
   | { state: "loading" }
-  | { state: "empty"; plans: CoursePlanSummary[] }
   | { state: "error"; message: string }
   | {
       state: "ready";
-      schedule: StudySchedule;
-      blocks: LearningBlock[];
+      schedules: StudySchedule[];
+      proposals: StudySchedule[];
+      blocks: LearningCalendarEntry[];
+      commitments: CommitmentCalendarEntry[];
       plans: CoursePlanSummary[];
+      timeZone: string;
     };
 
-/** Зона браузера. Её же предлагаем бэкенду при первой генерации. */
+/** Зона браузера — запасной вариант до появления хотя бы одного расписания. */
 export function browserTimeZone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -45,43 +55,92 @@ export function browserTimeZone(): string {
   }
 }
 
-/** Активное расписание среди всех: сначала идущее, потом предложенное. */
-function pickSchedule(schedules: StudySchedule[]): StudySchedule | null {
-  const byPriority = ["active", "confirmed", "proposed", "draft"];
-  for (const status of byPriority) {
-    const found = schedules.find((item) => item.status === status);
-    if (found) return found;
-  }
-  return schedules[0] ?? null;
-}
-
 export function useSchedule() {
+  const fallbackTimeZone = useMemo(browserTimeZone, []);
   const [data, setData] = useState<ScheduleState>({ state: "loading" });
   const [anchor, setAnchor] = useState<string>(() =>
-    zonedDateKey(new Date(), browserTimeZone()),
+    zonedDateKey(new Date(), fallbackTimeZone),
   );
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [lastRevision, setLastRevision] = useState<ScheduleRevision | null>(null);
 
-  // Гонка вкладок и быстрых переключений недели: ответ устаревшего запроса не
-  // должен затирать более свежий.
   const requestId = useRef(0);
+  const initialZoneResolved = useRef(false);
+  const days = useMemo(() => weekDays(anchor), [anchor]);
 
   const load = useCallback(async () => {
     const ticket = ++requestId.current;
     try {
-      const [schedules, plans] = await Promise.all([listSchedules(), listPlans()]);
-      const schedule = pickSchedule(schedules);
+      const [allSchedules, plans, fixedCommitments] = await Promise.all([
+        listSchedules(),
+        listPlans(),
+        listCommitments(),
+      ]);
       if (ticket !== requestId.current) return;
 
-      if (!schedule) {
-        setData({ state: "empty", plans });
-        return;
+      const visible = selectVisibleSchedules(allSchedules);
+      const timeZone = calendarTimeZone(visible, fallbackTimeZone);
+      if (!initialZoneResolved.current) {
+        initialZoneResolved.current = true;
+        const now = new Date();
+        const canonicalToday = zonedDateKey(now, timeZone);
+        if (canonicalToday !== zonedDateKey(now, fallbackTimeZone)) {
+          setAnchor(canonicalToday);
+          return;
+        }
       }
-      const blocks = await listBlocks(schedule.id);
+      const shownDays = weekDays(anchor);
+      const rawBlocks = await listCalendarBlocks({
+        from: shownDays[0],
+        to: shiftDateKey(shownDays[shownDays.length - 1], 1),
+        timezone: timeZone,
+      });
       if (ticket !== requestId.current) return;
-      setData({ state: "ready", schedule, blocks, plans });
+
+      const scheduleById = new Map(visible.map((schedule) => [schedule.id, schedule]));
+      const planById = new Map(plans.map((plan) => [plan.id, plan]));
+      const visibleByPlan = new Map(
+        visible.map((schedule) => [schedule.course_plan, schedule]),
+      );
+      const blocks: LearningCalendarEntry[] = rawBlocks.map((block) => {
+        const owner = scheduleById.get(block.schedule);
+        return {
+          ...block,
+          calendar_entry: "learning_block",
+          schedule_version: block.schedule_version ?? owner?.version ?? block.version,
+          schedule_status: block.schedule_status ?? owner?.status ?? "active",
+          schedule_timezone: block.schedule_timezone ?? owner?.timezone ?? timeZone,
+          course_plan_title:
+            block.course_plan_title ??
+            planById.get(block.course_plan)?.title ??
+            "Учебная программа",
+        };
+      });
+
+      setData({
+        state: "ready",
+        schedules: visible,
+        proposals: newestProposalPerCourse(
+          allSchedules.filter((schedule) => {
+            if (schedule.status !== "proposed" && schedule.status !== "draft") {
+              return false;
+            }
+            const current = visibleByPlan.get(schedule.course_plan);
+            // Legacy proposal older than an already-confirmed replacement is
+            // history, not an action the current calendar should surface.
+            return (
+              !current ||
+              current.id === schedule.id ||
+              compareCalendarSchedules(schedule, current) < 0
+            );
+          }),
+        ),
+        blocks,
+        commitments: expandCommitments(fixedCommitments, shownDays, timeZone),
+        plans,
+        timeZone,
+      });
     } catch (error) {
       if (ticket !== requestId.current) return;
       setData({
@@ -90,51 +149,40 @@ export function useSchedule() {
           error instanceof Error ? error.message : "Не удалось загрузить расписание.",
       });
     }
-  }, []);
+  }, [anchor, fallbackTimeZone]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const timeZone =
-    data.state === "ready" ? data.schedule.timezone : browserTimeZone();
-  const days = useMemo(() => weekDays(anchor), [anchor]);
+  const timeZone = data.state === "ready" ? data.timeZone : fallbackTimeZone;
 
-  const goToWeek = useCallback((direction: -1 | 0 | 1) => {
-    if (direction === 0) {
-      setAnchor(zonedDateKey(new Date(), browserTimeZone()));
-      return;
-    }
-    setAnchor((current) => shiftDateKey(current, direction * 7));
-  }, []);
-
-  /** Перечитать только блоки: после переноса неделя могла измениться. */
-  const reloadBlocks = useCallback(async (schedule: StudySchedule) => {
-    const fresh = await getSchedule(schedule.id);
-    const blocks = await listBlocks(schedule.id);
-    setData((current) =>
-      current.state === "ready"
-        ? { ...current, schedule: fresh, blocks }
-        : current,
-    );
-  }, []);
+  const goToWeek = useCallback(
+    (direction: -1 | 0 | 1) => {
+      if (direction === 0) {
+        setAnchor(zonedDateKey(new Date(), timeZone));
+        return;
+      }
+      setAnchor((current) => shiftDateKey(current, direction * 7));
+    },
+    [timeZone],
+  );
 
   const move = useCallback(
-    async (blockId: string, startAt: Date, durationMinutes?: number) => {
-      if (data.state !== "ready") return;
+    async (block: LearningCalendarEntry, startAt: Date, durationMinutes?: number) => {
       setBusy(true);
       setNotice(null);
       try {
-        const result = await moveBlock(blockId, {
+        const result = await moveBlock(block.id, {
           startAt: startAt.toISOString(),
           durationMinutes,
-          baseVersion: data.schedule.version,
+          baseVersion: block.schedule_version,
         });
         setLastRevision(result.revision);
-        await reloadBlocks(data.schedule);
+        await load();
       } catch (error) {
         if (error instanceof StudyplanApiError && error.isStale) {
-          setNotice("Расписание изменилось в другом месте — обновляю календарь.");
+          setNotice("Эта программа изменилась в другом месте — обновляю календарь.");
           await load();
         } else {
           setNotice(
@@ -145,42 +193,41 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [data, load, reloadBlocks],
+    [load],
   );
 
   const undoLast = useCallback(async () => {
-    if (!lastRevision || data.state !== "ready") return;
+    if (!lastRevision) return;
     setBusy(true);
     try {
       await undoRevision(lastRevision.id);
       setLastRevision(null);
       setNotice(null);
-      await reloadBlocks(data.schedule);
+      await load();
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Отменить уже нельзя.",
-      );
+      setNotice(error instanceof Error ? error.message : "Отменить уже нельзя.");
     } finally {
       setBusy(false);
     }
-  }, [data, lastRevision, reloadBlocks]);
+  }, [lastRevision, load]);
 
-  const confirm = useCallback(async () => {
-    if (data.state !== "ready") return;
-    setBusy(true);
-    try {
-      const schedule = await confirmSchedule(data.schedule.id);
-      setData((current) =>
-        current.state === "ready" ? { ...current, schedule } : current,
-      );
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Подтвердить не получилось.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, [data]);
+  const confirm = useCallback(
+    async (scheduleId: string) => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        await confirmSchedule(scheduleId);
+        await load();
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Подтвердить не получилось.",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
 
   const build = useCallback(
     async (coursePlanId: string) => {
@@ -189,19 +236,21 @@ export function useSchedule() {
       try {
         await generateSchedule({
           coursePlanId,
-          startDate: zonedDateKey(new Date(), browserTimeZone()),
-          timezone: browserTimeZone(),
+          startDate: zonedDateKey(new Date(), timeZone),
+          timezone: timeZone,
         });
         await load();
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Построить календарь не вышло.",
+          error instanceof Error
+            ? error.message
+            : "Добавить программу в расписание не получилось.",
         );
       } finally {
         setBusy(false);
       }
     },
-    [load],
+    [load, timeZone],
   );
 
   return {
@@ -220,4 +269,15 @@ export function useSchedule() {
     reload: load,
     dismissNotice: () => setNotice(null),
   };
+}
+
+function newestProposalPerCourse(proposals: StudySchedule[]): StudySchedule[] {
+  const newest = new Map<string, StudySchedule>();
+  for (const proposal of proposals) {
+    const current = newest.get(proposal.course_plan);
+    if (!current || compareCalendarSchedules(proposal, current) < 0) {
+      newest.set(proposal.course_plan, proposal);
+    }
+  }
+  return Array.from(newest.values()).sort(compareCalendarSchedules);
 }

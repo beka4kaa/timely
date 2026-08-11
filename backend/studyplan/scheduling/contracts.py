@@ -166,6 +166,11 @@ class ScheduleGenerationRequest:
     end_date: date
     timezone: str
     commitments: tuple[CommitmentSpec, ...] = ()
+    # Уже запланированная учебная нагрузка других курсов в локальных днях
+    # этого календаря. Занятое время вычитается через `commitments`, а эта
+    # отдельная сумма нужна для общих дневных/недельных лимитов: два курса не
+    # должны каждый по отдельности исчерпать один и тот же лимит ученика.
+    existing_study_minutes: tuple[tuple[date, int], ...] = ()
     # Зависимости тем: {topic_id: (topic_id, ...)}. Порядок изучения приходит
     # уже топологически отсортированным, но зависимости нужны для проверки.
     prerequisites: dict[str, tuple[str, ...]] = field(default_factory=dict)
