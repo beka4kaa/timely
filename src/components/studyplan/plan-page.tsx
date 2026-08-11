@@ -14,12 +14,17 @@ import {
   paperTile,
 } from "@/components/curriculum/paper";
 import {
-  courseAccent,
+  buildCourseAccents,
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
+import { weekLoad } from "@/lib/studyplan-load";
 import { createCommitment, type StudySchedule } from "@/lib/studyplan-api";
 import { layoutWeek, visibleRange, zonedDateKey } from "@/lib/studyplan-calendar";
-import { durationLabel, weekLabel } from "@/lib/studyplan-visuals";
+import {
+  durationLabel,
+  weekLabel,
+  weekdayOnLabel,
+} from "@/lib/studyplan-visuals";
 
 import { BlockDetails } from "./block-details";
 import { DayView } from "./day-view";
@@ -63,20 +68,43 @@ export function StudyPlanPage() {
         ? todayKey
         : schedule.days[0];
   const selected = entries.find((entry) => entry.id === selectedId) ?? null;
-  const weekMinutes = columns.reduce(
-    (sum, column) =>
-      sum +
-      column.blocks.reduce(
-        (inner, item) =>
-          inner +
-          (!isCommitmentEntry(item.block) &&
-          RELEASED_STATUSES.has(item.block.status)
-            ? 0
-            : item.block.duration_minutes),
-        0,
+
+  // Считаем УЧЕБНОЕ время, без школы и репетитора: столько же показывает лента
+  // в шапке сетки, и это единственное время, которое ученик здесь двигает.
+  // Занятое время видно в самом календаре.
+  const load = useMemo(
+    () =>
+      weekLoad(
+        columns.map((column) => column.dateKey),
+        columns.flatMap((column) =>
+          column.blocks.flatMap((item) => {
+            const entry = item.block;
+            if (isCommitmentEntry(entry)) return [];
+            return [
+              {
+                dateKey: column.dateKey,
+                minutes: entry.duration_minutes,
+                // Здесь цвет не нужен — важны только суммы и пик, — поэтому
+                // группируем прямо по программе.
+                accent: entry.course_plan,
+                released: RELEASED_STATUSES.has(entry.status),
+              },
+            ];
+          }),
+        ),
       ),
-    0,
+    [columns],
   );
+  const weekMinutes = load.totalMinutes;
+
+  // «Плотнее всего в среду» имеет смысл, только когда занятых дней больше
+  // одного: у единственного дня недели пик — он сам, и подпись превращается
+  // в тавтологию.
+  const busyDays = load.days.filter((day) => day.totalMinutes > 0).length;
+  const peakColumn =
+    busyDays > 1
+      ? columns.find((column) => column.dateKey === load.peakDateKey) ?? null
+      : null;
 
   // Какое расписание правит помощник в панели справа.
   //
@@ -160,6 +188,16 @@ export function StudyPlanPage() {
   const proposalByPlan = new Map(
     data.proposals.map((item) => [item.course_plan, item]),
   );
+  // Цвета программ раздаются по порядку списка, а не по хешу: иначе два курса
+  // могли достаться одному цвету, и правило «цвет = предмет» ломалось бы ровно
+  // там, где оно нужнее всего.
+  const accents = buildCourseAccents(data.plans.map((plan) => plan.id));
+
+  /** Что предложить добавить, когда календарь пуст. */
+  const firstUnscheduledPlan =
+    data.plans.find(
+      (plan) => !visibleByPlan.has(plan.id) && !proposalByPlan.has(plan.id),
+    ) ?? null;
 
   return (
     <CoffeePageShell>
@@ -171,9 +209,21 @@ export function StudyPlanPage() {
               {weekLabel(schedule.days)}
             </h1>
             <p className="mt-1 text-[12.5px] text-[#7b7168]">
-              {weekMinutes > 0
-                ? `${durationLabel(weekMinutes)} запланировано на этой неделе`
-                : "Неделя пока свободна"}
+              {weekMinutes > 0 ? (
+                <>
+                  {durationLabel(weekMinutes)} учёбы на этой неделе
+                  {peakColumn ? (
+                    <>
+                      {" · плотнее всего "}
+                      <span className="text-[#5f584f]">
+                        {weekdayOnLabel(peakColumn.weekday)}
+                      </span>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                "Неделя пока свободна"
+              )}
             </p>
           </div>
 
@@ -286,12 +336,28 @@ export function StudyPlanPage() {
                 todayKey={todayKey}
                 selectedId={selectedId}
                 busy={schedule.busy}
+                accents={accents}
                 onSelect={(entry) => setSelectedId(entry.id)}
                 onMove={(entry, startAt, duration) => {
                   if (!isCommitmentEntry(entry)) {
                     void schedule.move(entry, startAt, duration);
                   }
                 }}
+                // Единственная главная кнопка экрана стоит здесь, в пустом
+                // календаре, — там, где ученик и упирается в вопрос «а что
+                // дальше». В списке программ кнопки при этом тихие.
+                emptyAction={
+                  firstUnscheduledPlan ? (
+                    <button
+                      type="button"
+                      className={paperPrimaryButton}
+                      disabled={schedule.busy}
+                      onClick={() => void schedule.build(firstUnscheduledPlan.id)}
+                    >
+                      Добавить программу в расписание
+                    </button>
+                  ) : null
+                }
               />
             </div>
             <div className={mode === "week" ? "lg:hidden" : ""}>
@@ -302,6 +368,7 @@ export function StudyPlanPage() {
                 dateKey={activeDay}
                 todayKey={todayKey}
                 selectedId={selectedId}
+                accents={accents}
                 onSelect={(entry) => setSelectedId(entry.id)}
                 onChangeDay={(nextDay) => {
                   setDayKey(nextDay);
@@ -320,6 +387,7 @@ export function StudyPlanPage() {
               visibleByPlan={visibleByPlan}
               proposalByPlan={proposalByPlan}
               busy={schedule.busy}
+              accents={accents}
               onBuild={(planId) => void schedule.build(planId)}
             />
 
@@ -398,12 +466,14 @@ function ProgramsPanel({
   proposalByPlan,
   busy,
   onBuild,
+  accents,
 }: {
   plans: Array<{ id: string; title: string }>;
   visibleByPlan: Map<string, StudySchedule>;
   proposalByPlan: Map<string, StudySchedule>;
   busy: boolean;
   onBuild: (planId: string) => void;
+  accents: Map<string, string>;
 }) {
   return (
     <div className={`${paperCard} p-4`}>
@@ -435,7 +505,7 @@ function ProgramsPanel({
                   <div className="flex min-w-0 items-center gap-2">
                     <span
                       className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: courseAccent(plan.id) }}
+                      style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
                       aria-hidden
                     />
                     <span className="truncate text-[13px] text-[#312c27]">
@@ -453,14 +523,19 @@ function ProgramsPanel({
                   ) : null}
                 </div>
 
+                {/* Кнопка тихая и короткая. Раньше здесь стояла главная
+                    (`paperPrimaryButton`) на КАЖДУЮ программу, и две одинаковые
+                    коричневые плашки подряд перетягивали внимание с самого
+                    календаря — при том что `paper.ts` прямо просит держать одну
+                    главную кнопку на экран. */}
                 {!current && !proposal ? (
                   <button
                     type="button"
-                    className={`${paperPrimaryButton} mt-2 w-full justify-center px-3 text-[11.5px]`}
+                    className={`${paperButton} mt-2 w-full justify-center px-3 py-1.5 text-[11.5px]`}
                     disabled={busy}
                     onClick={() => onBuild(plan.id)}
                   >
-                    Добавить программу в расписание
+                    В расписание
                   </button>
                 ) : null}
               </li>

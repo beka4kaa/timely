@@ -40,6 +40,14 @@ export interface AssistantState {
   revision: ScheduleRevision | null;
   commitments: ParsedCommitment[] | null;
   error: string | null;
+  /**
+   * Машинный код отказа, если бэкенд его назвал.
+   *
+   * `assistant_not_configured` — модель не задана в окружении бэкенда. Это не
+   * поломка и не вина ученика, поэтому панель рисует такой случай спокойно, а
+   * не красной строкой.
+   */
+  errorCode: string | null;
 }
 
 export const initialAssistantState: AssistantState = {
@@ -49,6 +57,7 @@ export const initialAssistantState: AssistantState = {
   revision: null,
   commitments: null,
   error: null,
+  errorCode: null,
 };
 
 /** Человеческие названия инструментов: «get_schedule» ученику ничего не говорит. */
@@ -110,6 +119,8 @@ export function applyAssistantEvent(
           typeof event.data.error === "string"
             ? event.data.error
             : "Помощник не смог ответить.",
+        errorCode:
+          typeof event.data.code === "string" ? event.data.code : state.errorCode,
       };
     default:
       return state;

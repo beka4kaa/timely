@@ -1,15 +1,27 @@
 // Как выглядит блок в календаре: подпись, тон, состояние.
 //
 // Вынесено из компонента, потому что это правила, а не разметка, и их надо
-// проверять таблицей. Главное правило одно: **тип занятия и состояние блока
-// кодируются РАЗНЫМИ средствами**. Тип — тоном заливки, состояние — рамкой и
-// насыщенностью. Если бы оба брали цвет, «пропущенная теория» и «выполненная
-// проверка» стали бы неразличимы, а именно эти два вопроса ученик и задаёт
-// календарю: что это за занятие и сделал ли я его.
+// проверять таблицей. Главное правило неизменно: **тип занятия и состояние
+// блока кодируются РАЗНЫМИ средствами**. Если бы оба брали заливку,
+// «пропущенная теория» и «выполненная проверка» стали бы неразличимы, а именно
+// эти два вопроса ученик и задаёт календарю: что это за занятие и сделал ли я
+// его.
 //
-// Палитра одноцветная (hue 30, тёплая бумага раздела). Разные оттенки для
-// разных предметов превратили бы неделю в мозаику, из которой не читается ни
-// расписание, ни прогресс.
+// ЧТО ИЗМЕНИЛОСЬ. Раньше палитра была принципиально одноцветной (hue 32):
+// считалось, что разные оттенки для разных предметов превратят неделю в
+// мозаику. На практике вышло наоборот — вся неделя стала одинаково бежевой
+// (весь диапазон укладывался в 12% светлоты одного тона), и по цвету нельзя
+// было отличить физику от алгебры. Читаемость нормального календаря держится
+// на обратном принципе: цвет кодирует ИСТОЧНИК.
+//
+// Новое правило:
+//
+//     оттенок  = курс      (`courseAccent`, шесть различимых цветов)
+//     плотность = вес занятия (теория бледнее, проверка плотнее)
+//     состояние = рамка, приглушённость, пунктир — но НЕ заливка
+//
+// Мозаики не выходит, потому что заливка живёт в диапазоне 8–18% примеси
+// акцента: неделя читается группами, а не пестрит.
 
 export type BlockVisualStatus =
   | "scheduled"
@@ -72,6 +84,17 @@ export interface BlockAppearance {
   dashed: boolean;
   /** Выполненное и отменённое приглушается, а не выделяется. */
   faded: boolean;
+  /** Занятое время штрихуется: его не двигают и оно не про учёбу. */
+  hatched: boolean;
+  /**
+   * Закреплённое занятие: стоит на месте, но остаётся своим.
+   *
+   * Раньше закрепление показывали подменой акцента на серый — вместе с ним
+   * блок терял и цвет курса, то есть ответ на вопрос «это какой предмет».
+   * Теперь это отдельный признак: цвет остаётся курсовым, а «не двигается»
+   * рисует компонент.
+   */
+  pinned: boolean;
   /** Пропущенное и идущее сейчас получают заметную рамку. */
   ring: string | null;
   /** Короткая пометка состояния. `null` — состояние по умолчанию. */
@@ -104,32 +127,64 @@ export function activityLabel(activityType: string): string {
   return ACTIVITY_LABELS[activityType] ?? activityType;
 }
 
-/** Тон заливки по весу занятия. Один цвет, меняется только светлота. */
-export function activityTone(activityType: string): {
-  background: string;
-  accent: string;
-  border: string;
-  text: string;
-} {
+/** Бумага, на которой лежит блок: с ней смешивается акцент курса. */
+const SHEET = "#fffdfa";
+
+/**
+ * Занятое время — школа, репетитор, семейное.
+ *
+ * Оно намеренно БЕЗ цвета курса: это не учебная нагрузка ученика, а чужое
+ * время, которое он не двигает. Нейтральный тёплый серый плюс штриховка в
+ * компоненте читаются как «здесь занято», а не как ещё один предмет.
+ */
+export const OCCUPIED_ACCENT = "hsl(28 12% 55%)";
+
+const OCCUPIED = {
+  background: "hsl(30 10% 94%)",
+  border: "hsl(30 10% 86%)",
+  accent: OCCUPIED_ACCENT,
+  text: "hsl(28 10% 34%)",
+};
+
+/**
+ * Тон блока: оттенок даёт курс, плотность — вес занятия.
+ *
+ * Примесь акцента идёт от 15% у чтения до 30% у проверки. Ниже 15% предмет
+ * перестаёт читаться по заливке и остаётся жить в одном канте — именно так
+ * выглядела первая версия, и вся неделя снова казалась одинаково бежевой.
+ * Выше 30% семь колонок начинают спорить с тёплой бумагой раздела.
+ */
+export function blockTone(
+  accent: string,
+  activityType: string,
+): { background: string; border: string; text: string } {
   const weight = ACTIVITY_WEIGHT[activityType] ?? 2;
   const step = Math.min(Math.max(weight / MAX_WEIGHT, 0), 1);
-  const lightness = 94 - step * 12;
+  const fill = 15 + step * 15;
   return {
-    background: `hsl(32 42% ${lightness.toFixed(0)}%)`,
-    accent: `hsl(30 ${(38 - step * 10).toFixed(0)}% ${(52 - step * 18).toFixed(0)}%)`,
-    border: `hsl(32 30% ${(lightness - 8).toFixed(0)}%)`,
-    text: step > 0.6 ? "hsl(28 30% 22%)" : "hsl(28 20% 28%)",
+    background: `color-mix(in srgb, ${accent} ${fill.toFixed(0)}%, ${SHEET})`,
+    border: `color-mix(in srgb, ${accent} 42%, ${SHEET})`,
+    text: "#312c27",
   };
 }
 
-export function blockAppearance(block: {
-  activity_type: string;
-  status: string;
-  fixed: boolean;
-  review_step?: number | null;
-}): BlockAppearance {
+export function blockAppearance(
+  block: {
+    activity_type: string;
+    status: string;
+    fixed: boolean;
+    review_step?: number | null;
+  },
+  options: {
+    /** Цвет курса. Для занятого времени игнорируется. */
+    accent: string;
+    /** Чужое время: школа, репетитор. Не путать с `fixed` у закреплённого занятия. */
+    occupied?: boolean;
+  },
+): BlockAppearance {
   const status = (block.status as BlockVisualStatus) ?? "scheduled";
-  const tone = activityTone(block.activity_type);
+  const occupied = options.occupied === true;
+  const tone = occupied ? OCCUPIED : blockTone(options.accent, block.activity_type);
   const isReview = block.activity_type === "review" || block.review_step != null;
 
   let ring: string | null = null;
@@ -140,17 +195,37 @@ export function blockAppearance(block: {
   return {
     label: activityLabel(block.activity_type),
     background: tone.background,
-    // Закреплённый блок держит акцент независимо от типа занятия: «это не
-    // двигается» важнее, чем «это теория».
-    accent: block.fixed ? "hsl(28 18% 38%)" : tone.accent,
+    accent: occupied ? OCCUPIED.accent : options.accent,
     border: tone.border,
     text: tone.text,
     dashed: isReview,
     faded: FADED_STATUSES.has(status),
+    hatched: occupied,
+    pinned: block.fixed === true && !occupied,
     ring,
     statusLabel: STATUS_LABELS[status] ?? null,
     struck: status === "cancelled",
   };
+}
+
+/**
+ * День недели с предлогом: «в среду», «во вторник».
+ *
+ * Предлог хранится вместе со словом, а не приклеивается снаружи: у вторника он
+ * «во», и склейка «в вторник» вылезла бы в первой же живой неделе.
+ */
+const WEEKDAY_ON = [
+  "в понедельник",
+  "во вторник",
+  "в среду",
+  "в четверг",
+  "в пятницу",
+  "в субботу",
+  "в воскресенье",
+];
+
+export function weekdayOnLabel(weekday: number): string {
+  return WEEKDAY_ON[weekday] ?? "";
 }
 
 /** Подпись длительности: «45 мин», «1 ч 30 мин». */

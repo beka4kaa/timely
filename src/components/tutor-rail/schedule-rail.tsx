@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
+import { paperCaption, paperTile } from "@/components/curriculum/paper";
 import { CommitmentsCard, RevisionCard } from "@/components/studyplan/revision-cards";
 import { useActiveSchedule } from "@/contexts/active-schedule";
 import {
@@ -220,7 +221,22 @@ export function ScheduleRail() {
       ) : null}
 
       {state.status === "error" && state.error ? (
-        <p className="px-1 text-[12.5px] text-[#a2543a]">{state.error}</p>
+        state.errorCode === "assistant_not_configured" ? (
+          // Модель не задана в окружении бэкенда. Приложение не сломалось, и
+          // ученик ничего не сделал не так, — красная строка тут врала бы про
+          // серьёзность. Поле ввода остаётся на месте: как только переменную
+          // добавят, повторить вопрос можно тем же движением.
+          <div className={`${paperTile} px-3 py-2.5`}>
+            <div className={paperCaption}>Помощник выключен</div>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-[#7b7168]">
+              Модель для помощника по расписанию не подключена, поэтому менять
+              занятия он сейчас не может. Календарь и перетаскивание работают
+              как обычно.
+            </p>
+          </div>
+        ) : (
+          <p className="px-1 text-[12.5px] text-[#a2543a]">{state.error}</p>
+        )
       ) : null}
     </RailShell>
   );

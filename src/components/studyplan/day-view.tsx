@@ -8,7 +8,7 @@
 
 import {
   commitmentKindLabel,
-  courseAccent,
+  entryAccent,
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import {
@@ -38,6 +38,8 @@ interface DayViewProps {
   selectedId: string | null;
   onSelect: (block: CalendarEntry) => void;
   onChangeDay: (dateKey: string) => void;
+  /** Цвета программ по порядку списка. Без неё цвет берётся по хешу. */
+  accents?: Map<string, string>;
 }
 
 export function DayView({
@@ -47,6 +49,7 @@ export function DayView({
   selectedId,
   onSelect,
   onChangeDay,
+  accents,
 }: DayViewProps) {
   const blocks = column?.blocks ?? [];
   const total = blocks.reduce(
@@ -92,14 +95,15 @@ export function DayView({
           <ul className="space-y-2">
             {blocks.map((positioned) => {
               const block = positioned.block;
-              const look = blockAppearance(block);
               const commitment = isCommitmentEntry(block);
+              const look = blockAppearance(block, {
+                accent: entryAccent(block, accents),
+                occupied: commitment,
+              });
               const sourceLabel = commitment
                 ? commitmentKindLabel(block.commitment_kind)
                 : block.course_plan_title;
-              const sourceAccent = commitment
-                ? courseAccent(`commitment:${block.commitment_kind}`)
-                : courseAccent(block.course_plan);
+              const selected = selectedId === block.id;
               const isProposal =
                 !commitment &&
                 (block.schedule_status === "proposed" ||
@@ -109,16 +113,23 @@ export function DayView({
                   <button
                     type="button"
                     onClick={() => onSelect(block)}
-                    aria-current={selectedId === block.id ? "true" : undefined}
+                    aria-current={selected ? "true" : undefined}
                     className={`flex w-full items-stretch gap-3 rounded-[14px] border px-3 py-2.5 text-left ${paperFocus}`}
                     style={{
                       background: look.background,
+                      backgroundImage: look.hatched
+                        ? "repeating-linear-gradient(135deg, rgba(120,110,98,0.10) 0 3px, transparent 3px 7px)"
+                        : undefined,
                       borderColor: look.ring ?? look.border,
                       borderStyle: look.dashed || isProposal ? "dashed" : "solid",
                       borderWidth: look.ring ? 2 : 1,
                       color: look.text,
                       opacity: look.faded ? 0.6 : 1,
-                      boxShadow: `inset 3px 0 0 ${sourceAccent}`,
+                      // Выделение было только в `aria-current`: глазами выбранное
+                      // занятие в дневном списке не находилось никак.
+                      boxShadow: selected
+                        ? `inset 3px 0 0 ${look.accent}, 0 0 0 2px ${look.accent}`
+                        : `inset 3px 0 0 ${look.accent}`,
                     }}
                   >
                     <div className="w-14 shrink-0 pt-0.5">
