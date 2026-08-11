@@ -341,3 +341,107 @@ test("книга без пропусков не сообщает о пропус
   assert.deepEqual(model.gaps, []);
   assert.equal(gapsCaption(model), "");
 });
+
+// ───────────── Цитата растягивается до своего раздела ─────────────
+//
+// Ссылка «§17, стр. 25» означает не «в программе одна страница», а «в
+// программе §17». Без этого между темами оставались швы: §X кончался на 89,
+// §Y начинался с 91, и страница 90 попадала в «не вошли», хотя в книге
+// разделы идут вплотную.
+
+function section(path: string, from: number, to: number, order = 0) {
+  return { path, order_index: order, start_page: from, end_page: to };
+}
+
+function cite(path: string, from?: number, to?: number) {
+  return {
+    section_path: path,
+    page_start: from ?? null,
+    page_end: to ?? from ?? null,
+  };
+}
+
+test("ссылка на страницу раздела покрывает весь раздел", () => {
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [cite("§17", 25)])],
+    sections: [section("§17", 25, 31)],
+  });
+
+  assert.equal(model.segments.length, 1);
+  assert.deepEqual(
+    [model.segments[0].startUnit, model.segments[0].endUnit],
+    [25, 31],
+  );
+});
+
+test("шов между соседними разделами перестаёт быть пропуском", () => {
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [
+      topic("t1", 0, [cite("1.1", 89)]),
+      topic("t2", 0, [cite("1.2", 91)]),
+    ],
+    sections: [section("1.1", 85, 90), section("1.2", 91, 97, 1)],
+  });
+
+  const missing = model.gaps.flatMap((gap) =>
+    Array.from({ length: gap.endUnit - gap.startUnit + 1 }, (_, i) => gap.startUnit + i),
+  );
+  assert.equal(missing.includes(90), false);
+  assert.equal(model.claimedUnits, 13);
+});
+
+test("путь совпадает точно: цитата на «1.2.3» не забирает всю главу", () => {
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [cite("1.2.3", 40)])],
+    sections: [section("1.2", 10, 60)],
+  });
+
+  assert.deepEqual(
+    [model.segments[0].startUnit, model.segments[0].endUnit],
+    [40, 40],
+  );
+});
+
+test("цитата шире раздела свои страницы сохраняет", () => {
+  // Оглавление тоже распознаётся с ошибками, и обрезать по нему нельзя.
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [cite("§17", 25, 40)])],
+    sections: [section("§17", 25, 31)],
+  });
+
+  assert.deepEqual(
+    [model.segments[0].startUnit, model.segments[0].endUnit],
+    [25, 40],
+  );
+});
+
+test("тема без страниц встаёт на полосу по своему разделу", () => {
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [cite("§17")]), topic("t2", 0, [pages(50, 55)])],
+    sections: [section("§17", 25, 31)],
+  });
+
+  assert.deepEqual(model.unsourcedTopicIds, []);
+  assert.equal(model.scale, "pages");
+});
+
+test("раздел без страниц не мешает страничному режиму", () => {
+  // У EPUB страниц нет ни у раздела, ни у цитаты — режим обязан остаться
+  // прежним, а не сломаться на полпути.
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [cite("§17", 25, 31)])],
+    sections: [{ path: "§17", order_index: 0, start_page: null, end_page: null }],
+  });
+
+  assert.equal(model.scale, "pages");
+  assert.deepEqual(
+    [model.segments[0].startUnit, model.segments[0].endUnit],
+    [25, 31],
+  );
+});
