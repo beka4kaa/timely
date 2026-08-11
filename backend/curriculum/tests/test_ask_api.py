@@ -224,3 +224,60 @@ class AskStreamTests(TestCase):
 
         blob = " ".join(m["content"] for m in seen[0])
         self.assertNotIn("12 кг·м/с", blob)
+
+
+class WithoutSubjectStreamTests(TestCase):
+    """Вопрос без предмета: книги нет, и притворяться, что она есть, нельзя."""
+
+    def _ask(self, *chunks, **body):
+        with _stream(*chunks):
+            response = self.client.post(
+                URL,
+                data=json.dumps({"message": "что такое интеграл", **body}),
+                content_type="application/json",
+                **_auth(OWNER),
+            )
+            events = _events(response) if response.status_code == 200 else []
+        return response, events
+
+    def test_ответ_приходит_без_предмета(self):
+        response, events = self._ask("Интеграл — это ", "площадь под кривой.")
+
+        self.assertEqual(response.status_code, 200)
+        text = "".join(d["delta"] for n, d in events if n == "content")
+        self.assertEqual(text, "Интеграл — это площадь под кривой.")
+
+    def test_поиска_не_было_и_стадия_о_нём_не_приходит(self):
+        """«Ищу в учебнике» без учебника — выдумка о работе, которой не было."""
+        _, events = self._ask("ответ")
+
+        stages = [d["stage"] for n, d in events if n == "stage"]
+        self.assertEqual(stages, ["answering"])
+
+    def test_разговор_помечен_как_безкнижный(self):
+        """Страница по этому признаку не рисует пометку «В книге этого нет»."""
+        _, events = self._ask("ответ")
+
+        by_name = dict(events)
+        self.assertFalse(by_name["citations"]["library"])
+        self.assertFalse(by_name["citations"]["grounded"])
+        self.assertEqual(by_name["citations"]["items"], [])
+        self.assertFalse(by_name["done"]["library"])
+
+    def test_маркер_не_вырезается_из_начала_ответа(self):
+        """Модель без книги о маркере не знает, и разбор только съел бы текст."""
+        _, events = self._ask("[ВНЕ", " КНИГИ] всё же ответ")
+
+        text = "".join(d["delta"] for n, d in events if n == "content")
+        self.assertEqual(text, "[ВНЕ КНИГИ] всё же ответ")
+
+    def test_указанный_но_чужой_предмет_остаётся_ошибкой(self):
+        """Опечатка в идентификаторе не должна тихо превращаться в ответ «от
+        себя»: ученик не узнал бы, что книгу не читали."""
+        stranger = LearningGoal.objects.create(
+            user_email=INTRUDER, original_text="чужая физика"
+        )
+
+        response, _ = self._ask("ответ", goal_id=str(stranger.pk))
+
+        self.assertEqual(response.status_code, 404)

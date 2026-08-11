@@ -628,14 +628,21 @@ class SubjectChatViewSet(viewsets.ModelViewSet):
             return SubjectChat.objects.none()
         queryset = SubjectChat.objects.filter(user_email=email)
         goal_id = self.request.query_params.get("goal")
-        if goal_id:
+        if goal_id == "none":
+            # Разговоры без книги. Отдельным словом, а не пустым `?goal=`:
+            # пустой параметр приходит сам собой, когда предмет ещё не выбран,
+            # и означал бы «все чаты», а не «чаты без предмета».
+            queryset = queryset.filter(goal__isnull=True)
+        elif goal_id:
             queryset = queryset.filter(goal_id=goal_id)
         return queryset
 
     def perform_create(self, serializer):
         email = getattr(self.request, "user_email", None)
         goal = serializer.validated_data.get("goal")
-        if goal is None or goal.user_email != email:
+        # Предмета может не быть — это разговор без книги. А вот чужой предмет
+        # по-прежнему не существует.
+        if goal is not None and goal.user_email != email:
             # 404, а не 403: чужой предмет не должен подтверждать, что он есть.
             raise Http404("Предмет не найден.")
         serializer.save(user_email=email)

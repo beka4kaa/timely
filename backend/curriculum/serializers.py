@@ -499,6 +499,19 @@ class SubjectChatSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubjectChat
         fields = ["id", "goal", "title", "messages", "created_at", "updated_at"]
-        # `goal` пишется только при создании: перенос чата в другой предмет
-        # означал бы цитаты из другой книги в старых ответах.
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_fields(self):
+        """`goal` пишется только при создании.
+
+        Обещание было в комментарии, но не в коде: `goal` оставался доступным
+        на запись, а `perform_update` владельца не проверял — то есть
+        `PATCH {"goal": "<чужой uuid>"}` перевешивал чат на чужой предмет.
+        Здесь поле закрывается на обновлении, а вместе с этим уходит и вторая
+        беда: перенос разговора в другой предмет оставил бы в старых ответах
+        цитаты из книги, которой в нём нет.
+        """
+        fields = super().get_fields()
+        if self.instance is not None:
+            fields["goal"].read_only = True
+        return fields

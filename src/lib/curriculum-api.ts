@@ -664,7 +664,12 @@ export interface AskMessage {
  * запрос — а прервать нужно, когда ученик закрыл панель.
  */
 export async function askSubjectStream(
-  body: { goal_id: string; message: string; history?: AskMessage[] },
+  body: {
+    /** Пусто — разговор без книги: поиска не будет, ответ пойдёт от модели. */
+    goal_id: string | null;
+    message: string;
+    history?: AskMessage[];
+  },
   signal?: AbortSignal,
 ): Promise<Response> {
   const response = await authFetch(`${BASE}/ask/stream/`, {
@@ -693,7 +698,8 @@ export async function askSubjectStream(
 /** Строка списка. Сообщений здесь нет: их вес не нужен, чтобы показать название. */
 export interface SubjectChatSummary {
   id: string;
-  goal: string;
+  /** Пусто — разговор без книги. */
+  goal: string | null;
   title: string;
   message_count: number;
   created_at: string;
@@ -715,8 +721,19 @@ export interface AskTurn {
   durationMs?: number;
 }
 
-export async function listChats(goalId: string): Promise<SubjectChatSummary[]> {
-  const response = await authFetch(`${BASE}/chats/?goal=${goalId}`);
+/**
+ * Чаты предмета, чаты без книги или все сразу.
+ *
+ * `null` — разговоры без книги; бэкенд ждёт для них слово `none`, потому что
+ * пустой `?goal=` означал бы «все». Без аргумента — действительно все: так
+ * страница чата показывает историю целиком, не спрашивая по предмету за раз.
+ */
+export async function listChats(
+  goalId?: string | null,
+): Promise<SubjectChatSummary[]> {
+  const query =
+    goalId === undefined ? "" : `?goal=${goalId === null ? "none" : goalId}`;
+  const response = await authFetch(`${BASE}/chats/${query}`);
   const body = await unwrap<
     SubjectChatSummary[] | { results: SubjectChatSummary[] }
   >(response);
@@ -728,7 +745,7 @@ export async function getChat(chatId: string): Promise<SubjectChat> {
 }
 
 export async function createChat(
-  goalId: string,
+  goalId: string | null,
   body: { title?: string; messages?: AskTurn[] } = {},
 ): Promise<SubjectChat> {
   const response = await authFetch(`${BASE}/chats/`, {

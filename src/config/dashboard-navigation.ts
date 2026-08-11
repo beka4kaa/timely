@@ -10,6 +10,7 @@ import {
   LayoutDashboardIcon,
   LibraryIcon,
   MedalIcon,
+  MessagesSquareIcon,
   NotebookPenIcon,
   ShieldCheckIcon,
   SwordsIcon,
@@ -62,6 +63,10 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   "/dashboard/whiteboard": {
     title: "Научная доска",
     subtitle: "Учебная сессия · сохраняется автоматически",
+  },
+  "/dashboard/chat": {
+    title: "Тьютор",
+    subtitle: "Разбор по вашим книгам со ссылками на страницы",
   },
   "/dashboard/curriculum": {
     title: "Курс по книге",
@@ -177,6 +182,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
     label: "Главное",
     items: [
       { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
+      { title: "Тьютор", url: "/dashboard/chat", icon: MessagesSquareIcon },
       { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
       { title: "Помодоро", url: "/dashboard/pomodoro", icon: TimerIcon },
       { title: "Задачи", url: "/dashboard/tasks", icon: CheckSquareIcon },
@@ -230,6 +236,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
 // exposes only the compact set selected for the current product navigation.
 const visibleNavigationRoutes = new Set([
   "/dashboard/diary",
+  "/dashboard/chat",
   "/dashboard/whiteboard",
   "/dashboard/curriculum",
   "/dashboard/pomodoro",

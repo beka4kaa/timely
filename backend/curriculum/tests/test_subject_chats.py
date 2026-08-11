@@ -150,6 +150,72 @@ class WriteTests(TestCase):
         self.goal.delete()
         self.assertFalse(SubjectChat.objects.filter(pk=created.pk).exists())
 
+    def test_предмет_не_переписывается_патчем(self):
+        """Иначе чат уезжает в чужой предмет вместе с перепиской.
+
+        Комментарий в сериализаторе обещал это с самого начала, но `goal`
+        оставался доступным на запись.
+        """
+        created = chat(self.goal)
+        stranger = goal(email=INTRUDER, text="чужая физика")
+
+        self.client.patch(
+            f"{URL}{created.pk}/",
+            data=json.dumps({"goal": str(stranger.pk)}),
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+
+        created.refresh_from_db()
+        self.assertEqual(created.goal_id, self.goal.pk)
+
+
+class WithoutSubjectTests(TestCase):
+    """Разговор без книги.
+
+    Нужен и сам по себе, и для нового ученика: без него страница чата до первой
+    загруженной книги открывается мёртвой.
+    """
+
+    def test_чат_без_предмета_создаётся(self):
+        response = self.client.post(
+            URL,
+            data=json.dumps({"title": "Просто вопрос"}),
+            content_type="application/json",
+            **_auth(OWNER),
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = SubjectChat.objects.get(pk=response.json()["id"])
+        self.assertIsNone(created.goal_id)
+        self.assertEqual(created.user_email, OWNER)
+
+    def test_goal_none_отбирает_только_чаты_без_книги(self):
+        subject = goal()
+        chat(subject, title="По книге")
+        SubjectChat.objects.create(user_email=OWNER, goal=None, title="Без книги")
+
+        rows = _rows(self.client.get(f"{URL}?goal=none", **_auth(OWNER)))
+
+        self.assertEqual([row["title"] for row in rows], ["Без книги"])
+
+    def test_чужой_чат_без_книги_не_виден(self):
+        SubjectChat.objects.create(user_email=INTRUDER, goal=None, title="Чужой")
+
+        rows = _rows(self.client.get(f"{URL}?goal=none", **_auth(OWNER)))
+
+        self.assertEqual(rows, [])
+
+    def test_пустой_goal_в_запросе_означает_все_чаты(self):
+        """`?goal=` приходит сам собой, пока предмет не выбран."""
+        subject = goal()
+        chat(subject, title="По книге")
+        SubjectChat.objects.create(user_email=OWNER, goal=None, title="Без книги")
+
+        rows = _rows(self.client.get(f"{URL}?goal=", **_auth(OWNER)))
+
+        self.assertEqual(len(rows), 2)
+
 
 class TitleTests(TestCase):
     MESSAGES = [
