@@ -204,3 +204,46 @@ class OutsideMarkerTests(TestCase):
 
     def test_пустой_ответ(self):
         self.assertEqual(split_outside_marker(""), (True, ""))
+
+
+class WithoutLibraryTests(TestCase):
+    """Разговор без книги получает другой промпт, а не этот же без куска."""
+
+    def test_источников_в_промпте_нет_вовсе(self):
+        context = build_ask_context(goal=None, question="что такое интеграл")
+
+        blob = " ".join(m["content"] for m in context.messages())
+        self.assertNotIn("<SOURCES>", blob)
+        self.assertNotIn("в книге ничего не нашлось", blob)
+
+    def test_маркер_не_требуется(self):
+        """Иначе модель ставила бы «вне книги» перед каждым ответом."""
+        context = build_ask_context(goal=None, question="что такое интеграл")
+
+        blob = " ".join(m["content"] for m in context.messages())
+        self.assertNotIn(OUTSIDE_MARKER, blob)
+
+    def test_вопрос_и_история_доезжают(self):
+        context = build_ask_context(
+            goal=None,
+            question="а дальше?",
+            history=[{"role": "user", "content": "что такое интеграл"}],
+        )
+
+        messages = context.messages()
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["content"], "что такое интеграл")
+        self.assertEqual(messages[-1]["content"], "а дальше?")
+
+    def test_поиска_не_было(self):
+        context = build_ask_context(goal=None, question="что такое интеграл")
+
+        self.assertFalse(context.has_library)
+        self.assertFalse(context.grounded)
+        self.assertEqual(context.citations, [])
+
+    def test_у_разговора_по_книге_признак_стоит(self):
+        subject = goal()
+        context = build_ask_context(goal=subject, question="импульс")
+
+        self.assertTrue(context.has_library)

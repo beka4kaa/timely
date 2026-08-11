@@ -78,6 +78,17 @@ test("ссылка открывается безопасно", () => {
   assert.match(out, /rel="noopener noreferrer"/);
 });
 
+test("на странице шкала крупнее, чем в панели", () => {
+  // Одна и та же разметка читается в 280 px и в колонке на пол-экрана: шкала
+  // панели на странице выглядела бы мелким шрифтом договора.
+  const rail = html("## Импульс");
+  const page = renderToStaticMarkup(
+    createElement(MarkdownMessage, { content: "## Импульс", variant: "page" }),
+  );
+  assert.match(rail, /text-\[13\.5px\]/);
+  assert.match(page, /text-\[17px\]/);
+});
+
 test("пустой текст не роняет рендер", () => {
   assert.doesNotThrow(() => html(""));
 });

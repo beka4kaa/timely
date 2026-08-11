@@ -9,26 +9,21 @@
 
 import { useAskRail } from "@/contexts/ask-rail";
 
-/**
- * Ширина панели. Та же доля и тот же минимум, что у чата доски.
- *
- * Одно выражение на обе стороны намеренно. Пока ширина панели и сдвиг `main`
- * задавались порознь («25%» и `min-w-[280px]`), на окне около 900 пикселей они
- * расходились: четверть — это 225 пикселей, панель растягивалась до 280, а
- * контент сдвигался только на 225 — и панель наезжала на страницу.
- */
-export const RAIL_WIDTH = "max(25%, 280px)";
-
 export function DashboardMain({ children }: { children: React.ReactNode }) {
-  const { open, isMobile } = useAskRail();
+  const { open, isMobile, width, dragging } = useAskRail();
   const pushed = open && !isMobile;
 
   return (
     <main
-      className="timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-[95] overflow-auto transition-[right] duration-300 ease-in-out md:left-[58px]"
-      // `right` инлайном, а не классом: значение то же, что у панели, и держать
-      // их в одном месте надёжнее, чем сверять два тейлвинд-класса.
-      style={{ right: pushed ? RAIL_WIDTH : 0, minWidth: pushed ? 0 : undefined }}
+      className={`timely-dashboard-surface fixed bottom-0 left-0 right-0 top-12 z-[95] overflow-auto md:left-[58px] ${
+        // Плавность нужна при сворачивании, но не при перетаскивании: с ней
+        // край страницы отстаёт от курсора на треть секунды, и тянуть кромку
+        // ощущается как каша.
+        dragging ? "" : "transition-[right] duration-300 ease-in-out"
+      }`}
+      // Ширина инлайном: то же число, что у самой панели. Держать их в двух
+      // тейлвинд-классах значило бы сверять два места при каждой правке.
+      style={{ right: pushed ? width : 0 }}
     >
       {children}
     </main>

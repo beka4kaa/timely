@@ -1071,8 +1071,16 @@ class SubjectChat(TimestampedModel):
     user_email = models.EmailField(db_index=True)
     # Предмет — это папка чата. Удалили предмет — уходят и разговоры по нему:
     # отвечать им больше не по чему.
+    #
+    # Пусто — разговор без книги: обычный вопрос наставнику, на который не надо
+    # искать цитаты. Такой чат нужен ещё и до первой загруженной книги, иначе
+    # страница чата у нового ученика открывается мёртвой.
     goal = models.ForeignKey(
-        LearningGoal, on_delete=models.CASCADE, related_name="chats"
+        LearningGoal,
+        on_delete=models.CASCADE,
+        related_name="chats",
+        null=True,
+        blank=True,
     )
     title = models.CharField(max_length=200, blank=True, default="")
     messages = models.JSONField(default=list, blank=True)

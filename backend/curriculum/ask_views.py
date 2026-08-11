@@ -61,12 +61,21 @@ class SubjectAskStreamView(APIView):
 
         goal_id = str(request.data.get("goal_id") or "").strip()
         user_email = getattr(request, "user_email", None)
-        goal = LearningGoal.objects.filter(pk=goal_id, user_email=user_email).first()
-        if goal is None:
-            # 404, а не 403: чужой предмет не должен подтверждать, что он есть.
-            return Response(
-                {"error": "Предмет не найден."}, status=status.HTTP_404_NOT_FOUND
-            )
+
+        # Без предмета — разговор без книги. Пустой `goal_id` это разрешённый
+        # случай, а вот указанный и ненайденный — по-прежнему ошибка: иначе
+        # опечатка в идентификаторе молча превращала бы вопрос по учебнику в
+        # ответ «от себя», и ученик не узнал бы, что книгу не читали.
+        goal = None
+        if goal_id:
+            goal = LearningGoal.objects.filter(
+                pk=goal_id, user_email=user_email
+            ).first()
+            if goal is None:
+                # 404, а не 403: чужой предмет не должен подтверждать, что есть.
+                return Response(
+                    {"error": "Предмет не найден."}, status=status.HTTP_404_NOT_FOUND
+                )
 
         # Поиск делается ДО открытия потока: на нём ещё можно ответить честной
         # ошибкой с кодом, а после первого события заголовки уже отправлены.
@@ -96,12 +105,18 @@ class SubjectAskStreamView(APIView):
                 # ждёт. Поиск к этому моменту уже сделан — он идёт до открытия
                 # потока, — поэтому первые два уходят подряд, и «нашёл»
                 # остаётся на экране как результат, а не как обещание.
-                yield _sse("stage", {"stage": "retrieving"})
-                yield _sse("stage", {"stage": "found", "found": len(citations)})
+                #
+                # Без книги искать было негде, и «ищу в учебнике» стало бы
+                # выдумкой о работе, которой не было.
+                if context.has_library:
+                    yield _sse("stage", {"stage": "retrieving"})
+                    yield _sse("stage", {"stage": "found", "found": len(citations)})
                 yield _sse("stage", {"stage": "answering"})
                 try:
                     head = ""
-                    marker_resolved = False
+                    # Без книги маркера не будет: модель о нём не знает, и
+                    # разбор начала ответа только задержал бы первое слово.
+                    marker_resolved = not context.has_library
                     grounded = context.grounded
                     for delta in TextModel(temperature=0.3).stream_content(
                         context.messages(),
@@ -133,11 +148,22 @@ class SubjectAskStreamView(APIView):
                     # Цитаты показываются, только если ответ действительно по
                     # книге: ссылка под ответом «от себя» выглядела бы
                     # подтверждением, которого нет.
+                    #
+                    # `library` отличает «книга есть, но ответа в ней нет» от
+                    # «книги и не было». Без этого признака страница показывала
+                    # бы пометку «В книге этого нет» в разговоре, где книгу
+                    # никто не открывал.
                     yield _sse(
                         "citations",
-                        {"grounded": grounded, "items": citations if grounded else []},
+                        {
+                            "grounded": grounded,
+                            "library": context.has_library,
+                            "items": citations if grounded else [],
+                        },
                     )
-                    yield _sse("done", {"grounded": grounded})
+                    yield _sse(
+                        "done", {"grounded": grounded, "library": context.has_library}
+                    )
                 except Exception as exc:  # noqa: BLE001
                     # Заголовки уже отправлены — HTTP-код не поменять, поэтому
                     # ошибка приезжает событием, и панель её показывает.
