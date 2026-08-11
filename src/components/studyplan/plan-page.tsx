@@ -5,6 +5,7 @@
 import { useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
+import { usePageSchedule } from "@/contexts/active-schedule";
 import {
   paperButton,
   paperCaption,
@@ -20,7 +21,6 @@ import { createCommitment, type StudySchedule } from "@/lib/studyplan-api";
 import { layoutWeek, visibleRange, zonedDateKey } from "@/lib/studyplan-calendar";
 import { durationLabel, weekLabel } from "@/lib/studyplan-visuals";
 
-import { AssistantPanel } from "./assistant-panel";
 import { BlockDetails } from "./block-details";
 import { DayView } from "./day-view";
 import { type CalendarEntry, useSchedule } from "./use-schedule";
@@ -78,6 +78,55 @@ export function StudyPlanPage() {
     0,
   );
 
+  // Какое расписание правит помощник в панели справа.
+  //
+  // Считается ДО ранних возвратов ниже: `usePageSchedule` — хук, и после
+  // `return` его вызвать нельзя. Пока данные грузятся, расписания нет, и панель
+  // честно говорит, что выбрать нечего.
+  const ready = schedule.data.state === "ready" ? schedule.data : null;
+  const selectedLearning =
+    selected && !isCommitmentEntry(selected) ? selected : null;
+  const assistantSchedule = ready
+    ? selectedLearning
+      ? ready.schedules.find((item) => item.id === selectedLearning.schedule) ??
+        null
+      : ready.schedules.length === 1
+        ? ready.schedules[0]
+        : null
+    : null;
+  // `""` — расписаний нет вовсе, бэкенд возьмёт последнее неархивное сам.
+  // `null` — программ несколько, а занятие не выбрано: чью двигать, неясно.
+  const assistantScheduleId = !ready
+    ? null
+    : ready.schedules.length === 0
+      ? ""
+      : assistantSchedule?.id ?? null;
+
+  usePageSchedule({
+    scheduleId: assistantScheduleId,
+    timeZone: assistantSchedule?.timezone ?? schedule.timeZone,
+    onApplied: () => void schedule.reload(),
+    onCommitments: async (items) => {
+      for (const item of items) {
+        await createCommitment(
+          {
+            title: item.title,
+            kind: item.kind,
+            weekday: item.weekday,
+            start_time: item.start_time,
+            duration_minutes: item.duration_minutes,
+            valid_from: item.valid_from ?? null,
+            valid_until: item.valid_until ?? null,
+            start_at: item.start_at,
+            end_at: item.end_at,
+          },
+          "chat",
+        );
+      }
+      await schedule.reload();
+    },
+  });
+
   if (schedule.data.state === "loading") {
     return (
       <CoffeePageShell>
@@ -111,16 +160,6 @@ export function StudyPlanPage() {
   const proposalByPlan = new Map(
     data.proposals.map((item) => [item.course_plan, item]),
   );
-
-  const selectedLearning =
-    selected && !isCommitmentEntry(selected) ? selected : null;
-  const assistantSchedule = selectedLearning
-    ? data.schedules.find((item) => item.id === selectedLearning.schedule) ?? null
-    : data.schedules.length === 1
-      ? data.schedules[0]
-      : null;
-  const assistantScheduleId =
-    data.schedules.length === 0 ? "" : assistantSchedule?.id ?? null;
 
   return (
     <CoffeePageShell>
@@ -290,40 +329,10 @@ export function StudyPlanPage() {
               onClose={() => setSelectedId(null)}
             />
 
-            {assistantScheduleId !== null ? (
-              <AssistantPanel
-                key={assistantScheduleId || "calendar"}
-                scheduleId={assistantScheduleId}
-                timeZone={assistantSchedule?.timezone ?? schedule.timeZone}
-                onApplied={() => void schedule.reload()}
-                onCommitments={async (items) => {
-                  for (const item of items) {
-                    await createCommitment(
-                      {
-                        title: item.title,
-                        kind: item.kind,
-                        weekday: item.weekday,
-                        start_time: item.start_time,
-                        duration_minutes: item.duration_minutes,
-                        valid_from: item.valid_from ?? null,
-                        valid_until: item.valid_until ?? null,
-                        start_at: item.start_at,
-                        end_at: item.end_at,
-                      },
-                      "chat",
-                    );
-                  }
-                  await schedule.reload();
-                }}
-              />
-            ) : (
-              <div
-                className={`${paperCard} px-4 py-5 text-[13px] leading-relaxed text-[#7b7168]`}
-              >
-                Выбери учебное занятие в календаре, чтобы помощник понял,
-                расписание какой программы менять.
-              </div>
-            )}
+            {/* Помощник по расписанию переехал в панель справа: два разговора
+                в одном углу экрана заставляли выбирать между ними глазами.
+                Страница теперь только сообщает панели, какое расписание на
+                экране, — см. `usePageSchedule` выше. */}
           </aside>
         </div>
       </div>
