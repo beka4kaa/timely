@@ -94,13 +94,6 @@ export interface WeekGridProps {
   busy?: boolean;
   onSelect: (block: CalendarEntry) => void;
   onMove: (block: CalendarEntry, startAt: Date, durationMinutes?: number) => void;
-  /**
-   * Действие в пустой неделе.
-   *
-   * Кнопку отдаёт страница, а не сетка: она знает про программы, а сетка — нет.
-   * Это же оставляет на экране ровно одну главную кнопку.
-   */
-  emptyAction?: React.ReactNode;
   /** Цвета программ по порядку списка. Без неё цвет берётся по хешу. */
   accents?: Map<string, string>;
 }
@@ -114,7 +107,6 @@ export function WeekGrid({
   busy = false,
   onSelect,
   onMove,
-  emptyAction,
   accents,
 }: WeekGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
@@ -126,8 +118,30 @@ export function WeekGrid({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [now, setNow] = useState(() => new Date());
 
-  const marks = useMemo(() => hourMarks(range), [range]);
-  const bodyHeight = ((range.endMinutes - range.startMinutes) / 60) * HOUR_HEIGHT;
+  // Видимая высота прокрутки. Нужна, чтобы дотянуть шкалу часами до низа
+  // карточки: диапазон считается по занятиям, и в пустоватой неделе он выходит
+  // короче экрана — под сеткой оставалось бы пустое поле внутри рамки.
+  // Растёт только конец шкалы, начало не трогаем: `layoutWeek` уже посчитал
+  // отступы блоков от `range.startMinutes`, и сдвиг начала уронил бы их все.
+  const [viewportHeight, setViewportHeight] = useState(0);
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setViewportHeight(node.clientHeight));
+    observer.observe(node);
+    setViewportHeight(node.clientHeight);
+    return () => observer.disconnect();
+  }, []);
+
+  const effectiveEnd = Math.min(
+    24 * 60,
+    Math.max(range.endMinutes, range.startMinutes + (viewportHeight / HOUR_HEIGHT) * 60),
+  );
+  const marks = useMemo(
+    () => hourMarks({ ...range, endMinutes: effectiveEnd }),
+    [range, effectiveEnd],
+  );
+  const bodyHeight = ((effectiveEnd - range.startMinutes) / 60) * HOUR_HEIGHT;
   const days = useMemo(() => columns.map((column) => column.dateKey), [columns]);
   const empty = columns.every((column) => column.blocks.length === 0);
 
@@ -432,8 +446,11 @@ export function WeekGrid({
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex">
-          <div className="w-14 shrink-0" style={{ height: bodyHeight }}>
+        {/* `min-h-full`: когда шкала упёрлась в 24:00 и всё равно короче
+            карточки, колонки должны закрашиваться до низа, а не обрываться
+            полосой пустоты под последним часом. */}
+        <div className="flex min-h-full">
+          <div className="w-14 shrink-0" style={{ minHeight: bodyHeight }}>
             {marks.map((minutes) => (
               <div
                 key={minutes}
@@ -450,7 +467,7 @@ export function WeekGrid({
           <div
             ref={gridRef}
             className="relative flex flex-1 touch-none select-none"
-            style={{ height: bodyHeight }}
+            style={{ minHeight: bodyHeight }}
           >
             {marks.map((minutes) => (
               <div
@@ -660,10 +677,9 @@ export function WeekGrid({
                     Свободная неделя
                   </div>
                   <p className="mx-auto mt-1.5 text-[12.5px] leading-relaxed text-[#7b7168]">
-                    Добавь учебную программу — её занятия появятся здесь вместе
-                    с остальным занятым временем.
+                    Попроси помощника справа поставить учебную программу — её
+                    занятия появятся здесь вместе с остальным занятым временем.
                   </p>
-                  {emptyAction ? <div className="mt-4">{emptyAction}</div> : null}
                 </div>
               </div>
             ) : null}

@@ -92,8 +92,13 @@ export function ScheduleRail() {
           { role: "assistant", content: final.answer },
         ]);
       }
+      // Постановка программы в календарь — единственный инструмент, который
+      // пишет в расписание сразу, а не отдаёт ревизию с кнопкой «Применить».
+      // Без этой перерисовки ученик услышал бы «готово», глядя на пустую
+      // неделю.
+      if (final.stages.includes("add_course_to_schedule")) notifyApplied();
     },
-    [ready, scheduleId, thinking, turns],
+    [notifyApplied, ready, scheduleId, thinking, turns],
   );
 
   const decide = useCallback(
