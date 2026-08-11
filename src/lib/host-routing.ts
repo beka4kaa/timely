@@ -98,6 +98,30 @@ export function appPathToDashboardPath(pathname: string): string {
   return `/dashboard${normalizedPath}`;
 }
 
+/**
+ * Канонический адрес раздела по тому, что видно в адресной строке.
+ *
+ * На app-хосте адреса чистые: `/chat`, `/diary`, — а `/dashboard/...` живёт
+ * только внутри, после `NextResponse.rewrite`. `usePathname()` в браузере
+ * отдаёт именно адресную строку, поэтому всякое сравнение вида
+ * `pathname === "/dashboard/chat"` там молча ложно: заголовок раздела
+ * оставался «Рабочим пространством», подсветка пункта меню не зажигалась, а
+ * панель вопросов не исчезала со страниц, где ей нельзя быть.
+ *
+ * Приводить адрес к каноническому виду должен КАЖДЫЙ, кто по нему что-то
+ * решает, — для этого есть хук `useDashboardPath`.
+ */
+export function toDashboardPath(pathname: string): string {
+  if (!pathname) return "/dashboard";
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    return pathname;
+  }
+  // `/auth/...`, `/register`, файлы — это не разделы дашборда, и приставка
+  // сделала бы из них несуществующие страницы.
+  if (isAppPassthroughPath(pathname)) return pathname;
+  return appPathToDashboardPath(pathname);
+}
+
 export function resolveHostRouting(
   input: HostRoutingInput,
   config: HostRoutingConfig = DEFAULT_HOST_ROUTING_CONFIG,

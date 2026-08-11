@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   ChevronRight,
@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
+import { useDashboardPath } from "@/lib/use-dashboard-path";
 import {
   useCallback,
   useEffect,
@@ -33,7 +34,9 @@ export function MobileDashboardMenu({
   navigationGroups: DashboardNavigationGroup[];
   className?: string;
 }) {
-  const pathname = usePathname();
+  // Канонический путь: на app-хосте адресная строка чистая, и активный
+  // пункт меню не подсвечивался.
+  const pathname = useDashboardPath();
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);

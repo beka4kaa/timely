@@ -1,11 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { motion } from "framer-motion"
 import { type LucideIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useDashboardPath } from "@/lib/use-dashboard-path"
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -25,7 +25,9 @@ export interface NavGroup {
 }
 
 export function NavMain({ groups }: { groups: NavGroup[] }) {
-  const pathname = usePathname()
+  // Канонический путь: на app-хосте адресная строка чистая (`/diary`), и
+  // подсветка пункта меню не зажигалась ни на одном разделе.
+  const pathname = useDashboardPath()
   const isActive = (url: string) => pathname === url || pathname.startsWith(url + "/")
 
   return (

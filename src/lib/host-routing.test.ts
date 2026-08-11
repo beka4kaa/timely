@@ -7,6 +7,7 @@ import {
   isAppPassthroughPath,
   normalizeHostname,
   resolveHostRouting,
+  toDashboardPath,
 } from "./host-routing";
 
 test("normalizes forwarded hosts with ports and trailing dots", () => {
@@ -107,4 +108,36 @@ test("leaves the marketing landing and unrelated preview hosts untouched", () =>
     }),
     { type: "next" },
   );
+});
+
+// ─────────────── Канонический путь для того, что решает по адресу ───────────────
+//
+// На app-хосте адресная строка чистая, а `/dashboard/...` живёт только после
+// внутреннего rewrite. Из-за этого заголовок раздела оставался «Рабочим
+// пространством», подсветка меню не зажигалась, а панель вопросов висела на
+// странице «Тьютор» поверх такого же чата.
+
+test("clean app paths resolve to their dashboard route", () => {
+  assert.equal(toDashboardPath("/chat"), "/dashboard/chat");
+  assert.equal(toDashboardPath("/curriculum/plan"), "/dashboard/curriculum/plan");
+});
+
+test("the clean app root is the diary, as the rewrite says", () => {
+  assert.equal(toDashboardPath("/"), "/dashboard/diary");
+});
+
+test("dashboard paths pass through untouched", () => {
+  assert.equal(toDashboardPath("/dashboard"), "/dashboard");
+  assert.equal(toDashboardPath("/dashboard/chat"), "/dashboard/chat");
+});
+
+test("non-dashboard pages keep their own address", () => {
+  // Иначе `/auth/signin` превратился бы в несуществующий раздел.
+  assert.equal(toDashboardPath("/auth/signin"), "/auth/signin");
+  assert.equal(toDashboardPath("/register"), "/register");
+  assert.equal(toDashboardPath("/logo.svg"), "/logo.svg");
+});
+
+test("an empty path falls back to the dashboard root", () => {
+  assert.equal(toDashboardPath(""), "/dashboard");
 });

@@ -14,9 +14,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { usePathname } from "next/navigation";
-
 import { isRailFreeRoute } from "@/config/rail-free-routes";
+import { useDashboardPath } from "@/lib/use-dashboard-path";
 import {
   RAIL_KEYBOARD_STEP,
   clampRailWidth,
@@ -73,7 +72,10 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
 
   // Выбор ученика запоминается, но на странице «Тьютор» не действует: уйдя с
   // неё, он найдёт панель в том же состоянии, в каком оставил.
-  const hidden = isRailFreeRoute(usePathname() ?? "");
+  //
+  // Путь берётся канонический: на app-хосте в адресной строке `/chat`, и
+  // сравнение с `/dashboard/chat` там не срабатывало вовсе.
+  const hidden = isRailFreeRoute(useDashboardPath());
   const open = remembered && !hidden;
 
   useEffect(() => {
