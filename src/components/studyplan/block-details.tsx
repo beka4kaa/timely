@@ -8,6 +8,7 @@
 
 import {
   commitmentKindLabel,
+  courseAccent,
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import { formatMinutes, zonedDateKey, zonedMinutes } from "@/lib/studyplan-calendar";
@@ -53,7 +54,9 @@ export function BlockDetails({ block, timeZone, onClose }: BlockDetailsProps) {
     return <CommitmentDetails block={block} timeZone={timeZone} onClose={onClose} />;
   }
 
-  const look = blockAppearance(block);
+  // Занятое время ушло веткой выше, значит здесь всегда учебный блок и у него
+  // есть свой курс.
+  const look = blockAppearance(block, { accent: courseAccent(block.course_plan) });
   const startMinutes = zonedMinutes(block.start_at, timeZone);
   const dateKey = zonedDateKey(block.start_at, timeZone);
   const payload = block.lesson_payload as {

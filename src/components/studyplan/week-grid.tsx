@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   commitmentKindLabel,
-  courseAccent,
+  entryAccent,
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import {
@@ -35,16 +35,40 @@ import {
 } from "@/lib/studyplan-calendar";
 import {
   blockAppearance,
-  dayLabel,
   durationLabel,
   weekdayShort,
 } from "@/lib/studyplan-visuals";
+import { loadRatio, weekLoad } from "@/lib/studyplan-load";
 import { paperCaption, paperFocus } from "@/components/curriculum/paper";
 
 import type { CalendarEntry } from "./use-schedule";
 
 /** На сколько двигают блок стрелками с Alt. */
 const KEYBOARD_STEP_MINUTES = 15;
+
+/** Освобождённое время: в ленте нагрузки не участвует. */
+const RELEASED_STATUSES = new Set(["cancelled", "rescheduled"]);
+
+/** Высота ленты нагрузки под числом дня. */
+const LOAD_BAR_HEIGHT = 20;
+
+/**
+ * Как выглядит запись календаря.
+ *
+ * Один источник на три места — блок, слой предпросмотра и лента нагрузки, —
+ * чтобы полоска под числом дня и сам блок никогда не разъезжались по цвету.
+ *
+ * Признак «занятое время» вычисляется внутри, но НАРУЖУ не отдаётся: вызывающий
+ * код зовёт `isCommitmentEntry` сам, иначе TypeScript теряет сужение типа и
+ * `commitment_kind` перестаёт существовать.
+ */
+function entryLook(entry: CalendarEntry, accents?: Map<string, string>) {
+  const occupied = isCommitmentEntry(entry);
+  return blockAppearance(entry, {
+    accent: entryAccent(entry, accents),
+    occupied,
+  });
+}
 
 interface DragState {
   blockId: string;
@@ -70,6 +94,15 @@ export interface WeekGridProps {
   busy?: boolean;
   onSelect: (block: CalendarEntry) => void;
   onMove: (block: CalendarEntry, startAt: Date, durationMinutes?: number) => void;
+  /**
+   * Действие в пустой неделе.
+   *
+   * Кнопку отдаёт страница, а не сетка: она знает про программы, а сетка — нет.
+   * Это же оставляет на экране ровно одну главную кнопку.
+   */
+  emptyAction?: React.ReactNode;
+  /** Цвета программ по порядку списка. Без неё цвет берётся по хешу. */
+  accents?: Map<string, string>;
 }
 
 export function WeekGrid({
@@ -81,6 +114,8 @@ export function WeekGrid({
   busy = false,
   onSelect,
   onMove,
+  emptyAction,
+  accents,
 }: WeekGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -95,6 +130,35 @@ export function WeekGrid({
   const bodyHeight = ((range.endMinutes - range.startMinutes) / 60) * HOUR_HEIGHT;
   const days = useMemo(() => columns.map((column) => column.dateKey), [columns]);
   const empty = columns.every((column) => column.blocks.length === 0);
+
+  /**
+   * Лента нагрузки: сколько ученик УЧИТСЯ в каждом дне и по каким предметам.
+   *
+   * Занятое время сюда не входит намеренно. Школа стоит по семь часов пять дней
+   * подряд и, попав в ленту, забивала бы её собой: все будни выглядели одинаково
+   * полными, а разница в учебной нагрузке — единственное, что здесь можно
+   * подвинуть, — пропадала в общем сером столбике.
+   */
+  const load = useMemo(
+    () =>
+      weekLoad(
+        days,
+        columns.flatMap((column) =>
+          column.blocks
+            .filter((positioned) => !isCommitmentEntry(positioned.block))
+            .map((positioned) => {
+              const entry = positioned.block;
+              return {
+                dateKey: column.dateKey,
+                minutes: entry.duration_minutes,
+                accent: entryAccent(entry, accents),
+                released: RELEASED_STATUSES.has(entry.status),
+              };
+            }),
+        ),
+      ),
+    [accents, columns, days],
+  );
 
   // Метка «сейчас» живёт своей жизнью и не должна ждать перезагрузки данных.
   useEffect(() => {
@@ -128,9 +192,9 @@ export function WeekGrid({
       height: (drag.durationMinutes / 60) * HOUR_HEIGHT,
       startMinutes: drag.previewStartMinutes,
       title: source.block.title,
-      look: blockAppearance(source.block),
+      look: entryLook(source.block, accents),
     };
-  }, [columns, drag, range.startMinutes]);
+  }, [accents, columns, drag, range.startMinutes]);
 
   // Один раз доводим прокрутку до текущего времени: календарь, открывающийся
   // на полуночи, заставляет искать сегодняшний день руками.
@@ -305,23 +369,60 @@ export function WeekGrid({
   return (
     <div className="overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95">
       <div className="flex border-b border-[#e4ded4] bg-[#fffdfa]">
+        {/* Колонка под шкалой времени: держит шапку и сетку на одной оси. */}
         <div className="w-14 shrink-0" aria-hidden />
-        {columns.map((column) => {
+        {columns.map((column, index) => {
           const isToday = column.dateKey === todayKey;
+          const day = load.days[index];
+          const dayNumber = Number(column.dateKey.slice(-2));
           return (
             <div
               key={column.dateKey}
-              className={`flex-1 border-l border-[#eee9e1] px-2 py-2 text-center ${
-                isToday ? "bg-[#fff6e8]" : ""
-              }`}
+              className="flex-1 border-l border-[#eee9e1] px-1.5 pb-1.5 pt-2 text-center"
             >
               <div className={paperCaption}>{weekdayShort(column.weekday)}</div>
+              {/* Число, а не «18 августа»: месяц уже написан в заголовке недели,
+                  и семь раз повторять его — значит забить колонку словом. */}
               <div
-                className={`mt-0.5 text-[13px] ${
-                  isToday ? "font-medium text-[#8a5b24]" : "text-[#5f584f]"
+                className={`mx-auto mt-1 grid h-7 w-7 place-items-center font-serif text-[15px] tabular-nums ${
+                  isToday
+                    ? "rounded-full bg-[#8a5b24] font-medium text-[#fdf8ef]"
+                    : "text-[#4a443d]"
                 }`}
               >
-                {dayLabel(column.dateKey)}
+                {dayNumber}
+              </div>
+
+              {/* Лента нагрузки: сколько занято и чем. Отвечает на главный
+                  вопрос страницы — «я не перегружен» — до того, как ученик
+                  начнёт читать названия занятий. */}
+              <div
+                className="mt-1.5 flex items-end justify-center gap-px"
+                style={{ height: LOAD_BAR_HEIGHT }}
+                aria-hidden
+              >
+                {day && day.totalMinutes > 0 ? (
+                  day.segments.map((segment) => (
+                    <span
+                      key={segment.accent}
+                      className="w-[7px] rounded-[2px]"
+                      style={{
+                        height: Math.round(
+                          loadRatio(segment.minutes, load.peakMinutes) *
+                            LOAD_BAR_HEIGHT,
+                        ),
+                        background: segment.accent,
+                      }}
+                    />
+                  ))
+                ) : (
+                  // Свободный день — не пустое место, а плоское основание:
+                  // так семь дней остаются одним рядом, а не рваной строкой.
+                  <span className="h-px w-4 rounded-full bg-[#e0dbd2]" />
+                )}
+              </div>
+              <div className="mt-1 text-[10px] tabular-nums text-[#a1978b]">
+                {day && day.totalMinutes > 0 ? durationLabel(day.totalMinutes) : "—"}
               </div>
             </div>
           );
@@ -378,14 +479,12 @@ export function WeekGrid({
                 {column.blocks.map((positioned) => {
                   const block = positioned.block;
                   const dragging = drag?.blockId === block.id;
-                  const look = blockAppearance(block);
+                  const look = entryLook(block, accents);
                   const commitment = isCommitmentEntry(block);
                   const sourceLabel = commitment
                     ? commitmentKindLabel(block.commitment_kind)
                     : block.course_plan_title;
-                  const sourceAccent = commitment
-                    ? courseAccent(`commitment:${block.commitment_kind}`)
-                    : courseAccent(block.course_plan);
+                  const selected = selectedId === block.id;
                   const isProposal =
                     !commitment &&
                     (block.schedule_status === "proposed" ||
@@ -439,22 +538,30 @@ export function WeekGrid({
                       }}
                       className={`absolute overflow-hidden rounded-[10px] border px-2 py-1 text-left transition-shadow ${paperFocus} ${
                         block.fixed ? "cursor-default" : "cursor-grab"
-                      } ${dragging ? "z-30 cursor-grabbing shadow-lg" : "z-10"} ${
-                        selectedId === block.id ? "shadow-md" : ""
-                      }`}
+                      } ${dragging ? "z-30 cursor-grabbing shadow-lg" : selected ? "z-20" : "z-10"}`}
                       style={{
                         top,
                         height,
                         left: `calc(${positioned.lane * width}% + 2px)`,
                         width: `calc(${width}% - 4px)`,
                         background: look.background,
+                        // Занятое время штрихуется: чужой блок видно как чужой
+                        // даже боковым зрением, ещё до чтения подписи.
+                        backgroundImage: look.hatched
+                          ? "repeating-linear-gradient(135deg, rgba(120,110,98,0.10) 0 3px, transparent 3px 7px)"
+                          : undefined,
                         borderColor: look.ring ?? look.border,
                         borderStyle: look.dashed || isProposal ? "dashed" : "solid",
                         borderWidth: look.ring ? 2 : 1,
                         color: look.text,
                         opacity:
                           dragging && !resizing ? 0.3 : look.faded ? 0.55 : 1,
-                        boxShadow: `inset 3px 0 0 ${sourceAccent}`,
+                        // Кант слева — цвет курса. У выделенного он же становится
+                        // кольцом: раньше выделение показывала одна тень, и на
+                        // светлой бумаге её почти не было видно.
+                        boxShadow: selected
+                          ? `inset 3px 0 0 ${look.accent}, 0 0 0 2px ${look.accent}, 0 6px 16px rgba(70,54,36,0.16)`
+                          : `inset 3px 0 0 ${look.accent}`,
                       }}
                     >
                       <div
@@ -466,15 +573,24 @@ export function WeekGrid({
                       </div>
                       {height > 34 ? (
                         <div className="mt-0.5 truncate text-[11px] tabular-nums opacity-70">
-                          {formatMinutes(positioned.startMinutes)} · {sourceLabel}
+                          {/* Длительность прямо в блоке: раньше её показывал
+                              только дневной список, а на неделе «сколько это
+                              займёт» приходилось прикидывать по высоте. */}
+                          {formatMinutes(positioned.startMinutes)} ·{" "}
+                          {durationLabel(block.duration_minutes)}
                         </div>
                       ) : null}
                       {height > 62 ? (
                         <div className="mt-0.5 truncate text-[10px] opacity-60">
-                          {commitment ? "Занято" : look.label}
+                          {sourceLabel}
                         </div>
                       ) : null}
-                      {look.statusLabel && height > 78 ? (
+                      {height > 78 && !commitment ? (
+                        <div className="mt-0.5 truncate text-[10px] opacity-60">
+                          {look.label}
+                        </div>
+                      ) : null}
+                      {look.statusLabel && height > 96 ? (
                         <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.12em] opacity-60">
                           {look.statusLabel}
                         </div>
@@ -528,16 +644,24 @@ export function WeekGrid({
             ) : null}
 
             {empty ? (
+              // Раньше здесь висела карточка `absolute top-24`, налезавшая на
+              // часовые линейки, — именно это читалось как сломанная вёрстка.
+              // Теперь приглашение стоит по центру листа и накрыто мягкой
+              // подложкой, а сетка за ним остаётся призраком: видно, что это
+              // календарь, а не ошибка загрузки.
               <div
-                className="pointer-events-none absolute inset-x-6 top-24 z-30 rounded-[16px] border border-dashed border-[#d8d1c7] bg-[#fffdfa]/90 px-4 py-5 text-center"
+                className="absolute inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-[#fbfaf7]/70 via-[#fbfaf7]/92 to-[#fbfaf7]/70 px-6"
                 aria-live="polite"
               >
-                <div className="text-[13.5px] text-[#5f584f]">
-                  Свободная неделя
-                </div>
-                <div className="mt-1 text-[12px] text-[#8d857b]">
-                  Добавь учебную программу — её занятия появятся здесь вместе
-                  с остальным занятым временем.
+                <div className="max-w-[380px] text-center">
+                  <div className="font-serif text-[17px] tracking-[-0.02em] text-[#3b352f]">
+                    Свободная неделя
+                  </div>
+                  <p className="mx-auto mt-1.5 text-[12.5px] leading-relaxed text-[#7b7168]">
+                    Добавь учебную программу — её занятия появятся здесь вместе
+                    с остальным занятым временем.
+                  </p>
+                  {emptyAction ? <div className="mt-4">{emptyAction}</div> : null}
                 </div>
               </div>
             ) : null}

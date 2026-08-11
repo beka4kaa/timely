@@ -3,6 +3,7 @@ import {
   toInstant,
   weekdayOf,
 } from "./studyplan-calendar.ts";
+import { OCCUPIED_ACCENT } from "./studyplan-visuals.ts";
 
 export type CalendarScheduleStatus =
   | "draft"
@@ -256,6 +257,42 @@ export function courseAccent(coursePlanId: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return COURSE_ACCENTS[(hash >>> 0) % COURSE_ACCENTS.length];
+}
+
+/**
+ * Раздаёт цвета программам по порядку, а не по хешу.
+ *
+ * `courseAccent` берёт хеш по модулю шести, и у любой пары курсов примерно один
+ * шанс из шести оказаться одного цвета. Для подписи в списке это терпимо, но
+ * когда цветом кодируется предмет в календаре, два одинаковых курса ломают всё
+ * правило. По списку программ цвета гарантированно различаются, пока курсов не
+ * больше шести.
+ */
+export function buildCourseAccents(coursePlanIds: string[]): Map<string, string> {
+  const accents = new Map<string, string>();
+  for (const id of coursePlanIds) {
+    if (accents.has(id)) continue;
+    accents.set(id, COURSE_ACCENTS[accents.size % COURSE_ACCENTS.length]);
+  }
+  return accents;
+}
+
+/**
+ * Цвет записи календаря: курс — своим, занятое время — нейтральным.
+ *
+ * Один источник на всех, кто красит записи: блок в сетке, строка в дневном
+ * списке и лента нагрузки под числом дня. Считай кто-то из них цвет сам —
+ * полоска под днём рано или поздно разошлась бы с самим блоком.
+ *
+ * Без карты цветов откатывается на хеш: календарь должен рисоваться и до того,
+ * как список программ доехал.
+ */
+export function entryAccent<T extends CalendarBlock & { course_plan: string }>(
+  entry: StudyCalendarEntry<T>,
+  accents?: Map<string, string>,
+): string {
+  if (isCommitmentEntry(entry)) return OCCUPIED_ACCENT;
+  return accents?.get(entry.course_plan) ?? courseAccent(entry.course_plan);
 }
 
 export function commitmentKindLabel(kind: string): string {

@@ -52,13 +52,17 @@ export async function askAssistant(
     // Отказ до открытия потока приходит обычным телом с кодом — например,
     // когда помощник не настроен вовсе.
     let message = `Помощник недоступен (${response.status})`;
+    let code: string | null = null;
     try {
       const body = await response.json();
       if (typeof body?.error === "string") message = body.error;
+      // Код нужен панели, чтобы отличить «модель не задана в окружении» от
+      // настоящей поломки: первое — не ошибка ученика и рисуется спокойно.
+      if (typeof body?.code === "string") code = body.code;
     } catch {
       /* тело не JSON — остаётся общий текст */
     }
-    state = { ...state, status: "error", error: message };
+    state = { ...state, status: "error", error: message, errorCode: code };
     onUpdate(state);
     return state;
   }
