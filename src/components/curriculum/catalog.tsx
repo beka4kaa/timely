@@ -20,6 +20,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+import {
   type CoursePlanSummary,
   type CurriculumDocument,
   type LearningGoal,
@@ -115,7 +121,16 @@ export function CurriculumCatalog({
   const namedSubjects = subjects.filter((subject) => subject.goalId).length;
 
   return (
-    <div>
+    // Запросы по ширине СОДЕРЖИМОГО, а не окна: панель съедает часть экрана, и
+    // медиа-запрос на широком мониторе с растянутой панелью по-прежнему считал
+    // бы место просторным.
+    //
+    // Контейнер именно здесь, а не на `<main>` или общей оболочке раздела:
+    // `container-type: inline-size` включает `contain: layout`, а это делает
+    // элемент containing block для `position: fixed` потомков. На `<main>`
+    // такой контейнер перепривязал бы к нему полноэкранную доску и призрак
+    // перетаскивания в расписании, которые считают координаты от окна.
+    <div className="@container/page">
       {/* Вместо заголовка страницы — строка, которая работает: слева счёт,
           справа единственное главное действие. Название раздела печатает
           верхняя панель приложения, и повторять его здесь незачем. */}
@@ -204,7 +219,7 @@ function SubjectSection({
         {/* У группы «Без предмета» цели нет: ни добавлять книгу, ни удалять
             нечего — там лежат книги, потерявшие владельца. */}
         {subject.goalId ? (
-          <span className="flex shrink-0 gap-x-3">
+          <RowActions>
             {needsSetup && subject.goal ? (
               <button
                 type="button"
@@ -229,7 +244,7 @@ function SubjectSection({
                 await onChanged();
               }}
             />
-          </span>
+          </RowActions>
         ) : null}
       </header>
 
@@ -322,13 +337,17 @@ function BookRow({
         </div>
       ))}
 
+      {/* Просторно — одна строка. Тесно — она разворачивается в две: сверху
+          название и «⋯», под ними объём и статус. Название важнее объёма, и
+          отдавать ему полстроки, чтобы уместить рядом «513 стр.», значит
+          обрезать его первым. */}
       <div
         className={`flex flex-wrap items-baseline gap-x-4 gap-y-1 ${
           plans.length > 0 ? "mt-0.5" : ""
         }`}
       >
         <span
-          className={`min-w-0 flex-1 truncate ${
+          className={`order-1 min-w-0 flex-1 truncate @[560px]/page:order-none ${
             plans.length > 0 ? "text-[13px] text-[#8d857b]" : "text-[14px] text-[#3b352f]"
           }`}
           title={document.title}
@@ -336,18 +355,26 @@ function BookRow({
           {title}
         </span>
 
-        <Thickness pages={document.page_count} />
+        {/* Тесно этот блок занимает всю ширину и потому переносится под
+            название — вместе со статусом, который иначе оторвался бы от
+            объёма. Просторно он снова обычный элемент строки. */}
+        <span className="order-3 flex w-full min-w-0 items-baseline gap-x-4 @[560px]/page:order-none @[560px]/page:w-auto">
+          <Thickness pages={document.page_count} />
 
-        {failed ? (
-          <span className="text-[12px] text-[#a35c48]">не удалось обработать</span>
-        ) : !ready ? (
-          <span className="text-[12px] text-[#8a7a5e]">
-            {PHASES[phaseIndexFor(document.ingestion_status)]?.label ||
-              "обработка"}
-          </span>
-        ) : null}
+          {failed ? (
+            <span className="text-[12px] text-[#a35c48]">не удалось обработать</span>
+          ) : !ready ? (
+            <span className="text-[12px] text-[#8a7a5e]">
+              {PHASES[phaseIndexFor(document.ingestion_status)]?.label ||
+                "обработка"}
+            </span>
+          ) : null}
+        </span>
 
-        <span className="flex shrink-0 gap-x-3">
+        {/* «⋯» идёт сразу за названием, чтобы остаться с ним на одной
+            строке, когда объём уходит вниз. Просторно порядок сбрасывается и
+            действия снова замыкают строку. */}
+        <RowActions className="order-2 @[560px]/page:order-none">
           {!ready ? (
             <button
               type="button"
@@ -366,9 +393,62 @@ function BookRow({
             </button>
           ) : null}
           {remove}
-        </span>
+        </RowActions>
       </div>
     </li>
+  );
+}
+
+/**
+ * Действия строки: видны, когда есть место, и уходят под «⋯», когда тесно.
+ *
+ * Порог — по ширине КОНТЕЙНЕРА, а не окна: место съедает панель вопросов, и на
+ * широком мониторе с растянутой панелью медиа-запрос по-прежнему считал бы
+ * страницу просторной.
+ *
+ * Без этого каталог не ломался, а некрасиво распухал: текстовые действия
+ * переносились на свои строки, и карточка предмета превращалась в лестницу.
+ */
+function RowActions({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <span className={`hidden shrink-0 gap-x-3 @[560px]/page:flex ${className}`}>
+        {children}
+      </span>
+
+      <span className={`shrink-0 @[560px]/page:hidden ${className}`}>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="Действия"
+              className={`${ACTION} px-1 leading-none`}
+            >
+              ⋯
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-auto min-w-[160px] border-[#dcd7cf] bg-[#fbfaf7] p-1.5"
+          >
+            <span
+              className="flex flex-col items-start gap-y-2"
+              onClick={() => setOpen(false)}
+            >
+              {children}
+            </span>
+          </PopoverContent>
+        </Popover>
+      </span>
+    </>
   );
 }
 

@@ -75,5 +75,11 @@ module.exports = {
   		}
   	}
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+    require("tailwindcss-animate"),
+    // Запросы по ширине КОНТЕЙНЕРА, а не окна. Панель вопросов съедает часть
+    // экрана, и медиа-запрос на широком мониторе с растянутой панелью
+    // по-прежнему считал бы место просторным.
+    require("@tailwindcss/container-queries"),
+  ],
 }
