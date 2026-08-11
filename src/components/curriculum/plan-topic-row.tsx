@@ -8,19 +8,15 @@
 
 import { formatMinutes, uniqueSourceLabels } from "@/lib/curriculum-progress";
 import type { CourseTopic } from "@/lib/curriculum-api";
-import { moduleTone, paperFocus, paperNumber } from "./paper";
+import { paperFocus, paperNumber } from "./paper";
 
 export function PlanTopicRow({
   topic,
-  moduleIndex,
-  moduleCount,
   titles,
   hovered,
   onHover,
 }: {
   topic: CourseTopic;
-  moduleIndex: number;
-  moduleCount: number;
   titles: Map<string, string>;
   hovered: boolean;
   onHover: (topicId: string | null) => void;
@@ -39,14 +35,14 @@ export function PlanTopicRow({
           hovered ? "bg-[#fdf7ec]" : "bg-transparent"
         }`}
       >
-        {/* Метка тона модуля: связывает строку с её цветом на корешке. */}
+        {/* Тот же тон, каким на пути загорается глава этой темы: связь между
+            строкой и её местом во времени держится одной краской. Прежде здесь
+            был оттенок модуля из легенды корешка — легенды больше нет. */}
         <span
           aria-hidden
-          className="absolute left-0 top-3 h-[calc(100%-1.5rem)] w-[3px] rounded-full transition-opacity duration-150"
-          style={{
-            background: moduleTone(moduleIndex, moduleCount),
-            opacity: hovered ? 1 : 0,
-          }}
+          className={`absolute left-0 top-3 h-[calc(100%-1.5rem)] w-[3px] rounded-full bg-[#b7792d] transition-opacity duration-150 ${
+            hovered ? "opacity-100" : "opacity-0"
+          }`}
         />
 
         <div className="flex items-start justify-between gap-4">

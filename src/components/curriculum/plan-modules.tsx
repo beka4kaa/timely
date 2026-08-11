@@ -45,7 +45,6 @@ export function PlanModules({
             <PlanModuleStrip
               courseModule={courseModule}
               index={index}
-              moduleCount={plan.modules.length}
               titles={titles}
               hoveredTopicId={hoveredTopicId}
               onHoverTopic={onHoverTopic}
