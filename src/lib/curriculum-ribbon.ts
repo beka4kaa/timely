@@ -63,6 +63,9 @@ export interface RibbonBracket {
 export interface RibbonGap {
   startPct: number;
   widthPct: number;
+  /** 1-based включительные слоты: из них собирается подпись «Не вошли: …». */
+  startUnit: number;
+  endUnit: number;
 }
 
 export type RibbonScale = "pages" | "sections";
@@ -335,13 +338,19 @@ export function buildRibbon(input: RibbonInput): RibbonModel {
   const union = unionOf(spans);
   const claimedUnits = union.reduce((sum, [start, end]) => sum + (end - start + 1), 0);
 
+  const gap = (startUnit: number, endUnit: number): RibbonGap => ({
+    ...toPct(startUnit, endUnit),
+    startUnit,
+    endUnit,
+  });
+
   const gaps: RibbonGap[] = [];
   let cursor = 1;
   for (const [start, end] of union) {
-    if (start > cursor) gaps.push(toPct(cursor, start - 1));
+    if (start > cursor) gaps.push(gap(cursor, start - 1));
     cursor = end + 1;
   }
-  if (cursor <= unitCount) gaps.push(toPct(cursor, unitCount));
+  if (cursor <= unitCount) gaps.push(gap(cursor, unitCount));
 
   const byModule = new Map<number, [number, number]>();
   for (const span of spans) {
@@ -388,4 +397,45 @@ export function buildRibbon(input: RibbonInput): RibbonModel {
 export function coverageCaption(model: RibbonModel): string {
   const noun = model.scale === "pages" ? "Страниц" : "Разделов";
   return `${noun} в программе: ${model.claimedUnits} из ${model.totalUnits}`;
+}
+
+/** Сколько пропусков называем словами. Дальше список длиннее самой полосы. */
+const NAMED_GAPS = 4;
+
+/**
+ * Подпись пропусков: «Не вошли: стр. 1–24, 210–216 и ещё 3 участка».
+ *
+ * Полоса показывает, ГДЕ дыры, а строка — какие именно. Это тот же ответ с
+ * другой точностью, а не повтор: по картинке нельзя списать номер страницы, а
+ * по списку нельзя увидеть, что вся вторая половина книги не разобрана.
+ *
+ * Пустая строка означает «дыр нет»: подпись «Не вошли: —» сообщала бы о
+ * пропусках, которых нет.
+ */
+export function gapsCaption(model: RibbonModel): string {
+  if (!model.gaps.length) return "";
+
+  const named = model.gaps
+    .slice(0, NAMED_GAPS)
+    .map((gap) =>
+      gap.startUnit === gap.endUnit
+        ? `${gap.startUnit}`
+        : `${gap.startUnit}–${gap.endUnit}`,
+    )
+    .join(", ");
+
+  const rest = model.gaps.length - NAMED_GAPS;
+  const tail = rest > 0 ? ` и ещё ${rest} ${spanWord(rest)}` : "";
+  const prefix = model.scale === "pages" ? "Не вошли: стр. " : "Не вошли разделы: ";
+
+  return `${prefix}${named}${tail}`;
+}
+
+function spanWord(count: number): string {
+  const tens = count % 100;
+  const ones = count % 10;
+  if (tens >= 11 && tens <= 14) return "участков";
+  if (ones === 1) return "участок";
+  if (ones >= 2 && ones <= 4) return "участка";
+  return "участков";
 }

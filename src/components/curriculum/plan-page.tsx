@@ -16,7 +16,6 @@ import { PlanActions } from "./plan-actions";
 import { PlanForecastRail } from "./plan-forecast-rail";
 import { PlanModules } from "./plan-modules";
 import { PlanRibbon } from "./plan-ribbon";
-import { PlanRibbonLegend } from "./plan-ribbon-legend";
 import { PlanPageError, PlanPageSkeleton } from "./plan-states";
 import { paperCaption, paperCard } from "./paper";
 import {
@@ -71,18 +70,6 @@ function PlanPageBody({
       }),
     [plan, book, sections],
   );
-
-  const moduleTitles = plan.modules.map((courseModule) => courseModule.title);
-  const moduleIndexByTopic = useMemo(() => {
-    const map = new Map<string, number>();
-    plan.modules.forEach((courseModule, index) => {
-      for (const topic of courseModule.topics) map.set(topic.id, index);
-    });
-    return map;
-  }, [plan]);
-  const hoveredModuleIndex = hoveredTopicId
-    ? (moduleIndexByTopic.get(hoveredTopicId) ?? null)
-    : null;
 
   const blockers = reviewFindings.filter((finding) => finding.severity === "blocker");
   const allTopicsCount = plan.modules.reduce(
@@ -154,13 +141,8 @@ function PlanPageBody({
         <>
           <PlanRibbon
             model={ribbon}
-            moduleTitles={moduleTitles}
             hoveredTopicId={hoveredTopicId}
             onHoverTopic={setHoveredTopicId}
-          />
-          <PlanRibbonLegend
-            moduleTitles={moduleTitles}
-            hoveredModuleIndex={hoveredModuleIndex}
           />
         </>
       )}
