@@ -200,8 +200,8 @@ export function StudyPlanPage() {
     ) ?? null;
 
   return (
-    <CoffeePageShell>
-      <div className="space-y-4">
+    <CoffeePageShell fillHeight maxWidthClassName="max-w-none">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className={paperCaption}>Моё время · неделя</div>
@@ -279,6 +279,15 @@ export function StudyPlanPage() {
           </div>
         </header>
 
+        <ProgramsStrip
+          plans={data.plans}
+          visibleByPlan={visibleByPlan}
+          proposalByPlan={proposalByPlan}
+          busy={schedule.busy}
+          accents={accents}
+          onBuild={(planId) => void schedule.build(planId)}
+        />
+
         {data.proposals.map((proposal) => (
           <ProposalNotice
             key={proposal.id}
@@ -326,10 +335,16 @@ export function StudyPlanPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0">
-            <div className={mode === "week" ? "hidden lg:block" : "hidden"}>
-              <WeekGrid
+        {/* Календарь занимает всё оставшееся место, как в любом календарном
+            приложении. Раньше рядом стояла колонка в 320 px, которая почти
+            всегда пустовала, — из-за неё неделя жалась, а под сеткой оставалась
+            полоса мёртвого пространства. Программы уехали строкой наверх,
+            карточка занятия всплывает поверх сетки и только когда нужна. */}
+        <div className="relative min-h-0 flex-1">
+          <div
+            className={`h-full ${mode === "week" ? "hidden lg:block" : "hidden"}`}
+          >
+            <WeekGrid
                 columns={columns}
                 range={range}
                 timeZone={schedule.timeZone}
@@ -358,50 +373,62 @@ export function StudyPlanPage() {
                     </button>
                   ) : null
                 }
-              />
-            </div>
-            <div className={mode === "week" ? "lg:hidden" : ""}>
-              <DayView
-                column={columns.find(
-                  (column) => column.dateKey === activeDay,
-                )}
-                dateKey={activeDay}
-                todayKey={todayKey}
-                selectedId={selectedId}
-                accents={accents}
-                onSelect={(entry) => setSelectedId(entry.id)}
-                onChangeDay={(nextDay) => {
-                  setDayKey(nextDay);
-                  if (nextDay < schedule.days[0]) schedule.goToWeek(-1);
-                  else if (nextDay > schedule.days[schedule.days.length - 1]) {
-                    schedule.goToWeek(1);
-                  }
-                }}
-              />
-            </div>
+            />
           </div>
 
-          <aside className="min-w-0 space-y-3">
-            <ProgramsPanel
-              plans={data.plans}
-              visibleByPlan={visibleByPlan}
-              proposalByPlan={proposalByPlan}
-              busy={schedule.busy}
+          <div
+            className={`h-full overflow-y-auto ${
+              mode === "week" ? "lg:hidden" : ""
+            }`}
+          >
+            <DayView
+              column={columns.find((column) => column.dateKey === activeDay)}
+              dateKey={activeDay}
+              todayKey={todayKey}
+              selectedId={selectedId}
               accents={accents}
-              onBuild={(planId) => void schedule.build(planId)}
+              onSelect={(entry) => setSelectedId(entry.id)}
+              onChangeDay={(nextDay) => {
+                setDayKey(nextDay);
+                if (nextDay < schedule.days[0]) schedule.goToWeek(-1);
+                else if (nextDay > schedule.days[schedule.days.length - 1]) {
+                  schedule.goToWeek(1);
+                }
+              }}
             />
 
-            <BlockDetails
-              block={selected}
-              timeZone={schedule.timeZone}
-              onClose={() => setSelectedId(null)}
-            />
+            {/* На узком экране всплывающей карточке негде встать, поэтому там
+                разбор занятия идёт следом за списком. */}
+            {selected ? (
+              <div className="mt-3 lg:hidden">
+                <BlockDetails
+                  block={selected}
+                  timeZone={schedule.timeZone}
+                  onClose={() => setSelectedId(null)}
+                />
+              </div>
+            ) : null}
+          </div>
 
-            {/* Помощник по расписанию переехал в панель справа: два разговора
-                в одном углу экрана заставляли выбирать между ними глазами.
-                Страница теперь только сообщает панели, какое расписание на
-                экране, — см. `usePageSchedule` выше. */}
-          </aside>
+          {/* Карточка занятия всплывает поверх календаря и только по выбору —
+              как попап события в календарных приложениях. Постоянная колонка
+              под неё девять раз из десяти показывала «выбери занятие». */}
+          {selected ? (
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-40 hidden w-[340px] items-start p-3 lg:flex">
+              <div className="pointer-events-auto max-h-full w-full overflow-y-auto">
+                <BlockDetails
+                  block={selected}
+                  timeZone={schedule.timeZone}
+                  onClose={() => setSelectedId(null)}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Помощник по расписанию живёт в панели справа: два разговора в одном
+              углу экрана заставляли выбирать между ними глазами. Страница
+              только сообщает панели, какое расписание на экране, — см.
+              `usePageSchedule` выше. */}
         </div>
       </div>
     </CoffeePageShell>
@@ -460,7 +487,15 @@ function ProposalNotice({
   );
 }
 
-function ProgramsPanel({
+/**
+ * Программы одной строкой над календарём.
+ *
+ * Раньше это была карточка в колонке 320 px справа. Колонка забирала шестую
+ * часть ширины экрана ради списка из двух строк, а календарь — то, ради чего
+ * страницу открывают, — жался. Легенда календаря и должна читаться как
+ * легенда: цвет, название, состояние.
+ */
+function ProgramsStrip({
   plans,
   visibleByPlan,
   proposalByPlan,
@@ -475,74 +510,57 @@ function ProgramsPanel({
   onBuild: (planId: string) => void;
   accents: Map<string, string>;
 }) {
-  return (
-    <div className={`${paperCard} p-4`}>
-      <div className={paperCaption}>Программы</div>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-[#7b7168]">
-        Все программы добавляются в этот общий календарь.
+  if (plans.length === 0) {
+    return (
+      <p className="text-[12.5px] text-[#8d857b]">
+        Пока нет учебных программ. Создай программу в разделе «Курс по книге».
       </p>
+    );
+  }
 
-      {plans.length === 0 ? (
-        <p className={`${paperTile} mt-3 px-3 py-2 text-[12.5px] text-[#7b7168]`}>
-          Пока нет учебных программ. Создай программу в разделе «Курс по
-          книге».
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {plans.map((plan) => {
-            const current = visibleByPlan.get(plan.id);
-            const proposal = proposalByPlan.get(plan.id);
-            const active = current?.status === "active" || current?.status === "confirmed";
-            const pending = proposal && proposal.feasible;
-            const blocked = proposal && !proposal.feasible;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <span className={`${paperCaption} mr-1`}>Программы</span>
+      {plans.map((plan) => {
+        const current = visibleByPlan.get(plan.id);
+        const proposal = proposalByPlan.get(plan.id);
+        const pending = proposal && proposal.feasible;
+        const blocked = proposal && !proposal.feasible;
+        const status = blocked
+          ? "нужно освободить время"
+          : pending
+            ? "ждёт подтверждения"
+            : null;
 
-            return (
-              <li
-                key={plan.id}
-                className={`${paperTile} px-3 py-2.5`}
+        return (
+          <span
+            key={plan.id}
+            className={`${paperTile} inline-flex max-w-[280px] items-center gap-1.5 py-1 pl-2.5 pr-2 text-[12px]`}
+          >
+            <span
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
+              aria-hidden
+            />
+            <span className="truncate text-[#4a443d]">{plan.title}</span>
+            {status ? (
+              <span className="shrink-0 text-[11px] text-[#8d857b]">
+                · {status}
+              </span>
+            ) : null}
+            {!current && !proposal ? (
+              <button
+                type="button"
+                className={`${paperButton} ml-0.5 shrink-0 px-2 py-0.5 text-[11px]`}
+                disabled={busy}
+                onClick={() => onBuild(plan.id)}
               >
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
-                      aria-hidden
-                    />
-                    <span className="truncate text-[13px] text-[#312c27]">
-                      {plan.title}
-                    </span>
-                  </div>
-                  {active || pending || blocked ? (
-                    <div className="mt-0.5 pl-4 text-[11px] text-[#8d857b]">
-                      {blocked
-                        ? "Нужно освободить время"
-                        : pending
-                          ? "Ожидает подтверждения"
-                          : "В расписании"}
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Кнопка тихая и короткая. Раньше здесь стояла главная
-                    (`paperPrimaryButton`) на КАЖДУЮ программу, и две одинаковые
-                    коричневые плашки подряд перетягивали внимание с самого
-                    календаря — при том что `paper.ts` прямо просит держать одну
-                    главную кнопку на экран. */}
-                {!current && !proposal ? (
-                  <button
-                    type="button"
-                    className={`${paperButton} mt-2 w-full justify-center px-3 py-1.5 text-[11.5px]`}
-                    disabled={busy}
-                    onClick={() => onBuild(plan.id)}
-                  >
-                    В расписание
-                  </button>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                В расписание
+              </button>
+            ) : null}
+          </span>
+        );
+      })}
     </div>
   );
 }

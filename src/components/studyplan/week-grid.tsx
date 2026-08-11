@@ -367,8 +367,10 @@ export function WeekGrid({
   );
 
   return (
-    <div className="overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95">
-      <div className="flex border-b border-[#e4ded4] bg-[#fffdfa]">
+    // Сетка тянется на всю высоту, которую ей даёт страница: календарь должен
+    // занимать экран, а не жить в коробке на 62vh с полосой пустоты под ней.
+    <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95">
+      <div className="flex shrink-0 border-b border-[#e4ded4] bg-[#fffdfa]">
         {/* Колонка под шкалой времени: держит шапку и сетку на одной оси. */}
         <div className="w-14 shrink-0" aria-hidden />
         {columns.map((column, index) => {
@@ -429,7 +431,7 @@ export function WeekGrid({
         })}
       </div>
 
-      <div ref={scrollRef} className="max-h-[62vh] overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex">
           <div className="w-14 shrink-0" style={{ height: bodyHeight }}>
             {marks.map((minutes) => (
