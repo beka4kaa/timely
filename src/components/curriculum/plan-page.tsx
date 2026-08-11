@@ -1,4 +1,10 @@
-// Страница программы: корешок книги, модули и сроки.
+// Страница программы: путь курса, модули и действия.
+//
+// Герой страницы — ось ВРЕМЕНИ, а не ось страниц книги. Вопрос ученика здесь
+// один: жить ли по этой программе три месяца, — и все его части (когда
+// закончу, успею ли к сроку, что дальше) лежат во времени. Покрытие книги
+// осталось двумя строками под путём: это метрика качества генератора, и герой
+// экрана из неё выходил плохой.
 //
 // Состояние подсветки живёт здесь, а не в контексте: связаны ровно две
 // половины экрана, и передать им пару `{hoveredTopicId, onHoverTopic}` дешевле
@@ -10,12 +16,13 @@ import { usePageSubject } from "@/contexts/active-subject";
 import { useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
-import { buildRibbon } from "@/lib/curriculum-ribbon";
+import { buildCoursePath } from "@/lib/curriculum-path";
+import { parseForecast } from "@/lib/curriculum-forecast";
+import { buildRibbon, coverageCaption, gapsCaption } from "@/lib/curriculum-ribbon";
 import { cleanDocumentTitle } from "@/lib/curriculum-title";
 import { PlanActions } from "./plan-actions";
-import { PlanForecastRail } from "./plan-forecast-rail";
 import { PlanModules } from "./plan-modules";
-import { PlanRibbon } from "./plan-ribbon";
+import { PlanPath } from "./plan-path";
 import { PlanPageError, PlanPageSkeleton } from "./plan-states";
 import { paperCaption, paperCard } from "./paper";
 import {
@@ -70,6 +77,57 @@ function PlanPageBody({
       }),
     [plan, book, sections],
   );
+
+  // Путь строится из длительностей глав и дат бэкенда. Своего календаря здесь
+  // нет намеренно: два несогласных прогноза на одном экране хуже одного.
+  const forecast = useMemo(() => parseForecast(plan.forecast), [plan.forecast]);
+  const path = useMemo(
+    () =>
+      buildCoursePath({
+        modules: plan.modules.map((courseModule) => ({
+          id: courseModule.id,
+          title: courseModule.title,
+          numberLabel: courseModule.number_label,
+          // Своё поле модуля, при нуле — сумма тем: так же считает шапка
+          // модуля в списке.
+          minutes:
+            courseModule.estimated_minutes ||
+            courseModule.topics.reduce(
+              (sum, topic) => sum + (topic.estimated_minutes || 0),
+              0,
+            ),
+        })),
+        milestones: plan.milestones.map((milestone) => ({
+          id: milestone.id,
+          title: milestone.title,
+          moduleId: milestone.module,
+        })),
+        today: new Date(),
+        expectedFinish: forecast?.estimatedFinishDate ?? plan.forecast_finish_date,
+        optimisticFinish: forecast?.optimisticFinishDate ?? null,
+        realisticFinish: forecast?.realisticFinishDate ?? null,
+        deadline: goal?.desired_finish_date ?? null,
+      }),
+    [plan, forecast, goal],
+  );
+
+  /** Какая глава подсвечена на пути: наводят-то на строку темы. */
+  const hoveredModuleId = useMemo(() => {
+    if (!hoveredTopicId) return null;
+    for (const courseModule of plan.modules) {
+      if (courseModule.topics.some((topic) => topic.id === hoveredTopicId)) {
+        return courseModule.id;
+      }
+    }
+    return null;
+  }, [plan, hoveredTopicId]);
+
+  /** Всё, что осталось от корешка: покрытие и пропуски одной строкой. */
+  const bookLines = useMemo(() => {
+    if (ribbon.unitCount === 0) return [];
+    const gaps = gapsCaption(ribbon);
+    return [`${coverageCaption(ribbon)}.`, gaps ? `${gaps}.` : ""].filter(Boolean);
+  }, [ribbon]);
 
   const blockers = reviewFindings.filter((finding) => finding.severity === "blocker");
   const allTopicsCount = plan.modules.reduce(
@@ -137,14 +195,23 @@ function PlanPageBody({
         </div>
       )}
 
-      {ribbon.unitCount > 0 && (
-        <>
-          <PlanRibbon
-            model={ribbon}
-            hoveredTopicId={hoveredTopicId}
-            onHoverTopic={setHoveredTopicId}
-          />
-        </>
+      {path && (
+        <PlanPath
+          plan={plan}
+          goal={goal}
+          path={path}
+          bookLines={bookLines}
+          hoveredModuleId={hoveredModuleId}
+          onPlanChange={onPlanChange}
+        />
+      )}
+
+      {/* Пути нет — у программы нет ни одной главы с ненулевым временем. Книгу
+          это не отменяет: строку покрытия показываем всё равно. */}
+      {!path && bookLines.length > 0 && (
+        <p className={`${paperCard} px-4 py-3 text-[11px] leading-5 text-[#9b9186]`}>
+          {bookLines.join(" ")}
+        </p>
       )}
 
       {everythingUnsourced && (
@@ -154,26 +221,18 @@ function PlanPageBody({
         </div>
       )}
 
-      <div className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        {/* Прогноз идёт раньше модулей в разметке: на телефоне ответ на вопрос
-            «успею ли я» важнее списка тем. На десктопе он уходит в правую
-            колонку той же строки. */}
-        <div className="lg:col-start-2 lg:row-start-1">
-          <PlanForecastRail plan={plan} goal={goal} />
-        </div>
-        <div className="lg:col-start-1 lg:row-start-1">
-          {plan.modules.length > 0 ? (
-            <PlanModules
-              plan={plan}
-              hoveredTopicId={hoveredTopicId}
-              onHoverTopic={setHoveredTopicId}
-            />
-          ) : (
-            <div className={`${paperCard} p-6 text-[13px] text-[#7f776e]`}>
-              В программе пока нет ни одного модуля. Постройте её заново.
-            </div>
-          )}
-        </div>
+      <div className="mt-7">
+        {plan.modules.length > 0 ? (
+          <PlanModules
+            plan={plan}
+            hoveredTopicId={hoveredTopicId}
+            onHoverTopic={setHoveredTopicId}
+          />
+        ) : (
+          <div className={`${paperCard} p-6 text-[13px] text-[#7f776e]`}>
+            В программе пока нет ни одного модуля. Постройте её заново.
+          </div>
+        )}
       </div>
 
       <div className="mt-8 border-t border-[#ded8ce] pt-6">

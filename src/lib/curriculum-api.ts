@@ -181,6 +181,8 @@ export interface CourseMilestone {
   title: string;
   description: string;
   order_index: number;
+  /** Модуль, по завершении которого веха достигнута. `null` — веха общая. */
+  module: string | null;
 }
 
 export type PlanStatus =

@@ -12,12 +12,11 @@ import { useState } from "react";
 import type { CourseModule } from "@/lib/curriculum-api";
 import { formatMinutes } from "@/lib/curriculum-progress";
 import { PlanTopicRow } from "./plan-topic-row";
-import { moduleTone, paperCard, paperFocus, paperNumber } from "./paper";
+import { paperCard, paperFocus, paperNumber } from "./paper";
 
 export function PlanModuleStrip({
   courseModule,
   index,
-  moduleCount,
   titles,
   hoveredTopicId,
   onHoverTopic,
@@ -26,7 +25,6 @@ export function PlanModuleStrip({
   // наступали в предыдущей версии экрана.
   courseModule: CourseModule;
   index: number;
-  moduleCount: number;
   titles: Map<string, string>;
   hoveredTopicId: string | null;
   onHoverTopic: (topicId: string | null) => void;
@@ -45,11 +43,6 @@ export function PlanModuleStrip({
         aria-expanded={open}
         className={`${paperFocus} flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-[#f8f3ea]`}
       >
-        <span
-          aria-hidden
-          className="mt-1 h-8 w-[3px] shrink-0 rounded-full"
-          style={{ background: moduleTone(index, moduleCount) }}
-        />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
             <span className={`${paperNumber} shrink-0 text-[13px] text-[#a1978b]`}>
@@ -83,8 +76,6 @@ export function PlanModuleStrip({
             <PlanTopicRow
               key={topic.id}
               topic={topic}
-              moduleIndex={index}
-              moduleCount={moduleCount}
               titles={titles}
               hovered={hoveredTopicId === topic.id}
               onHover={onHoverTopic}

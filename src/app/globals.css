@@ -23,6 +23,47 @@
   }
 }
 
+/* ── Путь курса: главы набегают слева направо ──────────────────────────────
+   Время на этой оси течёт слева направо, и появление пути говорит ровно это.
+   Единственная анимация страницы программы: отметка срока проявляется после
+   того, как главы встали на места, — иначе она читалась бы как часть пути, а
+   не как встреченная им граница. */
+@keyframes timely-path-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.timely-path-block {
+  transform-origin: left center;
+  animation: timely-path-in 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes timely-path-mark-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.timely-path-mark {
+  animation: timely-path-mark-in 260ms ease-out 520ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timely-path-block,
+  .timely-path-mark {
+    animation: none;
+  }
+}
+
 /* ── Индикатор загрузки: искры разгораются по очереди ──────────────────────
    Поворот берёт лишь четверть оборота: полный оборот у четырёхлучевой искры
    неотличим от неподвижной, и анимация выглядела бы как подвисание. */
