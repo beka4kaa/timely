@@ -31,6 +31,9 @@ export interface RibbonTopicInput {
 export interface RibbonSectionInput {
   path?: string | null;
   order_index: number;
+  /** Границы раздела в книге. Ноль и `null` — «неизвестно» (EPUB). */
+  start_page?: number | null;
+  end_page?: number | null;
 }
 
 export interface RibbonInput {
@@ -136,6 +139,16 @@ function pageSpan(source: RibbonSource): [number, number] | null {
   return from <= to ? [from, to] : [to, from];
 }
 
+/** Объединение двух отрезков; `null` там, где отрезка нет вовсе. */
+function union(
+  a: [number, number] | null | undefined,
+  b: [number, number] | null | undefined,
+): [number, number] | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return [Math.min(a[0], b[0]), Math.max(a[1], b[1])];
+}
+
 /**
  * Схлопывание отрезков ОДНОЙ темы.
  *
@@ -178,13 +191,56 @@ function sectionSlot(path: string, slots: Map<string, number>): number | null {
   return null;
 }
 
-/** Отрезки по страницам. Пусто — значит, страниц нет ни у одной цитаты. */
-function pageSpansFor(topics: readonly RibbonTopicInput[]): Map<string, Span[]> {
+/**
+ * Границы разделов из оглавления книги: путь → страницы.
+ *
+ * Совпадение только ТОЧНОЕ, без подъёма к предку (в отличие от `sectionSlot`):
+ * цитата на «1.2.3» при наличии в оглавлении только «1.2» не должна забирать
+ * себе всю главу.
+ */
+function sectionPagesFor(
+  sections: readonly RibbonSectionInput[],
+): Map<string, [number, number]> {
+  const byPath = new Map<string, [number, number]>();
+  for (const section of sections) {
+    const path = (section.path || "").trim();
+    if (!path || byPath.has(path)) continue;
+    const from = pageNumber(section.start_page);
+    if (from === 0) continue;
+    const to = pageNumber(section.end_page);
+    byPath.set(path, to >= from ? [from, to] : [from, from]);
+  }
+  return byPath;
+}
+
+/**
+ * Отрезки по страницам. Пусто — значит, страниц нет ни у одной цитаты.
+ *
+ * ЦИТАТА РАСТЯГИВАЕТСЯ ДО СВОЕГО РАЗДЕЛА. Ссылка «§17, стр. 25» означает не
+ * «в программе одна страница 25», а «в программе §17» — и покрывает его
+ * целиком. Без этого между темами оставались швы: §X кончался на 89, §Y
+ * начинался с 91, и страница 90 попадала в «не вошли», хотя в книге разделы
+ * идут вплотную и она принадлежит одному из них. На шестистах страницах таких
+ * швов набиралось шестнадцать из девятнадцати «пропусков» — то есть полоса
+ * показывала не пропущенное, а места, куда не ткнулась цитата.
+ *
+ * Границы берутся объединением: цитата, вышедшая за границы раздела из
+ * оглавления, свои страницы сохраняет — оглавление тоже распознаётся с
+ * ошибками.
+ */
+function pageSpansFor(
+  topics: readonly RibbonTopicInput[],
+  sections: readonly RibbonSectionInput[],
+): Map<string, Span[]> {
+  const sectionPages = sectionPagesFor(sections);
   const byTopic = new Map<string, Span[]>();
   for (const topic of topics) {
     const raw: [number, number][] = [];
     for (const source of topic.sources ?? []) {
-      const span = pageSpan(source);
+      const cited = pageSpan(source);
+      const path = (source.section_path || "").trim();
+      const whole = path ? sectionPages.get(path) : undefined;
+      const span = union(cited, whole);
       if (span) raw.push(span);
     }
     if (raw.length === 0) continue;
@@ -292,7 +348,7 @@ export function buildRibbon(input: RibbonInput): RibbonModel {
   const topics = input.topics ?? [];
   if (topics.length === 0) return { ...EMPTY };
 
-  const byPage = pageSpansFor(topics);
+  const byPage = pageSpansFor(topics, input.sections ?? []);
   const usePages = byPage.size > 0;
   const byTopic = usePages
     ? byPage
