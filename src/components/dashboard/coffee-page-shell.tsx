@@ -37,16 +37,31 @@ interface CoffeePageShellProps {
   actions?: ReactNode;
   children: ReactNode;
   contentClassName?: string;
+  /**
+   * Ширина колонки содержимого.
+   *
+   * Отдельным свойством, а не через `contentClassName`: у Tailwind порядок
+   * классов в атрибуте ничего не решает, и `max-w-none`, дописанный следом,
+   * с `max-w-[1240px]` не спорил бы — выигрывал бы тот, что позже в CSS.
+   * Календарю нужна вся ширина, остальным разделам — колонка для чтения.
+   */
+  maxWidthClassName?: string;
+  /** Занять всю высоту экрана: страница-приложение, а не страница-документ. */
+  fillHeight?: boolean;
 }
 
 export function CoffeePageShell({
   actions,
   children,
   contentClassName = "",
+  maxWidthClassName = "max-w-[1240px]",
+  fillHeight = false,
 }: CoffeePageShellProps) {
   return (
     <div
-      className="relative min-h-full overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light]"
+      className={`relative overflow-hidden bg-[#f7f5f1] text-[#302d29] [color-scheme:light] ${
+        fillHeight ? "flex h-full min-h-full flex-col" : "min-h-full"
+      }`}
       style={coffeeTheme}
     >
       <div
@@ -60,7 +75,9 @@ export function CoffeePageShell({
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-[#fffdf8] via-[#fbf8f2]/80 to-transparent" />
 
       <div
-        className={`relative mx-auto w-full max-w-[1240px] px-5 pb-16 pt-8 sm:px-8 lg:px-10 ${contentClassName}`}
+        className={`relative mx-auto w-full ${maxWidthClassName} px-5 sm:px-8 lg:px-10 ${
+          fillHeight ? "flex min-h-0 flex-1 flex-col pb-5 pt-5" : "pb-16 pt-8"
+        } ${contentClassName}`}
       >
         {actions && (
           <div className="mb-6 flex justify-end border-b border-[#ded8ce] pb-5">
