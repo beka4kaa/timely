@@ -55,6 +55,30 @@ export interface LearningBlock extends CalendarBlock {
   version: number;
 }
 
+/** Блок общего календаря с данными его расписания и программы. */
+export interface CalendarLearningBlock extends LearningBlock {
+  schedule_version: number;
+  schedule_status: ScheduleStatus;
+  schedule_timezone: string;
+  course_plan_title: string;
+}
+
+export interface FixedCommitment {
+  id: string;
+  kind: "school" | "tutor" | "exam" | "family" | "other";
+  title: string;
+  weekday: number | null;
+  start_time: string | null;
+  duration_minutes: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  source: "manual" | "chat";
+  source_text: string;
+  created_at: string;
+}
+
 export interface ConflictReport {
   feasible: boolean;
   required_minutes: number;
@@ -265,6 +289,30 @@ export async function listBlocks(
   return unwrap<LearningBlock[]>(response);
 }
 
+/**
+ * Единая лента блоков пользователя.
+ *
+ * Бэкенд сам выбирает новейшую видимую версию каждого курса, поэтому старая
+ * активная и новое предложение одной программы не дублируются в сетке.
+ */
+export async function listCalendarBlocks(range: {
+  from: string;
+  to: string;
+  timezone: string;
+}): Promise<CalendarLearningBlock[]> {
+  const query = new URLSearchParams({
+    from: range.from,
+    to: range.to,
+    timezone: range.timezone,
+  });
+  const response = await authFetch(`${BASE}/learning-blocks/?${query.toString()}`);
+  return list(
+    await unwrap<
+      CalendarLearningBlock[] | { results: CalendarLearningBlock[] }
+    >(response),
+  );
+}
+
 // ─────────────────────────────── Изменения ───────────────────────────────────
 
 /**
@@ -375,4 +423,11 @@ export async function createCommitment(
     body: JSON.stringify({ ...input, source, source_text: sourceText }),
   });
   return unwrap<{ id: string }>(response);
+}
+
+export async function listCommitments(): Promise<FixedCommitment[]> {
+  const response = await authFetch(`${BASE}/study-commitments/`);
+  return list(
+    await unwrap<FixedCommitment[] | { results: FixedCommitment[] }>(response),
+  );
 }

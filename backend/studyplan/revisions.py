@@ -17,14 +17,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db import transaction
 from django.utils import timezone as django_timezone
 
 from .models import FixedCommitment, LearningBlock, ScheduleRevision, StudySchedule
 from .scheduling.contracts import MIN_PART_MINUTES, CommitmentSpec
-from .scheduling.slots import busy_intervals, resolve_zone
+from .scheduling.slots import busy_intervals, local_to_utc, resolve_zone
+from .services import calendar_learning_blocks
 
 # Статусы, в которых блок уже прожит и двигать его поздно.
 _IMMOVABLE_STATUSES = frozenset(
@@ -34,6 +35,10 @@ _IMMOVABLE_STATUSES = frozenset(
         LearningBlock.Status.IN_PROGRESS,
         LearningBlock.Status.CANCELLED,
     }
+)
+
+_RELEASED_STATUSES = frozenset(
+    {LearningBlock.Status.CANCELLED, LearningBlock.Status.RESCHEDULED}
 )
 
 _EMPTY_DIFF = {
@@ -144,6 +149,7 @@ def _validate_moves(
         planned[str(block.id)] = (block, target)
 
     _check_collisions(schedule, blocks, planned)
+    _check_load_limits(schedule, blocks, planned)
     _check_prerequisites(schedule, blocks, planned)
     return planned
 
@@ -169,10 +175,7 @@ def _check_collisions(
     """Пересечения с другими блоками и с занятым временем ученика."""
     intervals: list[tuple[datetime, datetime, LearningBlock]] = []
     for block in blocks.values():
-        if block.status in {
-            LearningBlock.Status.CANCELLED,
-            LearningBlock.Status.RESCHEDULED,
-        }:
+        if block.status in _RELEASED_STATUSES:
             continue
         start, end = _resulting_interval(block, planned)
         intervals.append((start, end, block))
@@ -192,6 +195,21 @@ def _check_collisions(
     if not moved_intervals:
         return
 
+    first_start = min(start for start, _ in moved_intervals)
+    last_end = max(end for _, end in moved_intervals)
+    other_course_blocks = calendar_learning_blocks(
+        schedule.user_email,
+        exclude_course_plan_id=str(schedule.course_plan_id),
+        include_released=False,
+    ).filter(end_at__gt=first_start, start_at__lt=last_end)
+    for block, _ in planned.values():
+        start, end = _resulting_interval(block, planned)
+        for other in other_course_blocks:
+            if _overlaps(start, end, other.start_at, other.end_at):
+                raise RevisionRejected(
+                    f"«{block.title}» пересёкся бы с «{other.title}» из другого курса."
+                )
+
     zone = resolve_zone(schedule.timezone)
     first = min(start for start, _ in moved_intervals).astimezone(zone).date()
     last = max(end for _, end in moved_intervals).astimezone(zone).date()
@@ -205,6 +223,85 @@ def _check_collisions(
         for busy_start, busy_end in busy:
             if _overlaps(start, end, busy_start, busy_end):
                 raise RevisionRejected("В это время у тебя уже занято.")
+
+
+def _split_minutes_by_day(
+    intervals: list[tuple[datetime, datetime]], timezone_name: str
+) -> dict[date, int]:
+    zone = resolve_zone(timezone_name)
+    result: dict[date, int] = {}
+    for start, end in intervals:
+        day = start.astimezone(zone).date()
+        last_day = end.astimezone(zone).date()
+        while day <= last_day:
+            day_start, _ = local_to_utc(day, time(0, 0), zone)
+            day_end, _ = local_to_utc(
+                day + timedelta(days=1), time(0, 0), zone
+            )
+            overlap_start = max(start, day_start)
+            overlap_end = min(end, day_end)
+            minutes = max(
+                0, int((overlap_end - overlap_start).total_seconds() // 60)
+            )
+            if minutes:
+                result[day] = result.get(day, 0) + minutes
+            day += timedelta(days=1)
+    return result
+
+
+def _week_key(day: date) -> tuple[int, int]:
+    iso = day.isocalendar()
+    return iso[0], iso[1]
+
+
+def _check_load_limits(
+    schedule: StudySchedule,
+    blocks: dict[str, LearningBlock],
+    planned: dict[str, tuple[LearningBlock, dict]],
+) -> None:
+    """Дневной/недельный потолок относится ко всем курсам пользователя."""
+    max_day = schedule.template.max_minutes_per_day
+    max_week = schedule.template.max_minutes_per_week
+    if not max_day and not max_week:
+        return
+
+    moved_intervals = [
+        _resulting_interval(block, planned) for block, _ in planned.values()
+    ]
+    affected = _split_minutes_by_day(moved_intervals, schedule.timezone)
+    affected_days = set(affected)
+    affected_weeks = {_week_key(day) for day in affected_days}
+
+    intervals = [
+        _resulting_interval(block, planned)
+        for block in blocks.values()
+        if block.status not in _RELEASED_STATUSES
+    ]
+    intervals.extend(
+        (block.start_at, block.end_at)
+        for block in calendar_learning_blocks(
+            schedule.user_email,
+            exclude_course_plan_id=str(schedule.course_plan_id),
+            include_released=False,
+        )
+    )
+    daily = _split_minutes_by_day(intervals, schedule.timezone)
+
+    if max_day:
+        overloaded = [day for day in affected_days if daily.get(day, 0) > max_day]
+        if overloaded:
+            raise RevisionRejected(
+                "Перенос превысил бы дневной лимит учебной нагрузки."
+            )
+    if max_week:
+        weekly: dict[tuple[int, int], int] = {}
+        for day, minutes in daily.items():
+            key = _week_key(day)
+            weekly[key] = weekly.get(key, 0) + minutes
+        if any(weekly.get(key, 0) > max_week for key in affected_weeks):
+            raise RevisionRejected(
+                "Перенос превысил бы недельный лимит учебной нагрузки."
+            )
 
 
 def _check_prerequisites(
@@ -379,12 +476,34 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
 
     try:
         with transaction.atomic():
-            schedule = StudySchedule.objects.select_for_update().get(
-                pk=revision.schedule_id
+            # Версии отдельных курсов не защищают от одновременных переносов
+            # в двух разных расписаниях. Общий lock пользователя делает
+            # повторную проверку ниже атомарной относительно другого confirm.
+            list(
+                StudySchedule.objects.select_for_update()
+                .filter(
+                    user_email=revision.user_email,
+                    status__in=StudySchedule.CALENDAR_STATUSES,
+                )
+                .order_by("id")
+                .values_list("id", flat=True)
             )
+            schedule = StudySchedule.objects.get(pk=revision.schedule_id)
             if schedule.version != revision.base_version:
                 raise _VersionMismatch()
 
+            targets = _entries(revision.diff)
+            _validate_moves(
+                schedule,
+                [
+                    BlockMove(
+                        block_id=block_id,
+                        start_at=datetime.fromisoformat(target["start_at"]),
+                        duration_minutes=target["duration_minutes"],
+                    )
+                    for block_id, target in targets.items()
+                ],
+            )
             _apply(schedule, revision.diff)
 
             schedule.version = revision.proposed_version
@@ -423,12 +542,33 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
     if revision.status != ScheduleRevision.Status.CONFIRMED:
         raise RevisionRejected("Отменить можно только подтверждённое изменение.")
 
-    schedule = StudySchedule.objects.select_for_update().get(pk=revision.schedule_id)
+    list(
+        StudySchedule.objects.select_for_update()
+        .filter(
+            user_email=revision.user_email,
+            status__in=StudySchedule.CALENDAR_STATUSES,
+        )
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+    schedule = StudySchedule.objects.get(pk=revision.schedule_id)
     if schedule.version != revision.proposed_version:
         raise StaleRevision(
             "После этого изменения расписание менялось — отменить его уже нельзя."
         )
 
+    targets = _entries(revision.inverse_diff)
+    _validate_moves(
+        schedule,
+        [
+            BlockMove(
+                block_id=block_id,
+                start_at=datetime.fromisoformat(target["start_at"]),
+                duration_minutes=target["duration_minutes"],
+            )
+            for block_id, target in targets.items()
+        ],
+    )
     _apply(schedule, revision.inverse_diff)
 
     schedule.version += 1
