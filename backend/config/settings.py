@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "nutrition",
     "curriculum",
     "pomodoro",
+    "studyplan",
     "django_filters",
 ]
 
@@ -326,6 +327,12 @@ if "test" in sys.argv:
         "COURSE_PLANNING_MODEL",
         "COURSE_PLANNING_PROVIDERS",
         "COURSE_REVIEW_MODEL",
+        # Пятый внешний сервис — пятый рубильник, по правилу из
+        # `curriculum/ROADMAP.md`. Без него настроенный в `.env` ритм-планировщик
+        # увёл бы в сеть и в оплату любой тест генерации расписания, который не
+        # подставил провайдера явно.
+        "SCHEDULE_PLANNING_MODEL",
+        "SCHEDULE_PLANNING_PROVIDERS",
         "TEXT_LLM_MODEL",
     ):
         os.environ.pop(_role_var, None)

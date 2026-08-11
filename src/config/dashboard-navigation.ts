@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   AppleIcon,
   BookOpenIcon,
+  CalendarIcon,
   CheckSquareIcon,
   EyeIcon,
   FlameIcon,
@@ -71,6 +72,10 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   "/dashboard/curriculum": {
     title: "Курс по книге",
     subtitle: "Программа по вашему учебнику со ссылками на страницы",
+  },
+  "/dashboard/plan": {
+    title: "План",
+    subtitle: "Программа, разложенная по дням и часам",
   },
   // Ключ длиннее «/dashboard/curriculum», а `getDashboardPageMeta` сортирует
   // ключи по убыванию длины — поэтому он выигрывает. В боковое меню программа
@@ -202,6 +207,7 @@ const dashboardNavigation: DashboardNavigationGroup[] = [
       { title: "Предметы", url: "/dashboard/subjects", icon: GraduationCapIcon },
       { title: "Слабые темы", url: "/dashboard/weaknesses", icon: ZapIcon },
       { title: "Курс по книге", url: "/dashboard/curriculum", icon: LibraryIcon },
+      { title: "План", url: "/dashboard/plan", icon: CalendarIcon },
       { title: "Программа", url: "/dashboard/program", icon: BookOpenIcon },
       { title: "Самостоятельная", url: "/dashboard/self-work", icon: HeartIcon },
     ],
@@ -239,6 +245,7 @@ const visibleNavigationRoutes = new Set([
   "/dashboard/chat",
   "/dashboard/whiteboard",
   "/dashboard/curriculum",
+  "/dashboard/plan",
   "/dashboard/pomodoro",
   "/dashboard/arena/solve",
   "/dashboard/arena/review",
