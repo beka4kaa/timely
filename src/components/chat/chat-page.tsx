@@ -150,6 +150,17 @@ export function ChatPage() {
     [selected, chat],
   );
 
+  /** Новый разговор внутри папки: заодно делает её книгу текущей. */
+  const startChatIn = useCallback(
+    (goalId: string | null) => {
+      setSelected(goalId);
+      window.localStorage.setItem(SUBJECT_KEY, goalId ?? NO_BOOK);
+      chat.startNew();
+      if (narrow) setListOpen(false);
+    },
+    [chat, narrow],
+  );
+
   const openChat = useCallback(
     (id: string) => {
       // Разговор помнит свой предмет: продолжать физику, спрашивая по алгебре,
@@ -214,13 +225,18 @@ export function ChatPage() {
       >
         <ChatList
           chats={chat.chats}
+          subjects={subjects}
           activeId={chat.chatId}
-          loading={chat.loadingChats}
+          activeGoalId={selected}
+          // Пока не приехали предметы, папок не построить: все разговоры
+          // свалились бы в «Без книги» и через миг разъехались обратно.
+          loading={chat.loadingChats || !ready}
           onOpen={openChat}
           onCreate={() => {
             chat.startNew();
             if (narrow) setListOpen(false);
           }}
+          onCreateIn={startChatIn}
           onRename={(id, title) => void chat.renameChat(id, title)}
           onDelete={(id) => void chat.removeChat(id)}
           onCollapse={() => setListOpen(false)}
