@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from studyplan.models import (
     FixedCommitment,
+    LearningBlock,
     ScheduleRevision,
     StudySchedule,
     WeeklyScheduleTemplate,
@@ -388,3 +389,69 @@ class TemplateAndCommitmentApiTests(SchedulePlanFixture):
         commitment = FixedCommitment.objects.get(pk=response.json()["id"])
         self.assertEqual(commitment.user_email, OWNER)
         self.assertEqual(commitment.source, FixedCommitment.Source.CHAT)
+
+
+class CancelBlocksTests(ApiFixture):
+    """Delete в календаре отменяет занятия пачкой и умеет вернуть их обратно."""
+
+    def setUp(self):
+        super().setUp()
+        self.generate()
+        self.schedule = StudySchedule.objects.get(user_email=OWNER)
+        self.blocks = list(self.schedule.blocks.order_by("start_at"))
+
+    def cancel(self, ids, email: str = OWNER, **extra):
+        payload = {"block_ids": [str(item) for item in ids]}
+        payload.update(extra)
+        return self.client.post(
+            "/api/learning-blocks/cancel/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers(email),
+        )
+
+    def test_several_blocks_are_cancelled_in_one_call(self):
+        targets = self.blocks[:3]
+        response = self.cancel([block.id for block in targets])
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(len(response.json()["changed"]), 3)
+        for block in targets:
+            block.refresh_from_db()
+            self.assertEqual(block.status, LearningBlock.Status.CANCELLED)
+
+    def test_cancelling_is_reversible(self):
+        block = self.blocks[0]
+        self.cancel([block.id])
+        response = self.cancel([block.id], restore=True)
+        self.assertEqual(response.status_code, 200, response.content)
+        block.refresh_from_db()
+        self.assertEqual(block.status, LearningBlock.Status.SCHEDULED)
+
+    def test_completed_work_is_not_erased(self):
+        block = self.blocks[0]
+        block.status = LearningBlock.Status.COMPLETED
+        block.save(update_fields=["status"])
+        response = self.cancel([block.id])
+        self.assertEqual(response.json()["changed"], [])
+        block.refresh_from_db()
+        self.assertEqual(block.status, LearningBlock.Status.COMPLETED)
+
+    def test_pinned_block_stays_put(self):
+        block = self.blocks[0]
+        block.fixed = True
+        block.save(update_fields=["fixed"])
+        self.cancel([block.id])
+        block.refresh_from_db()
+        self.assertEqual(block.status, LearningBlock.Status.SCHEDULED)
+
+    def test_stranger_cannot_cancel_someone_elses_blocks(self):
+        block = self.blocks[0]
+        response = self.cancel([block.id], email=STRANGER)
+        self.assertEqual(response.json()["changed"], [])
+        block.refresh_from_db()
+        self.assertEqual(block.status, LearningBlock.Status.SCHEDULED)
+
+    def test_empty_request_is_refused(self):
+        response = self.cancel([])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "ids_required")

@@ -90,9 +90,12 @@ export interface WeekGridProps {
   range: VisibleRange;
   timeZone: string;
   todayKey: string;
-  selectedId: string | null;
+  /** Выделенные занятия. Одно — карточка разбора, несколько — пакетные действия. */
+  selectedIds: string[];
   busy?: boolean;
-  onSelect: (block: CalendarEntry) => void;
+  onSelect: (block: CalendarEntry, additive: boolean) => void;
+  /** Выделение рамкой: пришёл готовый список попавших в неё занятий. */
+  onSelectMany: (blockIds: string[]) => void;
   onMove: (block: CalendarEntry, startAt: Date, durationMinutes?: number) => void;
   /** Цвета программ по порядку списка. Без неё цвет берётся по хешу. */
   accents?: Map<string, string>;
@@ -103,9 +106,10 @@ export function WeekGrid({
   range,
   timeZone,
   todayKey,
-  selectedId,
+  selectedIds,
   busy = false,
   onSelect,
+  onSelectMany,
   onMove,
   accents,
 }: WeekGridProps) {
@@ -346,6 +350,78 @@ export function WeekGrid({
     [columns, drag, onMove, range, timeZone],
   );
 
+  // ── Выделение рамкой ──────────────────────────────────────────────────────
+  //
+  // Тянем по пустому месту сетки — выделяются все занятия, которых рамка
+  // коснулась. Дальше их можно отменить одним Delete. Начинать разрешено
+  // только с пустого места: pointerdown на самом блоке — это перетаскивание,
+  // и путать эти два жеста нельзя.
+  const [marquee, setMarquee] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  } | null>(null);
+
+  const beginMarquee = useCallback(
+    (event: React.PointerEvent) => {
+      if (busy) return;
+      if ((event.target as HTMLElement).closest("[data-calendar-block]")) return;
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      setMarquee({ x1: x, y1: y, x2: x, y2: y });
+    },
+    [busy],
+  );
+
+  const updateMarquee = useCallback((event: React.PointerEvent) => {
+    setMarquee((current) => {
+      if (!current) return current;
+      const rect = gridRef.current?.getBoundingClientRect();
+      if (!rect) return current;
+      return {
+        ...current,
+        x2: event.clientX - rect.left,
+        y2: event.clientY - rect.top,
+      };
+    });
+  }, []);
+
+  const finishMarquee = useCallback(() => {
+    const box = marquee;
+    setMarquee(null);
+    if (!box) return;
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect || columns.length === 0) return;
+
+    const left = Math.min(box.x1, box.x2);
+    const right = Math.max(box.x1, box.x2);
+    const top = Math.min(box.y1, box.y2);
+    const bottom = Math.max(box.y1, box.y2);
+    // Меньше пяти пикселей — это клик по пустому месту, а не рамка. Иначе
+    // каждый промах мимо блока снимал бы выделение рывком.
+    if (right - left < 5 && bottom - top < 5) {
+      onSelectMany([]);
+      return;
+    }
+
+    const columnWidth = rect.width / columns.length;
+    const picked: string[] = [];
+    columns.forEach((column, index) => {
+      const columnLeft = index * columnWidth;
+      if (columnLeft + columnWidth < left || columnLeft > right) return;
+      for (const positioned of column.blocks) {
+        const blockTop = positioned.top;
+        const blockBottom = positioned.top + positioned.height;
+        if (blockBottom < top || blockTop > bottom) continue;
+        picked.push(positioned.block.id);
+      }
+    });
+    onSelectMany(picked);
+  }, [columns, marquee, onSelectMany]);
+
   const handleKey = useCallback(
     (
       event: React.KeyboardEvent,
@@ -355,7 +431,7 @@ export function WeekGrid({
     ) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        onSelect(block);
+        onSelect(block, event.shiftKey || event.metaKey || event.ctrlKey);
         return;
       }
       // Перенос с клавиатуры — только с Alt: голые стрелки обязаны листать
@@ -468,6 +544,10 @@ export function WeekGrid({
             ref={gridRef}
             className="relative flex flex-1 touch-none select-none"
             style={{ minHeight: bodyHeight }}
+            onPointerDown={beginMarquee}
+            onPointerMove={updateMarquee}
+            onPointerUp={finishMarquee}
+            onPointerCancel={finishMarquee}
           >
             {marks.map((minutes) => (
               <div
@@ -503,7 +583,7 @@ export function WeekGrid({
                   const sourceLabel = commitment
                     ? commitmentKindLabel(block.commitment_kind)
                     : block.course_plan_title;
-                  const selected = selectedId === block.id;
+                  const selected = selectedIds.includes(block.id);
                   const isProposal =
                     !commitment &&
                     (block.schedule_status === "proposed" ||
@@ -524,6 +604,7 @@ export function WeekGrid({
                   return (
                     <div
                       key={block.id}
+                      data-calendar-block=""
                       role="button"
                       tabIndex={0}
                       aria-label={`${block.title}, ${formatMinutes(
@@ -548,12 +629,14 @@ export function WeekGrid({
                       onKeyDown={(event) =>
                         handleKey(event, block, positioned.startMinutes, column.dateKey)
                       }
-                      onClick={() => {
+                      onClick={(event) => {
                         if (draggedRef.current) {
                           draggedRef.current = false;
                           return;
                         }
-                        onSelect(block);
+                        // Shift и Cmd/Ctrl добавляют к выделению — как в любом
+                        // списке файлов. Обычный клик выделяет одно.
+                        onSelect(block, event.shiftKey || event.metaKey || event.ctrlKey);
                       }}
                       className={`absolute overflow-hidden rounded-[10px] border px-2 py-1 text-left transition-shadow ${paperFocus} ${
                         block.fixed ? "cursor-default" : "cursor-grab"
@@ -638,6 +721,19 @@ export function WeekGrid({
                 })}
               </div>
             ))}
+
+            {marquee ? (
+              <div
+                className="pointer-events-none absolute z-50 rounded-[6px] border border-[#8a5b24] bg-[#8a5b24]/10"
+                style={{
+                  left: Math.min(marquee.x1, marquee.x2),
+                  top: Math.min(marquee.y1, marquee.y2),
+                  width: Math.abs(marquee.x2 - marquee.x1),
+                  height: Math.abs(marquee.y2 - marquee.y1),
+                }}
+                aria-hidden
+              />
+            ) : null}
 
             {preview ? (
               <div

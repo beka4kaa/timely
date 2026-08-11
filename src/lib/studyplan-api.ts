@@ -337,6 +337,27 @@ export async function moveBlock(
   return unwrap<{ block: LearningBlock; revision: ScheduleRevision }>(response);
 }
 
+/**
+ * Отменить занятия пачкой или вернуть отменённые обратно.
+ *
+ * «Удалить» занятие нельзя: оно часть учебной программы. Отменённое гаснет,
+ * зачёркивается и перестаёт занимать время — поэтому операция обратима, и
+ * поэтому же на неё можно вешать Delete без страха.
+ */
+export async function cancelBlocks(
+  blockIds: string[],
+  options?: { restore?: boolean },
+): Promise<{ changed: string[]; restored: boolean }> {
+  const response = await authFetch(`${BASE}/learning-blocks/cancel/`, {
+    method: "POST",
+    body: JSON.stringify({
+      block_ids: blockIds,
+      ...(options?.restore ? { restore: true } : {}),
+    }),
+  });
+  return unwrap<{ changed: string[]; restored: boolean }>(response);
+}
+
 export async function listRevisions(scheduleId: string): Promise<ScheduleRevision[]> {
   const response = await authFetch(`${BASE}/study-schedules/${scheduleId}/revisions/`);
   return unwrap<ScheduleRevision[]>(response);

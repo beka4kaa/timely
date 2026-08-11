@@ -16,7 +16,9 @@ import {
 } from "@/lib/studyplan-calendar-entries";
 import {
   StudyplanApiError,
+  cancelBlocks,
   type CalendarLearningBlock,
+  type FixedCommitment,
   type ScheduleRevision,
   type StudySchedule,
   confirmSchedule,
@@ -69,15 +71,23 @@ export function useSchedule() {
   const initialZoneResolved = useRef(false);
   const days = useMemo(() => weekDays(anchor), [anchor]);
 
-  const load = useCallback(async () => {
+  // Программы и занятость меняются редко, а расписание — на каждое движение
+  // мышью. Держим их между перезагрузками: иначе один перенос блока стоил
+  // четырёх запросов в две волны, из которых три возвращали то же самое.
+  const staticRef = useRef<{
+    plans: CoursePlanSummary[];
+    commitments: FixedCommitment[];
+  } | null>(null);
+
+  const load = useCallback(async (options?: { calendarOnly?: boolean }) => {
     const ticket = ++requestId.current;
+    const cached = options?.calendarOnly ? staticRef.current : null;
     try {
-      const [allSchedules, plans, fixedCommitments] = await Promise.all([
-        listSchedules(),
-        listPlans(),
-        listCommitments(),
-      ]);
+      const [allSchedules, plans, fixedCommitments] = cached
+        ? [await listSchedules(), cached.plans, cached.commitments]
+        : await Promise.all([listSchedules(), listPlans(), listCommitments()]);
       if (ticket !== requestId.current) return;
+      staticRef.current = { plans, commitments: fixedCommitments };
 
       const visible = selectVisibleSchedules(allSchedules);
       const timeZone = calendarTimeZone(visible, fallbackTimeZone);
@@ -179,11 +189,11 @@ export function useSchedule() {
           baseVersion: block.schedule_version,
         });
         setLastRevision(result.revision);
-        await load();
+        await load({ calendarOnly: true });
       } catch (error) {
         if (error instanceof StudyplanApiError && error.isStale) {
-          setNotice("Эта программа изменилась в другом месте — обновляю календарь.");
-          await load();
+          setNotice("Календарь обновился — здесь была другая версия.");
+          await load({ calendarOnly: true });
         } else {
           setNotice(
             error instanceof Error ? error.message : "Перенести не получилось.",
@@ -203,7 +213,7 @@ export function useSchedule() {
       await undoRevision(lastRevision.id);
       setLastRevision(null);
       setNotice(null);
-      await load();
+      await load({ calendarOnly: true });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Отменить уже нельзя.");
     } finally {
@@ -217,7 +227,7 @@ export function useSchedule() {
       setNotice(null);
       try {
         await confirmSchedule(scheduleId);
-        await load();
+        await load({ calendarOnly: true });
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Подтвердить не получилось.",
@@ -253,6 +263,51 @@ export function useSchedule() {
     [load, timeZone],
   );
 
+  /**
+   * Отменить выделенные занятия.
+   *
+   * Возвращает список отменённых, чтобы страница показала «Вернуть»: отмена
+   * пачкой без выхода назад — слишком дорогая ошибка для одной клавиши.
+   */
+  const cancel = useCallback(
+    async (blockIds: string[]) => {
+      if (blockIds.length === 0) return [];
+      setBusy(true);
+      setNotice(null);
+      try {
+        const result = await cancelBlocks(blockIds);
+        await load({ calendarOnly: true });
+        return result.changed;
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Отменить не получилось.",
+        );
+        return [];
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  const restore = useCallback(
+    async (blockIds: string[]) => {
+      if (blockIds.length === 0) return;
+      setBusy(true);
+      try {
+        await cancelBlocks(blockIds, { restore: true });
+        await load({ calendarOnly: true });
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Вернуть не получилось.",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
   return {
     data,
     days,
@@ -266,6 +321,8 @@ export function useSchedule() {
     undoLast,
     confirm,
     build,
+    cancel,
+    restore,
     reload: load,
     dismissNotice: () => setNotice(null),
   };
