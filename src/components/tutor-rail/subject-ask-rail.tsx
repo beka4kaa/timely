@@ -14,24 +14,13 @@
 // код: сам чат — две тысячи строк, завязанных на whiteboard-стор.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ChevronDown,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-} from "lucide-react";
+import { ChevronDown, PanelRightClose, Plus } from "lucide-react";
 
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useActiveSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import {
@@ -41,6 +30,7 @@ import {
   type LearningGoal,
 } from "@/lib/curriculum-api";
 import { ChatTree } from "./chat-tree";
+import { EdgeTab } from "./edge-tab";
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { AskTurn } from "@/components/chat/ask-turn";
 import { Composer } from "@/components/chat/composer";
@@ -79,9 +69,6 @@ function AskRail() {
   const chat = useSubjectChat({
     goalId: selected,
     enabled: open && Boolean(selected),
-    // Панель продолжает начатое: она узкая, живёт на всех страницах, и пустой
-    // экран вместо вчерашнего разбора выглядел бы потерей разговора.
-    autoOpenLatest: true,
     migrateLegacy: true,
   });
 
@@ -136,31 +123,26 @@ function AskRail() {
 
   return (
     <>
-      {/* ── Кнопка открытия ─────────────────────────────────────────────── */}
-      {/* Только открывает. Свернуть можно из шапки, рядом с «Новым разговором»:
+      {/* ── Закладка ────────────────────────────────────────────────────── */}
+      {/* Только открывает. Свернуть можно из шапки, рядом с «Новым чатом»:
           две кнопки одного назначения в разных углах экрана — это лишний
-          поиск глазами. */}
-      {!open && (
-        <div className="fixed right-4 top-[60px] z-[120]">
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={toggle}
-                  aria-label="Спросить по книге"
-                  className="grid h-9 w-9 place-items-center rounded-xl border border-[#dedbd4] bg-[#fbfaf7]/90 text-[#8a827a] shadow-[0_8px_24px_rgba(67,57,45,0.10)] outline-none backdrop-blur-md transition-colors hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
-                >
-                  <PanelRightOpen className="h-[17px] w-[17px]" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="text-xs">
-                Спросить по книге
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      )}
+          поиск глазами.
+
+          Стоит по центру правого края — там же, где у открытой панели засечка
+          сгиба, и уезжает за край ровно тем движением, каким панель выезжает
+          из-за него. */}
+      <EdgeTab
+        side="right"
+        hidden={open}
+        label="Спросить по книге"
+        onClick={toggle}
+        // Половина шапки: панель начинается под ней, и без сдвига закладка
+        // встала бы выше засечки сгиба, в которую превращается.
+        offsetY={24}
+        // Выше страницы (`z-[95]`), но ниже самой панели (`z-[115]`): уезжая,
+        // закладка должна скрыться ЗА её кромкой, а не поверх неё.
+        className="z-[110]"
+      />
 
       {/* ── Затемнение на узком экране ──────────────────────────────────── */}
       {isMobile && open && (
@@ -175,7 +157,13 @@ function AskRail() {
         style={{ width: isMobile ? "100%" : width || undefined }}
         className={`fixed bottom-0 right-0 top-12 z-[115] border-l border-[#dedbd4] ${
           dragging ? "" : "transition-transform duration-300 ease-in-out"
-        } ${open ? "translate-x-0" : "translate-x-full"}`}
+        } ${
+          // Тень слева: лист, приподнятый над страницей, а не приклеенный к
+          // ней встык. Закрытой она не нужна — панель за краем экрана.
+          open
+            ? "translate-x-0 shadow-[-18px_0_40px_-24px_rgba(67,57,45,0.25)]"
+            : "translate-x-full"
+        }`}
         aria-hidden={!open}
         // Панель уезжает трансформацией и остаётся в DOM. Без этого её поле
         // ввода ловило бы фокус по Tab со страницы, где панели не видно.

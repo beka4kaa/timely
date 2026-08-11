@@ -16,12 +16,7 @@
 // раскладке и в размере шрифта.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  BookOpen,
-  ChevronDown,
-  PanelLeftOpen,
-  PanelRightOpen,
-} from "lucide-react";
+import { BookOpen, ChevronDown } from "lucide-react";
 
 import {
   Popover,
@@ -35,6 +30,7 @@ import {
 } from "@/lib/curriculum-api";
 import { buildSpines } from "@/lib/citation-spread";
 import { subjectTitle } from "@/lib/curriculum-catalog";
+import { EdgeTab } from "@/components/tutor-rail/edge-tab";
 import { FoldResizer } from "@/components/tutor-rail/fold-resizer";
 import { AskTurn } from "./ask-turn";
 import { ChatList } from "./chat-list";
@@ -233,20 +229,22 @@ export function ChatPage() {
 
       {/* ── Разговор ────────────────────────────────────────────────────── */}
       <div className="relative flex min-w-0 flex-1 flex-col">
-        {!listOpen && (
-          <EdgeButton
-            side="left"
-            label="История разговоров"
-            onClick={() => setListOpen(true)}
-          />
-        )}
-        {!sourcesOpen && (
-          <EdgeButton
-            side="right"
-            label="Источники"
-            onClick={() => setSourcesOpen(true)}
-          />
-        )}
+        {/* Закладки свёрнутых колонок — те же, что у панели вопросов, только
+            левая зеркальна. Стоят по центру своего края колонки разговора. */}
+        <EdgeTab
+          side="left"
+          hidden={listOpen}
+          label="История разговоров"
+          onClick={() => setListOpen(true)}
+          className="z-20"
+        />
+        <EdgeTab
+          side="right"
+          hidden={sourcesOpen}
+          label="Источники"
+          onClick={() => setSourcesOpen(true)}
+          className="z-20"
+        />
 
         {/* Точечная сетка бумаги — та же, что на доске. */}
         <div
@@ -370,32 +368,6 @@ export function ChatPage() {
         />
       )}
     </div>
-  );
-}
-
-/** Кнопка вернуть свёрнутую колонку. Стоит на её краю, а не в общей шапке. */
-function EdgeButton({
-  side,
-  label,
-  onClick,
-}: {
-  side: "left" | "right";
-  label: string;
-  onClick: () => void;
-}) {
-  const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className={`absolute top-2.5 z-20 grid h-8 w-8 place-items-center rounded-xl border border-[#dedbd4] bg-[#fbfaf7]/90 text-[#8a827a] shadow-[0_8px_24px_rgba(67,57,45,0.08)] outline-none backdrop-blur-md transition-colors hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30 ${
-        side === "left" ? "left-2.5" : "right-2.5"
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
   );
 }
 

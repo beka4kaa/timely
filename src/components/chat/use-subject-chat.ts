@@ -62,14 +62,6 @@ export interface UseSubjectChatOptions {
   /** Пока `false`, ничего не грузится: панель закрыта — запросов быть не должно. */
   enabled?: boolean;
   /**
-   * Открывать последний разговор предмета сразу после загрузки списка.
-   *
-   * Так устроена панель: она узкая, живёт на всех страницах и продолжает
-   * начатое. Страница, наоборот, открывается чистым листом с приветствием —
-   * там прошлый разговор в один клик слева.
-   */
-  autoOpenLatest?: boolean;
-  /**
    * Разовый перенос разговора, накопленного в браузере до появления чатов.
    *
    * Делается здесь, а не снаружи, потому что успеть надо строго ДО запроса
@@ -97,7 +89,6 @@ export function useSubjectChat({
   goalId,
   scope = "subject",
   enabled = true,
-  autoOpenLatest = false,
   migrateLegacy = false,
 }: UseSubjectChatOptions): SubjectChatEngine {
   const [chats, setChats] = useState<SubjectChatSummary[]>([]);
@@ -113,18 +104,14 @@ export function useSubjectChat({
   const goalRef = useRef(goalId);
   goalRef.current = goalId;
 
-  // То же для открытого разговора: список может приехать позже, чем ученик
-  // нажмёт «Новый чат», и подставлять ему вчерашний разбор поверх пустого
-  // экрана нельзя.
-  const openedRef = useRef<{ chatId: string | null; turns: Turn[] }>({
-    chatId: null,
-    turns: [],
-  });
-  openedRef.current = { chatId, turns };
-
   // Список: в режиме предмета перезагружается при его смене, в режиме «все» —
   // один раз. Ключ строкой, потому что `null` — это законный предмет («без
   // книги»), и отличать его от «ещё не выбран» приходится явно.
+  //
+  // Последний разговор ЗДЕСЬ НЕ ОТКРЫВАЕТСЯ. Чат начинается с чистого листа —
+  // и в панели, и на странице; прошлые разговоры в одном клике, в списке.
+  // Подставлять вчерашний разбор человеку, который пришёл спросить новое,
+  // значит заставлять его сначала это убрать.
   const listKey = scope === "all" ? "all" : String(goalId);
   useEffect(() => {
     if (!enabled) return;
@@ -139,22 +126,12 @@ export function useSubjectChat({
       if (!alive) return;
       setChats(rows);
       setLoadingChats(false);
-      // Продолжаем последний разговор — но только если на экране пусто.
-      // Сравнение с `goalRef` обязательно: пока шёл запрос, ученик мог
-      // переключить предмет, и открывшийся чат оказался бы из другого.
-      const idle =
-        !openedRef.current.chatId && !openedRef.current.turns.length;
-      if (autoOpenLatest && idle && rows[0] && goalRef.current === subject) {
-        setChatId(rows[0].id);
-        const restored = await loadChatTurns(rows[0].id);
-        if (alive && goalRef.current === subject) setTurns(restored);
-      }
     })();
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey, enabled, scope, autoOpenLatest, migrateLegacy]);
+  }, [listKey, enabled, scope, migrateLegacy]);
 
   // Панель показывает чаты одного предмета, и открытый разговор из другого
   // предмета в ней выглядел бы чужим. На странице список общий, и закрывать

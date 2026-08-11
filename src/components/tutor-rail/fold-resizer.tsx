@@ -7,9 +7,14 @@
 // отношения не имеет.
 //
 // Здесь граница уже нарисована — это волосяная линия панели. Ничего добавлять
-// не нужно, нужно дать ей отзывчивость: при наведении она темнеет и получает
-// короткую засечку (край закладки, а не рукоятка), при перетаскивании
+// не нужно, нужно дать ей отзывчивость: короткая засечка (край закладки, а не
+// рукоятка из точек) при наведении вырастает и теплеет, при перетаскивании
 // становится акцентной и показывает долю экрана.
+//
+// Засечка видна В ПОКОЕ. Прозрачной её не оставить: ровно так и вышло, что
+// панель никто не тянул, — тянули соседнюю доску, где такая же ручка видна
+// всегда (`whiteboard/page.tsx`). Цвета и размеры взяты оттуда же: две панели
+// должны ощущаться одним механизмом, а не двумя похожими.
 //
 // Состояние — снаружи. Панель вопросов держит ширину в контексте (от неё
 // зависит сдвиг всей страницы), панель источников на странице «Тьютор» — в
@@ -55,6 +60,10 @@ export function FoldResizer({
   const [hovered, setHovered] = useState(false);
   const [share, setShare] = useState("");
   const hideLabel = useRef<number | null>(null);
+  // Идентификатор тянущего указателя. В рефе, а не в состоянии: движение
+  // читает его на каждый кадр, а перерисовок между кадрами может не быть
+  // вовсе — ширина панели вопросов живёт в контексте всего дашборда.
+  const dragRef = useRef<number | null>(null);
 
   // Подпись гаснет через полсекунды после отпускания: во время тяги она нужна,
   // после — только мешает.
@@ -70,41 +79,60 @@ export function FoldResizer({
     };
   }, [dragging, share]);
 
+  // Тяга слушает ОКНО, а не свою полосу в двенадцать пикселей.
+  //
+  // Полоса — цель только для нажатия. Дальше курсор уходит куда угодно: на
+  // соседнюю страницу, на её полосу прокрутки, за край окна, — и всюду тяга
+  // должна продолжаться. `setPointerCapture` это в теории и обещает, но
+  // держится на том, что события доедут до самого элемента; слушатель на окне
+  // не зависит ни от этого, ни от перерисовок дерева между кадрами.
+  useEffect(() => {
+    if (!dragging) return;
+
+    const move = (event: PointerEvent) => {
+      if (dragRef.current !== null && event.pointerId !== dragRef.current) return;
+      // Панель прижата к правому краю, поэтому её ширина — это расстояние от
+      // курсора до края окна.
+      const next = window.innerWidth - event.clientX;
+      setWidth(next);
+      setShare(railShareLabel(next, window.innerWidth));
+    };
+
+    const stop = () => {
+      dragRef.current = null;
+      setDragging(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    // Курсор мог уйти за пределы окна и отпуститься там.
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+      // Размонтировали посреди тяги — курсор и выделение вернуть обязаны.
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [dragging, setWidth, setDragging]);
+
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Только основная кнопка: правой кнопкой панель не тянут.
+      if (event.button !== 0) return;
       event.preventDefault();
-      // Захват указателя: тяга переживает уход курсора со своей полосы —
-      // иначе быстрый рывок мышью сбрасывал бы перетаскивание.
-      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = event.pointerId;
       setDragging(true);
       // Пока тянут, выделение текста только мешает.
       document.body.style.userSelect = "none";
       document.body.style.cursor = "col-resize";
     },
     [setDragging],
-  );
-
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      // Панель прижата к правому краю, поэтому её ширина — это расстояние от
-      // курсора до края окна.
-      const next = window.innerWidth - event.clientX;
-      setWidth(next);
-      setShare(railShareLabel(next, window.innerWidth));
-    },
-    [dragging, setWidth],
-  );
-
-  const stop = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging) return;
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-      setDragging(false);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    },
-    [dragging, setDragging],
   );
 
   const onKeyDown = useCallback(
@@ -132,22 +160,22 @@ export function FoldResizer({
       aria-valuenow={width}
       tabIndex={0}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={stop}
-      onPointerCancel={stop}
       onDoubleClick={resetWidth}
       onKeyDown={onKeyDown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      // Полоса захвата в 8 px поверх линии: в один пиксель не попасть мышью, а
-      // расширять саму линию значит менять вид ради удобства.
-      className="group absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize outline-none"
+      // Полоса захвата в 12 px и ЦЕЛИКОМ внутри панели. Раньше она торчала на
+      // четыре пикселя наружу и там ложилась на прокручиваемый `<main>` — то
+      // есть половина цели приходилась на чужую полосу прокрутки.
+      //
+      // `touch-none` обязателен: без него тяга пальцем уходит в прокрутку.
+      className="group absolute left-0 top-0 z-10 h-full w-3 cursor-col-resize touch-none outline-none"
       title={title}
     >
-      {/* Сама линия. В покое неотличима от границы панели. */}
+      {/* Линия. В покое неотличима от границы панели. */}
       <span
         aria-hidden
-        className={`absolute left-1 top-0 h-full transition-[width,background-color] duration-150 ${
+        className={`absolute left-0 top-0 h-full transition-[width,background-color] duration-150 ${
           dragging
             ? "w-[2px] bg-[#b7792d]"
             : active
@@ -156,18 +184,23 @@ export function FoldResizer({
         } group-focus-visible:w-[2px] group-focus-visible:bg-[#c5a474]`}
       />
 
-      {/* Засечка — край закладки, а не рукоятка из точек. */}
+      {/* Засечка — край закладки, а не рукоятка из точек. Видна всегда: за
+          невидимую кромку никто не тянет. */}
       <span
         aria-hidden
-        className={`absolute left-[3px] top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full transition-opacity duration-150 ${
-          active ? "bg-[#c5a474] opacity-100" : "opacity-0"
-        } group-focus-visible:opacity-100`}
+        className={`absolute left-[3px] top-1/2 w-[3px] -translate-y-1/2 rounded-full transition-[height,background-color,box-shadow] duration-150 ${
+          dragging
+            ? "h-20 bg-[#a9773b] shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
+            : hovered
+              ? "h-20 bg-[#aa7a42]"
+              : "h-14 bg-[#d4cec4]"
+        } group-focus-visible:h-20 group-focus-visible:bg-[#aa7a42] group-focus-visible:shadow-[0_0_0_4px_rgba(185,133,70,0.12)]`}
       />
 
       {share && (
         <span
           aria-hidden
-          className={`absolute left-3 top-3 rounded-full border border-[#e0dcd4] bg-[#fbfaf7] px-2 py-[2px] text-[10px] tabular-nums text-[#8a827a] shadow-[0_4px_14px_rgba(67,57,45,0.10)] transition-opacity duration-300 ${
+          className={`absolute left-4 top-3 rounded-full border border-[#e0dcd4] bg-[#fbfaf7] px-2 py-[2px] text-[10px] tabular-nums text-[#8a827a] shadow-[0_4px_14px_rgba(67,57,45,0.10)] transition-opacity duration-300 ${
             dragging ? "opacity-100" : "opacity-0"
           }`}
         >
