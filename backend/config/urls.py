@@ -33,6 +33,14 @@ from nutrition.views import (
     NutritionProfileView,
 )
 from nutrition.photo_views import AnalyzePhotoView
+from studyplan.chat_views import ScheduleChatStreamView
+from studyplan.views import (
+    FixedCommitmentViewSet,
+    LearningBlockViewSet,
+    ScheduleRevisionViewSet,
+    StudyScheduleViewSet,
+    WeeklyScheduleTemplateViewSet,
+)
 from curriculum.ask_views import SubjectAskStreamView
 from curriculum.views import (
     SubjectChatViewSet,
@@ -83,6 +91,14 @@ router.register(r'curriculum/chats', SubjectChatViewSet, basename='curriculum-ch
 router.register(
     r'curriculum/enrollments', CourseEnrollmentViewSet, basename='curriculum-enrollments'
 )
+# Расписание самостоятельного обучения: ритм → календарь → изменения.
+router.register(r'study-templates', WeeklyScheduleTemplateViewSet, basename='study-templates')
+router.register(r'study-commitments', FixedCommitmentViewSet, basename='study-commitments')
+router.register(r'study-schedules', StudyScheduleViewSet, basename='study-schedules')
+router.register(r'learning-blocks', LearningBlockViewSet, basename='learning-blocks')
+router.register(
+    r'schedule-revisions', ScheduleRevisionViewSet, basename='schedule-revisions'
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -104,6 +120,18 @@ urlpatterns = [
         'api/curriculum/ask/stream',
         SubjectAskStreamView.as_view(),
         name='curriculum-ask-stream-no-slash',
+    ),
+    # Помощник по расписанию — потоком. Оба варианта пути, как у чата доски:
+    # фронтенд ходит в backend напрямую, и редирект на слеше оборвал бы POST.
+    path(
+        'api/studyplan/chat/stream/',
+        ScheduleChatStreamView.as_view(),
+        name='studyplan-chat-stream',
+    ),
+    path(
+        'api/studyplan/chat/stream',
+        ScheduleChatStreamView.as_view(),
+        name='studyplan-chat-stream-no-slash',
     ),
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),

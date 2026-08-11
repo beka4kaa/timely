@@ -26,6 +26,13 @@ ROLE_GOAL_NORMALIZATION = "GOAL_NORMALIZATION"
 ROLE_SECTION_PROFILING = "SECTION_PROFILING"
 ROLE_COURSE_PLANNING = "COURSE_PLANNING"
 ROLE_COURSE_REVIEW = "COURSE_REVIEW"
+# Ритм занятий: как разложить темы по неделе. Отдельно от COURSE_PLANNING,
+# потому что это другая задача и другая цена. Программа строится один раз на
+# курс и стоит дорого; ритм пересчитывается при каждом «сделай занятия короче»
+# и обязан быть дешёвым. Одна переменная на двоих означала бы, что перевести
+# планировщик курса на сильную модель нельзя, не сделав дорогой каждую правку
+# расписания.
+ROLE_SCHEDULE_PLANNING = "SCHEDULE_PLANNING"
 ROLE_LESSON_GENERATION = "LESSON_GENERATION"
 ROLE_EMBEDDING = "EMBEDDING"
 ROLE_RERANKER = "RERANKER"
@@ -37,6 +44,7 @@ ALL_ROLES = (
     ROLE_SECTION_PROFILING,
     ROLE_COURSE_PLANNING,
     ROLE_COURSE_REVIEW,
+    ROLE_SCHEDULE_PLANNING,
     ROLE_LESSON_GENERATION,
     ROLE_EMBEDDING,
     ROLE_RERANKER,
@@ -59,6 +67,7 @@ _TEXT_FALLBACK_ROLES = frozenset(
         ROLE_SECTION_PROFILING,
         ROLE_COURSE_PLANNING,
         ROLE_COURSE_REVIEW,
+        ROLE_SCHEDULE_PLANNING,
         ROLE_LESSON_GENERATION,
     }
 )
