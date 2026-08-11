@@ -35,6 +35,7 @@ from nutrition.views import (
 from nutrition.photo_views import AnalyzePhotoView
 from curriculum.ask_views import SubjectAskStreamView
 from curriculum.views import (
+    SubjectChatViewSet,
     CourseEnrollmentViewSet,
     CoursePlanViewSet,
     DocumentViewSet,
@@ -78,6 +79,7 @@ router.register(r'pomodoro/sessions', FocusSessionViewSet, basename='pomodoro-se
 router.register(r'curriculum/goals', LearningGoalViewSet, basename='curriculum-goals')
 router.register(r'curriculum/documents', DocumentViewSet, basename='curriculum-documents')
 router.register(r'curriculum/plans', CoursePlanViewSet, basename='curriculum-plans')
+router.register(r'curriculum/chats', SubjectChatViewSet, basename='curriculum-chats')
 router.register(
     r'curriculum/enrollments', CourseEnrollmentViewSet, basename='curriculum-enrollments'
 )

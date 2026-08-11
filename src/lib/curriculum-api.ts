@@ -687,3 +687,88 @@ export async function askSubjectStream(
   }
   return response;
 }
+
+// ─────────────────────────── Чаты внутри предмета ────────────────────────────
+
+/** Строка списка. Сообщений здесь нет: их вес не нужен, чтобы показать название. */
+export interface SubjectChatSummary {
+  id: string;
+  goal: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubjectChat extends Omit<SubjectChatSummary, "message_count"> {
+  messages: AskTurn[];
+}
+
+/** Реплика в том виде, в каком её держит панель. */
+export interface AskTurn {
+  role: "user" | "assistant";
+  content: string;
+  citations?: AskCitation[];
+  grounded?: boolean;
+  error?: string;
+  found?: number;
+  durationMs?: number;
+}
+
+export async function listChats(goalId: string): Promise<SubjectChatSummary[]> {
+  const response = await authFetch(`${BASE}/chats/?goal=${goalId}`);
+  const body = await unwrap<
+    SubjectChatSummary[] | { results: SubjectChatSummary[] }
+  >(response);
+  return Array.isArray(body) ? body : body.results;
+}
+
+export async function getChat(chatId: string): Promise<SubjectChat> {
+  return unwrap<SubjectChat>(await authFetch(`${BASE}/chats/${chatId}/`));
+}
+
+export async function createChat(
+  goalId: string,
+  body: { title?: string; messages?: AskTurn[] } = {},
+): Promise<SubjectChat> {
+  const response = await authFetch(`${BASE}/chats/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goal: goalId, ...body }),
+  });
+  return unwrap<SubjectChat>(response);
+}
+
+export async function updateChat(
+  chatId: string,
+  body: { title?: string; messages?: AskTurn[] },
+): Promise<SubjectChat> {
+  const response = await authFetch(`${BASE}/chats/${chatId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return unwrap<SubjectChat>(response);
+}
+
+export async function deleteChat(chatId: string): Promise<void> {
+  return remove(`${BASE}/chats/${chatId}/`);
+}
+
+/**
+ * Просит модель придумать чату название.
+ *
+ * Отказ здесь не ошибка: заголовок — украшение списка, и ронять из-за него
+ * разговор нельзя. Бэкенд в этом случае уже подставил первый вопрос.
+ */
+export async function renameChatAutomatically(chatId: string): Promise<string> {
+  try {
+    const response = await authFetch(`${BASE}/chats/${chatId}/title/`, {
+      method: "POST",
+    });
+    const body = await response.json();
+    return String(body?.title || "");
+  } catch {
+    return "";
+  }
+}
