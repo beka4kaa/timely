@@ -10,6 +10,7 @@ import {
   type RibbonTopicInput,
   buildRibbon,
   coverageCaption,
+  gapsCaption,
 } from "./curriculum-ribbon.ts";
 
 function topic(
@@ -278,4 +279,65 @@ test("подпись покрытия обходится без проценто
     topics: [topic("t1", 0, [pages(10, 43)])],
   });
   assert.equal(coverageCaption(model), "Страниц в программе: 34 из 212");
+});
+
+// ──────────────────── Пропуски: то, ради чего полоса и есть ──────────────────
+
+test("пропуск помнит свои страницы, а не только проценты", () => {
+  // По картинке номер страницы не списать — его называет подпись.
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [pages(21, 80)])],
+  });
+
+  assert.deepEqual(
+    model.gaps.map((gap) => [gap.startUnit, gap.endUnit]),
+    [
+      [1, 20],
+      [81, 100],
+    ],
+  );
+});
+
+test("подпись пропусков называет участки словами", () => {
+  const model = buildRibbon({
+    pageCount: 100,
+    topics: [topic("t1", 0, [pages(21, 80)])],
+  });
+
+  assert.equal(gapsCaption(model), "Не вошли: стр. 1–20, 81–100");
+});
+
+test("пропуск в одну страницу пишется одним числом", () => {
+  const model = buildRibbon({
+    pageCount: 10,
+    topics: [topic("t1", 0, [pages(1, 4)]), topic("t2", 0, [pages(6, 10)])],
+  });
+
+  assert.equal(gapsCaption(model), "Не вошли: стр. 5");
+});
+
+test("длинный список пропусков сворачивается со склонением", () => {
+  // Иначе подпись выходит длиннее самой полосы.
+  const model = buildRibbon({
+    pageCount: 20,
+    topics: [
+      topic("t1", 0, [pages(2), pages(4), pages(6), pages(8), pages(10)]),
+    ],
+  });
+
+  assert.equal(
+    gapsCaption(model),
+    "Не вошли: стр. 1, 3, 5, 7 и ещё 2 участка",
+  );
+});
+
+test("книга без пропусков не сообщает о пропусках", () => {
+  const model = buildRibbon({
+    pageCount: 10,
+    topics: [topic("t1", 0, [pages(1, 10)])],
+  });
+
+  assert.deepEqual(model.gaps, []);
+  assert.equal(gapsCaption(model), "");
 });

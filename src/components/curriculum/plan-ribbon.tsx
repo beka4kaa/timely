@@ -5,16 +5,27 @@
 // разноязычной паре (учебник английский, программа русская) честно давал ноль
 // и потому врал.
 //
-// Отрезки намеренно НЕ являются табстопами и помечены `aria-hidden`. Книга на
-// сорок тем вставила бы шестьдесят с лишним остановок табуляции перед
+// ФИГУРА ЗДЕСЬ — ДЫРЫ, А НЕ ПОКРЫТИЕ. Сначала было наоборот: тёмным закрашивали
+// вошедшее, дыры оставались бледной штриховкой под плотной сеткой засечек. На
+// шестистах страницах это читалось как «книга закрыта целиком» — то есть ответ
+// на вопрос, которого никто не задавал, а настоящий терялся в фоне.
+//
+// Заодно ушла раскраска по модулям. Одиннадцать глав кодировались одним тоном
+// по светлоте (`hsl(30 …%)` с шагом в три процента) — последовательной шкалой
+// на категориях. Сопоставить чип легенды с засечкой было невозможно, и легенда
+// на три строки исчезла вместе с раскраской: номера глав идут скобками под
+// полосой и говорят то же самое.
+//
+// Отрезки тем намеренно НЕ являются табстопами и помечены `aria-hidden`. Книга
+// на сорок тем вставила бы шестьдесят с лишним остановок табуляции перед
 // содержимым. Доступный путь идёт через строки тем: фокус на строке
-// подсвечивает её отрезки, и это то же самое знание.
+// подсвечивает её место в книге, и это то же самое знание.
 
 "use client";
 
 import type { RibbonModel } from "@/lib/curriculum-ribbon";
-import { coverageCaption } from "@/lib/curriculum-ribbon";
-import { moduleTone, paperCaption, paperNumber, paperStrip } from "./paper";
+import { coverageCaption, gapsCaption } from "@/lib/curriculum-ribbon";
+import { paperCaption, paperNumber, paperStrip } from "./paper";
 
 const LANE_HEIGHT = 14;
 const LANE_GAP = 4;
@@ -22,14 +33,12 @@ const TRACK_PADDING = 6;
 
 interface PlanRibbonProps {
   model: RibbonModel;
-  moduleTitles: string[];
   hoveredTopicId: string | null;
   onHoverTopic: (topicId: string | null) => void;
 }
 
 export function PlanRibbon({
   model,
-  moduleTitles,
   hoveredTopicId,
   onHoverTopic,
 }: PlanRibbonProps) {
@@ -39,6 +48,7 @@ export function PlanRibbon({
   const trackHeight =
     lanes * LANE_HEIGHT + (lanes - 1) * LANE_GAP + TRACK_PADDING * 2;
   const unitNoun = model.scale === "pages" ? "страниц" : "разделов";
+  const missing = gapsCaption(model);
 
   return (
     <section className={`${paperStrip} p-5 sm:p-6`}>
@@ -47,7 +57,9 @@ export function PlanRibbon({
           {model.scale === "pages" ? "Корешок книги" : "Оглавление книги"}
         </p>
         <p className="text-[11px] text-[#9b9186]">
-          {model.scale === "pages" ? "Слева направо — от первой страницы к последней" : "Слева направо — по оглавлению"}
+          {missing
+            ? "Тёмным — то, что мимо программы"
+            : "Программа покрывает книгу целиком"}
         </p>
       </div>
 
@@ -55,42 +67,22 @@ export function PlanRibbon({
         className="relative overflow-hidden rounded-[10px] border border-[#e0d9cd] bg-[#f5f0e7]"
         style={{ height: trackHeight }}
         role="img"
-        aria-label={`${coverageCaption(model)}. Тёмным отмечены участки книги, вошедшие в программу.`}
+        aria-label={`${coverageCaption(model)}. ${
+          missing || "Пропусков нет."
+        }`}
       >
-        {/* Непокрытые участки — бледная штриховка во всю высоту: это ровно те
-            страницы, которых нет ни в одной теме. */}
+        {/* Пропуски — единственное, что залито в покое. */}
         {model.gaps.map((gap) => (
           <div
-            key={`gap-${gap.startPct}`}
+            key={`gap-${gap.startUnit}`}
             aria-hidden
-            className="absolute inset-y-0"
+            className="absolute inset-y-0 bg-[#8d7c62]"
             style={{
               left: `${gap.startPct}%`,
               width: `${gap.widthPct}%`,
-              backgroundImage:
-                "repeating-linear-gradient(-45deg, rgba(140,120,94,0.16) 0 1px, transparent 1px 5px)",
-            }}
-          />
-        ))}
-
-        {model.segments.map((segment) => (
-          <div
-            key={segment.key}
-            aria-hidden
-            className="absolute rounded-[3px] transition-[opacity,filter] duration-150"
-            style={{
-              left: `${segment.startPct}%`,
-              width: `${segment.widthPct}%`,
+              // Одна страница шестисотстраничной книги — это 0.17 % ширины.
+              // Пропуск в одну страницу обязан быть виден.
               minWidth: 2,
-              top: TRACK_PADDING + segment.lane * (LANE_HEIGHT + LANE_GAP),
-              height: LANE_HEIGHT,
-              background: moduleTone(segment.moduleIndex, moduleTitles.length),
-              opacity:
-                hoveredTopicId && hoveredTopicId !== segment.topicId ? 0.22 : 1,
-              boxShadow:
-                hoveredTopicId === segment.topicId
-                  ? "0 0 0 1.5px #fffdfa, 0 0 0 3px rgba(138,91,36,0.55)"
-                  : "none",
             }}
           />
         ))}
@@ -107,9 +99,28 @@ export function PlanRibbon({
           }}
         />
 
-        {/* Зоны наведения отдельно от заливки: одна страница шестисотстраничной
-            книги — это 0.17% ширины, в неё не попасть курсором. Геометрия
-            остаётся честной, расширяется только цель. */}
+        {/* Место темы в книге. В покое его нет вовсе: показывать разом все
+            отрезки значило бы вернуть ту же сетку засечек. Появляется под
+            курсором — своим, или наведённым на строку темы в списке. */}
+        {model.segments
+          .filter((segment) => segment.topicId === hoveredTopicId)
+          .map((segment) => (
+            <div
+              key={segment.key}
+              aria-hidden
+              className="pointer-events-none absolute rounded-[3px] bg-[#b7792d] shadow-[0_0_0_1.5px_#fffdfa]"
+              style={{
+                left: `${segment.startPct}%`,
+                width: `${segment.widthPct}%`,
+                minWidth: 2,
+                top: TRACK_PADDING + segment.lane * (LANE_HEIGHT + LANE_GAP),
+                height: LANE_HEIGHT,
+              }}
+            />
+          ))}
+
+        {/* Зоны наведения отдельно от заливки: в 0.17 % ширины не попасть
+            курсором. Геометрия остаётся честной, расширяется только цель. */}
         {model.segments.map((segment) => (
           <div
             key={`hit-${segment.key}`}
@@ -149,23 +160,30 @@ export function PlanRibbon({
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-[#e7e1d7] pt-3">
-        <p className="text-[13px] text-[#4a443d]">
-          {model.scale === "pages" ? "Страниц" : "Разделов"} в программе:{" "}
-          <span className={`${paperNumber} text-[15px] text-[#302b26]`}>
-            {model.claimedUnits}
-          </span>{" "}
-          из{" "}
-          <span className={`${paperNumber} text-[15px] text-[#302b26]`}>
-            {model.totalUnits}
-          </span>
-        </p>
-        {model.axisExtended && (
-          <p className="text-[11px] text-[#9b9186]">
-            Ссылки уходят дальше, чем заявлено {unitNoun} в книге — полоса
-            растянута по ссылкам.
-          </p>
+      <div className="mt-4 space-y-1 border-t border-[#e7e1d7] pt-3">
+        {/* Пропуски идут первой строкой: полоса показывает, ГДЕ дыры, строка —
+            какие именно. Счёт страниц — уже итог, и он вторым. */}
+        {missing && (
+          <p className="text-[13px] leading-5 text-[#4a443d]">{missing}</p>
         )}
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <p className="text-[13px] text-[#7f776e]">
+            {model.scale === "pages" ? "Страниц" : "Разделов"} в программе:{" "}
+            <span className={`${paperNumber} text-[15px] text-[#302b26]`}>
+              {model.claimedUnits}
+            </span>{" "}
+            из{" "}
+            <span className={`${paperNumber} text-[15px] text-[#302b26]`}>
+              {model.totalUnits}
+            </span>
+          </p>
+          {model.axisExtended && (
+            <p className="text-[11px] text-[#9b9186]">
+              Ссылки уходят дальше, чем заявлено {unitNoun} в книге — полоса
+              растянута по ссылкам.
+            </p>
+          )}
+        </div>
       </div>
     </section>
   );
