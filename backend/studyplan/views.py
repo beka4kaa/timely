@@ -43,6 +43,21 @@ from .scheduling.slots import local_to_utc, resolve_zone
 
 logger = logging.getLogger(__name__)
 
+# Потолок на пакетную отмену: выделение рамкой не должно превращаться в
+# «отменить весь семестр» одним промахом мыши.
+MAX_BULK_BLOCKS = 200
+
+# Что отменить уже нельзя. Выполненное и идущее — это история и текущая работа,
+# а отменённое отменять второй раз незачем.
+_UNCANCELLABLE = frozenset(
+    {
+        LearningBlock.Status.COMPLETED,
+        LearningBlock.Status.PARTIALLY_COMPLETED,
+        LearningBlock.Status.IN_PROGRESS,
+        LearningBlock.Status.CANCELLED,
+    }
+)
+
 
 def _no_user() -> Response:
     return Response(
@@ -425,6 +440,52 @@ class LearningBlockViewSet(viewsets.ReadOnlyModelViewSet):
     # смысл заменять целиком, а частичный перенос выражается PATCH'ем.
     def update(self, request, *args, **kwargs):
         return _error("Используй PATCH для переноса блока.", code="method_not_allowed")
+
+    @action(detail=False, methods=["post"], url_path="cancel")
+    def cancel(self, request):
+        """Отменить или вернуть занятия пачкой.
+
+        «Удалить» занятие из учебного плана нельзя: оно пришло из программы и
+        останется её частью. Отменённое занятие не исчезает, а гаснет,
+        зачёркивается и перестаёт занимать время — поэтому Delete именно
+        отменяет, а не стирает, и поэтому же операция обратима.
+
+        Пачкой, а не по одному: ученик выделяет рамкой несколько занятий, и
+        семь запросов подряд означали бы семь шансов разъехаться на середине.
+        """
+        email = self._user_email()
+        if not email:
+            return _no_user()
+
+        raw_ids = request.data.get("block_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _error("Не сказано, какие занятия отменять.", code="ids_required")
+        if len(raw_ids) > MAX_BULK_BLOCKS:
+            return _error("Слишком много занятий за раз.", code="too_many")
+
+        restore = bool(request.data.get("restore"))
+        target = (
+            LearningBlock.Status.SCHEDULED if restore else LearningBlock.Status.CANCELLED
+        )
+
+        blocks = list(
+            LearningBlock.objects.filter(user_email=email, pk__in=raw_ids)
+        )
+        changed: list[str] = []
+        for block in blocks:
+            # Закреплённое не трогаем: «это не двигается» относится и к отмене.
+            # Выполненное тоже — стирать сделанное значит терять историю.
+            if block.fixed:
+                continue
+            if not restore and block.status in _UNCANCELLABLE:
+                continue
+            if restore and block.status != LearningBlock.Status.CANCELLED:
+                continue
+            block.status = target
+            block.save(update_fields=["status"])
+            changed.append(str(block.id))
+
+        return Response({"changed": changed, "restored": restore})
 
 
 class ScheduleRevisionViewSet(viewsets.ReadOnlyModelViewSet):

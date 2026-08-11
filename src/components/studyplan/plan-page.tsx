@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
 import { usePageSchedule } from "@/contexts/active-schedule";
@@ -36,10 +36,24 @@ type Mode = "week" | "day";
 const EMPTY_ENTRIES: CalendarEntry[] = [];
 const RELEASED_STATUSES = new Set(["cancelled", "rescheduled"]);
 
+/** «1 занятие», «2 занятия», «5 занятий». */
+function blockWord(count: number): string {
+  const tens = count % 100;
+  if (tens >= 11 && tens <= 14) return "занятий";
+  const units = count % 10;
+  if (units === 1) return "занятие";
+  if (units >= 2 && units <= 4) return "занятия";
+  return "занятий";
+}
+
 export function StudyPlanPage() {
   const schedule = useSchedule();
   const [mode, setMode] = useState<Mode>("week");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Выделение — список, а не одно занятие: рамкой можно захватить несколько и
+  // отменить их одним Delete. Карточка разбора показывается, когда выбрано
+  // ровно одно: у пачки нет «того самого» занятия, которое стоит разбирать.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [undoable, setUndoable] = useState<string[]>([]);
   const [dayKey, setDayKey] = useState<string | null>(null);
 
   const entries = useMemo(() => {
@@ -67,7 +81,55 @@ export function StudyPlanPage() {
       : schedule.days.includes(todayKey)
         ? todayKey
         : schedule.days[0];
-  const selected = entries.find((entry) => entry.id === selectedId) ?? null;
+  const selected =
+    selectedIds.length === 1
+      ? entries.find((entry) => entry.id === selectedIds[0]) ?? null
+      : null;
+
+  const toggleSelected = useCallback((entryId: string, additive: boolean) => {
+    setSelectedIds((current) => {
+      if (!additive) return [entryId];
+      return current.includes(entryId)
+        ? current.filter((item) => item !== entryId)
+        : [...current, entryId];
+    });
+  }, []);
+
+  /**
+   * Delete отменяет выделенные занятия.
+   *
+   * Занятое время отсеиваем здесь же: школу и репетитора календарь не двигает
+   * и не отменяет, а посылать их на сервер ради отказа — лишний круг.
+   */
+  const cancelSelected = useCallback(async () => {
+    const learning = entries.filter(
+      (entry) => selectedIds.includes(entry.id) && !isCommitmentEntry(entry),
+    );
+    if (learning.length === 0) return;
+    const changed = await schedule.cancel(learning.map((entry) => entry.id));
+    if (changed.length > 0) {
+      setUndoable(changed);
+      setSelectedIds([]);
+    }
+  }, [entries, schedule, selectedIds]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      // Пока курсор в поле ввода, Delete принадлежит тексту, а не календарю.
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, [contenteditable='true']") ||
+        selectedIds.length === 0
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void cancelSelected();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancelSelected, selectedIds.length]);
 
   // Считаем УЧЕБНОЕ время, без школы и репетитора: столько же показывает лента
   // в шапке сетки, и это единственное время, которое ученик здесь двигает.
@@ -181,7 +243,6 @@ export function StudyPlanPage() {
   }
 
   const data = schedule.data;
-  const planById = new Map(data.plans.map((plan) => [plan.id, plan]));
   // Цвета программ раздаются по порядку списка, а не по хешу: иначе два курса
   // могли достаться одному цвету, и правило «цвет = предмет» ломалось бы ровно
   // там, где оно нужнее всего.
@@ -214,7 +275,11 @@ export function StudyPlanPage() {
                 "свободна"
               )}
             </p>
-            <ProgramsLegend plans={data.plans} accents={accents} />
+            {/* Легенды с названиями программ здесь больше нет. Названия у книг
+                длинные («_OceanofPDF.com_Hands-On_Machine_Learning_with…»), и
+                любая их подпись наверху съедала строку ради того, что и так
+                написано на каждом блоке третьей строкой. Цвет объясняет сам
+                блок. */}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -269,52 +334,26 @@ export function StudyPlanPage() {
           </div>
         </header>
 
-        {data.proposals.map((proposal) => (
-          <ProposalNotice
-            key={proposal.id}
-            schedule={proposal}
-            title={
-              planById.get(proposal.course_plan)?.title ?? "Учебная программа"
-            }
-            busy={schedule.busy}
-            onConfirm={() => void schedule.confirm(proposal.id)}
-          />
-        ))}
-
-        {schedule.notice ? (
-          <div
-            className={`${paperTile} flex items-center justify-between gap-3 px-4 py-2.5`}
-          >
-            <span className="text-[13px] text-[#a2543a]">
-              {schedule.notice}
-            </span>
-            <button
-              type="button"
-              className={paperButton}
-              onClick={schedule.dismissNotice}
-            >
-              Понятно
-            </button>
-          </div>
-        ) : null}
-
-        {schedule.lastRevision ? (
-          <div
-            className={`${paperTile} flex items-center justify-between gap-3 px-4 py-2.5`}
-          >
-            <span className="text-[13px] text-[#5f584f]">
-              Занятие перенесено.
-            </span>
-            <button
-              type="button"
-              className={paperButton}
-              disabled={schedule.busy}
-              onClick={() => void schedule.undoLast()}
-            >
-              Вернуть как было
-            </button>
-          </div>
-        ) : null}
+        {/* Одна полоска на всё. Раньше здесь стопкой стояли карточка «не
+            помещается» с полным именем книги, сообщение об устаревшей версии и
+            строка отмены — три блока, съедавшие треть экрана над календарём.
+            Имена программ убраны совсем: они длинные, и на каждом блоке и так
+            написано, к какому курсу он относится. */}
+        <CalendarNotice
+          proposals={data.proposals}
+          notice={schedule.notice}
+          cancelledCount={undoable.length}
+          hasUndo={Boolean(schedule.lastRevision)}
+          busy={schedule.busy}
+          onConfirm={(id) => void schedule.confirm(id)}
+          onDismiss={schedule.dismissNotice}
+          onUndo={() => void schedule.undoLast()}
+          onRestore={() => {
+            const ids = undoable;
+            setUndoable([]);
+            void schedule.restore(ids);
+          }}
+        />
 
         {/* Календарь занимает всё оставшееся место, как в любом календарном
             приложении. Раньше рядом стояла колонка в 320 px, которая почти
@@ -330,10 +369,11 @@ export function StudyPlanPage() {
                 range={range}
                 timeZone={schedule.timeZone}
                 todayKey={todayKey}
-                selectedId={selectedId}
+                selectedIds={selectedIds}
                 busy={schedule.busy}
                 accents={accents}
-                onSelect={(entry) => setSelectedId(entry.id)}
+                onSelect={(entry, additive) => toggleSelected(entry.id, additive)}
+                onSelectMany={setSelectedIds}
                 onMove={(entry, startAt, duration) => {
                   if (!isCommitmentEntry(entry)) {
                     void schedule.move(entry, startAt, duration);
@@ -351,9 +391,9 @@ export function StudyPlanPage() {
               column={columns.find((column) => column.dateKey === activeDay)}
               dateKey={activeDay}
               todayKey={todayKey}
-              selectedId={selectedId}
+              selectedId={selectedIds[0] ?? null}
               accents={accents}
-              onSelect={(entry) => setSelectedId(entry.id)}
+              onSelect={(entry) => setSelectedIds([entry.id])}
               onChangeDay={(nextDay) => {
                 setDayKey(nextDay);
                 if (nextDay < schedule.days[0]) schedule.goToWeek(-1);
@@ -370,7 +410,7 @@ export function StudyPlanPage() {
                 <BlockDetails
                   block={selected}
                   timeZone={schedule.timeZone}
-                  onClose={() => setSelectedId(null)}
+                  onClose={() => setSelectedIds([])}
                 />
               </div>
             ) : null}
@@ -385,7 +425,7 @@ export function StudyPlanPage() {
                 <BlockDetails
                   block={selected}
                   timeZone={schedule.timeZone}
-                  onClose={() => setSelectedId(null)}
+                  onClose={() => setSelectedIds([])}
                 />
               </div>
             </div>
@@ -401,95 +441,124 @@ export function StudyPlanPage() {
   );
 }
 
-function ProposalNotice({
-  schedule,
-  title,
+/**
+ * Единственная полоска состояния над календарём.
+ *
+ * Показывает РОВНО ОДНО сообщение и одно действие. Раньше три источника —
+ * предложения, ошибки и отмена переноса — рисовались каждый своей карточкой и
+ * складывались стопкой; в худшем случае календарь начинался на середине экрана.
+ * Порядок приоритета: ошибка важнее отмены, отмена важнее предложения.
+ *
+ * Названий программ здесь нет ни в одной ветке. Они длинные, а к какому курсу
+ * относится занятие, написано на самом занятии.
+ */
+function CalendarNotice({
+  proposals,
+  notice,
+  cancelledCount,
+  hasUndo,
   busy,
   onConfirm,
+  onDismiss,
+  onUndo,
+  onRestore,
 }: {
-  schedule: StudySchedule;
-  title: string;
+  proposals: StudySchedule[];
+  notice: string | null;
+  cancelledCount: number;
+  hasUndo: boolean;
   busy: boolean;
-  onConfirm: () => void;
+  onConfirm: (proposalId: string) => void;
+  onDismiss: () => void;
+  onUndo: () => void;
+  onRestore: () => void;
 }) {
-  const conflict = schedule.conflict_report;
+  const row = `${paperTile} flex items-center justify-between gap-3 px-3 py-1.5 text-[12.5px]`;
 
-  // Одна строка вместо карточки на пять. Полное имя программы, две суммы и
-  // список советов занимали над календарём больше места, чем сам разбор
-  // проблемы того стоит: что делать дальше, ученик спрашивает у помощника.
-  if (!schedule.feasible) {
+  // Отмена пачкой важнее всего остального: одна клавиша убрала несколько
+  // занятий, и выход назад должен быть на виду, а не за следующим сообщением.
+  if (cancelledCount > 0) {
     return (
-      <div
-        className={`${paperTile} flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-[12.5px]`}
-      >
-        <span className="min-w-0 max-w-[280px] truncate font-medium text-[#3d382f]">
-          {title}
-        </span>
-        <span className="text-[#a2543a]">не помещается:</span>
+      <div className={row}>
         <span className="text-[#5f584f]">
-          нужно {durationLabel(conflict?.required_minutes ?? 0)}, есть{" "}
-          {durationLabel(conflict?.available_minutes ?? 0)}
+          Отменено {cancelledCount} {blockWord(cancelledCount)}
         </span>
-        <span className="text-[#8d857b]">
-          · спроси помощника, что подвинуть
+        <button
+          type="button"
+          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
+          disabled={busy}
+          onClick={onRestore}
+        >
+          Вернуть
+        </button>
+      </div>
+    );
+  }
+
+  if (notice) {
+    return (
+      <div className={row}>
+        <span className="min-w-0 truncate text-[#a2543a]">{notice}</span>
+        <button
+          type="button"
+          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
+          onClick={onDismiss}
+        >
+          Понятно
+        </button>
+      </div>
+    );
+  }
+
+  if (hasUndo) {
+    return (
+      <div className={row}>
+        <span className="text-[#5f584f]">Занятие перенесено</span>
+        <button
+          type="button"
+          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
+          disabled={busy}
+          onClick={onUndo}
+        >
+          Вернуть как было
+        </button>
+      </div>
+    );
+  }
+
+  const feasible = proposals.find((proposal) => proposal.feasible);
+  if (feasible) {
+    return (
+      <div className={row}>
+        <span className="text-[#5f584f]">
+          Новое расписание показано пунктиром
+        </span>
+        <button
+          type="button"
+          className={`${paperPrimaryButton} shrink-0 px-3 py-1 text-[12px]`}
+          disabled={busy}
+          onClick={() => onConfirm(feasible.id)}
+        >
+          Подтвердить
+        </button>
+      </div>
+    );
+  }
+
+  if (proposals.length > 0) {
+    // Сколько именно не хватает и что с этим делать — вопрос к помощнику: он
+    // умеет и продлить курс, и разгрузить дни, а страница только сообщает факт.
+    return (
+      <div className={row}>
+        <span className="text-[#a2543a]">
+          Программа не помещается в свободное время
+        </span>
+        <span className="shrink-0 text-[#8d857b]">
+          спроси помощника, что подвинуть
         </span>
       </div>
     );
   }
 
-  return (
-    <div
-      className={`${paperTile} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}
-    >
-      <p className="text-[13px] text-[#5f584f]">
-        <span className="font-medium text-[#3d382f]">{title}.</span>{" "}
-        Предложенное время показано пунктиром. Подтверди его, если всё подходит.
-      </p>
-      <button
-        type="button"
-        className={paperPrimaryButton}
-        disabled={busy}
-        onClick={onConfirm}
-      >
-        Подтвердить программу
-      </button>
-    </div>
-  );
-}
-
-/**
- * Легенда календаря: какой цвет какому предмету.
- *
- * Только чтение. Кнопок здесь нет намеренно: программу в календарь ставит
- * помощник справа (`add_course_to_schedule`), и держать рядом вторую дорогу
- * значило бы снова разложить одну задачу по двум местам экрана — ровно то, из
- * чего эту страницу уже вытаскивали.
- */
-function ProgramsLegend({
-  plans,
-  accents,
-}: {
-  plans: Array<{ id: string; title: string }>;
-  accents: Map<string, string>;
-}) {
-  if (plans.length === 0) return null;
-
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-      {plans.map((plan) => (
-        <span
-          key={plan.id}
-          className="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-[#8d857b]"
-          title={plan.title}
-        >
-          <span
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: accents.get(plan.id) ?? "#8a5b24" }}
-            aria-hidden
-          />
-          <span className="max-w-[180px] truncate">{plan.title}</span>
-        </span>
-      ))}
-    </span>
-  );
+  return null;
 }
