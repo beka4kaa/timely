@@ -240,14 +240,49 @@ function commitmentEntry(
   };
 }
 
+/**
+ * Палитра курсов: приглушённая, но различимая.
+ *
+ * Восемь тонов вместо шести, и все сидят в одной светлоте — так неделя
+ * читается группами, а не пестрит. Ярких основных цветов здесь нет намеренно:
+ * раздел кофейный, и синий из системной палитры выглядел бы в нём чужим.
+ */
 const COURSE_ACCENTS = [
-  "#8a5b24",
-  "#4f6d5a",
-  "#5c668f",
-  "#8a5361",
-  "#57717a",
-  "#756246",
+  "#a3603a", // терракота
+  "#5c7a8a", // сине-серый
+  "#5f7a5c", // шалфей
+  "#7a6a94", // лаванда
+  "#6f7245", // олива
+  "#9a5f6b", // пыльная роза
+  "#8a6b45", // песок
+  "#7b5c8a", // слива
 ] as const;
+
+/**
+ * Предмет по названию программы.
+ *
+ * Цвет должен что-то значить: физика синеватая, математика тёплая, код —
+ * зелёный. Название приходит из имени книги, поэтому смотрим на корни слов и
+ * на латинице, и на кириллице. Не опознали — курс всё равно получит цвет, но
+ * по своему месту в списке.
+ */
+const SUBJECT_PATTERNS: Array<[RegExp, number]> = [
+  [/алгебр|матем|geometr|геометр|calculus|algebra|math/i, 0],
+  [/физик|physic|механик|mechanic|термодинам/i, 1],
+  [/machine.?learn|pytorch|tensor|програм|coding|python|информатик|нейрон/i, 2],
+  [/англ|english|немецк|french|язык|language/i, 3],
+  [/повтор|review|revision/i, 4],
+  [/экзам|exam|егэ|ент|тест|assessment/i, 5],
+  [/семь|family|личн|personal|быт/i, 6],
+  [/хими|chemistry|биолог|biology/i, 7],
+];
+
+function subjectAccent(title: string): string | null {
+  for (const [pattern, index] of SUBJECT_PATTERNS) {
+    if (pattern.test(title)) return COURSE_ACCENTS[index];
+  }
+  return null;
+}
 
 /** Узкий маркер курса; заливка блока по-прежнему обозначает тип занятия. */
 export function courseAccent(coursePlanId: string): string {
@@ -268,12 +303,40 @@ export function courseAccent(coursePlanId: string): string {
  * правило. По списку программ цвета гарантированно различаются, пока курсов не
  * больше шести.
  */
-export function buildCourseAccents(coursePlanIds: string[]): Map<string, string> {
+export function buildCourseAccents(
+  plans: Array<{ id: string; title?: string }> | string[],
+): Map<string, string> {
+  const rows = plans.map((plan) =>
+    typeof plan === "string" ? { id: plan, title: "" } : plan,
+  );
   const accents = new Map<string, string>();
-  for (const id of coursePlanIds) {
-    if (accents.has(id)) continue;
-    accents.set(id, COURSE_ACCENTS[accents.size % COURSE_ACCENTS.length]);
+  const used = new Set<string>();
+
+  // Сначала те, у кого предмет опознан: физика должна быть синеватой в любом
+  // порядке списка, а не «какой достанется».
+  for (const plan of rows) {
+    if (accents.has(plan.id)) continue;
+    const guess = subjectAccent(plan.title ?? "");
+    if (guess && !used.has(guess)) {
+      accents.set(plan.id, guess);
+      used.add(guess);
+    }
   }
+
+  // Остальным — первый свободный цвет по порядку. Так два курса не сойдутся в
+  // одном тоне, пока их не больше восьми.
+  let cursor = 0;
+  for (const plan of rows) {
+    if (accents.has(plan.id)) continue;
+    while (cursor < COURSE_ACCENTS.length && used.has(COURSE_ACCENTS[cursor])) {
+      cursor += 1;
+    }
+    const accent = COURSE_ACCENTS[cursor % COURSE_ACCENTS.length];
+    accents.set(plan.id, accent);
+    used.add(accent);
+    cursor += 1;
+  }
+
   return accents;
 }
 

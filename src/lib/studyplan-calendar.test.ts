@@ -124,23 +124,30 @@ test("сдвиг даты переживает границу месяца и г
 
 test("пустая неделя показывает рабочий день, а не сутки целиком", () => {
   assert.deepEqual(visibleRange([], "UTC"), {
-    startMinutes: 8 * 60,
+    startMinutes: 7 * 60,
     endMinutes: 22 * 60,
   });
 });
 
-test("шкала строится по данным с запасом в час", () => {
+test("рабочий день виден целиком, даже когда занятия только вечером", () => {
+  // Раньше шкала сжималась до самих занятий, и утро исчезало с экрана: два
+  // блока в пять вечера превращали неделю в узкую полоску без начала дня.
   const range = visibleRange(
     [block("a", "2026-08-17T17:00:00Z", 45), block("b", "2026-08-18T19:00:00Z", 60)],
     "UTC",
   );
-  assert.equal(range.startMinutes, 16 * 60);
-  assert.equal(range.endMinutes, 21 * 60);
+  assert.equal(range.startMinutes, 7 * 60);
+  assert.equal(range.endMinutes, 22 * 60);
 });
 
-test("шкала не сжимается ниже четырёх часов", () => {
-  const range = visibleRange([block("a", "2026-08-17T12:00:00Z", 30)], "UTC");
-  assert.ok(range.endMinutes - range.startMinutes >= 4 * 60);
+test("занятия за пределами рабочего дня раздвигают шкалу", () => {
+  const early = visibleRange([block("a", "2026-08-17T05:30:00Z", 30)], "UTC");
+  assert.equal(early.startMinutes, 4 * 60);
+  assert.equal(early.endMinutes, 22 * 60);
+
+  const late = visibleRange([block("b", "2026-08-17T22:30:00Z", 60)], "UTC");
+  assert.equal(late.startMinutes, 7 * 60);
+  assert.equal(late.endMinutes, 24 * 60);
 });
 
 test("шкала не выходит за пределы суток", () => {

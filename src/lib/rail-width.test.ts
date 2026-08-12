@@ -21,8 +21,15 @@ test("широкая панель обрезается половиной экр
   assert.equal(clampRailWidth(1400, 1600), 800);
 });
 
-test("по умолчанию четверть экрана", () => {
-  assert.equal(defaultRailWidth(1600), 400);
+test("по умолчанию компактная панель, а не доля экрана", () => {
+  // Раньше это была четверть экрана, и на широком мониторе панель забирала
+  // 400+ px, начиная спорить с календарём за главную роль.
+  assert.equal(defaultRailWidth(1600), 320);
+  assert.equal(defaultRailWidth(2560), 320);
+});
+
+test("на узком окне дефолт всё равно зажимается половиной", () => {
+  assert.equal(defaultRailWidth(600), 300);
 });
 
 test("сохранённое с монитора значение зажимается на ноутбуке", () => {
@@ -35,9 +42,9 @@ test("сохранённое значение в границах берётся
 });
 
 test("испорченное сохранённое значение даёт умолчание", () => {
-  assert.equal(restoreRailWidth("не число", 1600), 400);
-  assert.equal(restoreRailWidth(null, 1600), 400);
-  assert.equal(restoreRailWidth("-50", 1600), 400);
+  assert.equal(restoreRailWidth("не число", 1600), 320);
+  assert.equal(restoreRailWidth(null, 1600), 320);
+  assert.equal(restoreRailWidth("-50", 1600), 320);
 });
 
 test("на узком окне минимум уступает половине", () => {
@@ -49,7 +56,7 @@ test("на узком окне минимум уступает половине"
 });
 
 test("нечисло не роняет расчёт", () => {
-  assert.equal(clampRailWidth(Number.NaN, 1600), 400);
+  assert.equal(clampRailWidth(Number.NaN, 1600), 320);
 });
 
 test("подпись показывает долю экрана", () => {

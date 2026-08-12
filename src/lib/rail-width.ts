@@ -15,8 +15,15 @@ export const RAIL_MIN_PX = 280;
  */
 export const RAIL_MAX_SHARE = 0.5;
 
-/** Ширина по умолчанию и по двойному клику — та же четверть, что была всегда. */
-export const RAIL_DEFAULT_SHARE = 0.25;
+/**
+ * Ширина по умолчанию и по двойному клику.
+ *
+ * Раньше это была четверть экрана, и на широком мониторе панель забирала 400+
+ * px — рядом с календарём она начинала спорить с ним за главную роль. Триста
+ * двадцать хватает разговору и оставляют неделе всё остальное. Растянуть
+ * по-прежнему можно: это дефолт, а не потолок.
+ */
+export const RAIL_DEFAULT_PX = 320;
 
 /** Шаг стрелками. Заметный, но не прыжок через полэкрана. */
 export const RAIL_KEYBOARD_STEP = 32;
@@ -37,10 +44,7 @@ export function clampRailWidth(width: number, viewportWidth: number): number {
 }
 
 export function defaultRailWidth(viewportWidth: number): number {
-  return clampRailWidth(
-    Math.round(viewportWidth * RAIL_DEFAULT_SHARE),
-    viewportWidth,
-  );
+  return clampRailWidth(RAIL_DEFAULT_PX, viewportWidth);
 }
 
 /**
