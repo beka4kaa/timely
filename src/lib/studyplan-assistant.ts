@@ -14,6 +14,8 @@ import {
   type AssistantState,
 } from "@/lib/studyplan-chat";
 
+export type ScheduleChatMode = "advice" | "plan";
+
 export interface AssistantTurn {
   role: "user" | "assistant";
   content: string;
@@ -31,6 +33,7 @@ export async function askAssistant(
     message: string;
     scheduleId: string;
     history: AssistantTurn[];
+    mode: ScheduleChatMode;
     signal?: AbortSignal;
   },
   onUpdate: (state: AssistantState) => void,
@@ -44,6 +47,7 @@ export async function askAssistant(
       message: input.message,
       schedule_id: input.scheduleId,
       history: input.history,
+      mode: input.mode,
     }),
     signal: input.signal,
   });

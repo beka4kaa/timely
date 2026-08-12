@@ -38,6 +38,7 @@ from studyplan.views import (
     FixedCommitmentViewSet,
     LearningBlockViewSet,
     ScheduleRevisionViewSet,
+    ScheduleSetupView,
     StudyScheduleViewSet,
     WeeklyScheduleTemplateViewSet,
 )
@@ -132,6 +133,16 @@ urlpatterns = [
         'api/studyplan/chat/stream',
         ScheduleChatStreamView.as_view(),
         name='studyplan-chat-stream-no-slash',
+    ),
+    path(
+        'api/studyplan/setup/',
+        ScheduleSetupView.as_view(),
+        name='studyplan-setup',
+    ),
+    path(
+        'api/studyplan/setup',
+        ScheduleSetupView.as_view(),
+        name='studyplan-setup-no-slash',
     ),
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),

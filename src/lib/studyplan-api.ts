@@ -109,6 +109,7 @@ export interface StudySchedule {
   conflict_report: Partial<ConflictReport>;
   warnings: string[];
   feasible: boolean;
+  setup_restartable: boolean;
   confirmed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -178,6 +179,74 @@ export interface WeeklyTemplate {
   max_minutes_per_week: number;
   slots: TemplateSlot[];
 }
+
+// ─────────────────────────── Guided setup ──────────────────────────────────
+
+export interface ScheduleSetupOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface ScheduleSetupQuestion {
+  id: string;
+  text: string;
+  options: ScheduleSetupOption[];
+  /** У пользователя есть ещё программы, не вошедшие в короткий список. */
+  has_more?: boolean;
+}
+
+export interface ScheduleSetupSummary {
+  course_plan_id: string;
+  course_title: string;
+  weekdays: number[];
+  weekday_labels: string[];
+  start_time: string;
+  session_minutes: number;
+  sessions_per_week: number;
+  minutes_per_week: number;
+  timezone: string;
+  start_date: string;
+}
+
+interface ScheduleSetupResponseBase {
+  type: "schedule_setup";
+  session_id: string;
+  answers: Record<string, string>;
+  step?: number;
+  total_steps_hint?: number;
+  fallback?: boolean;
+  notice?: string;
+}
+
+export interface ScheduleSetupQuestionResponse
+  extends ScheduleSetupResponseBase {
+  status: "question";
+  question: ScheduleSetupQuestion;
+  allow_other?: boolean;
+}
+
+export interface ScheduleSetupCompleteResponse
+  extends ScheduleSetupResponseBase {
+  status: "complete";
+  summary: ScheduleSetupSummary;
+}
+
+export interface ScheduleSetupCreatedResponse {
+  type: "schedule_setup";
+  status: "created";
+  session_id: string;
+  answers: Record<string, string>;
+  summary: ScheduleSetupSummary;
+  schedule: StudySchedule;
+  feasible: boolean;
+  warnings: string[];
+  blocks_created: number;
+}
+
+export type ScheduleSetupResponse =
+  | ScheduleSetupQuestionResponse
+  | ScheduleSetupCompleteResponse;
 
 // ────────────────────────────── Транспорт ────────────────────────────────────
 
@@ -267,6 +336,51 @@ export async function confirmSchedule(id: string): Promise<StudySchedule> {
     method: "POST",
   });
   return unwrap<StudySchedule>(response);
+}
+
+/**
+ * Начать или продолжить короткую настройку первого расписания.
+ *
+ * Сервер подписывает состояние и возвращает новый `session_id` после каждого
+ * ответа. Клиент всегда возвращает последний токен и подтверждённый снимок.
+ */
+export async function continueScheduleSetup(input: {
+  timezone: string;
+  startDate: string;
+  sessionId?: string;
+  answers?: Record<string, string>;
+  signal?: AbortSignal;
+}): Promise<ScheduleSetupResponse> {
+  const response = await authFetch(`${BASE}/studyplan/setup/`, {
+    method: "POST",
+    signal: input.signal,
+    body: JSON.stringify({
+      type: "schedule_setup",
+      ...(input.sessionId ? { session_id: input.sessionId } : {}),
+      answers: input.answers ?? {},
+      timezone: input.timezone,
+      start_date: input.startDate,
+    }),
+  });
+  return unwrap<ScheduleSetupResponse>(response);
+}
+
+/** Создать предложение после сводки, но не подтверждать его за ученика. */
+export async function confirmScheduleSetup(input: {
+  sessionId: string;
+  answers: Record<string, string>;
+  signal?: AbortSignal;
+}): Promise<ScheduleSetupCreatedResponse> {
+  const response = await authFetch(`${BASE}/studyplan/setup/`, {
+    method: "POST",
+    signal: input.signal,
+    body: JSON.stringify({
+      type: "confirm_schedule_setup",
+      session_id: input.sessionId,
+      answers: input.answers,
+    }),
+  });
+  return unwrap<ScheduleSetupCreatedResponse>(response);
 }
 
 /**

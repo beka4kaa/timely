@@ -328,6 +328,17 @@ class StudySchedule(TimestampedModel):
     def feasible(self) -> bool:
         return not self.conflict_report
 
+    @property
+    def setup_restartable(self) -> bool:
+        """An unconfirmed /start proposal may be replaced by another /start."""
+        snapshot = self.pacing_snapshot if isinstance(self.pacing_snapshot, dict) else {}
+        setup_snapshot = snapshot.get("schedule_setup")
+        return (
+            self.status in {self.Status.DRAFT, self.Status.PROPOSED}
+            and isinstance(setup_snapshot, dict)
+            and bool(setup_snapshot.get("nonce"))
+        )
+
     def __str__(self) -> str:
         return f"{self.user_email}: {self.start_date}–{self.end_date}"
 
