@@ -26,6 +26,7 @@ from .models import (
     IngestionJob,
     KnowledgeChunk,
     LearningGoal,
+    StudyMaterial,
     SubjectChat,
 )
 
@@ -160,6 +161,73 @@ class DocumentUploadSerializer(serializers.Serializer):
     copyright_declaration = serializers.CharField(
         max_length=64, required=False, allow_blank=True
     )
+
+
+class StudyMaterialSerializer(serializers.ModelSerializer):
+    """Источник без файла: ссылка, набор тестов, задачник, своё описание."""
+
+    # Считается на сервере, чтобы подпись «4 из 10 вариантов» не собиралась в
+    # трёх местах интерфейса по-разному.
+    units_word = serializers.CharField(read_only=True)
+    total_minutes = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = StudyMaterial
+        fields = [
+            "id",
+            "goal",
+            "kind",
+            "title",
+            "url",
+            "note",
+            "total_units",
+            "completed_units",
+            "unit_label",
+            "units_word",
+            "minutes_per_unit",
+            "total_minutes",
+            "position",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            # Как и у книги: предмет назначается при создании, где вьюха
+            # проверяет владельца цели. Обычный PATCH взял бы queryset из всех
+            # целей подряд и позволил бы переложить источник в чужой предмет.
+            "goal",
+            "units_word",
+            "total_minutes",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        kind = attrs.get("kind", getattr(self.instance, "kind", None))
+        url = attrs.get("url", getattr(self.instance, "url", ""))
+        if kind == StudyMaterial.Kind.LINK and not (url or "").strip():
+            raise serializers.ValidationError(
+                {"url": "У ссылки должен быть адрес."}
+            )
+
+        total = attrs.get("total_units", getattr(self.instance, "total_units", 0))
+        done = attrs.get(
+            "completed_units", getattr(self.instance, "completed_units", 0)
+        )
+        if total and done > total:
+            raise serializers.ValidationError(
+                {"completed_units": "Пройдено не может быть больше, чем всего."}
+            )
+        return attrs
+
+
+class StudyMaterialCreateSerializer(StudyMaterialSerializer):
+    """То же самое, но с обязательной целью: источник без предмета не бывает."""
+
+    goal_id = serializers.UUIDField(write_only=True)
+
+    class Meta(StudyMaterialSerializer.Meta):
+        fields = StudyMaterialSerializer.Meta.fields + ["goal_id"]
 
 
 class DocumentSectionSerializer(serializers.ModelSerializer):
@@ -320,6 +388,7 @@ class CoursePlanSerializer(serializers.ModelSerializer):
             "id",
             "goal",
             "document",
+            "material",
             "title",
             "objective",
             "current_level",
@@ -374,6 +443,7 @@ class CoursePlanListSerializer(serializers.ModelSerializer):
             "id",
             "goal",
             "document",
+            "material",
             "title",
             "status",
             "estimated_total_minutes",

@@ -81,6 +81,51 @@ export interface CurriculumDocument {
   created_at: string;
 }
 
+/** Тип источника, у которого нет файла. */
+export type StudyMaterialKind =
+  | "link"
+  | "practice_set"
+  | "problem_set"
+  | "custom";
+
+/**
+ * Источник предмета, который нельзя загрузить файлом: ссылка, набор
+ * practice-тестов, задачник, своё описание.
+ *
+ * Единица работы у всех одна — `total_units` × `minutes_per_unit`. Планировщик
+ * не разбирает, вариант это или задача: он видит количество и время.
+ * `units_word` приходит с сервера, чтобы подпись не собиралась в трёх местах
+ * интерфейса по-разному.
+ */
+export interface StudyMaterial {
+  id: string;
+  goal: string;
+  kind: StudyMaterialKind;
+  title: string;
+  url: string;
+  note: string;
+  total_units: number;
+  completed_units: number;
+  unit_label: string;
+  units_word: string;
+  minutes_per_unit: number;
+  total_minutes: number;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudyMaterialDraft {
+  goalId: string;
+  kind: StudyMaterialKind;
+  title: string;
+  url?: string;
+  note?: string;
+  total_units: number;
+  minutes_per_unit: number;
+  unit_label?: string;
+}
+
 export interface IngestionJob {
   id: string;
   status: IngestionStatusCode;
@@ -197,7 +242,9 @@ export type PlanStatus =
 export interface CoursePlanSummary {
   id: string;
   goal: string;
+  /** Источник программы: заполнено ровно одно из двух, либо оба пусты. */
   document: string | null;
+  material: string | null;
   title: string;
   status: PlanStatus;
   estimated_total_minutes: number;
@@ -211,7 +258,8 @@ export interface CoursePlan {
   /** Идентификаторы цели и учебника. DRF их отдаёт, и без них страница
    *  программы не может загрузить книгу и цель по холодной ссылке. */
   goal: string;
-  document: string;
+  document: string | null;
+  material: string | null;
   title: string;
   objective: string;
   current_level: Level;
@@ -496,6 +544,61 @@ export async function getIngestionState(documentId: string): Promise<IngestionSt
   return unwrap<IngestionState>(response);
 }
 
+// ─────────────────────────────── Материал ────────────────────────────────────
+
+export async function listMaterials(): Promise<StudyMaterial[]> {
+  const response = await authFetch(`${BASE}/materials/`);
+  const body = await unwrap<StudyMaterial[] | { results: StudyMaterial[] }>(
+    response,
+  );
+  return Array.isArray(body) ? body : body.results;
+}
+
+export async function createMaterial(
+  draft: StudyMaterialDraft,
+): Promise<StudyMaterial> {
+  const { goalId, ...rest } = draft;
+  const response = await authFetch(`${BASE}/materials/`, {
+    method: "POST",
+    body: JSON.stringify({ goal_id: goalId, ...rest }),
+  });
+  return unwrap<StudyMaterial>(response);
+}
+
+export async function updateMaterial(
+  id: string,
+  patch: Partial<
+    Pick<
+      StudyMaterial,
+      | "kind"
+      | "title"
+      | "url"
+      | "note"
+      | "total_units"
+      | "completed_units"
+      | "unit_label"
+      | "minutes_per_unit"
+      | "position"
+    >
+  >,
+): Promise<StudyMaterial> {
+  const response = await authFetch(`${BASE}/materials/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  return unwrap<StudyMaterial>(response);
+}
+
+/** Раскладывает источник по занятиям. Считается на сервере, без модели. */
+export async function generateMaterialPlan(
+  materialId: string,
+): Promise<{ plan: CoursePlan }> {
+  const response = await authFetch(`${BASE}/materials/${materialId}/plan/`, {
+    method: "POST",
+  });
+  return unwrap<{ plan: CoursePlan }>(response);
+}
+
 // ──────────────────────────────── План ───────────────────────────────────────
 
 /**
@@ -634,6 +737,10 @@ export async function deleteGoal(goalId: string): Promise<void> {
 
 export async function deleteDocument(documentId: string): Promise<void> {
   return remove(`${BASE}/documents/${documentId}/`);
+}
+
+export async function deleteMaterial(materialId: string): Promise<void> {
+  return remove(`${BASE}/materials/${materialId}/`);
 }
 
 export async function deletePlan(planId: string): Promise<void> {

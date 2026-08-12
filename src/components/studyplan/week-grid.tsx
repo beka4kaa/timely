@@ -41,7 +41,7 @@ import {
   weekdayShort,
 } from "@/lib/studyplan-visuals";
 import { loadRatio, weekLoad } from "@/lib/studyplan-load";
-import { paperFocus } from "@/components/curriculum/paper";
+import { paperCard, paperFocus } from "@/components/curriculum/paper";
 
 import type { CalendarEntry } from "./use-schedule";
 
@@ -491,33 +491,36 @@ export function WeekGrid({
   return (
     // Сетка тянется на всю высоту, которую ей даёт страница: календарь должен
     // занимать экран, а не жить в коробке на 62vh с полосой пустоты под ней.
-    <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95">
+    <div className={`flex h-full min-h-[420px] flex-col overflow-hidden ${paperCard}`}>
       {/* Шапка дней закреплена: она вне области прокрутки, поэтому при скролле
           расписания не уезжает. Ширина первой ячейки совпадает с колонкой
-          времени — так числа стоят ровно над своими колонками. */}
-      <div className="flex shrink-0 border-b border-[#e4ded4] bg-[#fffdfa]">
+          времени — так числа стоят ровно над своими колонками.
+          Вертикальных швов здесь нет: те же линии рисует тело сетки, и в
+          шапке каждый шов выходил дважды. Выходные не тонируются — они уже
+          подписаны, а лишняя заливка спорит с лентой нагрузки. */}
+      <div className="flex shrink-0 border-b border-[#eee8de]">
         <div className={`${TIME_COLUMN} shrink-0`} aria-hidden />
         {columns.map((column, index) => {
           const isToday = column.dateKey === todayKey;
-          const weekend = column.weekday >= 5;
           const day = load.days[index];
           const dayNumber = Number(column.dateKey.slice(-2));
           return (
             <div
               key={column.dateKey}
-              className={`flex-1 border-l border-[#eee9e1] px-1.5 pb-1 pt-1.5 text-center ${
-                weekend ? "bg-[#faf7f1]" : ""
-              }`}
+              className="flex-1 px-1.5 pb-1 pt-1.5 text-center"
             >
               <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#a1978b]">
                 {weekdayShort(column.weekday)}
               </div>
               {/* Число, а не «18 августа»: месяц уже написан в заголовке недели,
-                  и семь раз повторять его — значит забить колонку словом. */}
+                  и семь раз повторять его — значит забить колонку словом.
+                  Сегодня — тёплый кружок, а не залитый коричневым: сплошная
+                  заливка делала из даты самое тёмное пятно экрана ради самого
+                  мелкого факта на нём. */}
               <div
                 className={`mx-auto mt-0.5 grid h-[26px] w-[26px] place-items-center font-serif text-[15px] tabular-nums ${
                   isToday
-                    ? "rounded-full bg-[#8a5b24] font-medium text-[#fdf8ef]"
+                    ? "rounded-full bg-[#fdf3e6] font-medium text-[#8a5b24]"
                     : "text-[#4a443d]"
                 }`}
               >
@@ -569,7 +572,7 @@ export function WeekGrid({
               разошлись бы с линиями. Ширина фиксированная: от неё зависит,
               стоят ли числа шапки над своими колонками. */}
           <div
-            className={`${TIME_COLUMN} shrink-0 border-r border-[#e8e2d8] bg-[#fbfaf7]`}
+            className={`${TIME_COLUMN} shrink-0 border-r border-[#f0eae0]`}
             style={{ minHeight: bodyHeight }}
             aria-hidden
           >
@@ -607,7 +610,7 @@ export function WeekGrid({
             {halfMarks.map((minutes) => (
               <div
                 key={`half-${minutes}`}
-                className="pointer-events-none absolute inset-x-0 border-t border-[#f4f0e9]"
+                className="pointer-events-none absolute inset-x-0 border-t border-[#f7f3ec]"
                 style={{ top: minutesToOffset(minutes, range.startMinutes) }}
                 aria-hidden
               />
@@ -615,7 +618,7 @@ export function WeekGrid({
             {marks.map((minutes) => (
               <div
                 key={minutes}
-                className="pointer-events-none absolute inset-x-0 border-t border-[#e8e2d8]"
+                className="pointer-events-none absolute inset-x-0 border-t border-[#f0eae0]"
                 style={{ top: minutesToOffset(minutes, range.startMinutes) }}
                 aria-hidden
               />
@@ -624,12 +627,8 @@ export function WeekGrid({
             {columns.map((column) => (
               <div
                 key={column.dateKey}
-                className={`relative min-w-0 flex-1 border-l border-[#eee9e1] ${
-                  column.dateKey === todayKey
-                    ? "bg-[#fffaf1]/70"
-                    : column.weekday >= 5
-                      ? "bg-[#faf7f1]/60"
-                      : ""
+                className={`relative min-w-0 flex-1 border-l border-[#f4efe7] ${
+                  column.dateKey === todayKey ? "bg-[#fffbf4]" : ""
                 }`}
               >
                 {marker?.dateKey === column.dateKey ? (

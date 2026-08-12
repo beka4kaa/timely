@@ -2,6 +2,7 @@
 
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
@@ -11,6 +12,11 @@ import {
   paperCaption,
   paperCard,
   paperPrimaryButton,
+  paperQuietButton,
+  paperSegment,
+  paperSegmentActive,
+  paperSegmentIdle,
+  paperSegmentItem,
   paperTile,
 } from "@/components/curriculum/paper";
 import {
@@ -459,21 +465,25 @@ export function StudyPlanPage() {
                 блок. */}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Навигация ничего не обводит. Раньше здесь стояли четыре рамки
+              подряд — три кнопки и переключатель вида, — и на кремовом фоне
+              они читались раньше самой недели. Теперь край появляется только
+              под курсором, а вид переключается утопленной дорожкой. */}
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               aria-label="Предыдущая неделя"
-              className={paperButton}
+              className={`${paperQuietButton} px-2.5`}
               onClick={() => {
                 setDayKey(null);
                 schedule.goToWeek(-1);
               }}
             >
-              ←
+              <ChevronLeft className="h-4 w-4" />
             </button>
             <button
               type="button"
-              className={paperButton}
+              className={paperQuietButton}
               onClick={() => {
                 setDayKey(null);
                 schedule.goToWeek(0);
@@ -484,24 +494,23 @@ export function StudyPlanPage() {
             <button
               type="button"
               aria-label="Следующая неделя"
-              className={paperButton}
+              className={`${paperQuietButton} px-2.5`}
               onClick={() => {
                 setDayKey(null);
                 schedule.goToWeek(1);
               }}
             >
-              →
+              <ChevronRight className="h-4 w-4" />
             </button>
-            <div className="ml-1 inline-flex overflow-hidden rounded-full border border-[#d8d1c7]">
+            <div className={`ml-2 ${paperSegment}`}>
               {(["week", "day"] as Mode[]).map((value) => (
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={mode === value}
                   onClick={() => setMode(value)}
-                  className={`px-3 py-1.5 text-[12.5px] transition-colors ${
-                    mode === value
-                      ? "bg-[#8a5b24] text-[#fdf8ef]"
-                      : "bg-[#fffdfa] text-[#5f584f] hover:bg-[#fff8ec]"
+                  className={`${paperSegmentItem} ${
+                    mode === value ? paperSegmentActive : paperSegmentIdle
                   }`}
                 >
                   {value === "week" ? "Неделя" : "День"}

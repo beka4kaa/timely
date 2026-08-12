@@ -16,7 +16,11 @@ import { Check, Loader2, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { type CoursePlan, rebuildPlan } from "@/lib/curriculum-api";
+import {
+  type CoursePlan,
+  generateMaterialPlan,
+  rebuildPlan,
+} from "@/lib/curriculum-api";
 import { formatPlanDate } from "@/lib/curriculum-forecast";
 
 import { PlanPaceDialog } from "./plan-pace";
@@ -45,7 +49,11 @@ export function PlanActions({
     setRebuilding(true);
     setError(null);
     try {
-      const result = await rebuildPlan(plan.id);
+      // У программы по источнику без файла пересборка своя: планировщику
+      // нечего читать, зато пересчитать занятия по новым числам можно точно.
+      const result = plan.material
+        ? await generateMaterialPlan(plan.material)
+        : await rebuildPlan(plan.id);
       // Новая программа живёт по своему адресу: прежний остаётся рабочей
       // ссылкой на архивную версию, поэтому переходим, а не подменяем данные.
       router.replace(`/dashboard/curriculum/plan/${result.plan.id}`);

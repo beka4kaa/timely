@@ -1117,6 +1117,14 @@ def rebuild_plan(
     """
     document = plan.document
     if document is None:
+        # У программы по материалу пересборка своя и детерминированная:
+        # `POST /materials/{id}/plan/` считает её заново и архивирует эту.
+        # Отправлять такую программу в планировщик нечем — оглавления нет.
+        if plan.material_id is not None:
+            raise PlanRejected(
+                None,
+                "Программа по источнику пересобирается со страницы предмета.",
+            )
         raise PlanRejected(
             None, "Книга удалена — перестроить программу по ней нельзя."
         )

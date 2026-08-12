@@ -50,6 +50,7 @@ from curriculum.views import (
     DocumentViewSet,
     KnowledgeSearchView,
     LearningGoalViewSet,
+    StudyMaterialViewSet,
 )
 
 
@@ -87,6 +88,9 @@ router.register(r'pomodoro/sessions', FocusSessionViewSet, basename='pomodoro-se
 # Curriculum: цель ученика → загруженный PDF → программа курса.
 router.register(r'curriculum/goals', LearningGoalViewSet, basename='curriculum-goals')
 router.register(r'curriculum/documents', DocumentViewSet, basename='curriculum-documents')
+router.register(
+    r'curriculum/materials', StudyMaterialViewSet, basename='curriculum-materials'
+)
 router.register(r'curriculum/plans', CoursePlanViewSet, basename='curriculum-plans')
 router.register(r'curriculum/chats', SubjectChatViewSet, basename='curriculum-chats')
 router.register(

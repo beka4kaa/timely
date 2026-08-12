@@ -33,6 +33,7 @@ from .models import (
     IngestionJob,
     KnowledgeChunk,
     LearningGoal,
+    StudyMaterial,
     SubjectChat,
 )
 from .retrieval import RetrievalPolicy
@@ -54,11 +55,14 @@ from .serializers import (
     LearningGoalSerializer,
     PlanPaceSerializer,
     PlanStructureSerializer,
+    StudyMaterialCreateSerializer,
+    StudyMaterialSerializer,
     SubjectChatListSerializer,
     SubjectChatSerializer,
 )
 from .services import dispatch
 from .services import goals as goals_service
+from .services import materials as materials_service
 from .services import plans as plans_service
 from .services import search as search_service
 from .services.dispatch import enqueue_ingestion
@@ -385,6 +389,70 @@ class DocumentViewSet(_UserScopedViewSet):
                 solution_visibility=KnowledgeChunk.SolutionVisibility.RESTRICTED
             )
         return Response(KnowledgeChunkSerializer(rows, many=True).data)
+
+
+class StudyMaterialViewSet(_UserScopedViewSet):
+    """Источники без файла: ссылка, набор тестов, задачник, своё описание."""
+
+    def get_queryset(self):
+        email = self._user_email()
+        if not email:
+            return StudyMaterial.objects.none()
+        queryset = StudyMaterial.objects.filter(user_email=email)
+        # Как и у книг: выборка уже сужена до источников этого ученика, поэтому
+        # чужая цель в фильтре просто ничего не найдёт.
+        goal_id = (self.request.query_params.get("goal") or "").strip()
+        if goal_id:
+            queryset = queryset.filter(goal_id=goal_id)
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return StudyMaterialCreateSerializer
+        return StudyMaterialSerializer
+
+    def create(self, request, *args, **kwargs):
+        email = self._user_email()
+        if not email:
+            return _no_user()
+
+        payload = StudyMaterialCreateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        data = dict(payload.validated_data)
+
+        # Владелец цели проверяется явно: без этого ученик привязал бы свой
+        # источник к чужому предмету и увидел бы его в чужом каталоге.
+        goal = LearningGoal.objects.filter(
+            pk=data.pop("goal_id"), user_email=email
+        ).first()
+        if goal is None:
+            return Response(
+                {"error": "Предмет не найден.", "code": "goal_not_found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        material = StudyMaterial.objects.create(
+            user_email=email, goal=goal, **data
+        )
+        return Response(
+            StudyMaterialSerializer(material).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["post"])
+    def plan(self, request, pk=None):
+        """Раскладывает источник по занятиям. Без модели и без retrieval."""
+        material = self.get_object()
+        try:
+            built = materials_service.build_plan(material)
+        except materials_service.MaterialNotPlannable as exc:
+            return Response(
+                {"error": str(exc), "code": exc.code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"plan": CoursePlanSerializer(built).data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CoursePlanViewSet(_UserScopedViewSet):

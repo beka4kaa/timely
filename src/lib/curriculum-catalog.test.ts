@@ -6,6 +6,7 @@ import { test } from "node:test";
 // находит модуль и тест молча не запускается.
 import {
   UNSORTED_TITLE,
+  booksOf,
   buildCatalog,
   subjectState,
   subjectTitle,
@@ -14,6 +15,7 @@ import type {
   CoursePlanSummary,
   CurriculumDocument,
   LearningGoal,
+  StudyMaterial,
 } from "./curriculum-api.ts";
 
 function goal(id: string, subject = "", text = "хочу разобраться"): LearningGoal {
@@ -55,15 +57,41 @@ function book(
   } as unknown as CurriculumDocument;
 }
 
+function material(
+  id: string,
+  goalId: string,
+  kind: StudyMaterial["kind"] = "practice_set",
+): StudyMaterial {
+  return {
+    id,
+    goal: goalId,
+    kind,
+    title: `Материал ${id}`,
+    url: "",
+    note: "",
+    total_units: 10,
+    completed_units: 0,
+    unit_label: "",
+    units_word: "вариантов",
+    minutes_per_unit: 60,
+    total_minutes: 600,
+    position: 0,
+    created_at: "2026-08-10T00:00:00Z",
+    updated_at: "2026-08-10T00:00:00Z",
+  };
+}
+
 function plan(
   id: string,
   goalId: string,
   documentId: string | null,
+  materialId: string | null = null,
 ): CoursePlanSummary {
   return {
     id,
     goal: goalId,
     document: documentId,
+    material: materialId,
     title: `План ${id}`,
     status: "awaiting_approval",
     estimated_total_minutes: 600,
@@ -71,6 +99,12 @@ function plan(
     current_version: 1,
     created_at: "2026-08-10T00:00:00Z",
   };
+}
+
+function sourceIds(subject: { sources: readonly unknown[] }): string[] {
+  return (subject.sources as { kind: string; document?: { id: string }; material?: { id: string } }[]).map(
+    (source) => (source.kind === "book" ? source.document!.id : source.material!.id),
+  );
 }
 
 // ───────────────────────────── Ничего не теряется ────────────────────────────
@@ -83,10 +117,7 @@ test("книга без предмета попадает в отдельную 
   assert.equal(catalog.length, 2);
   assert.equal(catalog[1].title, UNSORTED_TITLE);
   assert.equal(catalog[1].goalId, null);
-  assert.deepEqual(
-    catalog[1].books.map((entry) => entry.document.id),
-    ["d1"],
-  );
+  assert.deepEqual(sourceIds(catalog[1]), ["d1"]);
 });
 
 test("книга с исчезнувшим предметом тоже остаётся видимой", () => {
@@ -119,7 +150,7 @@ test("несколько книг на предмет и несколько пл
 
   assert.equal(catalog.length, 1);
   assert.deepEqual(
-    catalog[0].books.map((entry) => [
+    booksOf(catalog[0]).map((entry) => [
       entry.document.id,
       entry.plans.map((item) => item.id),
     ]),
@@ -138,15 +169,66 @@ test("предметы не смешиваются между собой", () =>
   );
 
   assert.deepEqual(
-    catalog.map((subject) => [
-      subject.title,
-      subject.books.map((entry) => entry.document.id),
-    ]),
+    catalog.map((subject) => [subject.title, sourceIds(subject)]),
     [
       ["Физика", ["d1"]],
       ["Алгебра", ["d2"]],
     ],
   );
+});
+
+// ──────────────────────────── Источники без файла ────────────────────────────
+
+test("книги и материалы стоят одним списком, книги первыми", () => {
+  const catalog = buildCatalog(
+    [goal("g1", "SAT")],
+    [book("d1", "g1")],
+    [],
+    [material("m1", "g1"), material("m2", "g1", "link")],
+  );
+
+  assert.deepEqual(sourceIds(catalog[0]), ["d1", "m1", "m2"]);
+});
+
+test("программа по материалу остаётся у своего источника, а не сиротеет", () => {
+  // Оба вида программы приходят с `document: null`. Без связи с материалом
+  // свежесобранная программа подписывалась бы как «книга удалена».
+  const catalog = buildCatalog(
+    [goal("g1", "SAT")],
+    [],
+    [plan("p1", "g1", null, "m1")],
+    [material("m1", "g1")],
+  );
+
+  assert.deepEqual(catalog[0].orphanPlans, []);
+  assert.deepEqual(
+    catalog[0].sources.map((source) => source.plans.map((item) => item.id)),
+    [["p1"]],
+  );
+});
+
+test("материал с исчезнувшим предметом остаётся видимым", () => {
+  const catalog = buildCatalog([], [], [], [material("m1", "g-удалённая")]);
+
+  assert.equal(catalog.length, 1);
+  assert.equal(catalog[0].title, UNSORTED_TITLE);
+  assert.deepEqual(sourceIds(catalog[0]), ["m1"]);
+});
+
+test("предмет с одними материалами сразу готов к расчёту", () => {
+  // Обрабатывать в материале нечего, поэтому «обработка» тут невозможна.
+  const catalog = buildCatalog([goal("g1")], [], [], [material("m1", "g1")]);
+  assert.equal(subjectState(catalog[0]), "ready_to_plan");
+});
+
+test("посчитанная программа по материалу важнее книги в очереди", () => {
+  const catalog = buildCatalog(
+    [goal("g1")],
+    [book("d1", "g1", "ocr")],
+    [plan("p1", "g1", null, "m1")],
+    [material("m1", "g1")],
+  );
+  assert.equal(subjectState(catalog[0]), "has_plan");
 });
 
 test("порядок предметов повторяет порядок целей с сервера", () => {
