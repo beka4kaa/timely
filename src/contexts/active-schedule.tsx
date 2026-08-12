@@ -32,6 +32,7 @@ export interface PageSchedule {
    * помощнику непонятно, чью программу двигать, и он просит выбрать.
    */
   scheduleId: string | null;
+  canStartSetup: boolean;
   timeZone: string;
   /** Ревизия применена — перерисовать календарь. */
   onApplied: () => void;
@@ -41,6 +42,7 @@ export interface PageSchedule {
 
 interface ActiveScheduleValue {
   scheduleId: string | null;
+  canStartSetup: boolean;
   timeZone: string;
   /** Стабильные обёртки: их можно класть в зависимости хуков без перерисовок. */
   notifyApplied: () => void;
@@ -53,6 +55,7 @@ const FALLBACK_TIME_ZONE = "Europe/Moscow";
 
 const ActiveScheduleContext = createContext<ActiveScheduleValue>({
   scheduleId: null,
+  canStartSetup: false,
   timeZone: FALLBACK_TIME_ZONE,
   notifyApplied: () => {},
   saveCommitments: async () => {},
@@ -69,6 +72,7 @@ export function ActiveScheduleProvider({
   // перерисовывалась бы вместе с календарём на каждое движение мыши.
   const [ids, setIds] = useState({
     scheduleId: null as string | null,
+    canStartSetup: false,
     timeZone: FALLBACK_TIME_ZONE,
   });
   const handlersRef = useRef<PageSchedule | null>(null);
@@ -77,12 +81,15 @@ export function ActiveScheduleProvider({
     handlersRef.current = value;
     const next = {
       scheduleId: value?.scheduleId ?? null,
+      canStartSetup: value?.canStartSetup ?? false,
       timeZone: value?.timeZone || FALLBACK_TIME_ZONE,
     };
     // Сравнение обязательно: `setPageSchedule` зовётся каждый рендер страницы,
     // и без него обновление состояния уходило бы в бесконечный цикл.
     setIds((current) =>
-      current.scheduleId === next.scheduleId && current.timeZone === next.timeZone
+      current.scheduleId === next.scheduleId &&
+      current.canStartSetup === next.canStartSetup &&
+      current.timeZone === next.timeZone
         ? current
         : next,
     );
@@ -100,6 +107,7 @@ export function ActiveScheduleProvider({
   const value = useMemo(
     () => ({
       scheduleId: ids.scheduleId,
+      canStartSetup: ids.canStartSetup,
       timeZone: ids.timeZone,
       notifyApplied,
       saveCommitments,
@@ -125,7 +133,7 @@ export function useActiveSchedule() {
  * Синхронизация идёт БЕЗ массива зависимостей: колбэки страницы — новые ссылки
  * на каждый рендер, сравнивать их бессмысленно. Лишних перерисовок это не
  * создаёт, потому что провайдер обновляет состояние только когда сменились
- * идентификатор или часовой пояс.
+ * идентификатор, доступность первоначальной настройки или часовой пояс.
  */
 export function usePageSchedule(value: PageSchedule | null) {
   const { setPageSchedule } = useActiveSchedule();

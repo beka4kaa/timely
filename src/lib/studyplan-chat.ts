@@ -77,6 +77,27 @@ export function stageLabel(tool: string): string {
   return STAGE_LABELS[tool] ?? "Работаю";
 }
 
+/** Завершить запрос, упавший до финального SSE-события. */
+export function failAssistantRequest(
+  state: AssistantState,
+  error: unknown,
+): AssistantState {
+  const aborted =
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    error.name === "AbortError";
+
+  return {
+    ...state,
+    status: "error",
+    error: aborted
+      ? "Запрос отменён. Можно попробовать ещё раз."
+      : "Связаться с помощником не получилось. Попробуй ещё раз.",
+    errorCode: null,
+  };
+}
+
 /**
  * Применить одно событие потока.
  *

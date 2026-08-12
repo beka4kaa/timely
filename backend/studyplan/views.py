@@ -15,11 +15,13 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from curriculum.models import CoursePlan
 
 from . import revisions as revisions_service
 from . import services
+from . import setup as setup_service
 from .models import (
     FixedCommitment,
     LearningBlock,
@@ -69,6 +71,67 @@ def _error(message: str, code: str = "invalid") -> Response:
     return Response(
         {"error": message, "code": code}, status=status.HTTP_400_BAD_REQUEST
     )
+
+
+def _setup_error(message: str, code: str, *, blocked: bool = False) -> Response:
+    return Response(
+        {
+            "type": "schedule_setup",
+            "status": "blocked" if blocked else "error",
+            "error": message,
+            "code": code,
+        },
+        status=status.HTTP_409_CONFLICT if blocked else status.HTTP_400_BAD_REQUEST,
+    )
+
+
+class ScheduleSetupView(APIView):
+    """One-question-at-a-time setup for an initial proposed schedule."""
+
+    def post(self, request):
+        email = getattr(request, "user_email", None)
+        if not email:
+            return _setup_error("Не определён пользователь.", "no_user")
+
+        request_type = request.data.get("type") if isinstance(request.data, dict) else None
+        try:
+            if request_type == "schedule_setup":
+                return Response(
+                    setup_service.handle_schedule_setup(
+                        request.data, user_email=email
+                    )
+                )
+            if request_type == "confirm_schedule_setup":
+                result = setup_service.confirm_schedule_setup(
+                    request.data, user_email=email
+                )
+                return Response(
+                    {
+                        "type": "schedule_setup",
+                        "status": "created",
+                        "session_id": str(request.data.get("session_id") or ""),
+                        "answers": result.answers,
+                        "summary": result.summary,
+                        "schedule": StudyScheduleSerializer(result.schedule).data,
+                        "feasible": result.feasible,
+                        "warnings": list(result.warnings),
+                        "blocks_created": result.blocks_created,
+                    },
+                    status=(
+                        status.HTTP_201_CREATED
+                        if result.created_new
+                        else status.HTTP_200_OK
+                    ),
+                )
+            return _setup_error(
+                "Неизвестный тип запроса настройки.", "invalid_setup_type"
+            )
+        except setup_service.ScheduleSetupBlocked as exc:
+            return _setup_error(str(exc), exc.code, blocked=True)
+        except setup_service.ScheduleSetupValidationError as exc:
+            return _setup_error(str(exc), exc.code)
+        except services.ScheduleGenerationError as exc:
+            return _setup_error(str(exc), "cannot_generate")
 
 
 def _boundary_in_timezone(raw: str | None, timezone_name: str) -> datetime | None:

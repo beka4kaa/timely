@@ -5,6 +5,7 @@ import { test } from "node:test";
 // src/lib/image-model-selection.test.ts.
 import {
   applyAssistantEvent,
+  failAssistantRequest,
   initialAssistantState,
   stageLabel,
   type AssistantState,
@@ -74,6 +75,33 @@ test("ошибка без текста всё равно объясняется 
   const state = play([{ event: "error", data: {} }]);
   assert.equal(state.status, "error");
   assert.ok(state.error && state.error.length > 0);
+});
+
+test("сбой сети завершает thinking и сохраняет готовое предложение", () => {
+  const thinking: AssistantState = {
+    ...initialAssistantState,
+    status: "thinking",
+    stages: ["get_schedule"],
+    revision: { id: "rev-1", status: "proposed" } as AssistantState["revision"],
+  };
+
+  const failed = failAssistantRequest(thinking, new TypeError("Failed to fetch"));
+
+  assert.equal(failed.status, "error");
+  assert.match(failed.error ?? "", /попробуй ещё раз/i);
+  assert.equal(failed.revision?.id, "rev-1");
+  assert.deepEqual(failed.stages, ["get_schedule"]);
+});
+
+test("отмена запроса не оставляет помощника в thinking", () => {
+  const abortError = Object.assign(new Error("aborted"), { name: "AbortError" });
+  const failed = failAssistantRequest(
+    { ...initialAssistantState, status: "thinking" },
+    abortError,
+  );
+
+  assert.equal(failed.status, "error");
+  assert.match(failed.error ?? "", /отменён/i);
 });
 
 test("неизвестное событие не ломает состояние", () => {

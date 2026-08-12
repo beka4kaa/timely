@@ -89,6 +89,7 @@ class ScheduleAccessTests(ApiFixture):
 
         own = self.client.get("/api/study-schedules/", **headers()).json()
         self.assertEqual(len(own), 1)
+        self.assertFalse(own[0]["setup_restartable"])
 
     def test_stranger_cannot_open_a_schedule(self):
         response = self.client.get(

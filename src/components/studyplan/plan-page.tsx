@@ -313,9 +313,16 @@ export function StudyPlanPage() {
     : ready.schedules.length === 0
       ? ""
       : assistantSchedule?.id ?? null;
+  const canStartAssistantSetup = Boolean(
+    ready &&
+      (ready.schedules.length === 0 ||
+        (ready.schedules.length === 1 &&
+          assistantSchedule?.setup_restartable)),
+  );
 
   usePageSchedule({
     scheduleId: assistantScheduleId,
+    canStartSetup: canStartAssistantSetup,
     timeZone: assistantSchedule?.timezone ?? schedule.timeZone,
     onApplied: () => void schedule.reload(),
     onCommitments: async (items) => {

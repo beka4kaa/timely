@@ -7,25 +7,34 @@
 // угол экрана на двоих — ученику приходилось выбирать глазами, куда писать.
 // Теперь разговор один, а панель на «Плане» умеет менять расписание.
 //
-// Скиллы менять расписание живут на бэкенде и сюда не переезжали: `askAssistant`
-// бьёт в `/api/studyplan/chat/stream/`, там семь инструментов
-// (`studyplan/tools.py`) и цикл «предложил → подтвердил → откатил». Правило
-// оттуда же: помощник НЕ меняет календарь сам, он предлагает — применяет ученик.
+// Скиллы расписания выполняются на бэкенде: обычный разговор получает только
+// чтение, а явный /plan — инструменты предложений. /start вообще не идёт в
+// модель: это подписанный детерминированный мастер первого расписания.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Composer } from "@/components/chat/composer";
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { paperCaption, paperTile } from "@/components/curriculum/paper";
 import { CommitmentsCard, RevisionCard } from "@/components/studyplan/revision-cards";
+import {
+  CommandWord,
+  ScheduleComposer,
+} from "@/components/studyplan/schedule-composer";
+import { ScheduleSetup } from "@/components/studyplan/schedule-setup";
 import { useActiveSchedule } from "@/contexts/active-schedule";
 import {
   confirmRevision,
   rejectRevision,
   type ScheduleRevision,
 } from "@/lib/studyplan-api";
-import { askAssistant, type AssistantTurn } from "@/lib/studyplan-assistant";
 import {
+  askAssistant,
+  type AssistantTurn,
+  type ScheduleChatMode,
+} from "@/lib/studyplan-assistant";
+import { zonedDateKey } from "@/lib/studyplan-calendar";
+import {
+  failAssistantRequest,
   initialAssistantState,
   stageLabel,
   type AssistantState,
@@ -34,74 +43,138 @@ import {
 import "katex/dist/katex.min.css";
 import { RailShell, railPillClass } from "./rail-shell";
 
-const EXAMPLES = [
-  "Разгрузи среду",
-  "Я пропустил три дня, восстанови план",
-  "По вторникам с 16:00 секция на два часа",
-];
-
 /** Сколько последних реплик уходит в контекст. Столько же было у панели. */
 const HISTORY_LIMIT = 6;
 
+interface RailTurn extends AssistantTurn {
+  /** Команда — метаданные интерфейса, а не часть model prompt. */
+  command?: "/plan";
+}
+
 export function ScheduleRail() {
-  const { scheduleId, timeZone, notifyApplied, saveCommitments } =
+  const { scheduleId, canStartSetup, timeZone, notifyApplied, saveCommitments } =
     useActiveSchedule();
-  const [turns, setTurns] = useState<AssistantTurn[]>([]);
+  const [turns, setTurns] = useState<RailTurn[]>([]);
   const [state, setState] = useState<AssistantState>(initialAssistantState);
   const [applying, setApplying] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [composerResetKey, setComposerResetKey] = useState(0);
+  const [armPlanKey, setArmPlanKey] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
+
+  /** Намеренная смена контекста не должна рисовать ошибку старого запроса. */
+  const invalidateRequest = useCallback(() => {
+    const active = abortRef.current;
+    abortRef.current = null;
+    active?.abort();
+  }, []);
 
   const thinking = state.status === "thinking";
   // `null` — расписаний несколько, а занятие не выбрано: непонятно, чью
   // программу двигать. Пустая строка — расписаний нет вовсе, и это НЕ помеха:
   // бэкенд возьмёт последнее неархивное сам.
   const ready = scheduleId !== null;
+  const hasSchedule = Boolean(scheduleId);
 
   // Сменилось расписание — разговор начинается заново: реплики про среду в
   // одной программе ничего не значат для другой.
   useEffect(() => {
-    abortRef.current?.abort();
+    invalidateRequest();
     setTurns([]);
     setState(initialAssistantState);
-  }, [scheduleId]);
+    setSetupOpen(false);
+    setComposerResetKey((current) => current + 1);
+  }, [invalidateRequest, scheduleId]);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => invalidateRequest(), [invalidateRequest]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
-  }, [turns, state.stages, state.revision, state.commitments]);
+  }, [setupOpen, turns, state.stages, state.revision, state.commitments]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, mode: ScheduleChatMode) => {
       const message = text.trim();
       if (!message || thinking || !ready) return;
 
-      setTurns((current) => [...current, { role: "user", content: message }]);
+      setTurns((current) => [
+        ...current,
+        {
+          role: "user",
+          content: message,
+          ...(mode === "plan" ? { command: "/plan" as const } : {}),
+        },
+      ]);
 
-      abortRef.current?.abort();
+      invalidateRequest();
       const controller = new AbortController();
       abortRef.current = controller;
 
       const history = turns.slice(-HISTORY_LIMIT);
-      const final = await askAssistant(
-        { message, scheduleId: scheduleId ?? "", history, signal: controller.signal },
-        setState,
-      );
-      if (final.answer) {
-        setTurns((current) => [
-          ...current,
-          { role: "assistant", content: final.answer },
-        ]);
+      try {
+        const final = await askAssistant(
+          {
+            message,
+            scheduleId: scheduleId ?? "",
+            history,
+            mode,
+            signal: controller.signal,
+          },
+          (next) => {
+            if (abortRef.current === controller) setState(next);
+          },
+        );
+        if (abortRef.current !== controller) return;
+        if (final.answer) {
+          setTurns((current) => [
+            ...current,
+            { role: "assistant", content: final.answer },
+          ]);
+        }
+        // Новая программа появляется предложением отдельного расписания.
+        if (final.stages.includes("add_course_to_schedule")) notifyApplied();
+      } catch (error) {
+        if (abortRef.current !== controller) return;
+        setState((current) => failAssistantRequest(current, error));
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
       }
-      // Постановка программы в календарь — единственный инструмент, который
-      // пишет в расписание сразу, а не отдаёт ревизию с кнопкой «Применить».
-      // Без этой перерисовки ученик услышал бы «готово», глядя на пустую
-      // неделю.
-      if (final.stages.includes("add_course_to_schedule")) notifyApplied();
     },
-    [notifyApplied, ready, scheduleId, thinking, turns],
+    [invalidateRequest, notifyApplied, ready, scheduleId, thinking, turns],
   );
+
+  const startSetup = useCallback(() => {
+    if (!ready || !canStartSetup || thinking) return;
+    invalidateRequest();
+    setTurns([]);
+    setState(initialAssistantState);
+    setSetupOpen(true);
+  }, [canStartSetup, invalidateRequest, ready, thinking]);
+
+  const setupCreated = useCallback(() => {
+    setSetupOpen(false);
+    setTurns([
+      {
+        role: "assistant",
+        content:
+          "Черновик готов. Проверь занятия в календаре и подтверди расписание.",
+      },
+    ]);
+    notifyApplied();
+  }, [notifyApplied]);
+
+  const setupAlreadyExists = useCallback(() => {
+    setSetupOpen(false);
+    setTurns([
+      {
+        role: "assistant",
+        content:
+          "Расписание уже появилось. Для следующих изменений используй /plan.",
+      },
+    ]);
+    notifyApplied();
+  }, [notifyApplied]);
 
   const decide = useCallback(
     async (revision: ScheduleRevision, accept: boolean) => {
@@ -146,16 +219,18 @@ export function ScheduleRail() {
   );
 
   const clear = useCallback(() => {
-    abortRef.current?.abort();
+    invalidateRequest();
     setTurns([]);
     setState(initialAssistantState);
-  }, []);
+    setSetupOpen(false);
+    setComposerResetKey((current) => current + 1);
+  }, [invalidateRequest]);
 
   return (
     <RailShell
       edgeLabel="Помощник по расписанию"
       newLabel="Начать заново"
-      onNew={turns.length ? clear : undefined}
+      onNew={turns.length || setupOpen ? clear : undefined}
       feedRef={feedRef}
       title={
         <span className={railPillClass}>
@@ -163,19 +238,45 @@ export function ScheduleRail() {
         </span>
       }
       footer={
-        ready ? (
-          <Composer
-            onSubmit={(text) => void send(text)}
+        ready && !setupOpen ? (
+          <ScheduleComposer
+            hasSchedule={hasSchedule}
+            canStart={canStartSetup}
+            onSubmit={(text, mode) => void send(text, mode)}
+            onStart={startSetup}
             busy={thinking}
-            placeholder="Что изменилось?"
-            // Подсказки только в пустом разговоре: дальше ученик пишет своё, а
-            // три кнопки над полем занимали бы место у ленты.
-            suggestions={turns.length === 0 ? EXAMPLES : undefined}
+            onStop={() => abortRef.current?.abort()}
+            resetKey={composerResetKey}
+            armPlanKey={armPlanKey}
+            showSuggestions={turns.length === 0}
           />
         ) : null
       }
     >
-      {turns.length === 0 && !thinking ? <EmptyState ready={ready} /> : null}
+      {turns.length === 0 && !thinking && !setupOpen ? (
+        <EmptyState
+          ready={ready}
+          hasSchedule={hasSchedule}
+          canStart={canStartSetup}
+          onStart={startSetup}
+          onPlan={() => setArmPlanKey((current) => current + 1)}
+        />
+      ) : null}
+
+      {setupOpen ? (
+        <div className="space-y-2">
+          <div className="px-1 text-[11px] text-[#7787a8]">
+            Запущен навык <CommandWord>/start</CommandWord>
+          </div>
+          <ScheduleSetup
+            timeZone={timeZone}
+            startDate={zonedDateKey(new Date(), timeZone)}
+            onCreated={setupCreated}
+            onScheduleExists={setupAlreadyExists}
+            onCancel={() => setSetupOpen(false)}
+          />
+        </div>
+      ) : null}
 
       {turns.map((turn, index) =>
         turn.role === "user" ? (
@@ -183,6 +284,11 @@ export function ScheduleRail() {
             key={`user-${index}`}
             className="ml-6 whitespace-pre-wrap rounded-[12px] bg-[#f2ece2] px-3 py-2 text-[13px] text-[#3d382f]"
           >
+            {turn.command ? (
+              <span className="mr-1.5 inline-flex rounded-full border border-[#b8caf5] bg-[#edf3ff] px-1.5 py-px align-baseline font-mono text-[10.5px] font-semibold text-[#2563eb]">
+                {turn.command}
+              </span>
+            ) : null}
             {turn.content}
           </div>
         ) : (
@@ -257,7 +363,19 @@ export function ScheduleRail() {
   );
 }
 
-function EmptyState({ ready }: { ready: boolean }) {
+function EmptyState({
+  ready,
+  hasSchedule,
+  canStart,
+  onStart,
+  onPlan,
+}: {
+  ready: boolean;
+  hasSchedule: boolean;
+  canStart: boolean;
+  onStart: () => void;
+  onPlan: () => void;
+}) {
   if (!ready) {
     return (
       <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
@@ -266,10 +384,53 @@ function EmptyState({ ready }: { ready: boolean }) {
       </p>
     );
   }
+  if (!hasSchedule) {
+    return (
+      <div className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+        <p>
+          Начни с{" "}
+          <SlashAction onClick={onStart}>/start</SlashAction>: я задам несколько
+          вопросов и соберу первый черновик расписания.
+        </p>
+        <p className="mt-2 text-[11.5px] text-[#9a938a]">
+          Введи <CommandWord>/</CommandWord>, чтобы увидеть доступные навыки.
+        </p>
+      </div>
+    );
+  }
   return (
-    <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
-      Скажи, что изменилось, — я предложу, как переставить занятия. Ничего не
-      поменяется, пока ты не подтвердишь.
-    </p>
+    <div className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+      <p>
+        Без команды я оцениваю расписание и советую, что улучшить. Для переноса
+        или разгрузки выбери <SlashAction onClick={onPlan}>/plan</SlashAction>.
+      </p>
+      {canStart ? (
+        <p className="mt-2">
+          Черновик ещё не подтверждён — <SlashAction onClick={onStart}>/start</SlashAction>{" "}
+          соберёт его заново.
+        </p>
+      ) : null}
+      <p className="mt-2 text-[11.5px] text-[#9a938a]">
+        Изменения всегда появятся предложением и потребуют подтверждения.
+      </p>
+    </div>
+  );
+}
+
+function SlashAction({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] decoration-dotted underline-offset-4 outline-none hover:underline focus-visible:underline"
+    >
+      {children}
+    </button>
   );
 }

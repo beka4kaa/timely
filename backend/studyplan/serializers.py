@@ -238,6 +238,7 @@ class ScheduleRevisionSerializer(serializers.ModelSerializer):
 
 class StudyScheduleSerializer(serializers.ModelSerializer):
     feasible = serializers.BooleanField(read_only=True)
+    setup_restartable = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = StudySchedule
@@ -256,6 +257,7 @@ class StudyScheduleSerializer(serializers.ModelSerializer):
             "conflict_report",
             "warnings",
             "feasible",
+            "setup_restartable",
             "confirmed_at",
             "created_at",
             "updated_at",
@@ -267,6 +269,7 @@ class StudyScheduleListSerializer(serializers.ModelSerializer):
     """Список БЕЗ снимка ритма: он весит килобайты, а в списке не показывается."""
 
     feasible = serializers.BooleanField(read_only=True)
+    setup_restartable = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = StudySchedule
@@ -282,6 +285,7 @@ class StudyScheduleListSerializer(serializers.ModelSerializer):
             "conflict_report",
             "warnings",
             "feasible",
+            "setup_restartable",
             "created_at",
             "updated_at",
         ]
