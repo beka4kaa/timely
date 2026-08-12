@@ -15,6 +15,7 @@ import {
 } from "@/components/curriculum/paper";
 import {
   buildCourseAccents,
+  expandCommitments,
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import { weekLoad } from "@/lib/studyplan-load";
@@ -33,6 +34,10 @@ import {
 import { BlockDetails } from "./block-details";
 import { DayView } from "./day-view";
 import { type CalendarEntry, useSchedule } from "./use-schedule";
+import {
+  buildScheduleTargetOptions,
+  resolveScheduleTarget,
+} from "./schedule-targets";
 import { WeekGrid } from "./week-grid";
 
 type Mode = "week" | "day";
@@ -70,27 +75,61 @@ export function StudyPlanPage() {
   // отменить их одним Delete. Карточка разбора показывается, когда выбрано
   // ровно одно: у пачки нет «того самого» занятия, которое стоит разбирать.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [assistantTargetId, setAssistantTargetId] = useState<string | null>(null);
   const [dayKey, setDayKey] = useState<string | null>(null);
 
+  const ready = schedule.data.state === "ready" ? schedule.data : null;
+  const assistantScheduleOptions = useMemo(
+    () =>
+      ready
+        ? buildScheduleTargetOptions(ready.assistantSchedules, ready.plans)
+        : [],
+    [ready],
+  );
+  const assistantView = useMemo(
+    () =>
+      resolveScheduleTarget(
+        assistantTargetId,
+        assistantScheduleOptions,
+        ready?.blocksBySchedule ?? {},
+        ready?.schedules.map((item) => item.id) ?? [],
+      ),
+    [
+      assistantScheduleOptions,
+      assistantTargetId,
+      ready?.blocksBySchedule,
+      ready?.schedules,
+    ],
+  );
+  const assistantScheduleOption = assistantView.option;
+  const displayTimeZone = assistantScheduleOption?.timeZone ?? schedule.timeZone;
+
   const entries = useMemo(() => {
-    if (schedule.data.state !== "ready") return EMPTY_ENTRIES;
-    return [...schedule.data.blocks, ...schedule.data.commitments];
-  }, [schedule.data]);
+    if (!ready) return EMPTY_ENTRIES;
+    return [
+      ...assistantView.blocks,
+      ...expandCommitments(
+        ready.commitmentSources,
+        schedule.days,
+        displayTimeZone,
+      ),
+    ];
+  }, [assistantView.blocks, displayTimeZone, ready, schedule.days]);
   const range = useMemo(
-    () => visibleRange(entries, schedule.timeZone),
-    [entries, schedule.timeZone],
+    () => visibleRange(entries, displayTimeZone),
+    [displayTimeZone, entries],
   );
   const columns = useMemo(
     () =>
       layoutWeek(entries, {
-        timeZone: schedule.timeZone,
+        timeZone: displayTimeZone,
         days: schedule.days,
         range,
       }),
-    [entries, schedule.timeZone, schedule.days, range],
+    [displayTimeZone, entries, schedule.days, range],
   );
 
-  const todayKey = zonedDateKey(new Date(), schedule.timeZone);
+  const todayKey = zonedDateKey(new Date(), displayTimeZone);
   const activeDay =
     dayKey && schedule.days.includes(dayKey)
       ? dayKey
@@ -101,6 +140,23 @@ export function StudyPlanPage() {
     selectedIds.length === 1
       ? entries.find((entry) => entry.id === selectedIds[0]) ?? null
       : null;
+
+  const selectAssistantSchedule = useCallback((scheduleId: string) => {
+    setAssistantTargetId(scheduleId);
+    // Карточка занятия не должна молча переопределять явный выбор в шапке.
+    setSelectedIds([]);
+  }, []);
+
+  // В другой вкладке выбранный proposal могли подтвердить или архивировать.
+  // Тогда показываем детерминированный fallback и одновременно нормализуем id,
+  // чтобы панель не считала исчезнувший вариант вечной «загрузкой».
+  useEffect(() => {
+    if (!ready || !assistantTargetId) return;
+    if (assistantScheduleOptions.some((item) => item.id === assistantTargetId)) {
+      return;
+    }
+    setAssistantTargetId(assistantScheduleOptions[0]?.id ?? null);
+  }, [assistantScheduleOptions, assistantTargetId, ready]);
 
   const toggleSelected = useCallback((entryId: string, additive: boolean) => {
     setSelectedIds((current) => {
@@ -290,41 +346,33 @@ export function StudyPlanPage() {
       ? columns.find((column) => column.dateKey === load.peakDateKey) ?? null
       : null;
 
+  const selectedProposal = assistantView.proposalId
+    ? ready?.assistantSchedules.find(
+        (item) => item.id === assistantView.proposalId,
+      ) ?? null
+    : null;
+
   // Какое расписание правит помощник в панели справа.
   //
   // Считается ДО ранних возвратов ниже: `usePageSchedule` — хук, и после
   // `return` его вызвать нельзя. Пока данные грузятся, расписания нет, и панель
   // честно говорит, что выбрать нечего.
-  const ready = schedule.data.state === "ready" ? schedule.data : null;
-  const selectedLearning =
-    selected && !isCommitmentEntry(selected) ? selected : null;
-  const assistantSchedule = ready
-    ? selectedLearning
-      ? ready.schedules.find((item) => item.id === selectedLearning.schedule) ??
-        null
-      : ready.schedules.length === 1
-        ? ready.schedules[0]
-        : null
-    : null;
-  // `""` — расписаний нет вовсе, бэкенд возьмёт последнее неархивное сам.
-  // `null` — программ несколько, а занятие не выбрано: чью двигать, неясно.
+  // `""` — расписаний нет вовсе; обычный чат остаётся доступен для советов, а
+  // /start создаст первый вариант. `null` бывает только во время загрузки.
   const assistantScheduleId = !ready
     ? null
-    : ready.schedules.length === 0
-      ? ""
-      : assistantSchedule?.id ?? null;
-  const canStartAssistantSetup = Boolean(
-    ready &&
-      (ready.schedules.length === 0 ||
-        (ready.schedules.length === 1 &&
-          assistantSchedule?.setup_restartable)),
-  );
+    : assistantScheduleOption?.id ?? "";
 
   usePageSchedule({
     scheduleId: assistantScheduleId,
-    canStartSetup: canStartAssistantSetup,
-    timeZone: assistantSchedule?.timezone ?? schedule.timeZone,
-    onApplied: () => void schedule.reload(),
+    scheduleOptions: assistantScheduleOptions,
+    timeZone: displayTimeZone,
+    onSelectSchedule: selectAssistantSchedule,
+    onApplied: async (preferredScheduleId) => {
+      const loaded = await schedule.reload();
+      if (!preferredScheduleId) return loaded !== null;
+      return Boolean(loaded?.some((item) => item.id === preferredScheduleId));
+    },
     onCommitments: async (items) => {
       for (const item of items) {
         await createCommitment(
@@ -469,7 +517,7 @@ export function StudyPlanPage() {
             Имена программ убраны совсем: они длинные, и на каждом блоке и так
             написано, к какому курсу он относится. */}
         <CalendarNotice
-          proposals={data.proposals}
+          proposals={selectedProposal ? [selectedProposal] : []}
           notice={schedule.notice}
           cancelledCount={deletedCount}
           hasUndo={Boolean(schedule.lastRevision)}
@@ -492,7 +540,7 @@ export function StudyPlanPage() {
             <WeekGrid
                 columns={columns}
                 range={range}
-                timeZone={schedule.timeZone}
+                timeZone={displayTimeZone}
                 todayKey={todayKey}
                 selectedIds={selectedIds}
                 busy={schedule.busy}
@@ -502,7 +550,7 @@ export function StudyPlanPage() {
                 renderDetails={(entry) => (
                   <BlockDetails
                     block={entry}
-                    timeZone={schedule.timeZone}
+                    timeZone={displayTimeZone}
                     busy={schedule.busy}
                     onClose={() => setSelectedIds([])}
                     onTogglePinned={(pinned) =>
@@ -545,7 +593,7 @@ export function StudyPlanPage() {
               <div className="mt-3 lg:hidden">
                 <BlockDetails
                   block={selected}
-                  timeZone={schedule.timeZone}
+                  timeZone={displayTimeZone}
                   busy={schedule.busy}
                   onClose={() => setSelectedIds([])}
                   onTogglePinned={(pinned) =>

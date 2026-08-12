@@ -22,31 +22,35 @@ import {
 } from "react";
 
 import type { ParsedCommitment } from "@/lib/studyplan-chat";
+import type { ScheduleTargetOption } from "@/components/studyplan/schedule-targets";
 
 export interface PageSchedule {
   /**
    * Расписание, которое правим.
    *
-   * `""` — расписаний у ученика нет вовсе; бэкенд в этом случае сам возьмёт
-   * последнее неархивное. `null` — расписаний несколько, а занятие не выбрано:
-   * помощнику непонятно, чью программу двигать, и он просит выбрать.
+   * `""` — расписаний у ученика нет вовсе. `null` — страница ещё грузится или
+   * уже размонтирована; запросы помощника в этом состоянии не отправляются.
    */
   scheduleId: string | null;
-  canStartSetup: boolean;
+  /** Несхлопнутые живые версии, доступные как target чата и /plan. */
+  scheduleOptions: ScheduleTargetOption[];
   timeZone: string;
-  /** Ревизия применена — перерисовать календарь. */
-  onApplied: () => void;
+  /** Явно выбрать, к какому расписанию относится следующий запрос. */
+  onSelectSchedule: (scheduleId: string) => void;
+  /** Перерисовать календарь и, если передан id, выбрать созданный вариант. */
+  onApplied: (preferredScheduleId?: string) => boolean | Promise<boolean>;
   /** Записать разобранную помощником занятость. */
   onCommitments: (items: ParsedCommitment[]) => Promise<void>;
 }
 
 interface ActiveScheduleValue {
   scheduleId: string | null;
-  canStartSetup: boolean;
+  scheduleOptions: ScheduleTargetOption[];
   timeZone: string;
   /** Стабильные обёртки: их можно класть в зависимости хуков без перерисовок. */
-  notifyApplied: () => void;
+  notifyApplied: (preferredScheduleId?: string) => Promise<boolean>;
   saveCommitments: (items: ParsedCommitment[]) => Promise<void>;
+  selectSchedule: (scheduleId: string) => void;
   setPageSchedule: (value: PageSchedule | null) => void;
 }
 
@@ -55,10 +59,11 @@ const FALLBACK_TIME_ZONE = "Europe/Moscow";
 
 const ActiveScheduleContext = createContext<ActiveScheduleValue>({
   scheduleId: null,
-  canStartSetup: false,
+  scheduleOptions: [],
   timeZone: FALLBACK_TIME_ZONE,
-  notifyApplied: () => {},
+  notifyApplied: async () => false,
   saveCommitments: async () => {},
+  selectSchedule: () => {},
   setPageSchedule: () => {},
 });
 
@@ -72,7 +77,7 @@ export function ActiveScheduleProvider({
   // перерисовывалась бы вместе с календарём на каждое движение мыши.
   const [ids, setIds] = useState({
     scheduleId: null as string | null,
-    canStartSetup: false,
+    scheduleOptions: [] as ScheduleTargetOption[],
     timeZone: FALLBACK_TIME_ZONE,
   });
   const handlersRef = useRef<PageSchedule | null>(null);
@@ -81,22 +86,23 @@ export function ActiveScheduleProvider({
     handlersRef.current = value;
     const next = {
       scheduleId: value?.scheduleId ?? null,
-      canStartSetup: value?.canStartSetup ?? false,
+      scheduleOptions: value?.scheduleOptions ?? [],
       timeZone: value?.timeZone || FALLBACK_TIME_ZONE,
     };
     // Сравнение обязательно: `setPageSchedule` зовётся каждый рендер страницы,
     // и без него обновление состояния уходило бы в бесконечный цикл.
     setIds((current) =>
       current.scheduleId === next.scheduleId &&
-      current.canStartSetup === next.canStartSetup &&
+      sameScheduleOptions(current.scheduleOptions, next.scheduleOptions) &&
       current.timeZone === next.timeZone
         ? current
         : next,
     );
   }, []);
 
-  const notifyApplied = useCallback(() => {
-    handlersRef.current?.onApplied();
+  const notifyApplied = useCallback(async (preferredScheduleId?: string) => {
+    const handler = handlersRef.current?.onApplied;
+    return handler ? await handler(preferredScheduleId) : false;
   }, []);
 
   const saveCommitments = useCallback(async (items: ParsedCommitment[]) => {
@@ -104,16 +110,21 @@ export function ActiveScheduleProvider({
     if (handler) await handler(items);
   }, []);
 
+  const selectSchedule = useCallback((scheduleId: string) => {
+    handlersRef.current?.onSelectSchedule(scheduleId);
+  }, []);
+
   const value = useMemo(
     () => ({
       scheduleId: ids.scheduleId,
-      canStartSetup: ids.canStartSetup,
+      scheduleOptions: ids.scheduleOptions,
       timeZone: ids.timeZone,
       notifyApplied,
       saveCommitments,
+      selectSchedule,
       setPageSchedule,
     }),
-    [ids, notifyApplied, saveCommitments, setPageSchedule],
+    [ids, notifyApplied, saveCommitments, selectSchedule, setPageSchedule],
   );
 
   return (
@@ -133,7 +144,7 @@ export function useActiveSchedule() {
  * Синхронизация идёт БЕЗ массива зависимостей: колбэки страницы — новые ссылки
  * на каждый рендер, сравнивать их бессмысленно. Лишних перерисовок это не
  * создаёт, потому что провайдер обновляет состояние только когда сменились
- * идентификатор, доступность первоначальной настройки или часовой пояс.
+ * идентификатор, варианты выбора или часовой пояс.
  */
 export function usePageSchedule(value: PageSchedule | null) {
   const { setPageSchedule } = useActiveSchedule();
@@ -145,4 +156,25 @@ export function usePageSchedule(value: PageSchedule | null) {
   // При уходе со страницы — сбросить, иначе панель на дневнике продолжала бы
   // считать, что правит расписание, которого на экране нет.
   useEffect(() => () => setPageSchedule(null), [setPageSchedule]);
+}
+
+function sameScheduleOptions(
+  left: readonly ScheduleTargetOption[],
+  right: readonly ScheduleTargetOption[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    return (
+      other !== undefined &&
+      item.id === other.id &&
+      item.title === other.title &&
+      item.detail === other.detail &&
+      item.status === other.status &&
+      item.version === other.version &&
+      item.createdAt === other.createdAt &&
+      item.timeZone === other.timeZone
+    );
+  });
 }

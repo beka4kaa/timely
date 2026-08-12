@@ -11,7 +11,8 @@
 // чтение, а явный /plan — инструменты предложений. /start вообще не идёт в
 // модель: это подписанный детерминированный мастер первого расписания.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Plus } from "lucide-react";
 
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { paperCaption, paperTile } from "@/components/curriculum/paper";
@@ -21,6 +22,12 @@ import {
   ScheduleComposer,
 } from "@/components/studyplan/schedule-composer";
 import { ScheduleSetup } from "@/components/studyplan/schedule-setup";
+import type { ScheduleTargetOption } from "@/components/studyplan/schedule-targets";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useActiveSchedule } from "@/contexts/active-schedule";
 import {
   confirmRevision,
@@ -41,7 +48,7 @@ import {
   type ParsedCommitment,
 } from "@/lib/studyplan-chat";
 import "katex/dist/katex.min.css";
-import { RailShell, railPillClass } from "./rail-shell";
+import { RailShell, railPillButtonClass } from "./rail-shell";
 
 /** Сколько последних реплик уходит в контекст. Столько же было у панели. */
 const HISTORY_LIMIT = 6;
@@ -52,14 +59,23 @@ interface RailTurn extends AssistantTurn {
 }
 
 export function ScheduleRail() {
-  const { scheduleId, canStartSetup, timeZone, notifyApplied, saveCommitments } =
-    useActiveSchedule();
+  const {
+    scheduleId,
+    scheduleOptions,
+    timeZone,
+    notifyApplied,
+    saveCommitments,
+    selectSchedule,
+  } = useActiveSchedule();
   const [turns, setTurns] = useState<RailTurn[]>([]);
   const [state, setState] = useState<AssistantState>(initialAssistantState);
   const [applying, setApplying] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [composerResetKey, setComposerResetKey] = useState(0);
   const [armPlanKey, setArmPlanKey] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
+  const pendingTargetRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
 
@@ -71,11 +87,31 @@ export function ScheduleRail() {
   }, []);
 
   const thinking = state.status === "thinking";
-  // `null` — расписаний несколько, а занятие не выбрано: непонятно, чью
-  // программу двигать. Пустая строка — расписаний нет вовсе, и это НЕ помеха:
-  // бэкенд возьмёт последнее неархивное сам.
+  // `null` — страница ещё не готова. Пустая строка — расписаний нет вовсе, и
+  // это НЕ помеха: /start остаётся доступен.
   const ready = scheduleId !== null;
   const hasSchedule = Boolean(scheduleId);
+  const selectedSchedule = useMemo(
+    () => scheduleOptions.find((item) => item.id === scheduleId) ?? null,
+    [scheduleId, scheduleOptions],
+  );
+  const selectingTarget = Boolean(pendingTargetId);
+
+  const markPendingTarget = useCallback((next: string | null) => {
+    pendingTargetRef.current = next;
+    setPendingTargetId(next);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingTargetId) return;
+    if (scheduleId === pendingTargetId) {
+      markPendingTarget(null);
+    }
+  }, [markPendingTarget, pendingTargetId, scheduleId]);
+
+  useEffect(() => {
+    if (selectingTarget) setPickerOpen(false);
+  }, [selectingTarget]);
 
   // Сменилось расписание — разговор начинается заново: реплики про среду в
   // одной программе ничего не значат для другой.
@@ -96,7 +132,7 @@ export function ScheduleRail() {
   const send = useCallback(
     async (text: string, mode: ScheduleChatMode) => {
       const message = text.trim();
-      if (!message || thinking || !ready) return;
+      if (!message || thinking || !ready || selectingTarget) return;
 
       setTurns((current) => [
         ...current,
@@ -141,18 +177,43 @@ export function ScheduleRail() {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [invalidateRequest, notifyApplied, ready, scheduleId, thinking, turns],
+    [
+      invalidateRequest,
+      notifyApplied,
+      ready,
+      scheduleId,
+      selectingTarget,
+      thinking,
+      turns,
+    ],
   );
 
   const startSetup = useCallback(() => {
-    if (!ready || !canStartSetup || thinking) return;
+    if (!ready || thinking || selectingTarget) return;
     invalidateRequest();
     setTurns([]);
     setState(initialAssistantState);
     setSetupOpen(true);
-  }, [canStartSetup, invalidateRequest, ready, thinking]);
+  }, [invalidateRequest, ready, selectingTarget, thinking]);
 
-  const setupCreated = useCallback(() => {
+  const selectKnownSchedule = useCallback(
+    (nextScheduleId: string) => {
+      if (nextScheduleId === scheduleId) return;
+      // Context обновляется через effect страницы. До совпадения id нельзя
+      // отправлять чат в ещё старый target, даже если новый уже был загружен.
+      markPendingTarget(nextScheduleId);
+      selectSchedule(nextScheduleId);
+    },
+    [markPendingTarget, scheduleId, selectSchedule],
+  );
+
+  const setupCreated = useCallback((result: { schedule: { id: string } }) => {
+    // Пока страница перечитывает созданный id, composer заблокирован и не
+    // может отправить запрос в предыдущее расписание. Страница выбирает id
+    // только если он действительно пришёл в свежем списке вариантов.
+    const createdId = result.schedule.id;
+    setPickerOpen(false);
+    markPendingTarget(createdId);
     setSetupOpen(false);
     setTurns([
       {
@@ -161,8 +222,21 @@ export function ScheduleRail() {
           "Черновик готов. Проверь занятия в календаре и подтверди расписание.",
       },
     ]);
-    notifyApplied();
-  }, [notifyApplied]);
+    void notifyApplied(createdId)
+      .then((available) => {
+        // Пока шёл reload, пользователь мог осознанно выбрать другой target.
+        // Устаревший ответ не имеет права переиграть его выбор.
+        if (pendingTargetRef.current !== createdId) return;
+        if (!available) {
+          markPendingTarget(null);
+          return;
+        }
+        selectSchedule(createdId);
+      })
+      .catch(() => {
+        if (pendingTargetRef.current === createdId) markPendingTarget(null);
+      });
+  }, [markPendingTarget, notifyApplied, selectSchedule]);
 
   const setupAlreadyExists = useCallback(() => {
     setSetupOpen(false);
@@ -233,18 +307,25 @@ export function ScheduleRail() {
       onNew={turns.length || setupOpen ? clear : undefined}
       feedRef={feedRef}
       title={
-        <span className={railPillClass}>
-          <span className="truncate">Расписание</span>
-        </span>
+        <ScheduleTargetPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          options={scheduleOptions}
+          selected={selectedSchedule}
+          onSelect={selectKnownSchedule}
+          onStart={startSetup}
+          disabled={selectingTarget || setupOpen}
+          startDisabled={!ready || thinking || selectingTarget}
+        />
       }
       footer={
         ready && !setupOpen ? (
           <ScheduleComposer
             hasSchedule={hasSchedule}
-            canStart={canStartSetup}
             onSubmit={(text, mode) => void send(text, mode)}
             onStart={startSetup}
             busy={thinking}
+            disabled={selectingTarget}
             onStop={() => abortRef.current?.abort()}
             resetKey={composerResetKey}
             armPlanKey={armPlanKey}
@@ -257,7 +338,6 @@ export function ScheduleRail() {
         <EmptyState
           ready={ready}
           hasSchedule={hasSchedule}
-          canStart={canStartSetup}
           onStart={startSetup}
           onPlan={() => setArmPlanKey((current) => current + 1)}
         />
@@ -363,24 +443,128 @@ export function ScheduleRail() {
   );
 }
 
+function ScheduleTargetPicker({
+  open,
+  onOpenChange,
+  options,
+  selected,
+  onSelect,
+  onStart,
+  disabled,
+  startDisabled,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  options: ScheduleTargetOption[];
+  selected: ScheduleTargetOption | null;
+  onSelect: (scheduleId: string) => void;
+  onStart: () => void;
+  disabled: boolean;
+  startDisabled: boolean;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Выбрать расписание для помощника"
+          aria-haspopup="menu"
+          title="Выбрать расписание для /plan и чата"
+          disabled={disabled}
+          className={railPillButtonClass}
+        >
+          <span className="min-w-0 truncate">
+            {selected ? `Расписание · ${selected.title}` : "Расписание"}
+          </span>
+          {selected ? (
+            <span className="shrink-0 text-[9.5px] text-[#968e84]">
+              {selected.statusLabel.toLocaleLowerCase("ru-RU")}
+            </span>
+          ) : null}
+          <ChevronDown className="ml-auto h-2.5 w-2.5 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        role="menu"
+        aria-label="Расписания для помощника"
+        className="w-[min(19rem,calc(100vw-1.5rem))] border-[#dcd7cf] bg-[#fbfaf7] p-1.5 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+      >
+        <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#9299a8]">
+          Расписания
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {options.map((option) => {
+            const active = option.id === selected?.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  onSelect(option.id);
+                  onOpenChange(false);
+                }}
+                className={`flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left outline-none transition-colors hover:bg-[#f1ede6] focus-visible:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-45 ${
+                  active ? "bg-[#f4efe7]" : ""
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-[#3f3933]">
+                    {option.title}
+                  </span>
+                  <span className="block truncate text-[10.5px] text-[#918980]">
+                    {option.detail}
+                  </span>
+                </span>
+                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-[#8a5b24]" /> : null}
+              </button>
+            );
+          })}
+          {options.length === 0 ? (
+            <p className="px-2.5 py-2 text-[11.5px] leading-relaxed text-[#918980]">
+              Вариантов пока нет. Создай первый — он появится в этом списке.
+            </p>
+          ) : null}
+        </div>
+        <div className="my-1 border-t border-[#e4e0d8]" />
+        <button
+          type="button"
+          role="menuitem"
+          disabled={startDisabled}
+          onClick={() => {
+            onOpenChange(false);
+            onStart();
+          }}
+          className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#2563eb] outline-none transition-colors hover:bg-[#eef4ff] focus-visible:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <Plus className="h-3.5 w-3.5 shrink-0" />
+          Создать новое расписание
+          <span className="ml-auto font-mono text-[10.5px]">/start</span>
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function EmptyState({
   ready,
   hasSchedule,
-  canStart,
   onStart,
   onPlan,
 }: {
   ready: boolean;
   hasSchedule: boolean;
-  canStart: boolean;
   onStart: () => void;
   onPlan: () => void;
 }) {
   if (!ready) {
     return (
       <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
-        Выбери учебное занятие в календаре, чтобы помощник понял, расписание
-        какой программы менять.
+        Загружаю расписания для помощника…
       </p>
     );
   }
@@ -404,12 +588,10 @@ function EmptyState({
         Без команды я оцениваю расписание и советую, что улучшить. Для переноса
         или разгрузки выбери <SlashAction onClick={onPlan}>/plan</SlashAction>.
       </p>
-      {canStart ? (
-        <p className="mt-2">
-          Черновик ещё не подтверждён — <SlashAction onClick={onStart}>/start</SlashAction>{" "}
-          соберёт его заново.
-        </p>
-      ) : null}
+      <p className="mt-2">
+        <SlashAction onClick={onStart}>/start</SlashAction> создаст ещё один
+        вариант — текущий останется в списке расписаний.
+      </p>
       <p className="mt-2 text-[11.5px] text-[#9a938a]">
         Изменения всегда появятся предложением и потребуют подтверждения.
       </p>

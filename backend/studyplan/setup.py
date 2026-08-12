@@ -1,4 +1,4 @@
-"""Deterministic, signed onboarding for the first study schedule.
+"""Deterministic, signed onboarding for proposed study schedules.
 
 The browser owns only presentation.  This module owns question order, accepted
 semantic answers, ownership checks and the final database transaction.  Every
@@ -21,9 +21,8 @@ from django.db import transaction
 from django.utils import timezone as django_timezone
 from django.utils.dateparse import parse_date
 
+from curriculum.forecast import ForecastInput, ForecastNotPossible, compute_forecast
 from curriculum.models import CoursePlan
-from curriculum.services import plans as curriculum_plans
-
 from . import services
 from .models import StudySchedule, TemplateSlot, WeeklyScheduleTemplate
 
@@ -527,20 +526,6 @@ def _response(state: dict[str, Any], *, user_email: str) -> dict[str, Any]:
     }
 
 
-def _replaceable_setup_proposal(schedule: StudySchedule) -> bool:
-    """An unconfirmed /start draft may be superseded by a later /start."""
-    return schedule.setup_restartable
-
-
-def _has_blocking_schedule(schedules) -> bool:
-    return any(
-        schedule.status
-        not in {StudySchedule.Status.ARCHIVED, StudySchedule.Status.COMPLETED}
-        and not _replaceable_setup_proposal(schedule)
-        for schedule in schedules
-    )
-
-
 def handle_schedule_setup(data: Any, *, user_email: str) -> dict[str, Any]:
     """Return one next question or a signed, complete setup summary."""
     if not isinstance(data, dict) or data.get("type") != "schedule_setup":
@@ -553,17 +538,6 @@ def handle_schedule_setup(data: Any, *, user_email: str) -> dict[str, Any]:
 
     session_id = data.get("session_id")
     if not session_id:
-        existing_schedules = StudySchedule.objects.filter(user_email=email).exclude(
-            status__in=[
-                StudySchedule.Status.ARCHIVED,
-                StudySchedule.Status.COMPLETED,
-            ]
-        )
-        if _has_blocking_schedule(existing_schedules):
-            raise ScheduleSetupBlocked(
-                "Расписание уже создано. Для изменений используй /plan.",
-                code="schedule_already_exists",
-            )
         offered_plans, has_more = _active_plans(email)
         offered_plan_ids = [str(plan.id) for plan in offered_plans]
         if data.get("answers") not in (None, "", {}):
@@ -657,9 +631,46 @@ def _existing_result(
     return None
 
 
+def _prepare_proposal_pace(
+    plan: CoursePlan,
+    *,
+    weekdays: tuple[int, ...],
+    session_minutes: int,
+    start_date: date,
+) -> tuple[str, ...]:
+    """Apply answers to this in-memory planning input without persisting them.
+
+    The schedule engine needs the selected part size and a matching horizon,
+    but a proposal is not yet the user's chosen pace.  Mutating only the locked
+    model instance gives generation the right inputs while the database keeps
+    the current course preferences until explicit schedule confirmation.
+    """
+    plan.recommended_sessions_per_week = len(weekdays)
+    plan.recommended_session_minutes = session_minutes
+    if plan.estimated_total_minutes <= 0:
+        return ("forecast_skipped_zero_duration",)
+    try:
+        forecast = compute_forecast(
+            ForecastInput(
+                total_estimated_minutes=plan.estimated_total_minutes,
+                sessions_per_week=len(weekdays),
+                minutes_per_session=session_minutes,
+                start_date=start_date,
+                allowed_weekdays=weekdays,
+                desired_finish_date=(
+                    plan.goal.desired_finish_date if plan.goal_id else None
+                ),
+            )
+        )
+    except ForecastNotPossible:
+        return ("forecast_not_possible",)
+    plan.forecast_finish_date = forecast.realistic_finish_date
+    return tuple(forecast.warnings)
+
+
 @transaction.atomic
 def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResult:
-    """Persist a new active rhythm and generate an idempotent proposal."""
+    """Persist an idempotent proposal; activate it only via schedule confirm."""
     if not isinstance(data, dict) or data.get("type") != "confirm_schedule_setup":
         raise ScheduleSetupValidationError("Некорректный запрос подтверждения.")
     email = _database_email(user_email)
@@ -705,9 +716,10 @@ def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResu
             code="course_plan_unavailable",
         )
 
-    # Сначала ищем идемпотентный replay, и только затем запрещаем второй
-    # календарь. Поэтому повтор ответа после потерянного HTTP-response безопасен,
-    # а другая вкладка не может создать параллельный первый план.
+    # Сначала ищем идемпотентный replay. Поэтому повтор ответа после потерянного
+    # HTTP-response безопасен, но независимая /start-сессия всё равно может
+    # создать новое предложение: наличие рабочего расписания не блокирует
+    # пользователя и не означает согласие заменить его.
     locked_schedules = list(
         StudySchedule.objects.select_for_update()
         .filter(user_email=email)
@@ -721,22 +733,6 @@ def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResu
     )
     if replay is not None:
         return replay
-    if _has_blocking_schedule(locked_schedules):
-        raise ScheduleSetupBlocked(
-            "Расписание уже создано. Для изменений используй /plan.",
-            code="schedule_already_exists",
-        )
-
-    replaceable_ids = [
-        schedule.id
-        for schedule in locked_schedules
-        if _replaceable_setup_proposal(schedule)
-    ]
-    if replaceable_ids:
-        StudySchedule.objects.filter(id__in=replaceable_ids).update(
-            status=StudySchedule.Status.ARCHIVED,
-            updated_at=django_timezone.now(),
-        )
 
     weekdays = tuple(int(item) for item in answers["weekdays"].split(","))
     start_hour, start_minute = (
@@ -745,16 +741,21 @@ def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResu
     session_minutes = int(answers["session_minutes"])
     start_date = date.fromisoformat(state["start_date"])
 
-    # A replacement is safer than mutating a template referenced by an active
-    # schedule: old calendars retain the rhythm that produced their geometry.
-    WeeklyScheduleTemplate.objects.select_for_update().filter(
-        user_email=email, active=True
-    ).update(active=False)
+    proposal_warnings = _prepare_proposal_pace(
+        plan,
+        weekdays=weekdays,
+        session_minutes=session_minutes,
+        start_date=start_date,
+    )
+
+    # Предложение получает собственный неизменяемый ритм. Он не становится
+    # пользовательским active-шаблоном до подтверждения расписания, поэтому
+    # простое создание варианта не меняет уже принятый календарь.
     template = WeeklyScheduleTemplate.objects.create(
         user_email=email,
         title="Учебный ритм",
         timezone=state["timezone"],
-        active=True,
+        active=False,
         valid_from=start_date,
         max_minutes_per_day=session_minutes,
         max_minutes_per_week=session_minutes * len(weekdays),
@@ -772,29 +773,6 @@ def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResu
         ]
     )
 
-    pace_warnings = curriculum_plans.repace_plan(
-        plan,
-        sessions_per_week=len(weekdays),
-        minutes_per_session=session_minutes,
-        start_date=start_date,
-    )
-    # Legacy/fixture plans can have zero total minutes, in which case forecast
-    # recalculation intentionally returns early.  The confirmed preference is
-    # still the scheduler's part-size limit and must therefore be persisted.
-    if (
-        plan.recommended_sessions_per_week != len(weekdays)
-        or plan.recommended_session_minutes != session_minutes
-    ):
-        plan.recommended_sessions_per_week = len(weekdays)
-        plan.recommended_session_minutes = session_minutes
-        plan.save(
-            update_fields=[
-                "recommended_sessions_per_week",
-                "recommended_session_minutes",
-                "updated_at",
-            ]
-        )
-
     outcome = services.generate_schedule(
         plan=plan,
         start_date=start_date,
@@ -803,7 +781,7 @@ def confirm_schedule_setup(data: Any, *, user_email: str) -> SetupGenerationResu
         provider_key="deterministic",
     )
     combined_warnings = tuple(
-        dict.fromkeys([*pace_warnings, *outcome.warnings])
+        dict.fromkeys([*proposal_warnings, *outcome.warnings])
     )
     outcome.schedule.pacing_snapshot = {
         **(outcome.schedule.pacing_snapshot or {}),

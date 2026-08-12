@@ -86,7 +86,7 @@ def _setup_error(message: str, code: str, *, blocked: bool = False) -> Response:
 
 
 class ScheduleSetupView(APIView):
-    """One-question-at-a-time setup for an initial proposed schedule."""
+    """One-question-at-a-time setup for a new proposed schedule."""
 
     def post(self, request):
         email = getattr(request, "user_email", None)

@@ -427,6 +427,8 @@ class GlobalConflictTests(UnifiedCalendarFixture):
             confirm_schedule(self.schedule)
 
     def test_confirmation_archives_same_course_draft_alternative(self):
+        self.schedule.status = StudySchedule.Status.PROPOSED
+        self.schedule.save(update_fields=["status", "updated_at"])
         draft = self.make_schedule(status=StudySchedule.Status.DRAFT)
 
         confirm_schedule(self.schedule)
