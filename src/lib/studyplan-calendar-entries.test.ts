@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   type CalendarScheduleLike,
   type FixedCommitmentLike,
+  buildCourseAccents,
   calendarTimeZone,
   courseAccent,
   expandCommitments,
@@ -239,8 +240,41 @@ test("разовая занятость, начавшаяся вчера, вид
 });
 
 test("акцент курса детерминирован и различает обычные идентификаторы", () => {
-  assert.equal(courseAccent("course-alpha"), "#756246");
   assert.equal(courseAccent("course-alpha"), courseAccent("course-alpha"));
   assert.notEqual(courseAccent("course-alpha"), courseAccent("course-beta"));
   assert.match(courseAccent("course-gamma"), /^#[0-9a-f]{6}$/i);
+});
+
+test("цвет отвечает предмету, а не месту в списке", () => {
+  // Физика синеватая, а математика тёплая — независимо от того, какая книга
+  // загрузилась первой. До этого цвет раздавался по порядку, и одна и та же
+  // физика меняла цвет от перестановки программ.
+  const first = buildCourseAccents([
+    { id: "p", title: "Механика, 10 класс" },
+    { id: "m", title: "Алгебра и начала анализа" },
+  ]);
+  const second = buildCourseAccents([
+    { id: "m", title: "Алгебра и начала анализа" },
+    { id: "p", title: "Механика, 10 класс" },
+  ]);
+  assert.equal(first.get("p"), second.get("p"));
+  assert.equal(first.get("m"), second.get("m"));
+  assert.notEqual(first.get("p"), first.get("m"));
+});
+
+test("неопознанные программы всё равно получают разные цвета", () => {
+  const accents = buildCourseAccents([
+    { id: "a", title: "Книга без предмета" },
+    { id: "b", title: "Ещё одна книга" },
+    { id: "c", title: "И третья" },
+  ]);
+  assert.equal(new Set(accents.values()).size, 3);
+});
+
+test("англоязычное название тоже опознаётся", () => {
+  const accents = buildCourseAccents([
+    { id: "ml", title: "_OceanofPDF.com_Hands-On_Machine_Learning" },
+    { id: "en", title: "English Grammar in Use" },
+  ]);
+  assert.notEqual(accents.get("ml"), accents.get("en"));
 });

@@ -246,7 +246,7 @@ export function StudyPlanPage() {
   // Цвета программ раздаются по порядку списка, а не по хешу: иначе два курса
   // могли достаться одному цвету, и правило «цвет = предмет» ломалось бы ровно
   // там, где оно нужнее всего.
-  const accents = buildCourseAccents(data.plans.map((plan) => plan.id));
+  const accents = buildCourseAccents(data.plans);
 
   return (
     <CoffeePageShell fillHeight maxWidthClassName="max-w-none">

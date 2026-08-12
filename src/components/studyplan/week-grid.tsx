@@ -25,6 +25,7 @@ import {
   currentTimeOffset,
   dropTarget,
   formatMinutes,
+  halfHourMarks,
   hourMarks,
   minutesToOffset,
   offsetToMinutes,
@@ -39,7 +40,7 @@ import {
   weekdayShort,
 } from "@/lib/studyplan-visuals";
 import { loadRatio, weekLoad } from "@/lib/studyplan-load";
-import { paperCaption, paperFocus } from "@/components/curriculum/paper";
+import { paperFocus } from "@/components/curriculum/paper";
 
 import type { CalendarEntry } from "./use-schedule";
 
@@ -50,7 +51,20 @@ const KEYBOARD_STEP_MINUTES = 15;
 const RELEASED_STATUSES = new Set(["cancelled", "rescheduled"]);
 
 /** Высота ленты нагрузки под числом дня. */
-const LOAD_BAR_HEIGHT = 20;
+const LOAD_BAR_HEIGHT = 18;
+
+/**
+ * Колонка времени. Ширина фиксирована и одинакова в шапке и в теле сетки:
+ * разъедься они на пиксель — числа дней перестали бы стоять над колонками.
+ */
+const TIME_COLUMN = "relative w-[68px]";
+
+/**
+ * Сколько процентов ширины колонки нужно блоку, чтобы в нём читался текст.
+ * Уже этого дорожки не режем: лучше две узкие колонки, чем пять полосок, в
+ * которых не видно ни названия, ни времени.
+ */
+const MAX_READABLE_LANES = 3;
 
 /**
  * Как выглядит запись календаря.
@@ -122,30 +136,13 @@ export function WeekGrid({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [now, setNow] = useState(() => new Date());
 
-  // Видимая высота прокрутки. Нужна, чтобы дотянуть шкалу часами до низа
-  // карточки: диапазон считается по занятиям, и в пустоватой неделе он выходит
-  // короче экрана — под сеткой оставалось бы пустое поле внутри рамки.
-  // Растёт только конец шкалы, начало не трогаем: `layoutWeek` уже посчитал
-  // отступы блоков от `range.startMinutes`, и сдвиг начала уронил бы их все.
-  const [viewportHeight, setViewportHeight] = useState(0);
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setViewportHeight(node.clientHeight));
-    observer.observe(node);
-    setViewportHeight(node.clientHeight);
-    return () => observer.disconnect();
-  }, []);
-
-  const effectiveEnd = Math.min(
-    24 * 60,
-    Math.max(range.endMinutes, range.startMinutes + (viewportHeight / HOUR_HEIGHT) * 60),
-  );
-  const marks = useMemo(
-    () => hourMarks({ ...range, endMinutes: effectiveEnd }),
-    [range, effectiveEnd],
-  );
-  const bodyHeight = ((effectiveEnd - range.startMinutes) / 60) * HOUR_HEIGHT;
+  // Шкалу больше не растягиваем под высоту экрана: рабочий день теперь всегда
+  // входит в диапазон целиком (`visibleRange`), и дотягивать её пустыми часами
+  // до полуночи незачем — это была плата за то, что диапазон считался только
+  // по занятиям.
+  const marks = useMemo(() => hourMarks(range), [range]);
+  const halfMarks = useMemo(() => halfHourMarks(range), [range]);
+  const bodyHeight = ((range.endMinutes - range.startMinutes) / 60) * HOUR_HEIGHT;
   const days = useMemo(() => columns.map((column) => column.dateKey), [columns]);
   const empty = columns.every((column) => column.blocks.length === 0);
 
@@ -460,23 +457,30 @@ export function WeekGrid({
     // Сетка тянется на всю высоту, которую ей даёт страница: календарь должен
     // занимать экран, а не жить в коробке на 62vh с полосой пустоты под ней.
     <div className="flex h-full min-h-[420px] flex-col overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95">
+      {/* Шапка дней закреплена: она вне области прокрутки, поэтому при скролле
+          расписания не уезжает. Ширина первой ячейки совпадает с колонкой
+          времени — так числа стоят ровно над своими колонками. */}
       <div className="flex shrink-0 border-b border-[#e4ded4] bg-[#fffdfa]">
-        {/* Колонка под шкалой времени: держит шапку и сетку на одной оси. */}
-        <div className="w-14 shrink-0" aria-hidden />
+        <div className={`${TIME_COLUMN} shrink-0`} aria-hidden />
         {columns.map((column, index) => {
           const isToday = column.dateKey === todayKey;
+          const weekend = column.weekday >= 5;
           const day = load.days[index];
           const dayNumber = Number(column.dateKey.slice(-2));
           return (
             <div
               key={column.dateKey}
-              className="flex-1 border-l border-[#eee9e1] px-1.5 pb-1.5 pt-2 text-center"
+              className={`flex-1 border-l border-[#eee9e1] px-1.5 pb-1 pt-1.5 text-center ${
+                weekend ? "bg-[#faf7f1]" : ""
+              }`}
             >
-              <div className={paperCaption}>{weekdayShort(column.weekday)}</div>
+              <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#a1978b]">
+                {weekdayShort(column.weekday)}
+              </div>
               {/* Число, а не «18 августа»: месяц уже написан в заголовке недели,
                   и семь раз повторять его — значит забить колонку словом. */}
               <div
-                className={`mx-auto mt-1 grid h-7 w-7 place-items-center font-serif text-[15px] tabular-nums ${
+                className={`mx-auto mt-0.5 grid h-[26px] w-[26px] place-items-center font-serif text-[15px] tabular-nums ${
                   isToday
                     ? "rounded-full bg-[#8a5b24] font-medium text-[#fdf8ef]"
                     : "text-[#4a443d]"
@@ -489,7 +493,7 @@ export function WeekGrid({
                   вопрос страницы — «я не перегружен» — до того, как ученик
                   начнёт читать названия занятий. */}
               <div
-                className="mt-1.5 flex items-end justify-center gap-px"
+                className="mt-1 flex items-end justify-center gap-px"
                 style={{ height: LOAD_BAR_HEIGHT }}
                 aria-hidden
               >
@@ -497,7 +501,7 @@ export function WeekGrid({
                   day.segments.map((segment) => (
                     <span
                       key={segment.accent}
-                      className="w-[7px] rounded-[2px]"
+                      className="w-[6px] rounded-[2px]"
                       style={{
                         height: Math.round(
                           loadRatio(segment.minutes, load.peakMinutes) *
@@ -513,7 +517,7 @@ export function WeekGrid({
                   <span className="h-px w-4 rounded-full bg-[#e0dbd2]" />
                 )}
               </div>
-              <div className="mt-1 text-[10px] tabular-nums text-[#a1978b]">
+              <div className="text-[10px] tabular-nums leading-tight text-[#a1978b]">
                 {day && day.totalMinutes > 0 ? durationLabel(day.totalMinutes) : "—"}
               </div>
             </div>
@@ -526,14 +530,27 @@ export function WeekGrid({
             карточки, колонки должны закрашиваться до низа, а не обрываться
             полосой пустоты под последним часом. */}
         <div className="flex min-h-full">
-          <div className="w-14 shrink-0" style={{ minHeight: bodyHeight }}>
+          {/* Колонка времени прокручивается вместе с сеткой — иначе подписи
+              разошлись бы с линиями. Ширина фиксированная: от неё зависит,
+              стоят ли числа шапки над своими колонками. */}
+          <div
+            className={`${TIME_COLUMN} shrink-0 border-r border-[#e8e2d8] bg-[#fbfaf7]`}
+            style={{ minHeight: bodyHeight }}
+            aria-hidden
+          >
             {marks.map((minutes) => (
               <div
                 key={minutes}
-                className="relative"
-                style={{ height: 0, top: minutesToOffset(minutes, range.startMinutes) }}
+                className="absolute"
+                style={{
+                  // Подпись центрируется ПО линии часа: половина её высоты
+                  // вверх. Раньше сдвиг был на глаз, и «17:00» стояло выше
+                  // собственной черты.
+                  top: minutesToOffset(minutes, range.startMinutes) - 7,
+                  right: 8,
+                }}
               >
-                <span className="absolute -top-2 right-2 text-[11px] tabular-nums text-[#9b9186]">
+                <span className="text-[11px] font-medium tabular-nums leading-[14px] text-[#8d857b]">
                   {formatMinutes(minutes)}
                 </span>
               </div>
@@ -549,10 +566,21 @@ export function WeekGrid({
             onPointerUp={finishMarquee}
             onPointerCancel={finishMarquee}
           >
+            {/* Получасовые засечки светлее часовых: по ним видно, что занятие
+                на сорок пять минут не дотягивает до следующего часа, но сами
+                они на себя внимания не тянут. */}
+            {halfMarks.map((minutes) => (
+              <div
+                key={`half-${minutes}`}
+                className="pointer-events-none absolute inset-x-0 border-t border-[#f4f0e9]"
+                style={{ top: minutesToOffset(minutes, range.startMinutes) }}
+                aria-hidden
+              />
+            ))}
             {marks.map((minutes) => (
               <div
                 key={minutes}
-                className="pointer-events-none absolute inset-x-0 border-t border-[#efeae2]"
+                className="pointer-events-none absolute inset-x-0 border-t border-[#e8e2d8]"
                 style={{ top: minutesToOffset(minutes, range.startMinutes) }}
                 aria-hidden
               />
@@ -561,8 +589,12 @@ export function WeekGrid({
             {columns.map((column) => (
               <div
                 key={column.dateKey}
-                className={`relative flex-1 border-l border-[#eee9e1] ${
-                  column.dateKey === todayKey ? "bg-[#fffaf1]/70" : ""
+                className={`relative min-w-0 flex-1 border-l border-[#eee9e1] ${
+                  column.dateKey === todayKey
+                    ? "bg-[#fffaf1]/70"
+                    : column.weekday >= 5
+                      ? "bg-[#faf7f1]/60"
+                      : ""
                 }`}
               >
                 {marker?.dateKey === column.dateKey ? (
@@ -600,7 +632,23 @@ export function WeekGrid({
                     ? (drag.previewDuration / 60) * HOUR_HEIGHT
                     : positioned.height;
 
-                  const width = 100 / positioned.lanes;
+                  // Дорожки не режем бесконечно: с четвёртой блок становится
+                  // полоской, в которой не читается ничего. Дальше они лежат
+                  // внахлёст со сдвигом — как в Google, где четвёртое событие
+                  // выглядывает из-под третьего, а не исчезает.
+                  const lanes = Math.min(positioned.lanes, MAX_READABLE_LANES);
+                  const lane = Math.min(positioned.lane, lanes - 1);
+                  const width = 100 / lanes;
+                  const overflowShift =
+                    positioned.lane >= MAX_READABLE_LANES
+                      ? (positioned.lane - MAX_READABLE_LANES + 1) * 6
+                      : 0;
+                  // Узкая дорожка отдаёт название и время, всё остальное
+                  // прячется: лучше две строки, которые видно, чем четыре,
+                  // которые слиплись.
+                  // Две дорожки — это ещё половина колонки, курс туда влезает.
+                  // Прячем третью строку только с третьей дорожки.
+                  const narrow = lanes > 2;
                   return (
                     <div
                       key={block.id}
@@ -638,14 +686,19 @@ export function WeekGrid({
                         // списке файлов. Обычный клик выделяет одно.
                         onSelect(block, event.shiftKey || event.metaKey || event.ctrlKey);
                       }}
-                      className={`absolute overflow-hidden rounded-[10px] border px-2 py-1 text-left transition-shadow ${paperFocus} ${
+                      title={`${block.title} · ${formatMinutes(
+                        positioned.startMinutes,
+                      )} · ${durationLabel(block.duration_minutes)}${
+                        sourceLabel ? ` · ${sourceLabel}` : ""
+                      }`}
+                      className={`group absolute overflow-hidden rounded-[8px] border px-2 py-1 text-left transition-[box-shadow,filter] hover:brightness-[0.97] ${paperFocus} ${
                         block.fixed ? "cursor-default" : "cursor-grab"
                       } ${dragging ? "z-30 cursor-grabbing shadow-lg" : selected ? "z-20" : "z-10"}`}
                       style={{
                         top,
                         height,
-                        left: `calc(${positioned.lane * width}% + 2px)`,
-                        width: `calc(${width}% - 4px)`,
+                        left: `calc(${lane * width}% + ${2 + overflowShift}px)`,
+                        width: `calc(${width}% - ${4 + overflowShift}px)`,
                         background: look.background,
                         // Занятое время штрихуется: чужой блок видно как чужой
                         // даже боковым зрением, ещё до чтения подписи.
@@ -666,33 +719,46 @@ export function WeekGrid({
                           : `inset 3px 0 0 ${look.accent}`,
                       }}
                     >
-                      <div
-                        className={`truncate text-[12px] font-medium leading-tight ${
-                          look.struck ? "line-through" : ""
-                        }`}
-                      >
-                        {block.title}
+                      {/* Три уровня: название — время — курс. Ниже опускается
+                          только то, на что хватило высоты; шрифт при этом не
+                          уменьшается, иначе на узкой дорожке он превратился бы
+                          в нечитаемую крошку. Отменённое гасится и получает
+                          тонкую линию по НАЗВАНИЮ, а не по всему блоку. */}
+                      <div className="flex items-center gap-1">
+                        {look.struck ? (
+                          <span
+                            className="h-[3px] w-[3px] shrink-0 rounded-full bg-current opacity-50"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <span
+                          className={`min-w-0 truncate text-[12px] font-medium leading-tight ${
+                            look.struck ? "line-through decoration-1" : ""
+                          }`}
+                        >
+                          {block.title}
+                        </span>
                       </div>
-                      {height > 34 ? (
-                        <div className="mt-0.5 truncate text-[11px] tabular-nums opacity-70">
+                      {height > 32 ? (
+                        <div className="mt-0.5 truncate text-[11px] tabular-nums opacity-75">
                           {/* Длительность прямо в блоке: раньше её показывал
                               только дневной список, а на неделе «сколько это
                               займёт» приходилось прикидывать по высоте. */}
-                          {formatMinutes(positioned.startMinutes)} ·{" "}
-                          {durationLabel(block.duration_minutes)}
+                          {formatMinutes(positioned.startMinutes)}
+                          {narrow ? "" : ` · ${durationLabel(block.duration_minutes)}`}
                         </div>
                       ) : null}
-                      {height > 62 ? (
-                        <div className="mt-0.5 truncate text-[10px] opacity-60">
+                      {height > 58 && !narrow ? (
+                        <div className="mt-0.5 truncate text-[11px] opacity-60">
                           {sourceLabel}
                         </div>
                       ) : null}
-                      {height > 78 && !commitment ? (
-                        <div className="mt-0.5 truncate text-[10px] opacity-60">
+                      {height > 80 && !narrow && !commitment ? (
+                        <div className="mt-0.5 truncate text-[11px] opacity-55">
                           {look.label}
                         </div>
                       ) : null}
-                      {look.statusLabel && height > 96 ? (
+                      {look.statusLabel && height > 100 && !narrow ? (
                         <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.12em] opacity-60">
                           {look.statusLabel}
                         </div>

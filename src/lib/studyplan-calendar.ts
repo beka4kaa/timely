@@ -22,8 +22,14 @@ export const MIN_BLOCK_MINUTES = 15;
 /** Запас сверху и снизу от крайних занятий, чтобы сетка не липла к краю. */
 const RANGE_PADDING_MINUTES = 60;
 
-/** Куда падает шкала, если занятий в неделе нет вовсе. */
-const DEFAULT_RANGE = { startMinutes: 8 * 60, endMinutes: 22 * 60 };
+/**
+ * Рабочий день: куда падает шкала, если занятий в неделе нет вовсе.
+ *
+ * Семь утра — потому что ученик встаёт раньше школы, а десять вечера — потому
+ * что дальше начинается сон, а не учёба. Показывать до полуночи «на всякий
+ * случай» значит отдать треть экрана заведомо пустым часам.
+ */
+const DEFAULT_RANGE = { startMinutes: 7 * 60, endMinutes: 22 * 60 };
 
 const MINUTES_IN_DAY = 24 * 60;
 
@@ -250,20 +256,18 @@ export function visibleRange(
     latest = Math.max(latest, end);
   }
 
-  const startMinutes = clampMinutes(
-    Math.floor((earliest - RANGE_PADDING_MINUTES) / 60) * 60,
+  // Рабочий день показывается ЦЕЛИКОМ всегда, а занятия только расширяют
+  // шкалу наружу. Так календарь ведёт себя предсказуемо: два занятия подряд в
+  // пять вечера не превращают неделю в узкую полоску без утра, а свободная
+  // неделя не растягивается до полуночи пустыми часами.
+  const startMinutes = Math.min(
+    DEFAULT_RANGE.startMinutes,
+    clampMinutes(Math.floor((earliest - RANGE_PADDING_MINUTES) / 60) * 60),
   );
-  const endMinutes = clampMinutes(
-    Math.ceil((latest + RANGE_PADDING_MINUTES) / 60) * 60,
+  const endMinutes = Math.max(
+    DEFAULT_RANGE.endMinutes,
+    clampMinutes(Math.ceil((latest + RANGE_PADDING_MINUTES) / 60) * 60),
   );
-  // Меньше четырёх часов шкала не бывает: иначе один блок растягивается на
-  // весь экран и сетка перестаёт читаться как время.
-  if (endMinutes - startMinutes < 4 * 60) {
-    return {
-      startMinutes,
-      endMinutes: Math.min(MINUTES_IN_DAY, startMinutes + 4 * 60),
-    };
-  }
   return { startMinutes, endMinutes };
 }
 
@@ -275,6 +279,22 @@ export function hourMarks(range: VisibleRange): number[] {
     minutes += 60
   ) {
     marks.push(minutes);
+  }
+  return marks;
+}
+
+/**
+ * Получасовые засечки — те же, что у часов, но между ними.
+ *
+ * Нужны, чтобы сорокапятиминутное занятие читалось по сетке, а не на глаз.
+ * Отдаются отдельно от часов: рисуются они тоньше и светлее, и подписи у них
+ * нет — вторая колонка цифр рядом с часами только мешала бы.
+ */
+export function halfHourMarks(range: VisibleRange): number[] {
+  const marks: number[] = [];
+  const first = Math.ceil((range.startMinutes - 30) / 60) * 60 + 30;
+  for (let minutes = first; minutes < range.endMinutes; minutes += 60) {
+    if (minutes > range.startMinutes) marks.push(minutes);
   }
   return marks;
 }
