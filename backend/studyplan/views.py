@@ -487,6 +487,40 @@ class LearningBlockViewSet(viewsets.ReadOnlyModelViewSet):
 
         return Response({"changed": changed, "restored": restore})
 
+    @action(detail=False, methods=["post"], url_path="pin")
+    def pin(self, request):
+        """Закрепить занятия или снять закрепление.
+
+        Закреплённое занятие планировщик не переносит, и вручную оно тоже не
+        перетаскивается. Раньше признак ставил только генератор расписания, и
+        снять его из интерфейса было нельзя — теперь это переключатель в
+        карточке занятия.
+
+        Занятое время (школа, репетитор) сюда не попадает: это отдельная
+        сущность `FixedCommitment`, и её «закреплённость» — не поле, а смысл.
+        """
+        email = self._user_email()
+        if not email:
+            return _no_user()
+
+        raw_ids = request.data.get("block_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _error("Не сказано, какие занятия закреплять.", code="ids_required")
+        if len(raw_ids) > MAX_BULK_BLOCKS:
+            return _error("Слишком много занятий за раз.", code="too_many")
+
+        pinned = bool(request.data.get("pinned"))
+        blocks = list(LearningBlock.objects.filter(user_email=email, pk__in=raw_ids))
+        changed: list[str] = []
+        for block in blocks:
+            if block.fixed == pinned:
+                continue
+            block.fixed = pinned
+            block.save(update_fields=["fixed"])
+            changed.append(str(block.id))
+
+        return Response({"changed": changed, "pinned": pinned})
+
 
 class ScheduleRevisionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ScheduleRevisionSerializer

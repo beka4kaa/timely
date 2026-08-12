@@ -17,6 +17,7 @@ import {
 import {
   StudyplanApiError,
   cancelBlocks,
+  pinBlocks,
   type CalendarLearningBlock,
   type FixedCommitment,
   type ScheduleRevision,
@@ -324,6 +325,26 @@ export function useSchedule() {
     [load],
   );
 
+  /** Закрепить занятие или отпустить его. */
+  const setPinned = useCallback(
+    async (blockIds: string[], pinned: boolean) => {
+      if (blockIds.length === 0) return;
+      setBusy(true);
+      setNotice(null);
+      try {
+        await pinBlocks(blockIds, pinned);
+        await load({ calendarOnly: true });
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Не получилось изменить.",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
   return {
     data,
     days,
@@ -339,6 +360,7 @@ export function useSchedule() {
     build,
     cancel,
     restore,
+    setPinned,
     reload: load,
     dismissNotice: () => setNotice(null),
   };

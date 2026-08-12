@@ -37,6 +37,7 @@ import {
 import {
   blockAppearance,
   durationLabel,
+  timeRangeLabel,
   weekdayShort,
 } from "@/lib/studyplan-visuals";
 import { loadRatio, weekLoad } from "@/lib/studyplan-load";
@@ -113,6 +114,11 @@ export interface WeekGridProps {
   onMove: (block: CalendarEntry, startAt: Date, durationMinutes?: number) => void;
   /** Цвета программ по порядку списка. Без неё цвет берётся по хешу. */
   accents?: Map<string, string>;
+  /**
+   * Карточка выбранного занятия. Рисуется ВНУТРИ сетки, рядом со своим блоком:
+   * геометрию знает только она, а содержимое — страница.
+   */
+  renderDetails?: (entry: CalendarEntry) => React.ReactNode;
 }
 
 export function WeekGrid({
@@ -126,6 +132,7 @@ export function WeekGrid({
   onSelectMany,
   onMove,
   accents,
+  renderDetails,
 }: WeekGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -453,6 +460,34 @@ export function WeekGrid({
     [busy, onMove, onSelect, timeZone],
   );
 
+  /**
+   * Где встанет карточка выбранного занятия.
+   *
+   * Сбоку от блока, как всплывающее окно события в календарях: сверху её
+   * держать негде — там шапка, а снизу она уезжала бы за нижний край при
+   * вечернем занятии. С правого края недели раскрывается влево, иначе окно
+   * вылезло бы за сетку.
+   */
+  const detailsAnchor = useMemo(() => {
+    if (!renderDetails || selectedIds.length !== 1) return null;
+    const id = selectedIds[0];
+    for (let index = 0; index < columns.length; index += 1) {
+      const found = columns[index].blocks.find((item) => item.block.id === id);
+      if (!found) continue;
+      const columnWidth = 100 / columns.length;
+      const toLeft = index >= columns.length - 2;
+      return {
+        entry: found.block,
+        top: Math.max(0, found.top - 6),
+        side: toLeft ? "left" : ("right" as "left" | "right"),
+        offset: toLeft
+          ? (columns.length - index) * columnWidth
+          : (index + 1) * columnWidth,
+      };
+    }
+    return null;
+  }, [columns, renderDetails, selectedIds]);
+
   return (
     // Сетка тянется на всю высоту, которую ей даёт страница: календарь должен
     // занимать экран, а не жить в коробке на 62vh с полосой пустоты под ней.
@@ -649,6 +684,11 @@ export function WeekGrid({
                   // Две дорожки — это ещё половина колонки, курс туда влезает.
                   // Прячем третью строку только с третьей дорожки.
                   const narrow = lanes > 2;
+                  // А вот диапазон «16:00–17:00 · 1 ч» в половину колонки уже
+                  // не помещается и обрезается многоточием на самом нужном
+                  // месте. На любой дорожке, кроме единственной, показываем
+                  // только начало: конец виден в карточке по клику.
+                  const tight = lanes > 1;
                   return (
                     <div
                       key={block.id}
@@ -744,8 +784,12 @@ export function WeekGrid({
                           {/* Длительность прямо в блоке: раньше её показывал
                               только дневной список, а на неделе «сколько это
                               займёт» приходилось прикидывать по высоте. */}
-                          {formatMinutes(positioned.startMinutes)}
-                          {narrow ? "" : ` · ${durationLabel(block.duration_minutes)}`}
+                          {tight
+                            ? formatMinutes(positioned.startMinutes)
+                            : timeRangeLabel(
+                                positioned.startMinutes,
+                                block.duration_minutes,
+                              )}
                         </div>
                       ) : null}
                       {height > 58 && !narrow ? (
@@ -787,6 +831,21 @@ export function WeekGrid({
                 })}
               </div>
             ))}
+
+            {detailsAnchor ? (
+              <div
+                className="absolute z-[60] w-[320px] max-w-[86vw]"
+                style={{
+                  top: detailsAnchor.top,
+                  ...(detailsAnchor.side === "right"
+                    ? { left: `calc(${detailsAnchor.offset}% + 8px)` }
+                    : { right: `calc(${detailsAnchor.offset}% + 8px)` }),
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {renderDetails?.(detailsAnchor.entry)}
+              </div>
+            ) : null}
 
             {marquee ? (
               <div

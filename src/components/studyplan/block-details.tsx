@@ -15,7 +15,7 @@ import { formatMinutes, zonedDateKey, zonedMinutes } from "@/lib/studyplan-calen
 import {
   blockAppearance,
   dayLabel,
-  durationLabel,
+  timeRangeLabel,
 } from "@/lib/studyplan-visuals";
 import { paperButton, paperCaption, paperCard, paperTile } from "@/components/curriculum/paper";
 
@@ -39,9 +39,18 @@ interface BlockDetailsProps {
   block: CalendarEntry | null;
   timeZone: string;
   onClose: () => void;
+  busy?: boolean;
+  /** Закрепить занятие или отпустить. Для занятого времени не вызывается. */
+  onTogglePinned?: (pinned: boolean) => void;
 }
 
-export function BlockDetails({ block, timeZone, onClose }: BlockDetailsProps) {
+export function BlockDetails({
+  block,
+  timeZone,
+  onClose,
+  busy = false,
+  onTogglePinned,
+}: BlockDetailsProps) {
   if (!block) {
     return (
       <div className={`${paperCard} px-4 py-6 text-[13px] text-[#7b7168]`}>
@@ -82,10 +91,8 @@ export function BlockDetails({ block, timeZone, onClose }: BlockDetailsProps) {
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#5f584f]">
         <span className="tabular-nums">
-          {dayLabel(dateKey)}, {formatMinutes(startMinutes)}
+          {dayLabel(dateKey)}, {timeRangeLabel(startMinutes, block.duration_minutes)}
         </span>
-        <span className="text-[#c4bbae]">·</span>
-        <span className="tabular-nums">{durationLabel(block.duration_minutes)}</span>
         {look.statusLabel ? (
           <>
             <span className="text-[#c4bbae]">·</span>
@@ -120,10 +127,17 @@ export function BlockDetails({ block, timeZone, onClose }: BlockDetailsProps) {
           </Row>
         ) : null}
 
-        {block.fixed ? (
-          <Row label="Закреплено">Это занятие планировщик не переносит.</Row>
-        ) : null}
       </dl>
+
+      {/* Закрепление стало переключателем. Раньше признак ставил только
+          генератор расписания, и снять его из интерфейса было нельзя: занятие
+          намертво стояло на своём месте, даже когда ученику нужно было его
+          подвинуть. */}
+      <PinToggle
+        pinned={block.fixed === true}
+        busy={busy}
+        onToggle={onTogglePinned}
+      />
 
       {block.schedule_status === "proposed" || block.schedule_status === "draft" ? (
         <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
@@ -172,10 +186,8 @@ function CommitmentDetails({
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#5f584f]">
         <span className="tabular-nums">
-          {dayLabel(dateKey)}, {formatMinutes(startMinutes)}
+          {dayLabel(dateKey)}, {timeRangeLabel(startMinutes, block.duration_minutes)}
         </span>
-        <span className="text-[#c4bbae]">·</span>
-        <span className="tabular-nums">{durationLabel(block.duration_minutes)}</span>
       </div>
 
       {block.objective ? (
@@ -184,11 +196,70 @@ function CommitmentDetails({
         </p>
       ) : null}
 
-      <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
-        Это время занято и не перетаскивается. Планировщик размещает учебные
-        занятия вокруг него.
+      {/* Переключателя здесь нет намеренно: у занятого времени закреплённость
+          не поле в базе, а его смысл. Снять её значило бы получить блок,
+          который выглядит подвижным, но никуда не двигается. */}
+      <PinToggle pinned busy={false} />
+
+      <p className={`${paperTile} mt-2 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
+        Планировщик размещает учебные занятия вокруг этого времени.
       </p>
     </div>
+  );
+}
+
+/**
+ * Переключатель закрепления.
+ *
+ * Выключен — занятие двигают и планировщик, и мышь. Включён — стоит на месте.
+ * Без обработчика показывается только состояние: у занятого времени
+ * закреплённость не поле, а смысл, и переключать там нечего.
+ */
+function PinToggle({
+  pinned,
+  busy,
+  onToggle,
+}: {
+  pinned: boolean;
+  busy: boolean;
+  onToggle?: (pinned: boolean) => void;
+}) {
+  const label = pinned ? "Стоит на месте" : "Можно двигать";
+
+  if (!onToggle) {
+    return (
+      <div className={`${paperTile} mt-4 px-3 py-2 text-[12.5px] text-[#7b7168]`}>
+        {label}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={pinned}
+      disabled={busy}
+      onClick={() => onToggle(!pinned)}
+      className={`${paperTile} mt-4 flex w-full items-center justify-between gap-3 px-3 py-2 text-left disabled:opacity-60`}
+    >
+      <span className="min-w-0">
+        <span className="block text-[13px] text-[#3d382f]">Закреплено</span>
+        <span className="block text-[11.5px] text-[#8d857b]">{label}</span>
+      </span>
+      <span
+        aria-hidden
+        className={`relative h-[18px] w-[32px] shrink-0 rounded-full transition-colors ${
+          pinned ? "bg-[#8a5b24]" : "bg-[#ded8ce]"
+        }`}
+      >
+        <span
+          className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-[left] ${
+            pinned ? "left-[16px]" : "left-[2px]"
+          }`}
+        />
+      </span>
+    </button>
   );
 }
 
