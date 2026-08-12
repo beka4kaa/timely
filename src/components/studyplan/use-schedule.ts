@@ -35,6 +35,14 @@ export type LearningCalendarEntry = CalendarLearningBlock &
   LearningCalendarEntryFields;
 export type CalendarEntry = StudyCalendarEntry<CalendarLearningBlock>;
 
+/**
+ * Чего в календаре не видно совсем.
+ *
+ * Отменённое — потому что «удалил» должно означать «исчезло»; перенесённое —
+ * потому что это след старого места блока, который уже стоит в новом.
+ */
+const HIDDEN_STATUSES = new Set(["cancelled", "rescheduled"]);
+
 export type ScheduleState =
   | { state: "loading" }
   | { state: "error"; message: string }
@@ -113,20 +121,28 @@ export function useSchedule() {
       const visibleByPlan = new Map(
         visible.map((schedule) => [schedule.course_plan, schedule]),
       );
-      const blocks: LearningCalendarEntry[] = rawBlocks.map((block) => {
-        const owner = scheduleById.get(block.schedule);
-        return {
-          ...block,
-          calendar_entry: "learning_block",
-          schedule_version: block.schedule_version ?? owner?.version ?? block.version,
-          schedule_status: block.schedule_status ?? owner?.status ?? "active",
-          schedule_timezone: block.schedule_timezone ?? owner?.timezone ?? timeZone,
-          course_plan_title:
-            block.course_plan_title ??
-            planById.get(block.course_plan)?.title ??
-            "Учебная программа",
-        };
-      });
+      // Отменённое и перенесённое в календаре не показываем вовсе. Раньше они
+      // оставались серым перечёркнутым следом: занятие «удалено», а место в
+      // сетке занимает, и неделя после нескольких отмен выглядела грязнее, чем
+      // до них. Вернуть отменённое можно по Ctrl+Z — данные на сервере целы.
+      const blocks: LearningCalendarEntry[] = rawBlocks
+        .filter((block) => !HIDDEN_STATUSES.has(block.status))
+        .map((block) => {
+          const owner = scheduleById.get(block.schedule);
+          return {
+            ...block,
+            calendar_entry: "learning_block",
+            schedule_version:
+              block.schedule_version ?? owner?.version ?? block.version,
+            schedule_status: block.schedule_status ?? owner?.status ?? "active",
+            schedule_timezone:
+              block.schedule_timezone ?? owner?.timezone ?? timeZone,
+            course_plan_title:
+              block.course_plan_title ??
+              planById.get(block.course_plan)?.title ??
+              "Учебная программа",
+          };
+        });
 
       setData({
         state: "ready",

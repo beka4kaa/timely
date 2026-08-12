@@ -13,6 +13,7 @@ import {
   formatMinutes,
   hourMarks,
   layoutWeek,
+  minutesToOffset,
   resizeTarget,
   shiftDateKey,
   snapMinutes,
@@ -122,32 +123,31 @@ test("сдвиг даты переживает границу месяца и г
 
 // ──────────────────────────────── Шкала ──────────────────────────────────────
 
-test("пустая неделя показывает рабочий день, а не сутки целиком", () => {
+test("шкала — всегда сутки целиком", () => {
+  // Подвижная шкала ломала постоянство: одно и то же занятие оказывалось то у
+  // верхнего края, то посередине, а перетащить блок на семь утра было нельзя,
+  // пока семи утра не было на шкале.
   assert.deepEqual(visibleRange([], "UTC"), {
-    startMinutes: 7 * 60,
-    endMinutes: 22 * 60,
+    startMinutes: 0,
+    endMinutes: 24 * 60,
   });
 });
 
-test("рабочий день виден целиком, даже когда занятия только вечером", () => {
-  // Раньше шкала сжималась до самих занятий, и утро исчезало с экрана: два
-  // блока в пять вечера превращали неделю в узкую полоску без начала дня.
-  const range = visibleRange(
+test("данные шкалу не двигают: ни вечерние занятия, ни ночные", () => {
+  const evening = visibleRange(
     [block("a", "2026-08-17T17:00:00Z", 45), block("b", "2026-08-18T19:00:00Z", 60)],
     "UTC",
   );
-  assert.equal(range.startMinutes, 7 * 60);
-  assert.equal(range.endMinutes, 22 * 60);
+  const nightly = visibleRange([block("c", "2026-08-17T23:30:00Z", 45)], "UTC");
+
+  assert.deepEqual(evening, { startMinutes: 0, endMinutes: 24 * 60 });
+  assert.deepEqual(nightly, { startMinutes: 0, endMinutes: 24 * 60 });
 });
 
-test("занятия за пределами рабочего дня раздвигают шкалу", () => {
-  const early = visibleRange([block("a", "2026-08-17T05:30:00Z", 30)], "UTC");
-  assert.equal(early.startMinutes, 4 * 60);
-  assert.equal(early.endMinutes, 22 * 60);
-
-  const late = visibleRange([block("b", "2026-08-17T22:30:00Z", 60)], "UTC");
-  assert.equal(late.startMinutes, 7 * 60);
-  assert.equal(late.endMinutes, 24 * 60);
+test("полуночное занятие помещается в шкалу без обрезки", () => {
+  // Блок в 00:15 обязан иметь нулевой отступ сверху, а не отрицательный.
+  const range = visibleRange([block("a", "2026-08-17T00:15:00Z", 30)], "UTC");
+  assert.equal(minutesToOffset(15, range.startMinutes), (15 / 60) * HOUR_HEIGHT);
 });
 
 test("шкала не выходит за пределы суток", () => {
