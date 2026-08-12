@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
+import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { paperCaption, paperTile } from "@/components/curriculum/paper";
 import { CommitmentsCard, RevisionCard } from "@/components/studyplan/revision-cards";
 import { useActiveSchedule } from "@/contexts/active-schedule";
@@ -30,6 +31,7 @@ import {
   type AssistantState,
   type ParsedCommitment,
 } from "@/lib/studyplan-chat";
+import "katex/dist/katex.min.css";
 import { RailShell, railPillClass } from "./rail-shell";
 
 const EXAMPLES = [
@@ -175,18 +177,26 @@ export function ScheduleRail() {
     >
       {turns.length === 0 && !thinking ? <EmptyState ready={ready} /> : null}
 
-      {turns.map((turn, index) => (
-        <div
-          key={`${turn.role}-${index}`}
-          className={
-            turn.role === "user"
-              ? "ml-6 rounded-[12px] bg-[#f2ece2] px-3 py-2 text-[13px] text-[#3d382f]"
-              : "mr-2 text-[13px] leading-relaxed text-[#4a443d]"
-          }
-        >
-          {turn.content}
-        </div>
-      ))}
+      {turns.map((turn, index) =>
+        turn.role === "user" ? (
+          <div
+            key={`user-${index}`}
+            className="ml-6 whitespace-pre-wrap rounded-[12px] bg-[#f2ece2] px-3 py-2 text-[13px] text-[#3d382f]"
+          >
+            {turn.content}
+          </div>
+        ) : (
+          // Ответ помощника — markdown, как и в чате по книге. Раньше он шёл
+          // сырым текстом, и ученик читал звёздочки списков и обратные
+          // кавычки вокруг имён инструментов.
+          <div
+            key={`assistant-${index}`}
+            className="mr-2 text-[13px] leading-relaxed text-[#4a443d]"
+          >
+            <MarkdownMessage content={turn.content} variant="rail" />
+          </div>
+        ),
+      )}
 
       {thinking ? (
         <div className="space-y-1">

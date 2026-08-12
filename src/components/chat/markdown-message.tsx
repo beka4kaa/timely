@@ -21,6 +21,10 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
+// Относительный путь намеренно: компонент прогоняется в тесте без сборщика
+// Next, а значит без алиаса `@/` — см. комментарий о тестируемости выше.
+import { isSkillName, skillLabel } from "../../lib/skill-names";
+
 /**
  * Размеры под ширину, в которой читают.
  *
@@ -140,6 +144,26 @@ function buildComponents(s: Scale): Components {
       if (isBlock) {
         return (
           <code className={`font-mono ${s.code} leading-[1.5]`}>{children}</code>
+        );
+      }
+      // Имя инструмента помощника подсвечивается как скилл, а не как код:
+      // «идентификатор берётся из `list_courses`» в сером моноширинном
+      // прямоугольнике читается как кусок программы и выглядит ошибкой
+      // интерфейса. Чип говорит: это то, что помощник умеет сделать.
+      const text = typeof children === "string" ? children : "";
+      if (isSkillName(text)) {
+        const label = skillLabel(text);
+        return (
+          <span
+            title={label ? `Помощник ${label}` : undefined}
+            className={`inline-flex items-center gap-1 rounded-full border border-[#d9c6a8] bg-[#fdf6ea] px-1.5 py-[1px] align-baseline font-sans ${s.code} font-medium text-[#8a5b24]`}
+          >
+            <span
+              className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#c9a16c]"
+              aria-hidden
+            />
+            {label || text}
+          </span>
         );
       }
       return (
