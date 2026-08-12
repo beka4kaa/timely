@@ -22,6 +22,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR.parent / '.env')
 
+# Локальные переопределения разработчика — ПОСЛЕ общего файла и с override.
+#
+# В корневом `.env` лежит боевой `DATABASE_URL` (он нужен фронтенду и скриптам),
+# и из-за этого любая команда `manage.py` без явного переопределения била в
+# production-базу. `manage.py migrate`, набранный на автомате, накатывал
+# миграцию на Northflank.
+#
+# Файл не коммитится (`.env*.local` в .gitignore) и в контейнере не существует,
+# поэтому на сервере эта строка ничего не делает. Пример — `.env.local.example`.
+load_dotenv(BASE_DIR / '.env.local', override=True)
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

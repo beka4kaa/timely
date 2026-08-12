@@ -43,6 +43,7 @@ function plan(id: string, title: string): CoursePlanSummary {
     id,
     goal: "goal",
     document: null,
+    material: null,
     title,
     status: "active",
     estimated_total_minutes: 60,

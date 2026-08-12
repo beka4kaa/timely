@@ -137,6 +137,12 @@ function PlanPageBody({
   const everythingUnsourced =
     allTopicsCount > 0 && ribbon.unsourcedTopicIds.length === allTopicsCount;
 
+  // Программа по источнику без файла: страниц у неё нет и быть не может.
+  // Без этой проверки страница жаловалась на отсутствие карты страниц и на
+  // темы без ссылок на учебник — то есть сообщала о поломке там, где всё
+  // работает как задумано.
+  const fromMaterial = Boolean(plan.material);
+
   return (
     <CoffeePageShell>
       {/* Название программы — это СОДЕРЖАНИЕ страницы, а не её подпись, и
@@ -188,8 +194,8 @@ function PlanPageBody({
         </div>
       )}
 
-      {degraded && (
-        <div className="mb-5 rounded-[14px] border border-[#ded7cd] bg-[#fbf8f2] px-4 py-3 text-[12px] leading-5 text-[#7f776e]">
+      {degraded && !fromMaterial && (
+        <div className="mb-5 rounded-[14px] bg-[#f2ede4] px-4 py-3 text-[12px] leading-5 text-[#7f776e]">
           Учебник не загрузился, поэтому карта страниц недоступна. Сама
           программа показана полностью.
         </div>
@@ -214,7 +220,7 @@ function PlanPageBody({
         </p>
       )}
 
-      {everythingUnsourced && (
+      {everythingUnsourced && !fromMaterial && (
         <div className={`${paperCard} mb-1 mt-5 px-4 py-3 text-[12px] leading-5 text-[#7f776e]`}>
           Ни одна тема не сослалась на страницы учебника — программа построена
           по смыслу, а не по разделам книги.

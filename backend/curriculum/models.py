@@ -846,11 +846,107 @@ class KnowledgeChunk(models.Model):
         ]
 
 
+# ────────────────────── Источники, у которых нет файла ───────────────────────
+
+
+class StudyMaterial(TimestampedModel):
+    """Источник предмета, который нельзя загрузить файлом.
+
+    Готовятся не только по книгам. К SAT источник — это страница College Board
+    и набор practice-тестов; к механике — задачник; к языку — колода слов.
+    Общее у них одно: их нельзя распарсить, но по ним можно считать объём.
+
+    ПОЧЕМУ ОТДЕЛЬНАЯ МОДЕЛЬ, А НЕ `kind` В `Document`
+    -------------------------------------------------
+    `Document` — это контракт ingestion от начала до конца: `DocumentFile`,
+    `DocumentPage`, двенадцать значений `ingestion_status`, `KnowledgeChunk` в
+    отдельной базе и `CourseSourceBinding`, у которого `page_start`/`page_end`
+    обязательны в каждой цитате. Строка без файла внутри `Document` добавила бы
+    `if` в каждый запрос пайплайна, в каждый опрос статуса и в каждый путь
+    цитирования — то есть в код, который сейчас не знает исключений. Соседняя
+    модель не трогает RAG вообще.
+
+    ЕДИНИЦА РАБОТЫ
+    --------------
+    Одна на все типы: `total_units` × `minutes_per_unit`. Планировщик не
+    разбирает, вариант это, задача или занятие, — он видит количество и время.
+    `unit_label` существует только ради подписи в интерфейсе: без него строка
+    читалась бы как «12 из 40» и ничего не сообщала.
+    """
+
+    class Kind(models.TextChoices):
+        LINK = "link", "Ссылка"
+        PRACTICE_SET = "practice_set", "Практис-тесты"
+        PROBLEM_SET = "problem_set", "Задачник"
+        CUSTOM = "custom", "Своё"
+
+    #: Что подставить в подпись, если ученик не задал свою.
+    DEFAULT_UNIT_LABELS = {
+        Kind.LINK: "занятий",
+        Kind.PRACTICE_SET: "вариантов",
+        Kind.PROBLEM_SET: "задач",
+        Kind.CUSTOM: "занятий",
+    }
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_email = models.EmailField(db_index=True)
+
+    # CASCADE, как у `Document.goal`: предмет — это единица, которой ученик
+    # управляет, и удаляя его, он удаляет всё содержимое.
+    goal = models.ForeignKey(
+        LearningGoal,
+        on_delete=models.CASCADE,
+        related_name="materials",
+    )
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.LINK)
+    title = models.CharField(max_length=400)
+
+    # Закладка, а не источник для RAG: страницу мы не забираем и не индексируем.
+    url = models.URLField(max_length=1000, blank=True, default="")
+
+    #: Что по нему делать. Это и есть вся «программа» для свободного описания.
+    note = models.TextField(blank=True, default="")
+
+    total_units = models.PositiveIntegerField(default=0)
+    completed_units = models.PositiveIntegerField(default=0)
+    unit_label = models.CharField(max_length=40, blank=True, default="")
+    minutes_per_unit = models.PositiveIntegerField(default=0)
+
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "created_at"]
+        indexes = [
+            models.Index(fields=["user_email", "goal"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.title[:80]
+
+    @property
+    def units_word(self) -> str:
+        """Подпись единицы: своя, если задана, иначе типовая."""
+        return self.unit_label.strip() or self.DEFAULT_UNIT_LABELS.get(
+            self.kind, "занятий"
+        )
+
+    @property
+    def total_minutes(self) -> int:
+        return self.total_units * self.minutes_per_unit
+
+
 # ───────────────────────── PHASE 9. Программа курса ──────────────────────────
 
 
 class CoursePlan(TimestampedModel):
-    """Программа по книге. Подтверждённая версия неизменяема (см. Version)."""
+    """Программа по источнику. Подтверждённая версия неизменяема (см. Version).
+
+    Источник бывает двух видов, и `document` у плана поэтому необязателен:
+    книга даёт программу через планировщик и RAG, `StudyMaterial` — через
+    детерминированный расчёт (`services.materials.build_plan`). Ниже по течению
+    разницы нет: расписание, блоки и календарь работают с темами.
+    """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Черновик"
@@ -867,6 +963,19 @@ class CoursePlan(TimestampedModel):
     )
     document = models.ForeignKey(
         Document,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="course_plans",
+    )
+    # Второй вид источника. Ровно одно из двух полей заполнено; оба пустые —
+    # это программа, чей источник удалён, и каталог показывает её отдельно.
+    #
+    # Без этой связи программа по материалу неотличима от осиротевшей: обе
+    # приходят с `document = null`, и каталог подписал бы свежесобранную
+    # программу как «книга удалена».
+    material = models.ForeignKey(
+        "StudyMaterial",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
