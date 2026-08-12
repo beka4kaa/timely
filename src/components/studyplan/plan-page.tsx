@@ -113,23 +113,51 @@ export function StudyPlanPage() {
     }
   }, [entries, schedule, selectedIds]);
 
+  /**
+   * Ctrl+Z — отмена последнего действия календаря.
+   *
+   * Одна клавиша на оба случая: сначала возвращаются удалённые занятия, потом
+   * откатывается последний перенос. Ученику не нужно помнить, что именно он
+   * сделал последним, — это и есть смысл Ctrl+Z.
+   */
+  const undoLastAction = useCallback(() => {
+    if (undoable.length > 0) {
+      const ids = undoable;
+      setUndoable([]);
+      void schedule.restore(ids);
+      return true;
+    }
+    if (schedule.lastRevision) {
+      void schedule.undoLast();
+      return true;
+    }
+    return false;
+  }, [schedule, undoable]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
-      // Пока курсор в поле ввода, Delete принадлежит тексту, а не календарю.
+      // Пока курсор в поле ввода, обе клавиши принадлежат тексту, а не
+      // календарю: Delete стирает символ, Ctrl+Z откатывает набор.
       const target = event.target as HTMLElement | null;
-      if (
-        target?.closest("input, textarea, [contenteditable='true']") ||
-        selectedIds.length === 0
-      ) {
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+
+      const undo =
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "z" &&
+        !event.shiftKey;
+      if (undo) {
+        if (undoLastAction()) event.preventDefault();
         return;
       }
+
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (selectedIds.length === 0) return;
       event.preventDefault();
       void cancelSelected();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelSelected, selectedIds.length]);
+  }, [cancelSelected, selectedIds.length, undoLastAction]);
 
   // Считаем УЧЕБНОЕ время, без школы и репетитора: столько же показывает лента
   // в шапке сетки, и это единственное время, которое ученик здесь двигает.
@@ -348,11 +376,7 @@ export function StudyPlanPage() {
           onConfirm={(id) => void schedule.confirm(id)}
           onDismiss={schedule.dismissNotice}
           onUndo={() => void schedule.undoLast()}
-          onRestore={() => {
-            const ids = undoable;
-            setUndoable([]);
-            void schedule.restore(ids);
-          }}
+          onRestore={undoLastAction}
         />
 
         {/* Календарь занимает всё оставшееся место, как в любом календарном
@@ -481,7 +505,7 @@ function CalendarNotice({
     return (
       <div className={row}>
         <span className="text-[#5f584f]">
-          Отменено {cancelledCount} {blockWord(cancelledCount)}
+          Удалено {cancelledCount} {blockWord(cancelledCount)}
         </span>
         <button
           type="button"
@@ -489,7 +513,7 @@ function CalendarNotice({
           disabled={busy}
           onClick={onRestore}
         >
-          Вернуть
+          Вернуть · Ctrl+Z
         </button>
       </div>
     );
