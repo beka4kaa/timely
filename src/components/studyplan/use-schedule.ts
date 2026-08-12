@@ -17,6 +17,8 @@ import {
 import {
   StudyplanApiError,
   cancelBlocks,
+  createCommitment,
+  deleteCommitment,
   pinBlocks,
   type CalendarLearningBlock,
   type FixedCommitment,
@@ -53,6 +55,14 @@ export type ScheduleState =
       proposals: StudySchedule[];
       blocks: LearningCalendarEntry[];
       commitments: CommitmentCalendarEntry[];
+      /**
+       * Исходные записи занятости, до разворота в блоки недели.
+       *
+       * Нужны, чтобы вернуть удалённое: повторяющаяся занятость — одна строка,
+       * и восстановить её можно только по её собственным полям, а не по
+       * блоку, в который календарь её развернул.
+       */
+      commitmentSources: FixedCommitment[];
       plans: CoursePlanSummary[];
       timeZone: string;
     };
@@ -165,6 +175,7 @@ export function useSchedule() {
         ),
         blocks,
         commitments: expandCommitments(fixedCommitments, shownDays, timeZone),
+        commitmentSources: fixedCommitments,
         plans,
         timeZone,
       });
@@ -345,6 +356,65 @@ export function useSchedule() {
     [load],
   );
 
+  /** Удалить занятое время целиком. Вернуть можно, создав его заново. */
+  const removeCommitment = useCallback(
+    async (commitmentId: string) => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        await deleteCommitment(commitmentId);
+        await load();
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Удалить не получилось.",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  /**
+   * Вернуть удалённую занятость.
+   *
+   * Именно ПЕРЕСОЗДАТЬ: строки на сервере уже нет, восстанавливать нечего.
+   * Идентификатор поэтому меняется, и вызывающий обязан взять новый — иначе
+   * повтор удаления бил бы по записи, которой не существует.
+   */
+  const recreateCommitment = useCallback(
+    async (item: FixedCommitment): Promise<FixedCommitment | null> => {
+      setBusy(true);
+      try {
+        const created = await createCommitment(
+          {
+            title: item.title,
+            kind: item.kind,
+            weekday: item.weekday ?? undefined,
+            start_time: item.start_time ?? undefined,
+            duration_minutes: item.duration_minutes,
+            valid_from: item.valid_from,
+            valid_until: item.valid_until,
+            start_at: item.start_at ?? undefined,
+            end_at: item.end_at ?? undefined,
+          },
+          item.source,
+          item.source_text,
+        );
+        await load();
+        return { ...item, id: created.id };
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Вернуть не получилось.",
+        );
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
   return {
     data,
     days,
@@ -360,6 +430,8 @@ export function useSchedule() {
     build,
     cancel,
     restore,
+    removeCommitment,
+    recreateCommitment,
     setPinned,
     reload: load,
     dismissNotice: () => setNotice(null),

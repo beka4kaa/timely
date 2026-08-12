@@ -390,6 +390,42 @@ class TemplateAndCommitmentApiTests(SchedulePlanFixture):
         self.assertEqual(commitment.user_email, OWNER)
         self.assertEqual(commitment.source, FixedCommitment.Source.CHAT)
 
+    def make_commitment(self, email: str = OWNER) -> FixedCommitment:
+        return FixedCommitment.objects.create(
+            user_email=email,
+            kind=FixedCommitment.Kind.OTHER,
+            title="Английский",
+            weekday=1,
+            start_time="09:00",
+            duration_minutes=120,
+        )
+
+    def test_commitment_is_deleted_for_good(self):
+        """Delete в календаре убирает занятость совсем.
+
+        У занятия есть статус «отменено», у занятости его нет: строка либо
+        существует, либо нет. Ctrl+Z поэтому пересоздаёт её заново — но это
+        уже работа фронтенда, здесь важно, что удаление не оставляет следа.
+        """
+        commitment = self.make_commitment()
+
+        response = self.client.delete(
+            f"/api/study-commitments/{commitment.id}/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 204, response.content)
+        self.assertFalse(FixedCommitment.objects.filter(pk=commitment.id).exists())
+
+    def test_commitment_of_another_student_is_not_deletable(self):
+        commitment = self.make_commitment(email="another@example.com")
+
+        response = self.client.delete(
+            f"/api/study-commitments/{commitment.id}/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(FixedCommitment.objects.filter(pk=commitment.id).exists())
+
 
 class CancelBlocksTests(ApiFixture):
     """Delete в календаре отменяет занятия пачкой и умеет вернуть их обратно."""
