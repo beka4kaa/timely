@@ -28,18 +28,14 @@ test("autocomplete находит основную команду и alias бе�
   );
 });
 
-test("доступность команд зависит от наличия расписания", () => {
+test("/start доступен всегда, а /plan — после появления расписания", () => {
   const empty = scheduleCommands(false);
   assert.equal(empty.find((item) => item.id === "start")?.available, true);
   assert.equal(empty.find((item) => item.id === "plan")?.available, false);
 
   const existing = scheduleCommands(true);
-  assert.equal(existing.find((item) => item.id === "start")?.available, false);
+  assert.equal(existing.find((item) => item.id === "start")?.available, true);
   assert.equal(existing.find((item) => item.id === "plan")?.available, true);
-
-  const draft = scheduleCommands(true, true);
-  assert.equal(draft.find((item) => item.id === "start")?.available, true);
-  assert.equal(draft.find((item) => item.id === "plan")?.available, true);
 });
 
 test("parser отделяет slash-команду от аргумента и не ловит похожие слова", () => {
@@ -86,7 +82,7 @@ test("недоступная и неизвестная команда остаю
   );
   assert.equal(
     resolveScheduleSubmission("/start", "advice", true).kind,
-    "error",
+    "start",
   );
   assert.equal(
     resolveScheduleSubmission("/unknown", "advice", true).kind,
@@ -96,7 +92,7 @@ test("недоступная и неизвестная команда остаю
 
 test("/start может перестроить ещё не подтверждённый setup-черновик", () => {
   assert.deepEqual(
-    resolveScheduleSubmission("/start", "advice", true, true),
+    resolveScheduleSubmission("/start", "advice", true),
     { kind: "start" },
   );
 });

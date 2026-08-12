@@ -22,11 +22,13 @@ import {
   pinBlocks,
   type CalendarLearningBlock,
   type FixedCommitment,
+  type LearningBlock,
   type ScheduleRevision,
   type StudySchedule,
   confirmSchedule,
   generateSchedule,
   listCalendarBlocks,
+  listBlocks,
   listCommitments,
   listSchedules,
   moveBlock,
@@ -51,9 +53,12 @@ export type ScheduleState =
   | { state: "error"; message: string }
   | {
       state: "ready";
+      /** Все живые версии — target'ы селектора помощника, без схлопывания по курсу. */
+      assistantSchedules: StudySchedule[];
       schedules: StudySchedule[];
       proposals: StudySchedule[];
-      blocks: LearningCalendarEntry[];
+      /** Блоки каждой живой версии: selector меняет календарь без второго fetch. */
+      blocksBySchedule: Record<string, LearningCalendarEntry[]>;
       commitments: CommitmentCalendarEntry[];
       /**
        * Исходные записи занятости, до разворота в блоки недели.
@@ -98,14 +103,16 @@ export function useSchedule() {
     commitments: FixedCommitment[];
   } | null>(null);
 
-  const load = useCallback(async (options?: { calendarOnly?: boolean }) => {
+  const load = useCallback(async (
+    options?: { calendarOnly?: boolean },
+  ): Promise<StudySchedule[] | null> => {
     const ticket = ++requestId.current;
     const cached = options?.calendarOnly ? staticRef.current : null;
     try {
       const [allSchedules, plans, fixedCommitments] = cached
         ? [await listSchedules(), cached.plans, cached.commitments]
         : await Promise.all([listSchedules(), listPlans(), listCommitments()]);
-      if (ticket !== requestId.current) return;
+      if (ticket !== requestId.current) return null;
       staticRef.current = { plans, commitments: fixedCommitments };
 
       const visible = selectVisibleSchedules(allSchedules);
@@ -116,18 +123,30 @@ export function useSchedule() {
         const canonicalToday = zonedDateKey(now, timeZone);
         if (canonicalToday !== zonedDateKey(now, fallbackTimeZone)) {
           setAnchor(canonicalToday);
-          return;
+          return null;
         }
       }
       const shownDays = weekDays(anchor);
-      const rawBlocks = await listCalendarBlocks({
+      const assistantSchedules = allSchedules.filter(
+        (item) => item.status !== "archived" && item.status !== "completed",
+      );
+      const visibleIds = new Set(visible.map((item) => item.id));
+      const alternatives = assistantSchedules.filter(
+        (item) => !visibleIds.has(item.id),
+      );
+      const range = {
         from: shownDays[0],
         to: shiftDateKey(shownDays[shownDays.length - 1], 1),
-        timezone: timeZone,
-      });
-      if (ticket !== requestId.current) return;
+      };
+      const [rawBlocks, ...alternativeBlocks] = await Promise.all([
+        listCalendarBlocks({ ...range, timezone: timeZone }),
+        ...alternatives.map((item) => listBlocks(item.id, range)),
+      ]);
+      if (ticket !== requestId.current) return null;
 
-      const scheduleById = new Map(visible.map((schedule) => [schedule.id, schedule]));
+      const scheduleById = new Map(
+        assistantSchedules.map((schedule) => [schedule.id, schedule]),
+      );
       const planById = new Map(plans.map((plan) => [plan.id, plan]));
       const visibleByPlan = new Map(
         visible.map((schedule) => [schedule.course_plan, schedule]),
@@ -136,27 +155,46 @@ export function useSchedule() {
       // оставались серым перечёркнутым следом: занятие «удалено», а место в
       // сетке занимает, и неделя после нескольких отмен выглядела грязнее, чем
       // до них. Вернуть отменённое можно по Ctrl+Z — данные на сервере целы.
-      const blocks: LearningCalendarEntry[] = rawBlocks
-        .filter((block) => !HIDDEN_STATUSES.has(block.status))
-        .map((block) => {
-          const owner = scheduleById.get(block.schedule);
-          return {
-            ...block,
-            calendar_entry: "learning_block",
-            schedule_version:
-              block.schedule_version ?? owner?.version ?? block.version,
-            schedule_status: block.schedule_status ?? owner?.status ?? "active",
-            schedule_timezone:
-              block.schedule_timezone ?? owner?.timezone ?? timeZone,
-            course_plan_title:
-              block.course_plan_title ??
-              planById.get(block.course_plan)?.title ??
-              "Учебная программа",
-          };
-        });
+      const sourceBySchedule = new Map<
+        string,
+        Array<LearningBlock | CalendarLearningBlock>
+      >();
+      for (const block of rawBlocks) {
+        const current = sourceBySchedule.get(block.schedule);
+        if (current) current.push(block);
+        else sourceBySchedule.set(block.schedule, [block]);
+      }
+      alternatives.forEach((schedule, index) => {
+        sourceBySchedule.set(schedule.id, alternativeBlocks[index] ?? []);
+      });
+      const blocksBySchedule = Object.fromEntries(
+        assistantSchedules.map((schedule) => [
+          schedule.id,
+          (sourceBySchedule.get(schedule.id) ?? [])
+            .filter((block) => !HIDDEN_STATUSES.has(block.status))
+            .map((block) => {
+              const calendarBlock = block as Partial<CalendarLearningBlock>;
+              return {
+                ...block,
+                calendar_entry: "learning_block" as const,
+                schedule_version:
+                  calendarBlock.schedule_version ?? schedule.version,
+                schedule_status:
+                  calendarBlock.schedule_status ?? schedule.status,
+                schedule_timezone:
+                  calendarBlock.schedule_timezone ?? schedule.timezone,
+                course_plan_title:
+                  calendarBlock.course_plan_title ??
+                  planById.get(block.course_plan)?.title ??
+                  "Учебная программа",
+              };
+            }),
+        ]),
+      );
 
       setData({
         state: "ready",
+        assistantSchedules,
         schedules: visible,
         proposals: newestProposalPerCourse(
           allSchedules.filter((schedule) => {
@@ -173,19 +211,21 @@ export function useSchedule() {
             );
           }),
         ),
-        blocks,
+        blocksBySchedule,
         commitments: expandCommitments(fixedCommitments, shownDays, timeZone),
         commitmentSources: fixedCommitments,
         plans,
         timeZone,
       });
+      return assistantSchedules;
     } catch (error) {
-      if (ticket !== requestId.current) return;
+      if (ticket !== requestId.current) return null;
       setData({
         state: "error",
         message:
           error instanceof Error ? error.message : "Не удалось загрузить расписание.",
       });
+      return null;
     }
   }, [anchor, fallbackTimeZone]);
 

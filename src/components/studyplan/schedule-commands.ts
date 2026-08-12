@@ -48,18 +48,14 @@ const COMMAND_DEFINITIONS = [
 
 export function scheduleCommands(
   hasSchedule: boolean,
-  canStart = !hasSchedule,
 ): ScheduleCommand[] {
   return COMMAND_DEFINITIONS.map((definition) => {
-    const available = definition.id === "start" ? canStart : hasSchedule;
+    const available = definition.id === "start" || hasSchedule;
     return {
       ...definition,
       aliases: [...definition.aliases],
       available,
-      unavailableReason:
-        definition.id === "start"
-          ? "Подтверждённое расписание меняется через /plan"
-          : "Сначала создай расписание через /start",
+      unavailableReason: "Сначала создай расписание через /start",
     };
   });
 }
@@ -74,12 +70,11 @@ export function slashQuery(value: string): string | null {
 export function matchingScheduleCommands(
   value: string,
   hasSchedule: boolean,
-  canStart = !hasSchedule,
 ): ScheduleCommand[] {
   const query = slashQuery(value);
   if (query === null) return [];
 
-  return scheduleCommands(hasSchedule, canStart).filter((item) =>
+  return scheduleCommands(hasSchedule).filter((item) =>
     [item.command, ...item.aliases].some((token) => token.startsWith(query)),
   );
 }
@@ -123,16 +118,13 @@ export function resolveScheduleSubmission(
   value: string,
   pendingMode: ScheduleAssistantMode,
   hasSchedule: boolean,
-  canStart = !hasSchedule,
 ): ScheduleSubmission {
   const message = value.trim();
   if (!message) return { kind: "empty" };
 
   const parsed = parseScheduleCommand(message);
   if (parsed?.id === "start") {
-    return !canStart
-      ? { kind: "error", message: "Расписание уже создано — используй /plan." }
-      : { kind: "start" };
+    return { kind: "start" };
   }
   if (parsed?.id === "plan") {
     if (!hasSchedule) {

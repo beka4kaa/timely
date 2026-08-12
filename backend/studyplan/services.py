@@ -22,7 +22,7 @@ from curriculum.models import (
     CourseSourceBinding,
     CourseTopic,
 )
-from curriculum.services.plans import topics_in_study_order
+from curriculum.services.plans import repace_plan, topics_in_study_order
 
 from .models import (
     FixedCommitment,
@@ -645,6 +645,81 @@ class ScheduleNotConfirmable(RuntimeError):
     """Расписание нельзя подтвердить в его текущем состоянии."""
 
 
+def _confirmed_setup_preferences(schedule: StudySchedule) -> tuple[int, int] | None:
+    """Темп из доверенного /start-снимка, применяемый только при выборе варианта."""
+    snapshot = schedule.pacing_snapshot
+    if not isinstance(snapshot, dict):
+        return None
+    setup_snapshot = snapshot.get("schedule_setup")
+    if not isinstance(setup_snapshot, dict):
+        return None
+    answers = setup_snapshot.get("answers")
+    if not isinstance(answers, dict):
+        return None
+
+    weekdays = str(answers.get("weekdays") or "").split(",")
+    try:
+        weekday_values = {int(item) for item in weekdays if item != ""}
+        session_minutes = int(answers.get("session_minutes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not weekday_values
+        or not weekday_values.issubset(set(range(7)))
+        or not 15 <= session_minutes <= 120
+    ):
+        return None
+    return len(weekday_values), session_minutes
+
+
+def _activate_selected_rhythm(schedule: StudySchedule) -> None:
+    """Make the explicitly confirmed proposal's rhythm and pace current."""
+    WeeklyScheduleTemplate.objects.filter(
+        user_email=schedule.user_email,
+        active=True,
+    ).exclude(pk=schedule.template_id).update(
+        active=False,
+        updated_at=django_timezone.now(),
+    )
+    if not schedule.template.active:
+        WeeklyScheduleTemplate.objects.filter(pk=schedule.template_id).update(
+            active=True,
+            updated_at=django_timezone.now(),
+        )
+
+    preferences = _confirmed_setup_preferences(schedule)
+    if preferences is None:
+        return
+    sessions_per_week, session_minutes = preferences
+    plan = CoursePlan.objects.select_for_update().get(pk=schedule.course_plan_id)
+    pace_warnings = repace_plan(
+        plan,
+        sessions_per_week=sessions_per_week,
+        minutes_per_session=session_minutes,
+        start_date=schedule.start_date,
+    )
+    # Fixture/legacy plans can have no estimated duration; repace_plan then
+    # intentionally skips its forecast, but the explicitly selected rhythm is
+    # still the preference used by subsequent scheduling.
+    if (
+        plan.recommended_sessions_per_week != sessions_per_week
+        or plan.recommended_session_minutes != session_minutes
+    ):
+        plan.recommended_sessions_per_week = sessions_per_week
+        plan.recommended_session_minutes = session_minutes
+        plan.save(
+            update_fields=[
+                "recommended_sessions_per_week",
+                "recommended_session_minutes",
+                "updated_at",
+            ]
+        )
+    if pace_warnings:
+        schedule.warnings = list(
+            dict.fromkeys([*(schedule.warnings or ()), *pace_warnings])
+        )
+
+
 def _first_cross_course_collision(
     schedule: StudySchedule,
 ) -> tuple[LearningBlock, LearningBlock] | None:
@@ -713,6 +788,10 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
     календарей по одному курсу быть не может — иначе экран «Сейчас» не сможет
     ответить, какое занятие следующее.
     """
+    # /start-confirmation берёт блокировки в том же порядке: сначала программа,
+    # затем расписания. Единый порядок не даёт двум вкладкам поймать deadlock.
+    CoursePlan.objects.select_for_update().get(pk=schedule.course_plan_id)
+
     # Подтверждения разных курсов сериализуются общим пользовательским lock:
     # версия одного StudySchedule не замечает движение во втором.
     list(
@@ -726,6 +805,12 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
     )
     schedule = StudySchedule.objects.get(pk=schedule.pk)
 
+    # Повтор потерянного HTTP-ответа не является новым выбором. Между первым
+    # подтверждением и retry пользователь уже мог создать следующий proposal;
+    # повторное подтверждение старого ACTIVE не должно архивировать его или
+    # заново переключать ритм/темп.
+    if schedule.status == StudySchedule.Status.ACTIVE:
+        return schedule
     if schedule.status in {
         StudySchedule.Status.COMPLETED,
         StudySchedule.Status.ARCHIVED,
@@ -750,6 +835,10 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
             "Обнови предложение расписания."
         )
 
+    # До этого момента подтверждение могло завершиться ошибкой и не имело
+    # права менять текущий ритм. Теперь пользователь явно выбрал вариант.
+    _activate_selected_rhythm(schedule)
+
     StudySchedule.objects.filter(
         course_plan=schedule.course_plan,
         status__in=[
@@ -764,5 +853,7 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
 
     schedule.status = StudySchedule.Status.ACTIVE
     schedule.confirmed_at = django_timezone.now()
-    schedule.save(update_fields=["status", "confirmed_at", "updated_at"])
+    schedule.save(
+        update_fields=["status", "confirmed_at", "warnings", "updated_at"]
+    )
     return schedule

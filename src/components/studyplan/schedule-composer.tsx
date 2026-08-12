@@ -39,7 +39,6 @@ const PLAN_SUGGESTIONS = [
 
 export function ScheduleComposer({
   hasSchedule,
-  canStart,
   busy = false,
   disabled = false,
   showSuggestions = false,
@@ -50,7 +49,6 @@ export function ScheduleComposer({
   onStop,
 }: {
   hasSchedule: boolean;
-  canStart: boolean;
   busy?: boolean;
   disabled?: boolean;
   showSuggestions?: boolean;
@@ -72,8 +70,8 @@ export function ScheduleComposer({
 
   const query = slashQuery(draft);
   const matches = useMemo(
-    () => matchingScheduleCommands(draft, hasSchedule, canStart),
-    [canStart, draft, hasSchedule],
+    () => matchingScheduleCommands(draft, hasSchedule),
+    [draft, hasSchedule],
   );
   const menuOpen = query !== null && !menuDismissed && !busy && !disabled;
 
@@ -109,7 +107,6 @@ export function ScheduleComposer({
       value,
       pendingMode,
       hasSchedule,
-      canStart,
     );
     if (result.kind === "empty") return;
     if (result.kind === "error") {

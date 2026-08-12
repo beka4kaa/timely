@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 from curriculum.models import CoursePlan
 from studyplan import services
-from studyplan.models import StudySchedule, WeeklyScheduleTemplate
+from studyplan.models import (
+    FixedCommitment,
+    LearningBlock,
+    StudySchedule,
+    WeeklyScheduleTemplate,
+)
 
 from .test_api import STRANGER, headers
 from .test_materialize import MONDAY, OWNER, SchedulePlanFixture
@@ -44,11 +49,20 @@ class ScheduleSetupTests(SchedulePlanFixture):
             email=email,
         )
 
-    def complete(self, *, email: str = OWNER) -> dict:
+    def complete(
+        self,
+        *,
+        email: str = OWNER,
+        weekdays: str = "alternate",
+        start_time: str = "17:00",
+        session_minutes: str = "45",
+    ) -> dict:
         body = self.start(email=email).json()
-        body = self.answer(body, "weekdays", "alternate", email=email).json()
-        body = self.answer(body, "start_time", "17:00", email=email).json()
-        body = self.answer(body, "session_minutes", "45", email=email).json()
+        body = self.answer(body, "weekdays", weekdays, email=email).json()
+        body = self.answer(body, "start_time", start_time, email=email).json()
+        body = self.answer(
+            body, "session_minutes", session_minutes, email=email
+        ).json()
         self.assertEqual(body["status"], "complete")
         return body
 
@@ -129,7 +143,7 @@ class ScheduleSetupTests(SchedulePlanFixture):
         )
         self.assertFalse(WeeklyScheduleTemplate.objects.exists())
 
-    def test_setup_is_blocked_when_a_current_schedule_already_exists(self):
+    def test_setup_is_available_when_a_current_schedule_already_exists(self):
         existing = services.generate_schedule(
             plan=self.plan,
             start_date=MONDAY,
@@ -138,12 +152,14 @@ class ScheduleSetupTests(SchedulePlanFixture):
 
         response = self.start()
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["code"], "schedule_already_exists")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["status"], "question")
         self.assertEqual(StudySchedule.objects.get().id, existing.id)
 
-    def test_confirm_rechecks_if_another_tab_created_the_first_schedule(self):
-        complete = self.complete()
+    def test_confirm_preserves_schedule_created_by_another_tab(self):
+        complete = self.complete(
+            weekdays="weekend", start_time="10:00", session_minutes="25"
+        )
         template = self.make_template()
         existing = services.generate_schedule(
             plan=self.plan,
@@ -153,11 +169,36 @@ class ScheduleSetupTests(SchedulePlanFixture):
 
         response = self.confirm(complete)
 
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["code"], "schedule_already_exists")
-        self.assertEqual(list(StudySchedule.objects.values_list("id", flat=True)), [existing.id])
+        self.assertEqual(response.status_code, 201, response.content)
+        existing.refresh_from_db()
+        self.assertEqual(existing.status, StudySchedule.Status.PROPOSED)
+        self.assertEqual(StudySchedule.objects.count(), 2)
         template.refresh_from_db()
         self.assertTrue(template.active)
+
+    def test_empty_active_calendar_can_receive_a_new_proposal_without_replacement(self):
+        active_template = self.make_template(weekdays=(1,), minutes=60)
+        active = services.generate_schedule(
+            plan=self.plan,
+            start_date=MONDAY,
+            template=active_template,
+        ).schedule
+        active.status = StudySchedule.Status.ACTIVE
+        active.save(update_fields=["status", "updated_at"])
+        active.blocks.update(status=LearningBlock.Status.CANCELLED)
+
+        complete = self.complete()
+        response = self.confirm(complete)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        active.refresh_from_db()
+        active_template.refresh_from_db()
+        self.assertEqual(active.status, StudySchedule.Status.ACTIVE)
+        self.assertTrue(active_template.active)
+        proposal = StudySchedule.objects.get(pk=response.json()["schedule"]["id"])
+        self.assertEqual(proposal.status, StudySchedule.Status.PROPOSED)
+        self.assertNotEqual(proposal.id, active.id)
+        self.assertFalse(proposal.template.active)
 
     def test_completed_schedule_does_not_block_a_fresh_start(self):
         schedule = services.generate_schedule(
@@ -173,7 +214,7 @@ class ScheduleSetupTests(SchedulePlanFixture):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["status"], "question")
 
-    def test_unconfirmed_setup_proposal_can_be_replaced_by_restart(self):
+    def test_restarted_setup_keeps_both_proposals_available(self):
         first = self.complete()
         first_response = self.confirm(first)
         self.assertEqual(first_response.status_code, 201)
@@ -189,25 +230,79 @@ class ScheduleSetupTests(SchedulePlanFixture):
         body = self.answer(body, "weekdays", "weekend").json()
         body = self.answer(body, "start_time", "10:00").json()
         body = self.answer(body, "session_minutes", "25").json()
-        replacement = self.confirm(body)
+        second_response = self.confirm(body)
 
-        self.assertEqual(replacement.status_code, 201, replacement.content)
+        self.assertEqual(second_response.status_code, 201, second_response.content)
         first_schedule.refresh_from_db()
-        self.assertEqual(first_schedule.status, StudySchedule.Status.ARCHIVED)
-        current = StudySchedule.objects.exclude(
-            status__in=[
-                StudySchedule.Status.ARCHIVED,
-                StudySchedule.Status.COMPLETED,
-            ]
-        ).get()
-        self.assertEqual(str(current.id), replacement.json()["schedule"]["id"])
-        self.assertTrue(current.setup_restartable)
+        self.assertEqual(first_schedule.status, StudySchedule.Status.PROPOSED)
+        self.assertFalse(first_schedule.template.active)
+        current = list(
+            StudySchedule.objects.exclude(
+                status__in=[
+                    StudySchedule.Status.ARCHIVED,
+                    StudySchedule.Status.COMPLETED,
+                ]
+            ).order_by("created_at")
+        )
+        self.assertEqual(len(current), 2)
+        self.assertEqual(current[0].id, first_schedule.id)
+        self.assertEqual(
+            str(current[1].id), second_response.json()["schedule"]["id"]
+        )
+        self.assertTrue(all(schedule.setup_restartable for schedule in current))
         self.assertEqual(
             WeeklyScheduleTemplate.objects.filter(
                 user_email=OWNER, active=True
             ).count(),
-            1,
+            0,
         )
+
+    def test_start_for_another_course_preserves_first_course_proposal(self):
+        first_response = self.confirm(self.complete())
+        first = StudySchedule.objects.get(
+            pk=first_response.json()["schedule"]["id"]
+        )
+        second_plan = CoursePlan.objects.create(
+            user_email=OWNER,
+            goal=self.goal,
+            title="Термодинамика",
+            status=CoursePlan.Status.ACTIVE,
+            recommended_sessions_per_week=2,
+            recommended_session_minutes=25,
+        )
+        for module in self.plan.modules.all():
+            cloned_module = second_plan.modules.create(
+                external_id=module.external_id,
+                title=module.title,
+                order_index=module.order_index,
+            )
+            for topic in module.topics.all():
+                cloned_module.topics.create(
+                    external_id=topic.external_id,
+                    title=topic.title,
+                    objective=topic.objective,
+                    mastery_criteria=topic.mastery_criteria,
+                    order_index=topic.order_index,
+                    estimated_minutes=topic.estimated_minutes,
+                    duration_breakdown=topic.duration_breakdown,
+                )
+
+        body = self.start().json()
+        self.assertEqual(body["question"]["id"], "course_plan_id")
+        body = self.answer(body, "course_plan_id", str(second_plan.id)).json()
+        body = self.answer(body, "weekdays", "weekend").json()
+        body = self.answer(body, "start_time", "10:00").json()
+        body = self.answer(body, "session_minutes", "25").json()
+        second_response = self.confirm(body)
+
+        self.assertEqual(second_response.status_code, 201, second_response.content)
+        first.refresh_from_db()
+        second = StudySchedule.objects.get(
+            pk=second_response.json()["schedule"]["id"]
+        )
+        self.assertEqual(first.status, StudySchedule.Status.PROPOSED)
+        self.assertEqual(second.status, StudySchedule.Status.PROPOSED)
+        self.assertNotEqual(first.course_plan_id, second.course_plan_id)
 
     def test_foreign_plan_cannot_be_injected_as_an_initial_answer(self):
         foreign = CoursePlan.objects.create(
@@ -293,7 +388,7 @@ class ScheduleSetupTests(SchedulePlanFixture):
         invalid_duration = self.answer(body, "session_minutes", "121")
         self.assertEqual(invalid_duration.status_code, 400)
 
-    def test_confirm_creates_new_active_template_and_proposed_schedule(self):
+    def test_confirm_creates_inactive_template_and_proposed_schedule(self):
         old_template = self.make_template(weekdays=(1,), minutes=60)
         old_slot_ids = list(old_template.slots.values_list("id", flat=True))
         complete = self.complete()
@@ -309,25 +404,133 @@ class ScheduleSetupTests(SchedulePlanFixture):
         self.assertEqual(body["schedule"]["course_plan"], str(self.plan.id))
 
         old_template.refresh_from_db()
-        self.assertFalse(old_template.active)
+        self.assertTrue(old_template.active)
         self.assertEqual(
             list(old_template.slots.values_list("id", flat=True)), old_slot_ids
         )
-        active = WeeklyScheduleTemplate.objects.get(user_email=OWNER, active=True)
-        self.assertNotEqual(active.id, old_template.id)
+        proposed_template = WeeklyScheduleTemplate.objects.exclude(
+            pk=old_template.pk
+        ).get()
+        self.assertFalse(proposed_template.active)
         self.assertEqual(
-            list(active.slots.values_list("weekday", flat=True)), [0, 2, 4]
+            list(proposed_template.slots.values_list("weekday", flat=True)),
+            [0, 2, 4],
         )
         self.assertEqual(
-            {slot.start_time.isoformat(timespec="minutes") for slot in active.slots.all()},
+            {
+                slot.start_time.isoformat(timespec="minutes")
+                for slot in proposed_template.slots.all()
+            },
             {"17:00"},
         )
         self.assertEqual(
-            {slot.duration_minutes for slot in active.slots.all()}, {45}
+            {slot.duration_minutes for slot in proposed_template.slots.all()},
+            {45},
         )
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.recommended_sessions_per_week, 3)
         self.assertEqual(self.plan.recommended_session_minutes, 45)
+
+    def test_explicit_schedule_confirmation_activates_setup_rhythm_and_pace(self):
+        active_template = self.make_template(weekdays=(1,), minutes=60)
+        original = services.generate_schedule(
+            plan=self.plan,
+            start_date=MONDAY,
+            template=active_template,
+        ).schedule
+        original.status = StudySchedule.Status.ACTIVE
+        original.save(update_fields=["status", "updated_at"])
+
+        complete = self.complete(
+            weekdays="weekend", start_time="10:00", session_minutes="25"
+        )
+        setup_response = self.confirm(complete)
+        proposal = StudySchedule.objects.get(
+            pk=setup_response.json()["schedule"]["id"]
+        )
+        self.assertFalse(proposal.template.active)
+
+        response = self.client.post(
+            f"/api/study-schedules/{proposal.id}/confirm/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        proposal.refresh_from_db()
+        original.refresh_from_db()
+        active_template.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertEqual(proposal.status, StudySchedule.Status.ACTIVE)
+        self.assertTrue(proposal.template.active)
+        self.assertEqual(original.status, StudySchedule.Status.ARCHIVED)
+        self.assertFalse(active_template.active)
+        self.assertEqual(self.plan.recommended_sessions_per_week, 2)
+        self.assertEqual(self.plan.recommended_session_minutes, 25)
+
+    def test_rejected_setup_proposal_does_not_change_current_rhythm_or_pace(self):
+        active_template = self.make_template(weekdays=(1,), minutes=60)
+        original_sessions = self.plan.recommended_sessions_per_week
+        original_minutes = self.plan.recommended_session_minutes
+        complete = self.complete(
+            weekdays="weekend", start_time="10:00", session_minutes="25"
+        )
+        setup_response = self.confirm(complete)
+        proposal = StudySchedule.objects.get(
+            pk=setup_response.json()["schedule"]["id"]
+        )
+        proposal.conflict_report = {"unplaced": [{"reason": "no_room"}]}
+        proposal.save(update_fields=["conflict_report", "updated_at"])
+
+        response = self.client.post(
+            f"/api/study-schedules/{proposal.id}/confirm/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "not_confirmable")
+        active_template.refresh_from_db()
+        proposal.template.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertTrue(active_template.active)
+        self.assertFalse(proposal.template.active)
+        self.assertEqual(
+            self.plan.recommended_sessions_per_week, original_sessions
+        )
+        self.assertEqual(self.plan.recommended_session_minutes, original_minutes)
+
+    def test_collision_does_not_change_current_rhythm_or_pace(self):
+        active_template = self.make_template(weekdays=(1,), minutes=60)
+        original_sessions = self.plan.recommended_sessions_per_week
+        original_minutes = self.plan.recommended_session_minutes
+        complete = self.complete(
+            weekdays="weekend", start_time="10:00", session_minutes="25"
+        )
+        setup_response = self.confirm(complete)
+        proposal = StudySchedule.objects.get(
+            pk=setup_response.json()["schedule"]["id"]
+        )
+        first_block = proposal.blocks.order_by("start_at", "id").first()
+        self.assertIsNotNone(first_block)
+        FixedCommitment.objects.create(
+            user_email=OWNER,
+            title="Экзамен",
+            start_at=first_block.start_at,
+            end_at=first_block.end_at,
+        )
+
+        response = self.client.post(
+            f"/api/study-schedules/{proposal.id}/confirm/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "not_confirmable")
+        active_template.refresh_from_db()
+        proposal.template.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertTrue(active_template.active)
+        self.assertFalse(proposal.template.active)
+        self.assertEqual(
+            self.plan.recommended_sessions_per_week, original_sessions
+        )
+        self.assertEqual(self.plan.recommended_session_minutes, original_minutes)
 
     def test_confirm_is_idempotent_for_the_signed_session(self):
         complete = self.complete()
@@ -340,7 +543,7 @@ class ScheduleSetupTests(SchedulePlanFixture):
         self.assertEqual(StudySchedule.objects.count(), 1)
         self.assertEqual(
             WeeklyScheduleTemplate.objects.filter(user_email=OWNER, active=True).count(),
-            1,
+            0,
         )
 
     def test_confirmed_session_fork_with_other_answers_is_rejected(self):
@@ -364,7 +567,7 @@ class ScheduleSetupTests(SchedulePlanFixture):
         self.assertEqual(StudySchedule.objects.count(), 1)
         self.assertEqual(
             WeeklyScheduleTemplate.objects.filter(user_email=OWNER, active=True).count(),
-            1,
+            0,
         )
 
     def test_confirm_requires_the_completed_signed_answers(self):

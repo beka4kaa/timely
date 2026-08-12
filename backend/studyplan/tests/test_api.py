@@ -148,6 +148,77 @@ class ConfirmTests(ApiFixture):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "not_confirmable")
 
+    def test_non_setup_confirmation_does_not_rewrite_course_pace(self):
+        self.plan.recommended_sessions_per_week = 4
+        self.plan.recommended_session_minutes = 50
+        self.plan.save(
+            update_fields=[
+                "recommended_sessions_per_week",
+                "recommended_session_minutes",
+                "updated_at",
+            ]
+        )
+        schedule_id = self.generate().json()["schedule"]["id"]
+
+        response = self.client.post(
+            f"/api/study-schedules/{schedule_id}/confirm/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.recommended_sessions_per_week, 4)
+        self.assertEqual(self.plan.recommended_session_minutes, 50)
+
+    def test_retrying_active_confirmation_preserves_newer_proposal(self):
+        active_id = self.generate().json()["schedule"]["id"]
+        first = self.client.post(
+            f"/api/study-schedules/{active_id}/confirm/", **headers()
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        active = StudySchedule.objects.get(pk=active_id)
+        active_template_id = active.template_id
+
+        alternative_template = WeeklyScheduleTemplate.objects.create(
+            user_email=OWNER,
+            title="Новый вариант",
+            timezone="UTC",
+            active=False,
+        )
+        alternative_template.slots.create(
+            weekday=5,
+            start_time="10:00",
+            duration_minutes=25,
+        )
+        proposal_id = self.generate(
+            template=str(alternative_template.id)
+        ).json()["schedule"]["id"]
+        original_pace = (
+            self.plan.recommended_sessions_per_week,
+            self.plan.recommended_session_minutes,
+        )
+
+        retry = self.client.post(
+            f"/api/study-schedules/{active_id}/confirm/", **headers()
+        )
+
+        self.assertEqual(retry.status_code, 200, retry.content)
+        active.refresh_from_db()
+        proposal = StudySchedule.objects.get(pk=proposal_id)
+        alternative_template.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertEqual(active.status, StudySchedule.Status.ACTIVE)
+        self.assertEqual(active.template_id, active_template_id)
+        self.assertTrue(active.template.active)
+        self.assertEqual(proposal.status, StudySchedule.Status.PROPOSED)
+        self.assertFalse(alternative_template.active)
+        self.assertEqual(
+            (
+                self.plan.recommended_sessions_per_week,
+                self.plan.recommended_session_minutes,
+            ),
+            original_pace,
+        )
+
 
 class RevisionApiTests(ApiFixture):
     def setUp(self):
