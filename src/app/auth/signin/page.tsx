@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { signIn, getSession } from 'next-auth/react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -10,9 +10,35 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { toast } from 'sonner'
 
+/**
+ * Куда вернуть человека после входа.
+ *
+ * Middleware отправляет незалогиненного на `/auth/signin?callbackUrl=<куда он
+ * шёл>`, но обе кнопки входа этот адрес выбрасывали и вели на дневник. Открыл
+ * «План» → вошёл → оказался в дневнике: ровно та жалоба, с которой всё
+ * началось.
+ *
+ * Берём только внутренние пути: `callbackUrl` приходит из адресной строки, и
+ * чужой абсолютный адрес превратил бы форму входа в открытый редиректор.
+ *
+ * Читаем из `window.location`, а не через `useSearchParams`: последний в Next
+ * требует Suspense-границы вокруг страницы, и без неё падает сборка.
+ */
+function safeCallback(raw: string | null): string {
+  if (!raw) return '/dashboard/diary'
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard/diary'
+  return raw
+}
+
 export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const [callbackUrl, setCallbackUrl] = useState('/dashboard/diary')
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get('callbackUrl')
+    setCallbackUrl(safeCallback(raw))
+  }, [])
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -39,7 +65,7 @@ export default function SignInPage() {
           toast.success('Вы вошли в систему!', {
             description: `Добро пожаловать, ${session.user?.name || session.user?.email}!`,
           })
-          router.push('/dashboard/diary')
+          router.push(callbackUrl)
         }
       }
     } catch (error) {
@@ -52,7 +78,7 @@ export default function SignInPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard/diary', redirect: true })
+      await signIn('google', { callbackUrl, redirect: true })
     } catch (error) {
       toast.error('Ошибка входа через Google')
       setIsLoading(false)

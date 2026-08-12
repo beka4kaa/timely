@@ -21,7 +21,11 @@ class CustomUser(AbstractUser):
     # Moderators can review/approve submissions alongside is_staff admins.
     # (An AI auto-reviewer can be wired in later as another approver — not yet.)
     is_moderator = models.BooleanField(default=False)
-    has_full_access = models.BooleanField(default=False, db_index=True)
+    # Разделы открыты по умолчанию, а флаг служит для того, чтобы ЗАКРЫТЬ их
+    # конкретному человеку. Раньше умолчание было обратным, и любой заведённый
+    # в Django аккаунт упирался в `FullAccessGate`, пока админ не выдаст доступ
+    # руками.
+    has_full_access = models.BooleanField(default=True, db_index=True)
     ai_plan = models.CharField(
         max_length=12,
         choices=AI_PLAN_CHOICES,
