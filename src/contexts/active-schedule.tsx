@@ -21,7 +21,10 @@ import {
   useState,
 } from "react";
 
-import type { ParsedCommitment } from "@/lib/studyplan-chat";
+import type {
+  ParsedCommitment,
+  ProposedStudyWindows,
+} from "@/lib/studyplan-chat";
 import type { ScheduleTargetOption } from "@/components/studyplan/schedule-targets";
 
 export interface PageSchedule {
@@ -41,6 +44,8 @@ export interface PageSchedule {
   onApplied: (preferredScheduleId?: string) => boolean | Promise<boolean>;
   /** Записать разобранную помощником занятость. */
   onCommitments: (items: ParsedCommitment[]) => Promise<void>;
+  /** Переписать ритм: окна, внутри которых вообще могут стоять занятия. */
+  onStudyWindows: (proposal: ProposedStudyWindows) => Promise<void>;
 }
 
 interface ActiveScheduleValue {
@@ -50,6 +55,7 @@ interface ActiveScheduleValue {
   /** Стабильные обёртки: их можно класть в зависимости хуков без перерисовок. */
   notifyApplied: (preferredScheduleId?: string) => Promise<boolean>;
   saveCommitments: (items: ParsedCommitment[]) => Promise<void>;
+  saveStudyWindows: (proposal: ProposedStudyWindows) => Promise<void>;
   selectSchedule: (scheduleId: string) => void;
   setPageSchedule: (value: PageSchedule | null) => void;
 }
@@ -63,6 +69,7 @@ const ActiveScheduleContext = createContext<ActiveScheduleValue>({
   timeZone: FALLBACK_TIME_ZONE,
   notifyApplied: async () => false,
   saveCommitments: async () => {},
+  saveStudyWindows: async () => {},
   selectSchedule: () => {},
   setPageSchedule: () => {},
 });
@@ -110,6 +117,11 @@ export function ActiveScheduleProvider({
     if (handler) await handler(items);
   }, []);
 
+  const saveStudyWindows = useCallback(async (proposal: ProposedStudyWindows) => {
+    const handler = handlersRef.current?.onStudyWindows;
+    if (handler) await handler(proposal);
+  }, []);
+
   const selectSchedule = useCallback((scheduleId: string) => {
     handlersRef.current?.onSelectSchedule(scheduleId);
   }, []);
@@ -121,10 +133,18 @@ export function ActiveScheduleProvider({
       timeZone: ids.timeZone,
       notifyApplied,
       saveCommitments,
+      saveStudyWindows,
       selectSchedule,
       setPageSchedule,
     }),
-    [ids, notifyApplied, saveCommitments, selectSchedule, setPageSchedule],
+    [
+      ids,
+      notifyApplied,
+      saveCommitments,
+      saveStudyWindows,
+      selectSchedule,
+      setPageSchedule,
+    ],
   );
 
   return (

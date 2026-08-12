@@ -16,7 +16,11 @@ import { Check, ChevronDown, Plus } from "lucide-react";
 
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { paperCaption, paperTile } from "@/components/curriculum/paper";
-import { CommitmentsCard, RevisionCard } from "@/components/studyplan/revision-cards";
+import {
+  CommitmentsCard,
+  RevisionCard,
+  StudyWindowsCard,
+} from "@/components/studyplan/revision-cards";
 import {
   CommandWord,
   ScheduleComposer,
@@ -46,6 +50,7 @@ import {
   stageLabel,
   type AssistantState,
   type ParsedCommitment,
+  type ProposedStudyWindows,
 } from "@/lib/studyplan-chat";
 import "katex/dist/katex.min.css";
 import { RailShell, railPillButtonClass } from "./rail-shell";
@@ -65,6 +70,7 @@ export function ScheduleRail() {
     timeZone,
     notifyApplied,
     saveCommitments,
+    saveStudyWindows,
     selectSchedule,
   } = useActiveSchedule();
   const [turns, setTurns] = useState<RailTurn[]>([]);
@@ -292,6 +298,26 @@ export function ScheduleRail() {
     [saveCommitments],
   );
 
+  const acceptStudyWindows = useCallback(
+    async (proposal: ProposedStudyWindows) => {
+      setApplying(true);
+      try {
+        await saveStudyWindows(proposal);
+        setState((current) => ({ ...current, studyWindows: null }));
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          status: "error",
+          error:
+            error instanceof Error ? error.message : "Записать ритм не вышло.",
+        }));
+      } finally {
+        setApplying(false);
+      }
+    },
+    [saveStudyWindows],
+  );
+
   const clear = useCallback(() => {
     invalidateRequest();
     setTurns([]);
@@ -417,6 +443,17 @@ export function ScheduleRail() {
           onAccept={acceptCommitments}
           onDismiss={() =>
             setState((current) => ({ ...current, commitments: null }))
+          }
+        />
+      ) : null}
+
+      {state.studyWindows ? (
+        <StudyWindowsCard
+          proposal={state.studyWindows}
+          busy={applying}
+          onAccept={acceptStudyWindows}
+          onDismiss={() =>
+            setState((current) => ({ ...current, studyWindows: null }))
           }
         />
       ) : null}

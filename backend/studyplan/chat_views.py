@@ -96,6 +96,15 @@ MODE_PROMPTS = {
 - Прежде чем предлагать перенос, найди свободные окна: find_free_slots.
 - Любое изменение делается инструментом propose_*. Ты НЕ меняешь календарь —
   ты предлагаешь изменение, а применяет его ученик.
+- ВРЕМЯ ЗАНЯТИЙ ЗАДАЁТ РИТМ, А НЕ ПЕРЕНОС. Занятия могут стоять только внутри
+  окон ритма — они приходят в get_schedule полем study_windows. Просят
+  заниматься в часы, которых в ритме нет («давай с 9:00 до 12:00 по будням»,
+  «хочу по утрам», «освободи вечера») — зови propose_study_windows. Двигать
+  занятия в такой просьбе бессмысленно: за пределы окон они всё равно не
+  выйдут.
+- Никогда не отвечай «готово», если сделал не то, о чём просили. Перенос
+  внутри вечернего окна — это НЕ выполненная просьба заниматься утром. Скажи
+  прямо, чего не хватает, и предложи то, что решает задачу.
 - Просят поставить то, чего нет в каталоге программ (курсы английского,
   секция, репетитор, «просто блок») — это ЗАНЯТОЕ ВРЕМЯ. Зови
   propose_fixed_commitments с названием из просьбы.
@@ -161,7 +170,8 @@ def _system_prompt(mode: str) -> str:
 class ScheduleChatStreamView(APIView):
     """POST /api/studyplan/chat/stream/ — просьба про расписание.
 
-    События: `stage`* → `revision`? → `commitments`? → `content` → `done`,
+    События: `stage`* → `revision`? → `commitments`? → `study_windows`? →
+    `content` → `done`,
     либо `error`.
     """
 
@@ -256,6 +266,7 @@ class ScheduleChatStreamView(APIView):
             ]
             revision: ScheduleRevision | None = None
             commitments: list[dict] | None = None
+            study_windows: dict | None = None
             schedule_proposed = False
 
             with usage_scope(user_email=user_email, feature="schedule_chat"):
@@ -327,6 +338,12 @@ class ScheduleChatStreamView(APIView):
                             ).first()
                         if name == "propose_fixed_commitments" and result.get("ok"):
                             commitments = result.get("items")
+                        if name == "propose_study_windows" and result.get("ok"):
+                            study_windows = {
+                                "windows": result.get("windows") or [],
+                                "replace": bool(result.get("replace")),
+                                "current": result.get("current") or [],
+                            }
                         if name == "add_course_to_schedule" and result.get("ok"):
                             schedule_proposed = True
 
@@ -360,9 +377,14 @@ class ScheduleChatStreamView(APIView):
                         )
                     if commitments:
                         yield _sse("commitments", {"items": commitments})
+                    if study_windows:
+                        yield _sse("study_windows", study_windows)
 
                     proposal_ready = bool(
-                        revision is not None or commitments or schedule_proposed
+                        revision is not None
+                        or commitments
+                        or study_windows
+                        or schedule_proposed
                     )
                     if reply:
                         final_text = reply

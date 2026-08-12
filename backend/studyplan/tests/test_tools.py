@@ -427,3 +427,89 @@ class CourseToolTests(ToolFixture):
         # Помощник предлагает, применяет ученик — статус тот же, что у кнопки.
         self.assertEqual(created.status, StudySchedule.Status.PROPOSED)
         self.assertEqual(created.user_email, OWNER)
+
+
+class StudyWindowsTests(ToolFixture):
+    """Время занятий задаёт ритм, а не перенос.
+
+    Пока инструмента не было, просьба «занимайся со мной с 9:00 до 12:00»
+    была невыполнима в принципе: занятия ставятся только внутрь окон ритма,
+    а менять окна модели было нечем. Она переставляла блоки внутри вечернего
+    окна и отвечала «готово».
+    """
+
+    def test_schedule_shows_current_rhythm(self):
+        # Без этого поля модель не отличает «в 9:00 занято» от «в 9:00 ученик
+        # вообще не собирался заниматься».
+        result = run_schedule_tool("get_schedule", {}, self.context)
+
+        self.assertTrue(result["ok"])
+        self.assertIn("study_windows", result)
+        self.assertTrue(result["study_windows"])
+        for window in result["study_windows"]:
+            self.assertIn("weekday", window)
+            self.assertIn("start_time", window)
+            self.assertIn("duration_minutes", window)
+
+    def test_windows_are_parsed_but_not_saved(self):
+        template = self.schedule.template
+        before = list(template.slots.values_list("id", flat=True))
+
+        result = run_schedule_tool(
+            "propose_study_windows",
+            {
+                "windows": [
+                    {"weekday": day, "start_time": "09:00", "duration_minutes": 180}
+                    for day in range(5)
+                ],
+                "replace": True,
+            },
+            self.context,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(result["windows"]), 5)
+        self.assertTrue(result["replace"])
+        self.assertEqual(result["windows"][0]["start_time"], "09:00")
+        self.assertEqual(result["windows"][0]["weekday_name"], "понедельник")
+        # Ритм — решение ученика о собственной жизни: молча его не меняем.
+        self.assertEqual(
+            list(template.slots.values_list("id", flat=True)), before
+        )
+
+    def test_windows_come_back_sorted(self):
+        result = run_schedule_tool(
+            "propose_study_windows",
+            {
+                "windows": [
+                    {"weekday": 3, "start_time": "18:00", "duration_minutes": 60},
+                    {"weekday": 0, "start_time": "19:00", "duration_minutes": 60},
+                    {"weekday": 0, "start_time": "09:00", "duration_minutes": 60},
+                ]
+            },
+            self.context,
+        )
+
+        self.assertEqual(
+            [(item["weekday"], item["start_time"]) for item in result["windows"]],
+            [(0, "09:00"), (0, "19:00"), (3, "18:00")],
+        )
+
+    def test_bad_windows_are_refused(self):
+        cases = [
+            ({"windows": []}, "пустой список"),
+            ({"windows": [{"weekday": 9, "start_time": "09:00", "duration_minutes": 60}]}, "день недели"),
+            ({"windows": [{"weekday": 0, "start_time": "утром", "duration_minutes": 60}]}, "время"),
+            ({"windows": [{"weekday": 0, "start_time": "09:00", "duration_minutes": 5}]}, "короткое окно"),
+            ({"windows": [{"weekday": 0, "start_time": "09:00"}]}, "без длительности"),
+        ]
+        for args, label in cases:
+            with self.subTest(label):
+                result = run_schedule_tool("propose_study_windows", args, self.context)
+                self.assertFalse(result["ok"], label)
+
+    def test_tool_is_absent_in_read_only_mode(self):
+        from studyplan.tools import READ_ONLY_TOOLS
+
+        self.assertIn("propose_study_windows", ALL_TOOL_NAMES)
+        self.assertNotIn("propose_study_windows", READ_ONLY_TOOLS)
