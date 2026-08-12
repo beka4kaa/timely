@@ -22,11 +22,24 @@ class AccessControlApiTests(TestCase):
         )
 
     def test_me_includes_full_access_flag(self):
+        # Правило изменилось: разделы открыты по умолчанию, а флаг служит для
+        # того, чтобы ЗАКРЫТЬ их конкретному человеку. Прежнее умолчание
+        # `False` закрывало «План» и «Курс» каждому новому аккаунту, пока админ
+        # не выдаст доступ руками.
         response = self.client.get('/api/me/', HTTP_X_USER_EMAIL=self.user.email)
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()['has_full_access'])
+        self.assertTrue(response.json()['has_full_access'])
         self.assertEqual(response.json()['ai_plan'], 'free')
+
+    def test_access_can_be_revoked(self):
+        # Тумблер в админке продолжает работать — только теперь он закрывает,
+        # а не открывает.
+        self.user.has_full_access = False
+        self.user.save(update_fields=['has_full_access'])
+
+        response = self.client.get('/api/me/', HTTP_X_USER_EMAIL=self.user.email)
+        self.assertFalse(response.json()['has_full_access'])
 
     def test_staff_me_uses_max_plan(self):
         response = self.client.get('/api/me/', HTTP_X_USER_EMAIL=self.admin.email)
