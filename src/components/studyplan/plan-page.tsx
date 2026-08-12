@@ -18,7 +18,11 @@ import {
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import { weekLoad } from "@/lib/studyplan-load";
-import { createCommitment, type StudySchedule } from "@/lib/studyplan-api";
+import {
+  createCommitment,
+  type FixedCommitment,
+  type StudySchedule,
+} from "@/lib/studyplan-api";
 import { layoutWeek, visibleRange, zonedDateKey } from "@/lib/studyplan-calendar";
 import {
   durationLabel,
@@ -34,6 +38,19 @@ import { WeekGrid } from "./week-grid";
 type Mode = "week" | "day";
 
 const EMPTY_ENTRIES: CalendarEntry[] = [];
+
+/**
+ * Один шаг истории удаления.
+ *
+ * Занятия и занятое время удаляются разными способами: занятие получает статус
+ * «отменено» и живо на сервере, а занятость удаляется совсем — вернуть её можно
+ * только пересозданием. Поэтому шаг хранит и идентификаторы занятий, и полные
+ * записи занятости.
+ */
+interface DeleteStep {
+  blockIds: string[];
+  commitments: FixedCommitment[];
+}
 const RELEASED_STATUSES = new Set(["cancelled", "rescheduled"]);
 
 /** «1 занятие», «2 занятия», «5 занятий». */
@@ -53,7 +70,6 @@ export function StudyPlanPage() {
   // отменить их одним Delete. Карточка разбора показывается, когда выбрано
   // ровно одно: у пачки нет «того самого» занятия, которое стоит разбирать.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [undoable, setUndoable] = useState<string[]>([]);
   const [dayKey, setDayKey] = useState<string | null>(null);
 
   const entries = useMemo(() => {
@@ -96,68 +112,146 @@ export function StudyPlanPage() {
   }, []);
 
   /**
-   * Delete отменяет выделенные занятия.
+   * Что удалили последним Delete.
    *
-   * Занятое время отсеиваем здесь же: школу и репетитора календарь не двигает
-   * и не отменяет, а посылать их на сервер ради отказа — лишний круг.
+   * Занятия и занятое время удаляются РАЗНЫМИ способами: занятие получает
+   * статус «отменено» и живо на сервере, а занятость удаляется совсем и
+   * восстанавливается пересозданием. Поэтому шаг истории держит и то и другое,
+   * а не список идентификаторов.
    */
-  const cancelSelected = useCallback(async () => {
-    const learning = entries.filter(
-      (entry) => selectedIds.includes(entry.id) && !isCommitmentEntry(entry),
-    );
-    if (learning.length === 0) return;
-    const changed = await schedule.cancel(learning.map((entry) => entry.id));
-    if (changed.length > 0) {
-      setUndoable(changed);
-      setSelectedIds([]);
-    }
-  }, [entries, schedule, selectedIds]);
+  const [undoStack, setUndoStack] = useState<DeleteStep[]>([]);
+  const [redoStack, setRedoStack] = useState<DeleteStep[]>([]);
+
+  /** Сколько всего удалено последним Delete — для строки состояния. */
+  const lastStep = undoStack[undoStack.length - 1];
+  const deletedCount = lastStep
+    ? lastStep.blockIds.length + lastStep.commitments.length
+    : 0;
+
+  /** Выполнить удаление и вернуть шаг истории, если что-то действительно ушло. */
+  const applyDelete = useCallback(
+    async (step: DeleteStep): Promise<DeleteStep | null> => {
+      const cancelled = step.blockIds.length
+        ? await schedule.cancel(step.blockIds)
+        : [];
+      for (const item of step.commitments) {
+        await schedule.removeCommitment(item.id);
+      }
+      if (cancelled.length === 0 && step.commitments.length === 0) return null;
+      return { blockIds: cancelled, commitments: step.commitments };
+    },
+    [schedule],
+  );
 
   /**
-   * Ctrl+Z — отмена последнего действия календаря.
+   * Delete удаляет выделенное.
    *
-   * Одна клавиша на оба случая: сначала возвращаются удалённые занятия, потом
-   * откатывается последний перенос. Ученику не нужно помнить, что именно он
-   * сделал последним, — это и есть смысл Ctrl+Z.
+   * Раньше занятое время отсеивалось здесь же — «школу и репетитора календарь
+   * не отменяет», — и на экране из одних только таких блоков клавиша молча не
+   * делала ничего. Теперь удаляется и оно: занятость это отдельная запись, и
+   * убрать её ученик вправе.
    */
-  const undoLastAction = useCallback(() => {
-    if (undoable.length > 0) {
-      const ids = undoable;
-      setUndoable([]);
-      void schedule.restore(ids);
-      return true;
+  const deleteSelected = useCallback(async () => {
+    const chosen = entries.filter((entry) => selectedIds.includes(entry.id));
+    const blockIds = chosen
+      .filter((entry) => !isCommitmentEntry(entry))
+      .map((entry) => entry.id);
+
+    // Повторяющаяся занятость развёрнута в пять блоков одной записи — по
+    // идентификатору записи их и схлопываем, иначе одно удаление ушло бы
+    // на сервер пятью запросами.
+    const commitmentIds = new Set(
+      chosen.filter(isCommitmentEntry).map((entry) => entry.commitment_id),
+    );
+    const commitments = (
+      schedule.data.state === "ready" ? schedule.data.commitmentSources : []
+    ).filter((item) => commitmentIds.has(item.id));
+
+    if (blockIds.length === 0 && commitments.length === 0) return;
+
+    const done = await applyDelete({ blockIds, commitments });
+    if (!done) return;
+    setUndoStack((current) => [...current, done]);
+    // Новое действие обрывает ветку повтора — как в любом редакторе.
+    setRedoStack([]);
+    setSelectedIds([]);
+  }, [applyDelete, entries, schedule.data, selectedIds]);
+
+  /**
+   * Ctrl+Z — вернуть удалённое.
+   *
+   * Занятие восстанавливается статусом, занятость — пересозданием, поэтому у
+   * неё меняется идентификатор. Шаг истории обновляется новыми: без этого
+   * повтор через Ctrl+Shift+Z бил бы по строке, которой уже нет.
+   */
+  const undo = useCallback(async () => {
+    const step = undoStack[undoStack.length - 1];
+    if (!step) {
+      // Удалять нечего — откатываем последний перенос. Ученику не нужно
+      // помнить, что именно он сделал последним.
+      if (schedule.lastRevision) {
+        await schedule.undoLast();
+        return true;
+      }
+      return false;
     }
-    if (schedule.lastRevision) {
-      void schedule.undoLast();
-      return true;
+
+    setUndoStack((current) => current.slice(0, -1));
+    if (step.blockIds.length) await schedule.restore(step.blockIds);
+
+    const restored: FixedCommitment[] = [];
+    for (const item of step.commitments) {
+      const created = await schedule.recreateCommitment(item);
+      if (created) restored.push(created);
     }
-    return false;
-  }, [schedule, undoable]);
+
+    setRedoStack((current) => [
+      ...current,
+      { blockIds: step.blockIds, commitments: restored },
+    ]);
+    return true;
+  }, [schedule, undoStack]);
+
+  /** Ctrl+Shift+Z — удалить снова то, что только что вернули. */
+  const redo = useCallback(async () => {
+    const step = redoStack[redoStack.length - 1];
+    if (!step) return false;
+    setRedoStack((current) => current.slice(0, -1));
+    const done = await applyDelete(step);
+    if (done) setUndoStack((current) => [...current, done]);
+    return true;
+  }, [applyDelete, redoStack]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // Пока курсор в поле ввода, обе клавиши принадлежат тексту, а не
+      // Пока курсор в поле ввода, эти клавиши принадлежат тексту, а не
       // календарю: Delete стирает символ, Ctrl+Z откатывает набор.
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable='true']")) return;
 
-      const undo =
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === "z" &&
-        !event.shiftKey;
-      if (undo) {
-        if (undoLastAction()) event.preventDefault();
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      // Ctrl+Shift+Z и Ctrl+Y — два общепринятых написания одного действия.
+      if (modifier && (key === "y" || (key === "z" && event.shiftKey))) {
+        event.preventDefault();
+        void redo();
+        return;
+      }
+      if (modifier && key === "z") {
+        event.preventDefault();
+        void undo();
         return;
       }
 
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (selectedIds.length === 0) return;
       event.preventDefault();
-      void cancelSelected();
+      void deleteSelected();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelSelected, selectedIds.length, undoLastAction]);
+  }, [deleteSelected, redo, selectedIds.length, undo]);
 
   // Считаем УЧЕБНОЕ время, без школы и репетитора: столько же показывает лента
   // в шапке сетки, и это единственное время, которое ученик здесь двигает.
@@ -370,13 +464,13 @@ export function StudyPlanPage() {
         <CalendarNotice
           proposals={data.proposals}
           notice={schedule.notice}
-          cancelledCount={undoable.length}
+          cancelledCount={deletedCount}
           hasUndo={Boolean(schedule.lastRevision)}
           busy={schedule.busy}
           onConfirm={(id) => void schedule.confirm(id)}
           onDismiss={schedule.dismissNotice}
           onUndo={() => void schedule.undoLast()}
-          onRestore={undoLastAction}
+          onRestore={() => void undo()}
         />
 
         {/* Календарь занимает всё оставшееся место, как в любом календарном
@@ -506,6 +600,9 @@ function CalendarNotice({
       <div className={row}>
         <span className="text-[#5f584f]">
           Удалено {cancelledCount} {blockWord(cancelledCount)}
+          <span className="ml-2 text-[#8d857b]">
+            Ctrl+Shift+Z — удалить снова
+          </span>
         </span>
         <button
           type="button"

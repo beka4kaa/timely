@@ -463,6 +463,21 @@ export async function createCommitment(
   return unwrap<{ id: string }>(response);
 }
 
+/**
+ * Удалить занятое время.
+ *
+ * Удаляется вся запись целиком, а не один её день: повторяющаяся занятость —
+ * это ОДНА строка, которую календарь разворачивает в пять блоков. Отдельного
+ * дня у неё не существует, и делать вид, что существует, значило бы обещать
+ * то, чего модель не умеет.
+ */
+export async function deleteCommitment(id: string): Promise<void> {
+  const response = await authFetch(`${BASE}/study-commitments/${id}/`, {
+    method: "DELETE",
+  });
+  if (!response.ok) await unwrap<unknown>(response);
+}
+
 export async function listCommitments(): Promise<FixedCommitment[]> {
   const response = await authFetch(`${BASE}/study-commitments/`);
   return list(
