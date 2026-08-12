@@ -21,6 +21,7 @@ import {
   zonedDateKey,
 } from "@/lib/studyplan-calendar";
 
+import { BlockDetails } from "./block-details";
 import { DayView } from "./day-view";
 import type { CalendarEntry } from "./use-schedule";
 import { WeekGrid } from "./week-grid";
@@ -203,6 +204,14 @@ export function PlanQaBoard() {
             }
             onSelectMany={setSelectedIds}
             onMove={() => {}}
+            renderDetails={(entry) => (
+              <BlockDetails
+                block={entry}
+                timeZone={TZ}
+                onClose={() => setSelectedIds([])}
+                onTogglePinned={() => {}}
+              />
+            )}
           />
         ) : (
           <div className="h-full overflow-y-auto">

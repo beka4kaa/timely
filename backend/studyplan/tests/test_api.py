@@ -455,3 +455,54 @@ class CancelBlocksTests(ApiFixture):
         response = self.cancel([])
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "ids_required")
+
+
+class PinBlocksTests(ApiFixture):
+    """Закрепление стало переключателем, а не только результатом генерации."""
+
+    def setUp(self):
+        super().setUp()
+        self.generate()
+        self.schedule = StudySchedule.objects.get(user_email=OWNER)
+        self.block = self.schedule.blocks.order_by("start_at").first()
+
+    def pin(self, pinned, ids=None, email: str = OWNER):
+        # `is None`, а не `or`: пустой список — это осмысленный случай, который
+        # должен доехать до сервера и получить отказ.
+        targets = [self.block.id] if ids is None else ids
+        payload = {
+            "block_ids": [str(item) for item in targets],
+            "pinned": pinned,
+        }
+        return self.client.post(
+            "/api/learning-blocks/pin/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers(email),
+        )
+
+    def test_pin_and_unpin(self):
+        self.assertFalse(self.block.fixed)
+
+        self.assertEqual(self.pin(True).status_code, 200)
+        self.block.refresh_from_db()
+        self.assertTrue(self.block.fixed)
+
+        self.assertEqual(self.pin(False).status_code, 200)
+        self.block.refresh_from_db()
+        self.assertFalse(self.block.fixed)
+
+    def test_repeated_call_changes_nothing(self):
+        self.pin(True)
+        self.assertEqual(self.pin(True).json()["changed"], [])
+
+    def test_stranger_cannot_pin_someone_elses_block(self):
+        response = self.pin(True, email=STRANGER)
+        self.assertEqual(response.json()["changed"], [])
+        self.block.refresh_from_db()
+        self.assertFalse(self.block.fixed)
+
+    def test_empty_request_is_refused(self):
+        response = self.pin(True, ids=[])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "ids_required")

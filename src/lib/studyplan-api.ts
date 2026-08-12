@@ -358,6 +358,23 @@ export async function cancelBlocks(
   return unwrap<{ changed: string[]; restored: boolean }>(response);
 }
 
+/**
+ * Закрепить занятия или снять закрепление.
+ *
+ * Закреплённое планировщик не переносит, и вручную оно не перетаскивается.
+ * Раньше признак ставил только генератор — снять его из интерфейса было нельзя.
+ */
+export async function pinBlocks(
+  blockIds: string[],
+  pinned: boolean,
+): Promise<{ changed: string[]; pinned: boolean }> {
+  const response = await authFetch(`${BASE}/learning-blocks/pin/`, {
+    method: "POST",
+    body: JSON.stringify({ block_ids: blockIds, pinned }),
+  });
+  return unwrap<{ changed: string[]; pinned: boolean }>(response);
+}
+
 export async function listRevisions(scheduleId: string): Promise<ScheduleRevision[]> {
   const response = await authFetch(`${BASE}/study-schedules/${scheduleId}/revisions/`);
   return unwrap<ScheduleRevision[]>(response);

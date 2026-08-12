@@ -1,3 +1,5 @@
+import { formatMinutes } from "./studyplan-calendar.ts";
+
 // Как выглядит блок в календаре: подпись, тон, состояние.
 //
 // Вынесено из компонента, потому что это правила, а не разметка, и их надо
@@ -235,6 +237,27 @@ export function durationLabel(minutes: number): string {
   const hours = Math.floor(safe / 60);
   const rest = safe % 60;
   return rest === 0 ? `${hours} ч` : `${hours} ч ${rest} мин`;
+}
+
+/**
+ * Время занятия целиком: «09:00–11:00 · 2 ч».
+ *
+ * Одного начала мало. «09:00 · 2 ч» заставляет считать конец в уме, а конец —
+ * это то, что ученик и проверяет, когда прикидывает, успеет ли он на секцию.
+ * Длительность при этом остаётся: она отвечает на другой вопрос — «сколько это
+ * займёт», — и по двум концам считается не быстрее.
+ *
+ * Заезд за полночь печатается как есть: занятие с 23:30 на час кончается в
+ * 00:30, и «23:30–00:30» честнее, чем «23:30–24:30».
+ */
+export function timeRangeLabel(
+  startMinutes: number,
+  durationMinutes: number,
+): string {
+  const end = (Math.round(startMinutes + durationMinutes) + 24 * 60) % (24 * 60);
+  return `${formatMinutes(startMinutes)}–${formatMinutes(end)} · ${durationLabel(
+    durationMinutes,
+  )}`;
 }
 
 const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];

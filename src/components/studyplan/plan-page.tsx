@@ -398,6 +398,17 @@ export function StudyPlanPage() {
                 accents={accents}
                 onSelect={(entry, additive) => toggleSelected(entry.id, additive)}
                 onSelectMany={setSelectedIds}
+                renderDetails={(entry) => (
+                  <BlockDetails
+                    block={entry}
+                    timeZone={schedule.timeZone}
+                    busy={schedule.busy}
+                    onClose={() => setSelectedIds([])}
+                    onTogglePinned={(pinned) =>
+                      void schedule.setPinned([entry.id], pinned)
+                    }
+                  />
+                )}
                 onMove={(entry, startAt, duration) => {
                   if (!isCommitmentEntry(entry)) {
                     void schedule.move(entry, startAt, duration);
@@ -434,26 +445,15 @@ export function StudyPlanPage() {
                 <BlockDetails
                   block={selected}
                   timeZone={schedule.timeZone}
+                  busy={schedule.busy}
                   onClose={() => setSelectedIds([])}
+                  onTogglePinned={(pinned) =>
+                    void schedule.setPinned([selected.id], pinned)
+                  }
                 />
               </div>
             ) : null}
           </div>
-
-          {/* Карточка занятия всплывает поверх календаря и только по выбору —
-              как попап события в календарных приложениях. Постоянная колонка
-              под неё девять раз из десяти показывала «выбери занятие». */}
-          {selected ? (
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-40 hidden w-[340px] items-start p-3 lg:flex">
-              <div className="pointer-events-auto max-h-full w-full overflow-y-auto">
-                <BlockDetails
-                  block={selected}
-                  timeZone={schedule.timeZone}
-                  onClose={() => setSelectedIds([])}
-                />
-              </div>
-            </div>
-          ) : null}
 
           {/* Помощник по расписанию живёт в панели справа: два разговора в одном
               углу экрана заставляли выбирать между ними глазами. Страница
