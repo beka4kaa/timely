@@ -119,6 +119,70 @@ def _breakdown_minutes(topic: TopicInput) -> tuple[int, int, int]:
     )
 
 
+def _absorb_short_parts(plan: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """Части короче минимума вливаются в соседнюю, а не едут в календарь.
+
+    Блок короче `MIN_PART_MINUTES` календарь принимает, но потом его нельзя
+    ДВИГАТЬ: `revisions._validate_moves` отклоняет любой перенос такого блока
+    («Занятие короче 15 минут не имеет смысла»), и занятие оказывается прибито
+    к своему месту навсегда — ни мышью, ни помощником. Пятиминутная проверка
+    не повод сделать урок неперемещаемым.
+
+    `_chunk` такое правило уже применял, но только к ХВОСТУ длинной части.
+    Мимо него проходили два случая: часть, которая с самого начала короче
+    минимума, и проверка, которую `build_lesson_parts` намеренно не режет.
+
+    Остаток вливается в предыдущую часть, а если предыдущей нет — в следующую.
+    Единственная короткая часть поднимается до минимума: пятнадцать минут —
+    это цена деления календаря, а не оценка темы.
+    """
+    parts = [[activity_type, minutes] for activity_type, minutes in plan if minutes > 0]
+    if not parts:
+        return []
+
+    total = sum(minutes for _, minutes in parts)
+    if total <= MIN_PART_MINUTES:
+        # Тема целиком короче одного блока. Тип берём у самой длинной части:
+        # «проверка на 15 минут» честнее, чем проверка, съевшая теорию.
+        lead = max(parts, key=lambda part: part[1])[0]
+        return [(lead, MIN_PART_MINUTES)]
+
+    # Сколько частей вообще помещается в тему. Пока их больше, самая короткая
+    # вливается в самую длинную: терять состав урока приходится только когда
+    # минут физически не хватает на отдельные блоки.
+    capacity = total // MIN_PART_MINUTES
+    while len(parts) > capacity:
+        short = parts.pop(min(range(len(parts)), key=lambda i: parts[i][1]))
+        longest = max(range(len(parts)), key=lambda i: parts[i][1])
+        parts[longest][1] += short[1]
+
+    # Короткие поднимаются до минимума, недостачу отдаёт самая длинная часть.
+    # Трогаем ТОЛЬКО то, что сломано: пересчитывать все части пропорционально
+    # значило бы отнимать минуты у практики из-за того, что проверка вышла
+    # короткой, — а с практикой всё было в порядке.
+    deficit = sum(
+        MIN_PART_MINUTES - minutes
+        for _, minutes in parts
+        if minutes < MIN_PART_MINUTES
+    )
+    for part in parts:
+        if part[1] < MIN_PART_MINUTES:
+            part[1] = MIN_PART_MINUTES
+
+    while deficit > 0:
+        donor = max(parts, key=lambda part: part[1])
+        take = min(deficit, donor[1] - MIN_PART_MINUTES)
+        if take <= 0:
+            # Недостижимо: `capacity` гарантирует, что минут хватает на все
+            # оставшиеся части. Выходим, чтобы не зациклиться, если гарантия
+            # когда-нибудь перестанет держаться.
+            break
+        donor[1] -= take
+        deficit -= take
+
+    return [(activity_type, minutes) for activity_type, minutes in parts]
+
+
 def _chunk(minutes: int, max_part_minutes: int) -> list[int]:
     """Порезать длинную часть на куски по длине занятия.
 
@@ -198,7 +262,10 @@ def build_lesson_parts(
     занятия нужно, но не придумывает ни названий, ни ссылок на разделы книги —
     иначе в календаре появились бы страницы, которых в источнике нет.
     """
-    plan = list(part_plan) if part_plan else default_part_plan(topic)
+    # Нормализация ОБЩАЯ для обоих источников разбивки: и своя, и предложенная
+    # моделью могут дать часть короче минимума, а неперемещаемый блок в
+    # календаре одинаково плох независимо от того, кто его придумал.
+    plan = _absorb_short_parts(list(part_plan) if part_plan else default_part_plan(topic))
 
     parts: list[LessonPart] = []
     index = 0

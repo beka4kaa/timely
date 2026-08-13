@@ -30,6 +30,27 @@ export interface ParsedCommitment {
   end_at?: string;
 }
 
+/**
+ * Окно недельного ритма, предложенное помощником.
+ *
+ * Занятия могут стоять ТОЛЬКО внутри таких окон, поэтому просьба «занимайся со
+ * мной с 9:00 до 12:00» решается здесь, а не переносом занятий: за пределы
+ * ритма они всё равно не выйдут.
+ */
+export interface ParsedStudyWindow {
+  weekday: number;
+  weekday_name: string;
+  start_time: string;
+  duration_minutes: number;
+}
+
+export interface ProposedStudyWindows {
+  windows: ParsedStudyWindow[];
+  /** `true` — прежний ритм заменяется целиком, `false` — окна добавляются. */
+  replace: boolean;
+  current: ParsedStudyWindow[];
+}
+
 export type AssistantStatus = "idle" | "thinking" | "done" | "error";
 
 export interface AssistantState {
@@ -39,6 +60,7 @@ export interface AssistantState {
   answer: string;
   revision: ScheduleRevision | null;
   commitments: ParsedCommitment[] | null;
+  studyWindows: ProposedStudyWindows | null;
   error: string | null;
   /**
    * Машинный код отказа, если бэкенд его назвал.
@@ -56,6 +78,7 @@ export const initialAssistantState: AssistantState = {
   answer: "",
   revision: null,
   commitments: null,
+  studyWindows: null,
   error: null,
   errorCode: null,
 };
@@ -71,6 +94,7 @@ const STAGE_LABELS: Record<string, string> = {
   propose_load_reduction: "Разгружаю день",
   propose_recovery_plan: "Собираю план догона",
   propose_fixed_commitments: "Записываю занятость",
+  propose_study_windows: "Подбираю время занятий",
 };
 
 export function stageLabel(tool: string): string {
@@ -127,6 +151,23 @@ export function applyAssistantEvent(
         ? (event.data.items as ParsedCommitment[])
         : null;
       return { ...state, status: "thinking", commitments: items };
+    }
+    case "study_windows": {
+      const windows = Array.isArray(event.data.windows)
+        ? (event.data.windows as ParsedStudyWindow[])
+        : null;
+      if (!windows || windows.length === 0) return state;
+      return {
+        ...state,
+        status: "thinking",
+        studyWindows: {
+          windows,
+          replace: event.data.replace === true,
+          current: Array.isArray(event.data.current)
+            ? (event.data.current as ParsedStudyWindow[])
+            : [],
+        },
+      };
     }
     case "content": {
       const text = typeof event.data.text === "string" ? event.data.text : "";

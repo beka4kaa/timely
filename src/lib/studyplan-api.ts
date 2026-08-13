@@ -545,6 +545,50 @@ export async function listTemplates(): Promise<WeeklyTemplate[]> {
   return list(await unwrap<WeeklyTemplate[] | { results: WeeklyTemplate[] }>(response));
 }
 
+export interface StudyWindowInput {
+  weekday: number;
+  start_time: string;
+  duration_minutes: number;
+}
+
+/**
+ * Переписать ритм: окна, внутри которых вообще могут стоять занятия.
+ *
+ * Помощник только РАЗБИРАЕТ просьбу «занимайся со мной с 9:00 до 12:00» в
+ * список окон; записывает их эта функция и только после согласия человека.
+ * Ритм — решение ученика о собственной жизни, и менять его молча нельзя.
+ *
+ * `replace` удаляет прежние окна ПОСЛЕ того, как новые созданы: если создание
+ * упадёт на середине, ученик останется со старым ритмом, а не без всякого.
+ */
+export async function applyStudyWindows(
+  templateId: string,
+  windows: StudyWindowInput[],
+  options: { replace?: boolean; previousSlotIds?: string[] } = {},
+): Promise<WeeklyTemplate> {
+  let template: WeeklyTemplate | null = null;
+  for (const window of windows) {
+    const response = await authFetch(
+      `${BASE}/study-templates/${templateId}/slots/`,
+      { method: "POST", body: JSON.stringify(window) },
+    );
+    template = await unwrap<WeeklyTemplate>(response);
+  }
+
+  if (options.replace) {
+    for (const slotId of options.previousSlotIds ?? []) {
+      const response = await authFetch(
+        `${BASE}/study-templates/${templateId}/slots/${slotId}/`,
+        { method: "DELETE" },
+      );
+      if (response.ok) template = await unwrap<WeeklyTemplate>(response);
+    }
+  }
+
+  if (!template) throw new Error("Не удалось записать ритм.");
+  return template;
+}
+
 export interface FixedCommitmentInput {
   title: string;
   kind: string;

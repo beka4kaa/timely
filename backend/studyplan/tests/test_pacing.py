@@ -8,6 +8,7 @@ from django.test import SimpleTestCase
 
 from studyplan.scheduling.contracts import MIN_PART_MINUTES
 from studyplan.scheduling.pacing import (
+    _absorb_short_parts,
     TopicInput,
     build_lesson_parts,
     default_template,
@@ -142,3 +143,55 @@ class WorkspaceTests(SimpleTestCase):
 
     def test_unknown_activity_falls_back_to_tutor(self):
         self.assertEqual(workspace_for("nonsense"), "tutor_chat")
+
+
+class ShortPartsTests(SimpleTestCase):
+    """Части короче минимума не доезжают до календаря.
+
+    Блок короче `MIN_PART_MINUTES` создать можно, а ДВИНУТЬ потом нельзя:
+    `revisions._validate_moves` отклоняет любой его перенос, и занятие
+    оказывается прибито к своему месту навсегда. Поэтому короткая часть должна
+    исчезать здесь, при разбивке, а не всплывать 400-й ошибкой при
+    перетаскивании.
+    """
+
+    def test_short_part_is_raised_to_the_minimum(self):
+        parts = _absorb_short_parts([("theory", 10), ("practice", 30), ("assessment", 5)])
+
+        self.assertTrue(all(minutes >= MIN_PART_MINUTES for _, minutes in parts))
+        self.assertEqual(sum(minutes for _, minutes in parts), 45)
+
+    def test_healthy_breakdown_is_left_alone(self):
+        # Пересчитывать всё пропорционально нельзя: практика теряла бы минуты
+        # из-за того, что проверка вышла короткой, а с практикой всё в порядке.
+        plan = [("theory", 60), ("practice", 120), ("assessment", 20)]
+        self.assertEqual(_absorb_short_parts(plan), [(a, m) for a, m in plan])
+
+    def test_deficit_is_taken_from_the_longest_part(self):
+        parts = _absorb_short_parts([("theory", 20), ("practice", 40), ("assessment", 10)])
+
+        self.assertEqual(parts, [("theory", 20), ("practice", 35), ("assessment", 15)])
+
+    def test_topic_shorter_than_one_block_becomes_one_block(self):
+        parts = _absorb_short_parts([("theory", 5), ("practice", 5), ("assessment", 5)])
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0][1], MIN_PART_MINUTES)
+
+    def test_zero_length_parts_disappear(self):
+        self.assertEqual(
+            _absorb_short_parts([("theory", 0), ("practice", 45)]),
+            [("practice", 45)],
+        )
+        self.assertEqual(_absorb_short_parts([]), [])
+
+    def test_assessment_no_longer_slips_past_the_minimum(self):
+        # `build_lesson_parts` намеренно не режет проверку на куски, и раньше
+        # она проходила мимо любой проверки длины.
+        topic_input = topic("t1", theory=10, practice=30, assessment=5)
+
+        parts = build_lesson_parts(topic_input)
+
+        self.assertTrue(parts)
+        for part in parts:
+            self.assertGreaterEqual(part.duration_minutes, MIN_PART_MINUTES)

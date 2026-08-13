@@ -32,7 +32,10 @@ from ai_engine.tutor_tools import ToolValidationError, validate_args
 from .availability import free_windows, place_sequentially
 from .models import FixedCommitment, LearningBlock, StudySchedule
 from .revisions import BlockMove, RevisionRejected, propose_moves
+from .scheduling.contracts import MIN_PART_MINUTES
 from .scheduling.slots import local_to_utc, resolve_zone
+
+MINUTES_IN_DAY = 24 * 60
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +182,28 @@ def _handle_get_schedule(
         "today": context.current_date().isoformat(),
         "daily_minutes": load,
         "blocks": [_block_payload(block, zone) for block in blocks],
+        # Ритм — рамка, в которой вообще может стоять занятие: занятия ставятся
+        # ТОЛЬКО внутрь этих окон (`availability.free_windows`). Без него модель
+        # не отличала «в 9:00 занято» от «в 9:00 ученик не готов заниматься» и
+        # на просьбу «поставь с 9 до 12» молча переставляла блоки внутри
+        # вечернего окна, отвечая «готово».
+        "study_windows": _windows_payload(schedule),
     }
+
+
+def _windows_payload(schedule: StudySchedule) -> list[dict[str, Any]]:
+    template = schedule.template
+    if template is None:
+        return []
+    return [
+        {
+            "weekday": slot.weekday,
+            "weekday_name": _WEEKDAY_NAMES[slot.weekday],
+            "start_time": slot.start_time.strftime("%H:%M"),
+            "duration_minutes": slot.duration_minutes,
+        }
+        for slot in template.slots.all()
+    ]
 
 
 def _handle_find_free_slots(
@@ -509,6 +533,80 @@ def _handle_propose_fixed_commitments(
     }
 
 
+def _handle_propose_study_windows(
+    args: dict[str, Any], context: ScheduleToolContext
+) -> dict[str, Any]:
+    """Разобрать просьбу про время занятий в окна ритма. В базу НИЧЕГО не пишет.
+
+    Занятия ставятся только внутрь окон недельного ритма
+    (`availability.free_windows` → `template_spec`). Пока такого инструмента не
+    было, просьба «занимайся со мной с 9:00 до 12:00 по будням» была
+    невыполнима в принципе: у модели оставался один `propose_move_blocks`,
+    который двигает занятия ВНУТРИ уже объявленных окон. Она переставляла блоки
+    в вечернем окне и отвечала «готово» — формально правду, по сути нет.
+
+    Инструмент только разбирает, как `propose_fixed_commitments`: ритм — это
+    решение ученика о собственной жизни, и менять его молча нельзя. Окна
+    записывает панель, обычным CRUD и после согласия человека.
+    """
+    problem = _require_schedule(context)
+    if problem:
+        return problem
+
+    raw_windows = args.get("windows")
+    if not isinstance(raw_windows, list) or not raw_windows:
+        return _fail("invalid_arguments", "Нужен непустой список окон.")
+
+    parsed: list[dict[str, Any]] = []
+    for item in raw_windows[:21]:
+        if not isinstance(item, dict):
+            return _fail("invalid_arguments", "Каждое окно — это объект.")
+
+        weekday = item.get("weekday")
+        if not isinstance(weekday, int) or not 0 <= weekday <= 6:
+            return _fail("invalid_arguments", "weekday — целое от 0 (пн) до 6 (вс).")
+
+        start_time = str(item.get("start_time") or "").strip()
+        try:
+            time.fromisoformat(start_time)
+        except ValueError:
+            return _fail("invalid_arguments", f"Время {start_time!r} не разобрано.")
+
+        duration = item.get("duration_minutes")
+        try:
+            minutes = int(duration)
+        except (TypeError, ValueError):
+            return _fail("invalid_arguments", "Нужна длительность окна в минутах.")
+        if minutes < MIN_PART_MINUTES:
+            return _fail(
+                "invalid_arguments",
+                f"Окно короче {MIN_PART_MINUTES} минут бесполезно.",
+            )
+        if minutes > MINUTES_IN_DAY:
+            return _fail("invalid_arguments", "Окно не может быть длиннее суток.")
+
+        parsed.append(
+            {
+                "weekday": weekday,
+                "weekday_name": _WEEKDAY_NAMES[weekday],
+                "start_time": start_time,
+                "duration_minutes": minutes,
+            }
+        )
+
+    parsed.sort(key=lambda window: (window["weekday"], window["start_time"]))
+    return {
+        "ok": True,
+        "windows": parsed,
+        "replace": bool(args.get("replace")),
+        "current": _windows_payload(context.schedule),
+        "note": (
+            "Ритм РАЗОБРАН, но не сохранён. Ученик подтверждает его в панели, и "
+            "только тогда занятия смогут встать в это время."
+        ),
+    }
+
+
 def _handle_list_courses(
     args: dict[str, Any], context: ScheduleToolContext
 ) -> dict[str, Any]:
@@ -773,6 +871,40 @@ SCHEDULE_TOOLS: dict[str, ScheduleTool] = {
             "required": ["course_plan_id"],
         },
         handler=_handle_add_course_to_schedule,
+    ),
+    "propose_study_windows": ScheduleTool(
+        name="propose_study_windows",
+        description=(
+            "ПРЕДЛОЖИТЬ новое время занятий — окна недельного ритма. Занятия "
+            "могут стоять ТОЛЬКО внутри этих окон, поэтому просьбы вида "
+            "«занимайся со мной с 9:00 до 12:00 по будням», «хочу учиться по "
+            "утрам», «освободи вечера» решаются здесь, а НЕ переносом занятий. "
+            "Текущие окна видно в get_schedule → study_windows. Не применяет "
+            "изменение — предлагает его ученику."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "windows": {
+                    "type": "array",
+                    "description": (
+                        "Окна: weekday 0–6 (0 — понедельник), start_time "
+                        "«ЧЧ:ММ», duration_minutes. Одно окно на каждый день: "
+                        "«пн–пт с 9:00 до 12:00» — это пять окон по 180 минут."
+                    ),
+                },
+                "replace": {
+                    "type": "boolean",
+                    "description": (
+                        "true — заменить весь прежний ритм, false — добавить к "
+                        "нему. «Занимайся только утром» — это замена."
+                    ),
+                },
+                "reason": {"type": "string", "description": "Зачем меняем ритм."},
+            },
+            "required": ["windows"],
+        },
+        handler=_handle_propose_study_windows,
     ),
 }
 

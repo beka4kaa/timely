@@ -26,7 +26,9 @@ import {
 } from "@/lib/studyplan-calendar-entries";
 import { weekLoad } from "@/lib/studyplan-load";
 import {
+  applyStudyWindows,
   createCommitment,
+  listTemplates,
   type FixedCommitment,
   type StudySchedule,
 } from "@/lib/studyplan-api";
@@ -396,6 +398,35 @@ export function StudyPlanPage() {
           "chat",
         );
       }
+      await schedule.reload();
+    },
+    // Ритм — рамка, внутри которой вообще может стоять занятие. Помощник его
+    // только предлагает: занятия по утрам вместо вечеров меняют жизнь ученика,
+    // а не расстановку блоков, и такое решение принимает он сам.
+    onStudyWindows: async (proposal) => {
+      const active = ready?.schedules.find(
+        (item) => item.id === assistantScheduleId,
+      );
+      if (!active?.template) {
+        throw new Error("Расписание ещё не загрузилось.");
+      }
+      // Прежние окна нужны только для замены: их идентификаторы есть лишь в
+      // самом шаблоне, а расписание отдаёт только его id.
+      const previousSlotIds = proposal.replace
+        ? (await listTemplates())
+            .find((item) => item.id === active.template)
+            ?.slots.map((slot) => slot.id) ?? []
+        : [];
+
+      await applyStudyWindows(
+        active.template,
+        proposal.windows.map((window) => ({
+          weekday: window.weekday,
+          start_time: window.start_time,
+          duration_minutes: window.duration_minutes,
+        })),
+        { replace: proposal.replace, previousSlotIds },
+      );
       await schedule.reload();
     },
   });
