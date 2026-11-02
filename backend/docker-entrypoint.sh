@@ -24,6 +24,9 @@ set -e
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     echo "[entrypoint] applying database migrations..."
     python manage.py migrate --noinput
+    # CACHES = DatabaseCache: без cache_table любой cache.get() падает в 500.
+    # Команда идемпотентна — существующую таблицу не трогает.
+    python manage.py createcachetable
 else
     echo "[entrypoint] RUN_MIGRATIONS=0 — миграции пропущены"
 fi
