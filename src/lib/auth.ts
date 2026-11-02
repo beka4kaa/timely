@@ -65,7 +65,15 @@ export const authOptions: NextAuthOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      const ALLOWED_HOSTS = new Set(['app.timelyplan.me', 'timelyplan.me', 'localhost:3000']);
+      const ALLOWED_HOSTS = new Set(
+        [
+          'app.timelyplan.me',
+          'timelyplan.me',
+          'localhost:3000',
+          process.env.TIMELY_APP_HOST,
+          process.env.TIMELY_MARKETING_HOST,
+        ].filter((host): host is string => Boolean(host)),
+      );
       if (url.startsWith('/')) return new URL(url, baseUrl).toString();
       try {
         const target = new URL(url);
