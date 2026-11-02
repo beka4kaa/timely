@@ -11,7 +11,7 @@
 // предмета: ученик выбирает не модель, а книгу, по которой отвечать. В панели
 // слот пуст: предмет там задан сверху.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Loader2, Square } from "lucide-react";
 
 import {
@@ -31,6 +31,7 @@ export function Composer({
   variant = "rail",
   left,
   onStop,
+  initialDraft,
 }: {
   onSubmit: (text: string) => void;
   busy?: boolean;
@@ -45,11 +46,23 @@ export function Composer({
    * ведёт себя панель, и менять ей поведение эта правка не должна.
    */
   onStop?: () => void;
+  /** Текст, которым поле заполняется один раз, — например, вопрос с лендинга. */
+  initialDraft?: string;
 }) {
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const page = variant === "page";
   const maxHeight = page ? 200 : 160;
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    setDraft(initialDraft);
+    const field = textareaRef.current;
+    if (!field) return;
+    field.focus();
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, maxHeight)}px`;
+  }, [initialDraft, maxHeight]);
 
   const send = (text?: string) => {
     const question = (text ?? draft).trim();

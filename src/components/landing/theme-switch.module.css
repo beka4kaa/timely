@@ -1,0 +1,51 @@
+.switch {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.switch:hover {
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* Иконка показывает, во что переключит кнопка: в светлой — луна, в тёмной — солнце. */
+.sun,
+.moon {
+  grid-area: 1 / 1;
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    opacity 240ms ease;
+}
+
+.sun {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.4);
+}
+
+.switch[data-dark="true"] .sun {
+  opacity: 1;
+  transform: none;
+}
+
+.switch[data-dark="true"] .moon {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.4);
+}

@@ -64,7 +64,25 @@ export function ChatPage() {
   const [listOpen, setListOpen] = useState(true);
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [narrow, setNarrow] = useState(false);
+  const [initialDraft, setInitialDraft] = useState("");
   const feedRef = useRef<HTMLDivElement | null>(null);
+
+  // Вопрос с лендинга приходит как `?q=…`. Кладём его в поле, но не отправляем:
+  // сначала ученик может выбрать предмет с книгой. Параметр убираем из адреса,
+  // чтобы перезагрузка не вставляла вопрос заново.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const question = params.get("q")?.trim();
+    if (!question) return;
+    setInitialDraft(question.slice(0, 2000));
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`,
+    );
+  }, []);
 
   const chat = useSubjectChat({ goalId: selected, scope: "all" });
   const fold = useFoldWidth({
@@ -319,6 +337,7 @@ export function ChatPage() {
               onStop={chat.stop}
               busy={chat.busy}
               placeholder={current ? "Спросите по книге…" : "Спросите что угодно…"}
+              initialDraft={initialDraft}
               suggestions={empty ? SUGGESTIONS : undefined}
               left={
                 <SubjectPicker

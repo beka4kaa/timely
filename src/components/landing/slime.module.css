@@ -1,0 +1,87 @@
+/*
+ * Слайм чёрно-белый: в светлой теме — тёмный «пластилиновый» купол с белыми
+ * глазами, в тёмной — наоборот. Все цвета здесь, в разметке только ссылки.
+ */
+.slime {
+  --slime-hi: #5b5b6e;
+  --slime-mid: #23232e;
+  --slime-lo: #0b0b10;
+  --slime-eye: #ffffff;
+  --slime-eye-shade: #d5d5e0;
+  --slime-sheen: 0.1;
+  --slime-rim: rgba(255, 255, 255, 0.07);
+  --slime-gloss: 0.32;
+
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  /* цвет тени под слаймом */
+  color: #14141c;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+:global(.dark) .slime {
+  --slime-hi: #ffffff;
+  --slime-mid: #ececf3;
+  --slime-lo: #a4a4b6;
+  --slime-eye: #14141c;
+  --slime-eye-shade: #383844;
+  --slime-sheen: 0.5;
+  --slime-rim: rgba(20, 20, 40, 0.1);
+  --slime-gloss: 0.9;
+
+  color: #000000;
+}
+
+.slime[data-interactive="true"] {
+  cursor: pointer;
+}
+
+.sheen {
+  opacity: var(--slime-sheen);
+}
+
+.rim {
+  fill: var(--slime-rim);
+}
+
+.gloss {
+  opacity: var(--slime-gloss);
+}
+
+.mouth {
+  fill: var(--slime-eye);
+}
+
+.eyesHappy path {
+  fill: none;
+  stroke: var(--slime-eye);
+  stroke-width: 6.5;
+  stroke-linecap: round;
+}
+
+.eyesOpen,
+.eyesHappy {
+  transition: opacity 120ms ease;
+}
+
+.eyesHappy {
+  opacity: 0;
+}
+
+.slime[data-happy="true"] .eyesHappy {
+  opacity: 1;
+}
+
+.slime[data-happy="true"] .eyesOpen {
+  opacity: 0;
+}
+
+/* Падающий слайм не должен на миг стоять на месте до старта анимации. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .slime[data-drop="true"]:not([data-ready]) {
+    visibility: hidden;
+  }
+}

@@ -1,0 +1,11 @@
+/*
+ * Смена темы на лендинге: новая тема расходится кругом поверх старой (см.
+ * theme-switch.tsx). Стандартное перекрёстное затухание отключаем, иначе оно
+ * спорит с кругом. Класс висит на <html> только во время перехода, поэтому
+ * на остальные переходы приложения правило не влияет.
+ */
+html.theme-transition::view-transition-old(root),
+html.theme-transition::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
