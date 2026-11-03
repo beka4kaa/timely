@@ -730,7 +730,7 @@ export function WeekGrid({
                       )} · ${durationLabel(block.duration_minutes)}${
                         sourceLabel ? ` · ${sourceLabel}` : ""
                       }`}
-                      className={`group absolute overflow-hidden rounded-[8px] border px-2 py-1 text-left transition-[box-shadow,filter] hover:brightness-[0.97] ${paperFocus} ${
+                      className={`group absolute overflow-hidden rounded-[8px] border px-2 py-1 text-left transition-[box-shadow,filter] hover:brightness-[0.97] dark:hover:brightness-125 ${paperFocus} ${
                         block.fixed ? "cursor-default" : "cursor-grab"
                       } ${dragging ? "z-30 cursor-grabbing shadow-lg" : selected ? "z-20" : "z-10"}`}
                       style={{
@@ -833,7 +833,7 @@ export function WeekGrid({
 
             {detailsAnchor ? (
               <div
-                className="absolute z-[60] w-[320px] max-w-[86vw]"
+                className="absolute z-[60] w-[320px] max-w-[86vw] rounded-[20px] dark:shadow-[0_18px_48px_-8px_rgba(0,0,0,0.65)] dark:ring-1 dark:ring-tm-line-strong"
                 style={{
                   top: detailsAnchor.top,
                   ...(detailsAnchor.side === "right"

@@ -581,8 +581,8 @@ export function ScheduleComponent() {
 
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button size="icon" variant={slot.status === 'IN_PROGRESS' ? 'default' : 'ghost'} className="h-6 w-6 rounded" onClick={(e) => { e.stopPropagation(); updateSlotStatus(slot.id, 'IN_PROGRESS') }}><Play className="h-3 w-3" /></Button>
-                        <Button size="icon" variant={slot.status === 'COMPLETED' ? 'default' : 'ghost'} className={cn("h-6 w-6 rounded", slot.status === 'COMPLETED' && "bg-emerald-600")} onClick={(e) => { e.stopPropagation(); updateSlotStatus(slot.id, 'COMPLETED') }}><Check className="h-3 w-3" /></Button>
-                        <Button size="icon" variant={slot.status === 'SKIPPED' ? 'default' : 'ghost'} className={cn("h-6 w-6 rounded", slot.status === 'SKIPPED' && "bg-gray-600")} onClick={(e) => { e.stopPropagation(); updateSlotStatus(slot.id, 'SKIPPED') }}><SkipForward className="h-3 w-3" /></Button>
+                        <Button size="icon" variant={slot.status === 'COMPLETED' ? 'default' : 'ghost'} className={cn("h-6 w-6 rounded", slot.status === 'COMPLETED' && "bg-emerald-600 text-white hover:bg-emerald-600/90")} onClick={(e) => { e.stopPropagation(); updateSlotStatus(slot.id, 'COMPLETED') }}><Check className="h-3 w-3" /></Button>
+                        <Button size="icon" variant={slot.status === 'SKIPPED' ? 'default' : 'ghost'} className={cn("h-6 w-6 rounded", slot.status === 'SKIPPED' && "bg-gray-600 text-white hover:bg-gray-600/90")} onClick={(e) => { e.stopPropagation(); updateSlotStatus(slot.id, 'SKIPPED') }}><SkipForward className="h-3 w-3" /></Button>
                         <Button size="icon" variant="ghost" className="h-6 w-6 rounded text-red-500 hover:bg-red-500/10" onClick={(e) => { e.stopPropagation(); removeSlot(slot.id) }}><Trash2 className="h-3 w-3" /></Button>
                       </div>
                     </div>

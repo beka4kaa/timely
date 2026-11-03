@@ -107,7 +107,7 @@ export function AddSource({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[320px] rounded-[16px] border-0 bg-tm-surface p-4 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-[320px] rounded-[16px] border-0 bg-tm-surface p-4 shadow-[0_18px_60px_rgba(62,52,41,0.14)] dark:border dark:border-tm-line-strong dark:shadow-[0_18px_60px_rgba(0,0,0,0.55)]"
       >
         <div className="flex gap-1">
           {SOURCE_KINDS.map((item) => (

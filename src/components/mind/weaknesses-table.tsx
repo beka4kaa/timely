@@ -183,7 +183,7 @@ function SortableRow({
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className="cursor-pointer hover:opacity-80 transition-opacity">
-                                <Badge className={cn("text-xs whitespace-nowrap", getTopicStatusColor(topic.status as any))}>
+                                <Badge variant="outline" className={cn("border-transparent text-xs whitespace-nowrap", getTopicStatusColor(topic.status as any))}>
                                     {getTopicStatusLabel(topic.status as any)}
                                 </Badge>
                             </button>

@@ -608,7 +608,7 @@ function OverflowMenu({
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-auto min-w-[180px] rounded-[12px] border-0 bg-tm-surface p-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-auto min-w-[180px] rounded-[12px] border-0 bg-tm-surface p-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)] dark:border dark:border-tm-line-strong dark:shadow-[0_18px_60px_rgba(0,0,0,0.55)]"
       >
         <span
           className="flex flex-col items-start gap-y-2"
