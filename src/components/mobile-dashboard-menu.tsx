@@ -19,7 +19,10 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import type { DashboardNavigationGroup } from "@/config/dashboard-navigation";
+import {
+  matchNavigation,
+  type DashboardNavigationGroup,
+} from "@/config/dashboard-navigation";
 
 const MENU_TRANSITION_MS = 280;
 
@@ -30,19 +33,28 @@ function reducedMotionEnabled() {
 export function MobileDashboardMenu({
   navigationGroups,
   className = "",
+  onOpenChange,
+  renderTrigger,
 }: {
   navigationGroups: DashboardNavigationGroup[];
   className?: string;
+  /** Сообщает хозяину, открыт ли лист: нижней панели — для `aria-expanded`. */
+  onOpenChange?: (open: boolean) => void;
+  /** Своя кнопка вместо гамбургера: «Ещё» в нижней панели телефона. */
+  renderTrigger?: (open: () => void) => React.ReactNode;
 }) {
   // Канонический путь: на app-хосте адресная строка чистая, и активный
   // пункт меню не подсвечивался.
   const pathname = useDashboardPath();
+  const activeItem = matchNavigation(pathname).itemUrl;
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const transitionTimerRef = useRef<number | null>(null);
   const openFrameRef = useRef<number | null>(null);
+  /** Кнопка, которой открыли лист: закрыв его без перехода, фокус вернётся к ней. */
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const clearScheduledWork = useCallback(() => {
     if (transitionTimerRef.current !== null) {
@@ -57,16 +69,20 @@ export function MobileDashboardMenu({
 
   const openMenu = useCallback(() => {
     clearScheduledWork();
+    const active = document.activeElement;
+    openerRef.current = active instanceof HTMLElement ? active : null;
+    onOpenChange?.(true);
     setIsMounted(true);
     openFrameRef.current = window.requestAnimationFrame(() => {
       setIsVisible(true);
       openFrameRef.current = null;
     });
-  }, [clearScheduledWork]);
+  }, [clearScheduledWork, onOpenChange]);
 
   const closeMenu = useCallback(
     (destination?: string) => {
       clearScheduledWork();
+      onOpenChange?.(false);
       setIsVisible(false);
       const delay = reducedMotionEnabled() ? 0 : MENU_TRANSITION_MS;
       transitionTimerRef.current = window.setTimeout(() => {
@@ -74,10 +90,13 @@ export function MobileDashboardMenu({
         transitionTimerRef.current = null;
         if (destination && destination !== pathname) {
           router.push(destination);
+        } else if (openerRef.current?.isConnected) {
+          openerRef.current.focus();
         }
+        openerRef.current = null;
       }, delay);
     },
-    [clearScheduledWork, pathname, router],
+    [clearScheduledWork, onOpenChange, pathname, router],
   );
 
   useEffect(() => clearScheduledWork, [clearScheduledWork]);
@@ -123,15 +142,19 @@ export function MobileDashboardMenu({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openMenu}
-        aria-label="Открыть разделы"
-        aria-expanded={isMounted && isVisible}
-        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border border-tm-line bg-tm-surface/72 text-tm-muted outline-none transition-colors hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35 md:hidden ${className}`}
-      >
-        <Menu className="h-4 w-4" />
-      </button>
+      {renderTrigger ? (
+        renderTrigger(openMenu)
+      ) : (
+        <button
+          type="button"
+          onClick={openMenu}
+          aria-label="Открыть разделы"
+          aria-expanded={isMounted && isVisible}
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border border-tm-line bg-tm-surface/72 text-tm-muted outline-none transition-colors hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35 md:hidden ${className}`}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+      )}
 
       {isMounted &&
         createPortal(
@@ -168,19 +191,28 @@ export function MobileDashboardMenu({
             className="min-h-0 flex-1 overflow-y-auto px-4 py-5 [scrollbar-width:none]"
           >
             <div className="mx-auto w-full max-w-2xl space-y-6">
-              {navigationGroups.map((group) => (
-                <section key={group.label} aria-labelledby={`mobile-${group.label}`}>
-                  <h2
-                    id={`mobile-${group.label}`}
-                    className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-tm-faint"
-                  >
-                    {group.label}
-                  </h2>
+              {navigationGroups.map((group) => {
+                // Раздел из одной страницы («Сейчас», «Библиотека») — просто
+                // пункт: заголовок над ним повторил бы то же слово.
+                const single =
+                  group.items.length === 1 && group.items[0].title === group.label;
+                return (
+                <section
+                  key={group.label}
+                  aria-labelledby={single ? undefined : `mobile-${group.label}`}
+                  aria-label={single ? group.label : undefined}
+                >
+                  {!single && (
+                    <h2
+                      id={`mobile-${group.label}`}
+                      className="mb-2 px-1 font-serif text-[15px] font-medium text-tm-muted"
+                    >
+                      {group.label}
+                    </h2>
+                  )}
                   <div className="grid gap-2 sm:grid-cols-2">
                     {group.items.map((item) => {
-                      const active =
-                        pathname === item.url ||
-                        pathname.startsWith(`${item.url}/`);
+                      const active = activeItem === item.url;
                       const Icon = item.icon;
                       return (
                         <Link
@@ -212,7 +244,8 @@ export function MobileDashboardMenu({
                     })}
                   </div>
                 </section>
-              ))}
+                );
+              })}
             </div>
           </nav>
 

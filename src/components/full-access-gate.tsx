@@ -19,8 +19,23 @@
 
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { useMe } from "@/lib/contest-api"
+import { getMe, useMe } from "@/lib/contest-api"
+import { useResource } from "@/lib/resource-cache"
 import { paperButton, paperCard, paperCaption } from "@/components/curriculum/paper"
+
+/**
+ * Раздел для этого человека закрыт — сервер ОПРЕДЕЛЁННО так сказал.
+ *
+ * То же правило, что у самого гейта, для мест, которые показывают данные
+ * закрытых разделов вне их страниц: главная «Сейчас» и отметки рейла.
+ */
+export function useFullAccessDenied(): boolean {
+  // Через общий кэш: рейл и главная спрашивают одно и то же, и два
+  // одинаковых запроса профиля на каждую страницу ни к чему.
+  const { data: me, loading } = useResource("me", getMe, { ttl: 5 * 60_000 })
+  if (loading || !me || me.authenticated === false) return false
+  return me.has_full_access === false && me.is_admin === false
+}
 
 export function FullAccessGate({ children }: { children: ReactNode }) {
   const { me, loading } = useMe()
@@ -46,8 +61,8 @@ export function FullAccessGate({ children }: { children: ReactNode }) {
           Доступ к этому разделу выключен для вашего аккаунта. Его включает
           администратор.
         </p>
-        <Link href="/dashboard/diary" className={`${paperButton} mt-5`}>
-          Вернуться в дневник
+        <Link href="/dashboard" className={`${paperButton} mt-5`}>
+          На главную
         </Link>
       </div>
     </div>

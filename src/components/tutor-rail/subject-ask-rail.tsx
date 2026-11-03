@@ -65,11 +65,13 @@ export function SubjectAskRail() {
 }
 
 function AskRail() {
-  const { open } = useAskRail();
+  const { open, pending, consumePrompt } = useAskRail();
   const { goalId: pageGoalId } = useActiveSubject();
   const [subjects, setSubjects] = useState<Subject[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** Текст, подставленный в поле извне. `nonce` пересоздаёт поле при повторе. */
+  const [draft, setDraft] = useState<{ text: string; nonce: number } | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   const chat = useSubjectChat({
@@ -96,10 +98,26 @@ function AskRail() {
   }, [open, subjects]);
 
   // Предмет страницы побеждает: если ученик открыл физику, панель спрашивает
-  // про физику, а не про то, что он выбирал вчера.
+  // про физику, а не про то, что он выбирал вчера. Но идущий разговор не
+  // перебиваем: смена предмета сбрасывает ленту, и вопрос, заданный минуту
+  // назад, пропал бы вместе с ответом (на главной предмет страницы меняется
+  // сам — когда кончается текущее занятие). Пустая панель сменит предмет,
+  // как только разговор закончат или начнут новый.
+  //
+  // Принятый предмет страницы помнится: иначе ручной выбор в самой панели
+  // сбрасывал бы ленту, «разговор кончился» — и эффект тут же возвращал бы
+  // предмет страницы, отменяя выбор ученика.
+  const conversationActive = chat.busy || chat.turns.length > 0;
+  const adoptedPageGoal = useRef<string | null>(null);
   useEffect(() => {
-    if (pageGoalId) setSelected(pageGoalId);
-  }, [pageGoalId]);
+    if (!pageGoalId) {
+      adoptedPageGoal.current = null;
+      return;
+    }
+    if (conversationActive || adoptedPageGoal.current === pageGoalId) return;
+    adoptedPageGoal.current = pageGoalId;
+    setSelected(pageGoalId);
+  }, [pageGoalId, conversationActive]);
 
   useEffect(() => {
     if (selected || !subjects?.length) return;
@@ -111,6 +129,38 @@ function AskRail() {
   useEffect(() => {
     if (selected) window.localStorage.setItem(SUBJECT_KEY, selected);
   }, [selected]);
+
+  // Просьба извне — «Нужна помощь» на карточке «Сейчас», вопрос из тьютора на
+  // главной. Сначала выбирается предмет, и только следующим проходом —
+  // разговор: смена предмета сбрасывает ленту, и вопрос, заданный в том же
+  // проходе, этим сбросом бы и стёрся.
+  useEffect(() => {
+    if (!pending || pending.target !== "book" || !open) return;
+    const wanted = pending.goalId ?? null;
+    if (wanted && wanted !== selected) {
+      setSelected(wanted);
+      return;
+    }
+    if (pending.chatId) {
+      void chat.openChat(pending.chatId);
+    } else if (pending.text && pending.send && !selected) {
+      // Предмет ещё не выбран — отправлять некуда. Ждём, пока панель выберет
+      // его сама (запомненный или первый); черновик — только если предметов
+      // нет вовсе.
+      if (subjects === null || subjects.length > 0) return;
+      setDraft({ text: pending.text, nonce: pending.id });
+    } else if (pending.text && pending.send) {
+      // Идущий ответ дорисуется, а вопрос уйдёт следом.
+      if (chat.busy) return;
+      // Новый вопрос — новый разговор: дописывать его в открытый вчерашний
+      // разбор значило бы смешать две темы в одной ленте.
+      chat.startNew();
+      void chat.ask(pending.text, []);
+    } else if (pending.text) {
+      setDraft({ text: pending.text, nonce: pending.id });
+    }
+    consumePrompt(pending.id);
+  }, [pending, open, selected, subjects, chat, consumePrompt]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
@@ -129,6 +179,7 @@ function AskRail() {
 
   return (
     <RailShell
+      mode="book"
       edgeLabel="Спросить по книге"
       newLabel="Новый чат"
       onNew={chat.startNew}
@@ -172,6 +223,8 @@ function AskRail() {
       }
       footer={
         <Composer
+          key={draft?.nonce ?? "composer"}
+          initialDraft={draft?.text}
           onSubmit={(text) => void chat.ask(text)}
           busy={chat.busy}
           disabled={!selected}
@@ -190,14 +243,14 @@ function AskRail() {
 function EmptyState({ subject }: { subject: Subject | null }) {
   if (subject && !subject.books) {
     return (
-      <p className="px-1 text-[13px] leading-[1.55] text-tm-faint">
+      <p className="px-1 text-[13px] leading-[1.55] text-tm-muted">
         У предмета «{subject.title}» пока нет обработанной книги. Загрузите
         учебник — и можно будет спрашивать по нему.
       </p>
     );
   }
   return (
-    <p className="px-1 text-[13px] leading-[1.55] text-tm-faint">
+    <p className="px-1 text-[13px] leading-[1.55] text-tm-muted">
       Спросите что-нибудь по книге предмета. Ответ придёт со ссылкой на раздел и
       страницу.
     </p>

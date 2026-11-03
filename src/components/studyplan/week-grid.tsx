@@ -44,6 +44,7 @@ import { loadRatio, weekLoad } from "@/lib/studyplan-load";
 import { paperCard, paperFocus } from "@/components/curriculum/paper";
 
 import type { CalendarEntry } from "./use-schedule";
+import { useAskRail } from "@/contexts/ask-rail";
 
 /** На сколько двигают блок стрелками с Alt. */
 const KEYBOARD_STEP_MINUTES = 15;
@@ -142,6 +143,9 @@ export function WeekGrid({
   const draggedRef = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [now, setNow] = useState(() => new Date());
+  // Пустая неделя зовёт помощника по расписанию. Закладки у правого края
+  // больше нет — кнопка открывает панель сама.
+  const { openRail } = useAskRail();
 
   // Шкалу больше не растягиваем под высоту экрана: рабочий день теперь всегда
   // входит в диапазон целиком (`visibleRange`), и дотягивать её пустыми часами
@@ -897,9 +901,16 @@ export function WeekGrid({
                     Свободная неделя
                   </div>
                   <p className="mx-auto mt-1.5 text-[12.5px] leading-relaxed text-tm-muted">
-                    Попроси помощника справа поставить учебную программу — её
-                    занятия появятся здесь вместе с остальным занятым временем.
+                    Попроси помощника поставить учебную программу — её занятия
+                    появятся здесь вместе с остальным занятым временем.
                   </p>
+                  <button
+                    type="button"
+                    onClick={openRail}
+                    className="mt-3 inline-flex h-9 items-center rounded-full border border-tm-line bg-tm-surface px-4 text-[13px] font-medium text-tm-ink outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
+                  >
+                    Открыть помощника по расписанию
+                  </button>
                 </div>
               </div>
             ) : null}

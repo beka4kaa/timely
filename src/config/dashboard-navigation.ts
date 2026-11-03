@@ -1,25 +1,22 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  AppleIcon,
-  BookOpenIcon,
+  AwardIcon,
   CalendarIcon,
-  CheckSquareIcon,
-  EyeIcon,
-  FlameIcon,
+  ChartLineIcon,
+  ClipboardCheckIcon,
   GraduationCapIcon,
-  HeartIcon,
-  LayoutDashboardIcon,
   LibraryIcon,
   MedalIcon,
   MessagesSquareIcon,
   NotebookPenIcon,
-  ShieldCheckIcon,
+  PresentationIcon,
   SwordsIcon,
-  TargetIcon,
   TimerIcon,
   TrophyIcon,
   ZapIcon,
 } from "lucide-react";
+
+import { NowIcon } from "./nav-icons.ts";
 
 export interface DashboardNavigationAccess {
   is_admin?: boolean;
@@ -46,8 +43,8 @@ export interface DashboardPageMeta {
 
 const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   "/dashboard": {
-    title: "Рабочее пространство",
-    subtitle: "Все учебные инструменты в одном месте",
+    title: "Сейчас",
+    subtitle: "День одной лентой и следующий шаг",
   },
   "/dashboard/diary": {
     title: "Дневник",
@@ -70,11 +67,11 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
     subtitle: "Разбор по вашим книгам со ссылками на страницы",
   },
   "/dashboard/curriculum": {
-    title: "Курс по книге",
+    title: "Библиотека",
     subtitle: "Программа по вашему учебнику со ссылками на страницы",
   },
   "/dashboard/plan": {
-    title: "План",
+    title: "План недели",
     subtitle: "Программа, разложенная по дням и часам",
   },
   // Ключ длиннее «/dashboard/curriculum», а `getDashboardPageMeta` сортирует
@@ -125,19 +122,19 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
     subtitle: "Практика и закрепление материала",
   },
   "/dashboard/arena/solve": {
-    title: "Contests",
+    title: "Контесты",
     subtitle: "Соревнования и новые задачи",
   },
   "/dashboard/arena/review": {
-    title: "Arena Review",
+    title: "Арена",
     subtitle: "Взаимная проверка решений",
   },
   "/dashboard/leaderboard": {
-    title: "Leaderboard",
+    title: "Рейтинг",
     subtitle: "Рейтинг участников Timely",
   },
   "/dashboard/achievements": {
-    title: "Achievements",
+    title: "Достижения",
     subtitle: "Личная коллекция побед",
   },
   "/dashboard/profile": {
@@ -182,76 +179,103 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
   },
 };
 
-const dashboardNavigation: DashboardNavigationGroup[] = [
+/** Страница без собственной записи: заголовок шапки не должен врать. */
+const FALLBACK_META: DashboardPageMeta = {
+  title: "Timely",
+  subtitle: "Учёба по шагам",
+};
+
+export type DashboardSectionKey =
+  | "now"
+  | "study"
+  | "tutor"
+  | "library"
+  | "contests"
+  | "progress";
+
+/**
+ * Раздел верхнего уровня — то, что стоит в рейле и в нижней панели телефона.
+ *
+ * Шесть разделов из CLAUDE.md §16. Страниц внутри больше, и они живут в
+ * `items`: рейл показывает их, когда раскрыт, а сам раздел ведёт на первую.
+ */
+export interface DashboardSection {
+  key: DashboardSectionKey;
+  title: string;
+  icon: LucideIcon;
+  url: string;
+  items: DashboardNavigationItem[];
+}
+
+const dashboardSections: DashboardSection[] = [
   {
-    label: "Главное",
+    key: "now",
+    title: "Сейчас",
+    icon: NowIcon,
+    url: "/dashboard",
+    items: [],
+  },
+  {
+    key: "study",
+    title: "Учёба",
+    icon: NotebookPenIcon,
+    url: "/dashboard/diary",
     items: [
       { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
-      { title: "Тьютор", url: "/dashboard/chat", icon: MessagesSquareIcon },
-      { title: "Доска", url: "/dashboard/whiteboard", icon: LayoutDashboardIcon },
-      { title: "Помодоро", url: "/dashboard/pomodoro", icon: TimerIcon },
-      { title: "Задачи", url: "/dashboard/tasks", icon: CheckSquareIcon },
-    ],
-  },
-  {
-    label: "Личное",
-    items: [
-      { title: "Привычки", url: "/dashboard/habits", icon: FlameIcon },
-      { title: "Карта целей", url: "/dashboard/goals", icon: TargetIcon },
-      { title: "Калории и БЖУ", url: "/dashboard/nutrition", icon: AppleIcon },
-    ],
-  },
-  {
-    label: "Учёба",
-    items: [
-      { title: "Предметы", url: "/dashboard/subjects", icon: GraduationCapIcon },
+      { title: "План недели", url: "/dashboard/plan", icon: CalendarIcon },
       { title: "Слабые темы", url: "/dashboard/weaknesses", icon: ZapIcon },
-      { title: "Курс по книге", url: "/dashboard/curriculum", icon: LibraryIcon },
-      { title: "План", url: "/dashboard/plan", icon: CalendarIcon },
-      { title: "Программа", url: "/dashboard/program", icon: BookOpenIcon },
-      { title: "Самостоятельная", url: "/dashboard/self-work", icon: HeartIcon },
     ],
   },
   {
-    label: "Сообщество",
+    key: "tutor",
+    title: "Тьютор",
+    icon: MessagesSquareIcon,
+    url: "/dashboard/chat",
     items: [
-      { title: "Contests", url: "/dashboard/arena/solve", icon: SwordsIcon },
+      { title: "Чат по книге", url: "/dashboard/chat", icon: MessagesSquareIcon },
       {
-        title: "Arena (Review)",
-        url: "/dashboard/arena/review",
-        icon: EyeIcon,
+        title: "Научная доска",
+        url: "/dashboard/whiteboard",
+        icon: PresentationIcon,
       },
-      { title: "Leaderboard", url: "/dashboard/leaderboard", icon: MedalIcon },
-      { title: "Achievements", url: "/dashboard/achievements", icon: TrophyIcon },
     ],
   },
   {
-    label: "Управление",
+    key: "library",
+    title: "Библиотека",
+    icon: LibraryIcon,
+    url: "/dashboard/curriculum",
+    items: [],
+  },
+  {
+    key: "contests",
+    title: "Соревнования",
+    icon: TrophyIcon,
+    url: "/dashboard/arena/solve",
+    items: [
+      { title: "Контесты", url: "/dashboard/arena/solve", icon: SwordsIcon },
+      { title: "Арена", url: "/dashboard/arena/review", icon: ClipboardCheckIcon },
+      { title: "Рейтинг", url: "/dashboard/leaderboard", icon: MedalIcon },
+      { title: "Достижения", url: "/dashboard/achievements", icon: AwardIcon },
+    ],
+  },
+  {
+    key: "progress",
+    title: "Прогресс",
+    icon: ChartLineIcon,
+    // Отдельной страницы прогресса пока нет; ближе всего к нему — оценки за
+    // четверть и год. Таймер — второй, со своей статистикой фокуса.
+    url: "/dashboard/diary/grades",
     items: [
       {
-        title: "Админ-панель",
-        url: "/dashboard/admin",
-        icon: ShieldCheckIcon,
-        access: "admin",
+        title: "Итоговые оценки",
+        url: "/dashboard/diary/grades",
+        icon: GraduationCapIcon,
       },
+      { title: "Помодоро", url: "/dashboard/pomodoro", icon: TimerIcon },
     ],
   },
 ];
-
-// Routes stay available in the application, while the sidebar intentionally
-// exposes only the compact set selected for the current product navigation.
-const visibleNavigationRoutes = new Set([
-  "/dashboard/diary",
-  "/dashboard/chat",
-  "/dashboard/whiteboard",
-  "/dashboard/curriculum",
-  "/dashboard/plan",
-  "/dashboard/pomodoro",
-  "/dashboard/arena/solve",
-  "/dashboard/arena/review",
-  "/dashboard/leaderboard",
-  "/dashboard/achievements",
-]);
 
 function canSeeItem(
   item: DashboardNavigationItem,
@@ -262,37 +286,73 @@ function canSeeItem(
   return Boolean(access?.is_admin || access?.is_moderator || access?.is_staff);
 }
 
+export function getDashboardSections(
+  access?: DashboardNavigationAccess | null,
+): DashboardSection[] {
+  return dashboardSections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canSeeItem(item, access)),
+  }));
+}
+
+/**
+ * Разделы плоскими группами: так их читают меню телефона и мини-рейл доски.
+ * У раздела из одной страницы пункт — он сам.
+ */
 export function getDashboardNavigation(
   access?: DashboardNavigationAccess | null,
 ): DashboardNavigationGroup[] {
-  return dashboardNavigation
-    .map((group) => ({
-      label: group.label,
-      items: group.items
-        .filter(
-          (item) =>
-            visibleNavigationRoutes.has(item.url) && canSeeItem(item, access),
-        )
-        .map((item) => ({
-          title: item.title,
-          url: item.url,
-          icon: item.icon,
-        })),
-    }))
-    .filter((group) => group.items.length > 0);
+  return getDashboardSections(access).map((section) => ({
+    label: section.title,
+    items: section.items.length
+      ? section.items
+      : [{ title: section.title, url: section.url, icon: section.icon }],
+  }));
+}
+
+function matches(pathname: string, url: string): boolean {
+  // «Сейчас» — корень дашборда, и префиксом он совпал бы с любой страницей.
+  if (url === "/dashboard") return pathname === "/dashboard";
+  return pathname === url || pathname.startsWith(`${url}/`);
+}
+
+export interface NavigationMatch {
+  section: DashboardSectionKey | null;
+  /** Адрес пункта, который подсвечивается внутри раздела. */
+  itemUrl: string | null;
+}
+
+/**
+ * Какой раздел и пункт подсветить для пути.
+ *
+ * Побеждает самое длинное совпадение: «Итоговые оценки» живут под
+ * `/dashboard/diary/grades`, и по префиксу их перехватил бы «Дневник».
+ */
+export function matchNavigation(pathname: string): NavigationMatch {
+  let best: { section: DashboardSectionKey; itemUrl: string; length: number } | null =
+    null;
+  for (const section of dashboardSections) {
+    const candidates = section.items.length
+      ? section.items.map((item) => item.url)
+      : [section.url];
+    for (const url of candidates) {
+      if (!matches(pathname, url)) continue;
+      if (!best || url.length > best.length) {
+        best = { section: section.key, itemUrl: url, length: url.length };
+      }
+    }
+  }
+  return best
+    ? { section: best.section, itemUrl: best.itemUrl }
+    : { section: null, itemUrl: null };
 }
 
 export function getDashboardPageMeta(pathname: string): DashboardPageMeta {
+  if (pathname === "/dashboard") return dashboardPageMeta["/dashboard"];
   const matchingRoute = Object.keys(dashboardPageMeta)
+    .filter((route) => route !== "/dashboard")
     .sort((a, b) => b.length - a.length)
-    .find(
-      (route) =>
-        pathname === route ||
-        (route !== "/dashboard" && pathname.startsWith(`${route}/`)),
-    );
+    .find((route) => pathname === route || pathname.startsWith(`${route}/`));
 
-  return (
-    (matchingRoute ? dashboardPageMeta[matchingRoute] : undefined) ??
-    dashboardPageMeta["/dashboard"]
-  );
+  return (matchingRoute ? dashboardPageMeta[matchingRoute] : undefined) ?? FALLBACK_META;
 }

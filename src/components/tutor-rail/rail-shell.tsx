@@ -1,6 +1,6 @@
 "use client";
 
-// Оболочка панели справа: закладка, выезд, шапка, лента, поле.
+// Оболочка панели справа: выезд, шапка, лента, поле.
 //
 // Панель работает в двух режимах — вопросы по книге и помощник по расписанию, —
 // и оболочка у них общая. Разъезжается только содержимое: плашка в шапке, лента
@@ -8,14 +8,14 @@
 // сидят z-index'ы, `inert` и правила выезда, которые чинились по одному и
 // разъехались бы на первой же правке.
 
-import type { MutableRefObject, ReactNode } from "react";
+import { useEffect, useRef, type MutableRefObject, type ReactNode } from "react";
 import { PanelRightClose, Plus } from "lucide-react";
 
 import { useAskRail } from "@/contexts/ask-rail";
-import { EdgeTab } from "./edge-tab";
 import { RailResizer } from "./rail-resizer";
 
 export function RailShell({
+  mode,
   edgeLabel,
   title,
   onNew,
@@ -24,7 +24,9 @@ export function RailShell({
   children,
   footer,
 }: {
-  /** Подпись закладки у свёрнутой панели. Называет, что за разговор внутри. */
+  /** Вид панели: просьбу о фокусе забирает только панель своего вида. */
+  mode: "book" | "schedule";
+  /** Как называть панель вслух: её подпись для скринридера. */
   edgeLabel: string;
   /** Левая часть шапки: выбор предмета или название режима. */
   title: ReactNode;
@@ -35,43 +37,76 @@ export function RailShell({
   children: ReactNode;
   footer: ReactNode;
 }) {
-  const { open, toggle, isMobile, width, dragging } = useAskRail();
+  const { open, toggle, isMobile, width, dragging, focusRequest, consumeFocus } = useAskRail();
+  const asideRef = useRef<HTMLElement>(null);
+
+  // Открыли извне — фокус в поле ввода. Панель стоит в разметке после
+  // страницы, и без этого с клавиатуры до неё пришлось бы идти через всю
+  // страницу, а на телефоне фокус остался бы на кнопке под панелью.
+  //
+  // Поле может появиться не сразу: помощник по расписанию рисует его, только
+  // когда страница сообщит расписание. Поэтому ждём его до пары секунд, а
+  // потом просьбу снимаем — чтобы она не украла фокус через минуту.
+  useEffect(() => {
+    if (!open || !focusRequest) return;
+    if (focusRequest.target !== "any" && focusRequest.target !== mode) return;
+    const { id } = focusRequest;
+    if (Date.now() - id > 5000) {
+      consumeFocus(id);
+      return;
+    }
+    let frame = 0;
+    const attempt = () => {
+      const field = asideRef.current?.querySelector<HTMLElement>(
+        "textarea:not([disabled]), input:not([type=hidden]):not([disabled])",
+      );
+      if (field) {
+        field.focus();
+        consumeFocus(id);
+        return;
+      }
+      if (Date.now() - id > 2500) {
+        consumeFocus(id);
+        return;
+      }
+      frame = window.requestAnimationFrame(attempt);
+    };
+    frame = window.requestAnimationFrame(attempt);
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, focusRequest, mode, consumeFocus]);
+
+  // На телефоне панель — лист поверх всего экрана: Escape его закрывает.
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") toggle();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, isMobile, toggle]);
 
   return (
     <>
-      {/* ── Закладка ────────────────────────────────────────────────────── */}
-      {/* Только открывает. Свернуть можно из шапки, рядом с «Новым чатом»:
-          две кнопки одного назначения в разных углах экрана — это лишний
-          поиск глазами.
-
-          Стоит по центру правого края — там же, где у открытой панели засечка
-          сгиба, и уезжает за край ровно тем движением, каким панель выезжает
-          из-за него. */}
-      <EdgeTab
-        side="right"
-        hidden={open}
-        label={edgeLabel}
-        onClick={toggle}
-        // Половина шапки: панель начинается под ней, и без сдвига закладка
-        // встала бы выше засечки сгиба, в которую превращается.
-        offsetY={24}
-        // Выше страницы (`z-[95]`), но ниже самой панели (`z-[115]`): уезжая,
-        // закладка должна скрыться ЗА её кромкой, а не поверх неё.
-        className="z-[110]"
-      />
+      {/* Закладки у края больше нет: панель открывает «Спросить» в рейле
+          слева и в нижней панели телефона. Безымянная стрелка 20×56 у правого
+          края на телефоне закрывала колонку оценок, а на компьютере ничего не
+          говорила о том, что за ней спрятано. */}
 
       {/* ── Затемнение на узком экране ──────────────────────────────────── */}
       {isMobile && open && (
         <div
-          className="fixed inset-0 top-12 z-[110] bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 top-14 z-[110] bg-black/40 backdrop-blur-sm"
           onClick={toggle}
         />
       )}
 
       {/* ── Панель ──────────────────────────────────────────────────────── */}
       <aside
+        ref={asideRef}
+        role={isMobile ? "dialog" : undefined}
+        aria-modal={isMobile && open ? true : undefined}
         style={{ width: isMobile ? "100%" : width || undefined }}
-        className={`fixed bottom-0 right-0 top-12 z-[115] border-l border-tm-line ${
+        className={`fixed bottom-0 right-0 top-14 z-[115] border-l border-tm-line ${
           dragging ? "" : "transition-transform duration-300 ease-in-out"
         } ${
           // Тень слева: лист, приподнятый над страницей, а не приклеенный к
@@ -80,6 +115,7 @@ export function RailShell({
             ? "translate-x-0 shadow-[-18px_0_40px_-24px_rgba(67,57,45,0.25)]"
             : "translate-x-full"
         }`}
+        aria-label={edgeLabel}
         aria-hidden={!open}
         // Панель уезжает трансформацией и остаётся в DOM. Без этого её поле
         // ввода ловило бы фокус по Tab со страницы, где панели не видно.

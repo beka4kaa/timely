@@ -15,7 +15,7 @@ test("normalizes forwarded hosts with ports and trailing dots", () => {
   assert.equal(normalizeHostname("timelyplan.me., proxy.internal"), "timelyplan.me");
 });
 
-test("rewrites the app root to the dashboard diary without a public redirect", () => {
+test("rewrites the app root to the «Сейчас» home without a public redirect", () => {
   assert.deepEqual(
     resolveHostRouting({
       hostname: "app.timelyplan.me",
@@ -23,7 +23,7 @@ test("rewrites the app root to the dashboard diary without a public redirect", (
     }),
     {
       type: "rewrite",
-      pathname: "/dashboard/diary",
+      pathname: "/dashboard",
     },
   );
 });
@@ -122,8 +122,8 @@ test("clean app paths resolve to their dashboard route", () => {
   assert.equal(toDashboardPath("/curriculum/plan"), "/dashboard/curriculum/plan");
 });
 
-test("the clean app root is the diary, as the rewrite says", () => {
-  assert.equal(toDashboardPath("/"), "/dashboard/diary");
+test("the clean app root is the «Сейчас» home, as the rewrite says", () => {
+  assert.equal(toDashboardPath("/"), "/dashboard");
 });
 
 test("dashboard paths pass through untouched", () => {

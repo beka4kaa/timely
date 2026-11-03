@@ -9,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     // not the apex marketing domain.
     id: 'https://app.timelyplan.me/',
     scope: '/',
-    // '/' is rewritten to /dashboard/diary internally by the host routing,
-    // so launching the PWA costs no extra redirect.
+    // '/' is rewritten to /dashboard («Сейчас») internally by the host
+    // routing, so launching the PWA costs no extra redirect.
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',

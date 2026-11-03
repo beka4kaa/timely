@@ -1,0 +1,29 @@
+/* Цвета — те же, что у живого слайма (landing/slime.module.css). */
+.glyph {
+  --slime-hi: #5b5b6e;
+  --slime-mid: #23232e;
+  --slime-lo: #0b0b10;
+  --slime-eye: #ffffff;
+  --slime-eye-shade: #d5d5e0;
+  --slime-sheen: 0.1;
+  --slime-rim: rgba(255, 255, 255, 0.07);
+  --slime-gloss: 0.32;
+
+  display: block;
+  flex: none;
+  overflow: visible;
+  color: #14141c;
+}
+
+:global(.dark) .glyph {
+  --slime-hi: #ffffff;
+  --slime-mid: #ececf3;
+  --slime-lo: #a4a4b6;
+  --slime-eye: #14141c;
+  --slime-eye-shade: #383844;
+  --slime-sheen: 0.5;
+  --slime-rim: rgba(20, 20, 40, 0.1);
+  --slime-gloss: 0.9;
+
+  color: #000000;
+}

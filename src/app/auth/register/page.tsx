@@ -56,7 +56,7 @@ export default function RegisterPage() {
         })
 
         if (result?.ok) {
-          router.push('/dashboard/diary')
+          router.push('/dashboard')
         } else {
           router.push('/auth/signin')
         }
@@ -74,7 +74,7 @@ export default function RegisterPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
     try {
-      await signIn('google', { callbackUrl: '/dashboard/diary', redirect: true })
+      await signIn('google', { callbackUrl: '/dashboard', redirect: true })
     } catch (error) {
       toast.error('Ошибка входа через Google')
       setIsLoading(false)

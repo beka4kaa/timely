@@ -541,7 +541,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!loading && !me?.is_admin) {
-      router.replace("/dashboard/diary")
+      router.replace("/dashboard")
     }
   }, [loading, me?.is_admin, router])
 

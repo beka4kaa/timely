@@ -1,160 +1,351 @@
 "use client";
 
-import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { signOut } from "next-auth/react";
-import { LogOut, UserRound } from "lucide-react";
+// Рейл дашборда: шесть разделов из CLAUDE.md §16 с подписями.
+//
+// Прежний рейл был столбиком из десяти безымянных иконок: подписи жили только
+// в подсказках при наведении, а на планшете их не было вовсе. Теперь у каждого
+// раздела подпись видна всегда.
+//
+// Страницы раздела открываются карточкой рядом с ним — наведением, фокусом с
+// клавиатуры или касанием. Сам рейл при этом не меняет форму: раньше он
+// раскрывался целиком, вставлял списки страниц между разделами, и пункт,
+// к которому тянулась мышь, уезжал из-под неё. На широком экране рейл можно
+// закрепить раскрытым — тогда страницы видны списком и карточки не нужны.
+//
+// Внизу — слайм «Спросить»: он открывает панель тьютора справа.
 
-import { UserAvatar } from "@/components/user-avatar";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
+import { LogoMark } from "@/components/landing/logo-mark";
+import { SlimeGlyph } from "@/components/nav/slime-glyph";
+import { useShellStatus, type ShellStatus } from "@/components/nav/use-shell-status";
+import { useFullAccessDenied } from "@/components/full-access-gate";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { getDashboardNavigation } from "@/config/dashboard-navigation";
-import { useMe } from "@/lib/contest-api";
+  getDashboardSections,
+  matchNavigation,
+  type DashboardSection,
+  type DashboardSectionKey,
+} from "@/config/dashboard-navigation";
+import { isRailFreeRoute } from "@/config/rail-free-routes";
+import { useAskRail } from "@/contexts/ask-rail";
+import { useDashboardShell } from "@/contexts/dashboard-shell";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
+
+import styles from "./app-sidebar.module.css";
+
+/** Задержка карточки по наведению: мышь, пролетающая к странице, её не откроет. */
+const HOVER_OPEN_MS = 140;
+const HOVER_CLOSE_MS = 180;
+/** Высота строки карточки и её шапки — чтобы не уехать за нижний край окна. */
+const FLYOUT_ROW = 38;
+const FLYOUT_HEAD = 46;
+
+interface Flyout {
+  key: DashboardSectionKey;
+  top: number;
+}
 
 export function AppSidebar() {
   // Канонический путь: на app-хосте в адресной строке `/whiteboard`, и
-  // рельс не убирался с доски, у которой есть собственный.
+  // рейл не убирался с доски, у которой есть собственный.
   const pathname = useDashboardPath();
-  const { data: session } = useSession();
-  const { me } = useMe();
+  const router = useRouter();
+  const { pinned, canPin, ready, togglePinned } = useDashboardShell();
+  const askRail = useAskRail();
+  const denied = useFullAccessDenied();
+  const hidden = pathname === "/dashboard/whiteboard";
+  const status = useShellStatus(!hidden && !denied);
 
-  if (pathname === "/dashboard/whiteboard") {
-    return null;
-  }
+  const [flyout, setFlyout] = useState<Flyout | null>(null);
+  const openTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const pointerType = useRef<string>("mouse");
+  const asideRef = useRef<HTMLElement>(null);
 
-  const navigationGroups = getDashboardNavigation({
-    is_admin: me?.is_admin,
-    is_moderator: me?.is_moderator,
-    is_staff: me?.is_staff,
-  });
-  const userName = session?.user?.name || "User";
-  const userEmail = session?.user?.email || "Профиль Timely";
+  const clearTimers = useCallback(() => {
+    if (openTimer.current) window.clearTimeout(openTimer.current);
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    openTimer.current = null;
+    closeTimer.current = null;
+  }, []);
+
+  useEffect(() => clearTimers, [clearTimers]);
+
+  // Переход по ссылке закрывает карточку: она про раздел, из которого ушли.
+  useEffect(() => {
+    clearTimers();
+    setFlyout(null);
+  }, [pathname, clearTimers]);
+
+  // Открытую карточку закрывают Escape и касание мимо — откуда бы ни был фокус.
+  useEffect(() => {
+    if (!flyout) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const aside = asideRef.current;
+      const inside = aside?.contains(document.activeElement) ?? false;
+      // Сначала фокус на раздел, потом закрыть: фокус с клавиатуры сам
+      // открывает карточку, и закрытие должно быть последним словом.
+      if (inside) {
+        aside
+          ?.querySelector<HTMLElement>(`[data-section="${flyout.key}"]`)
+          ?.focus();
+      }
+      setFlyout(null);
+    };
+    const onPointer = (event: PointerEvent) => {
+      if (!asideRef.current?.contains(event.target as Node)) setFlyout(null);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [flyout]);
+
+  if (hidden) return null;
+
+  const sections = getDashboardSections();
+  const { section: activeSection, itemUrl: activeItem } = matchNavigation(pathname);
+  const askOnPage = !isRailFreeRoute(pathname);
+
+  const openFor = (section: DashboardSection, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const height = FLYOUT_HEAD + section.items.length * FLYOUT_ROW + 16;
+    const top = Math.max(8, Math.min(rect.top - 6, window.innerHeight - height - 8));
+    setFlyout({ key: section.key, top });
+  };
+
+  const hasFlyout = (section: DashboardSection) => !pinned && section.items.length > 1;
+
+  const ask = () => {
+    if (!askOnPage) {
+      // На «Тьюторе» и доске своя переписка во весь экран — панель там не
+      // открывается, и «Спросить» ведёт в сам тьютор.
+      router.push("/dashboard/chat");
+      return;
+    }
+    if (askRail.open) askRail.toggle();
+    else askRail.openRail();
+  };
 
   return (
-    <aside className="fixed bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-tm-line bg-tm-bg py-2 md:flex">
-      <TooltipProvider delayDuration={120}>
-        <nav
-          aria-label="Разделы Timely"
-          className="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto px-2 [scrollbar-width:none]"
-        >
-          {navigationGroups.map((group, groupIndex) => (
+    <aside
+      ref={asideRef}
+      className={styles.rail}
+      data-pinned={pinned}
+      data-ready={ready}
+      aria-label="Навигация"
+    >
+      <Link href="/dashboard" className={styles.logo} aria-label="Timely — сейчас">
+        <LogoMark size={36} />
+        <span className={styles.brand} aria-hidden="true">
+          Timely
+        </span>
+      </Link>
+
+      <nav aria-label="Разделы Timely" className={styles.nav}>
+        {sections.map((section) => {
+          const Icon = section.icon;
+          const active = activeSection === section.key;
+          const badge = sectionBadge(section.key, status);
+          const withFlyout = hasFlyout(section);
+          const open = flyout?.key === section.key;
+          const name = badge.label ? `${section.title}, ${badge.label}` : section.title;
+
+          const onClick = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+            // На касании первая — показать страницы раздела, вторая — перейти:
+            // у планшета нет наведения, а «Ещё» с полным меню живёт только на
+            // телефоне.
+            const touch = pointerType.current === "touch" || pointerType.current === "pen";
+            if (withFlyout && touch && !open) {
+              event.preventDefault();
+              openFor(section, event.currentTarget);
+            }
+          };
+
+          return (
             <div
-              key={group.label}
-              aria-label={group.label}
-              className="flex w-full flex-col items-center gap-0.5"
+              key={section.key}
+              className={styles.group}
+              onPointerEnter={(event) => {
+                if (event.pointerType !== "mouse" || !withFlyout) return;
+                clearTimers();
+                const target = event.currentTarget.firstElementChild as HTMLElement | null;
+                if (!target) return;
+                // Из одной карточки в соседнюю — сразу, без повторной задержки.
+                if (flyout) openFor(section, target);
+                else
+                  openTimer.current = window.setTimeout(
+                    () => openFor(section, target),
+                    HOVER_OPEN_MS,
+                  );
+              }}
+              onPointerLeave={(event) => {
+                if (event.pointerType !== "mouse" || !withFlyout) return;
+                clearTimers();
+                closeTimer.current = window.setTimeout(() => setFlyout(null), HOVER_CLOSE_MS);
+              }}
+              onBlur={(event) => {
+                if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setFlyout(null);
+                }
+              }}
             >
-              {group.items.map((item) => {
-                const active =
-                  pathname === item.url || pathname.startsWith(`${item.url}/`);
-                const Icon = item.icon;
-
-                return (
-                  <Tooltip key={item.url}>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href={item.url}
-                        aria-label={item.title}
-                        aria-current={active ? "page" : undefined}
-                        className={`grid h-8 w-10 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
-                          active
-                            ? "bg-tm-strong text-tm-on-strong shadow-[0_8px_18px_-10px_rgba(0,0,0,0.45)]"
-                            : "text-tm-faint hover:bg-tm-surface-2 hover:text-tm-ink"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      sideOffset={8}
-                      className="border-tm-strong bg-tm-strong px-2.5 py-1.5 text-[11px] text-tm-on-strong"
-                    >
-                      {item.title}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-              {groupIndex < navigationGroups.length - 1 && (
-                <span className="my-1 h-px w-5 bg-tm-line" />
-              )}
-            </div>
-          ))}
-        </nav>
-
-        <div className="mt-1 flex flex-col items-center gap-1">
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Открыть профиль"
-                    className="grid h-10 w-10 place-items-center rounded-[12px] outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35 data-[state=open]:bg-tm-surface-2"
-                  >
-                    <UserAvatar size={28} />
-                  </button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent
-                side="right"
-                sideOffset={8}
-                className="border-tm-strong bg-tm-strong px-2.5 py-1.5 text-[11px] text-tm-on-strong"
+              <Link
+                href={section.url}
+                className={styles.item}
+                data-section={section.key}
+                data-active={active}
+                aria-current={
+                  active ? (activeItem === section.url ? "page" : "true") : undefined
+                }
+                aria-label={name}
+                aria-expanded={withFlyout ? open : undefined}
+                onPointerDown={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onKeyDown={() => {
+                  pointerType.current = "keyboard";
+                }}
+                onFocus={(event) => {
+                  if (withFlyout && event.currentTarget.matches(":focus-visible")) {
+                    openFor(section, event.currentTarget);
+                  }
+                }}
+                onClick={onClick}
               >
-                Профиль
-              </TooltipContent>
-            </Tooltip>
-
-            <DropdownMenuContent
-              side="right"
-              align="end"
-              sideOffset={8}
-              className="w-60 rounded-[18px] border-tm-line bg-tm-surface/95 p-1.5 text-tm-ink shadow-[0_20px_55px_-12px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_55px_-12px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
-            >
-              <DropdownMenuLabel className="flex items-center gap-2.5 px-2 py-2 font-normal">
-                <UserAvatar size={36} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">
-                    {userName}
-                  </span>
-                  <span className="block truncate text-xs text-tm-muted">
-                    {userEmail}
-                  </span>
+                <span className={styles.ico} aria-hidden="true">
+                  <Icon strokeWidth={1.8} />
+                  {badge.node}
                 </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-tm-line" />
-              <DropdownMenuItem
-                asChild
-                className="cursor-pointer rounded-xl px-2.5 py-2 focus:bg-tm-surface-2 focus:text-tm-ink"
-              >
-                <Link href="/dashboard/profile">
-                  <UserRound className="h-4 w-4" />
-                  Профиль
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-                className="cursor-pointer rounded-xl px-2.5 py-2 text-tm-danger focus:bg-tm-danger-soft focus:text-tm-danger"
-              >
-                <LogOut className="h-4 w-4" />
-                Выйти
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </TooltipProvider>
+                <span className={styles.label} aria-hidden="true">
+                  {section.title}
+                </span>
+              </Link>
+
+              {section.items.length > 1 && pinned ? (
+                <div className={styles.sub}>
+                  <SubLinks section={section} activeItem={activeItem} status={status} />
+                </div>
+              ) : null}
+
+              {withFlyout ? (
+                <div
+                  className={styles.flyout}
+                  hidden={!open}
+                  style={open ? { top: flyout?.top } : undefined}
+                >
+                  <div className={styles.flyoutCard}>
+                    <p className={styles.flyoutTitle} aria-hidden="true">
+                      {section.title}
+                    </p>
+                    <SubLinks section={section} activeItem={activeItem} status={status} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </nav>
+
+      <div className={styles.foot}>
+        <button
+          type="button"
+          className={styles.ask}
+          onClick={ask}
+          aria-label="Спросить тьютора"
+          aria-expanded={askOnPage ? askRail.open : undefined}
+        >
+          <SlimeGlyph className={styles.askSlime} />
+          <span className={styles.askLabel} aria-hidden="true">
+            Спросить
+          </span>
+          <span className={styles.askText} aria-hidden="true">
+            <b>Спросить тьютора</b>
+            <span>Знает, что у тебя сейчас</span>
+          </span>
+        </button>
+        {canPin ? (
+          <button
+            type="button"
+            className={styles.pin}
+            onClick={togglePinned}
+            aria-pressed={pinned}
+            aria-label="Закрепить меню"
+            title={pinned ? "Свернуть меню" : "Закрепить меню открытым"}
+          >
+            {pinned ? <PanelLeftClose /> : <PanelLeftOpen />}
+          </button>
+        ) : null}
+      </div>
     </aside>
   );
+}
+
+function SubLinks({
+  section,
+  activeItem,
+  status,
+}: {
+  section: DashboardSection;
+  activeItem: string | null;
+  status: ShellStatus;
+}) {
+  return (
+    <>
+      {section.items.map((item) => {
+        const due =
+          item.url === "/dashboard/weaknesses" && status.dueReviews ? status.dueReviews : 0;
+        return (
+          <Link
+            key={item.url}
+            href={item.url}
+            className={styles.sublink}
+            data-active={activeItem === item.url}
+            aria-current={activeItem === item.url ? "page" : undefined}
+          >
+            <span>{item.title}</span>
+            {due ? (
+              <span className={styles.subMeta}>
+                {due}
+                <span className={styles.srOnly}> к повторению</span>
+              </span>
+            ) : (
+              <ChevronRight className={styles.subChev} aria-hidden="true" />
+            )}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
+
+function sectionBadge(
+  key: DashboardSectionKey,
+  status: ShellStatus,
+): { node: React.ReactNode; label: string } {
+  if (key === "now" && status.live) {
+    return { node: <span className={styles.live} />, label: "идёт занятие" };
+  }
+  if (key === "study" && status.dueReviews > 0) {
+    return {
+      node: <span className={styles.count}>{status.dueReviews > 9 ? "9+" : status.dueReviews}</span>,
+      label: `${status.dueReviews} к повторению`,
+    };
+  }
+  if (key === "library" && status.ingesting) {
+    return { node: <span className={styles.spin} />, label: "книга обрабатывается" };
+  }
+  return { node: null, label: "" };
 }

@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Barcode, Camera, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { GLASS, softHaptic } from './lib'
+import { BodyPortal } from "@/components/ui/body-portal"
 
 interface AddSheetProps {
   open: boolean
@@ -48,10 +49,12 @@ function SheetAction({
 }
 
 export function AddSheet({ open, onClose, onBarcode, onPhoto }: AddSheetProps) {
+  // В body: изнутри `<main>` лист не поднялся бы над нижней панелью разделов.
   return (
+    <BodyPortal>
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-[200]">
           {/* Затемнение */}
           <motion.div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -103,5 +106,6 @@ export function AddSheet({ open, onClose, onBarcode, onPhoto }: AddSheetProps) {
         </div>
       )}
     </AnimatePresence>
+    </BodyPortal>
   )
 }

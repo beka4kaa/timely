@@ -87,9 +87,9 @@ export function dashboardPathToAppPath(pathname: string): string {
 
 export function appPathToDashboardPath(pathname: string): string {
   if (pathname === "/") {
-    // /dashboard currently resolves to the diary. Rewriting directly keeps the
-    // public app URL at "/" instead of exposing the internal redirect target.
-    return "/dashboard/diary";
+    // Корень приложения — «Сейчас», он же `/dashboard`. Адрес в строке
+    // остаётся «/», без внутреннего редиректа.
+    return "/dashboard";
   }
 
   const normalizedPath = pathname.startsWith("/")

@@ -123,6 +123,8 @@
 
 :root {
   --font-handwriting: 'Caveat', cursive;
+  /* Нижняя панель разделов на телефоне. На ≥768 px её нет — там рейл слева. */
+  --tm-tabbar-h: calc(62px + env(safe-area-inset-bottom));
 }
 
 @layer base {
@@ -152,6 +154,12 @@
     --tm-lilac: 224 208 247;
     --tm-sky: 207 229 248;
     --tm-mint: 211 240 228;
+    --tm-pink-ink: 166 46 100;
+    --tm-lilac-ink: 116 72 196;
+    --tm-sky-ink: 30 98 160;
+    --tm-mint-ink: 26 112 88;
+    --tm-warn: 163 90 29;
+    --tm-margin: 236 196 213;
     --tm-dot: 23 23 31;
     --tm-danger: 176 71 62;
     --tm-danger-soft: 251 238 236;
@@ -212,6 +220,12 @@
     --tm-lilac: 51 39 92;
     --tm-sky: 27 52 82;
     --tm-mint: 22 58 48;
+    --tm-pink-ink: 245 156 195;
+    --tm-lilac-ink: 196 168 255;
+    --tm-sky-ink: 140 202 255;
+    --tm-mint-ink: 127 220 185;
+    --tm-warn: 242 179 122;
+    --tm-margin: 77 43 66;
     --tm-dot: 255 255 255;
     --tm-danger: 255 155 143;
     --tm-danger-soft: 58 28 32;
@@ -286,6 +300,12 @@
   --tm-lilac: 224 208 247;
   --tm-sky: 207 229 248;
   --tm-mint: 211 240 228;
+  --tm-pink-ink: 166 46 100;
+  --tm-lilac-ink: 116 72 196;
+  --tm-sky-ink: 30 98 160;
+  --tm-mint-ink: 26 112 88;
+  --tm-warn: 163 90 29;
+  --tm-margin: 236 196 213;
   --tm-dot: 23 23 31;
   --tm-danger: 176 71 62;
   --tm-danger-soft: 251 238 236;
@@ -358,6 +378,12 @@
     --tm-lilac: 224 208 247;
     --tm-sky: 207 229 248;
     --tm-mint: 211 240 228;
+    --tm-pink-ink: 166 46 100;
+    --tm-lilac-ink: 116 72 196;
+    --tm-sky-ink: 30 98 160;
+    --tm-mint-ink: 26 112 88;
+    --tm-warn: 163 90 29;
+    --tm-margin: 236 196 213;
     --tm-dot: 23 23 31;
     --tm-danger: 176 71 62;
     --tm-danger-soft: 251 238 236;
@@ -383,7 +409,8 @@
   }
 
   .timely-dashboard-shell > header,
-  .timely-dashboard-shell > aside {
+  .timely-dashboard-shell > aside,
+  .timely-dashboard-shell > nav {
     display: none !important;
   }
 

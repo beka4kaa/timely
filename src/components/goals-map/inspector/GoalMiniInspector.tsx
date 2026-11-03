@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useMotionValue, useDragControls, animate as fmAnimate } from 'framer-motion'
+import { BodyPortal } from '@/components/ui/body-portal'
 import { X, CheckCircle2, Circle, Plus, Trash2, Ban, GitBranch, Calendar, Link2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ACCENT_GRADIENT } from '@/components/habits/lib'
@@ -102,6 +103,8 @@ export function GoalMiniInspector() {
   )
 
   return (
+    // В body: изнутри `<main>` окно не поднялось бы над рейлом и нижней панелью.
+    <BodyPortal>
     <AnimatePresence>
       {goal && (
         <motion.div
@@ -110,7 +113,7 @@ export function GoalMiniInspector() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 max-sm:p-0 max-sm:items-end"
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 max-sm:p-0 max-sm:items-end"
         >
           {/* Dim backdrop — click to close */}
           <button
@@ -450,5 +453,6 @@ export function GoalMiniInspector() {
         </motion.div>
       )}
     </AnimatePresence>
+    </BodyPortal>
   )
 }

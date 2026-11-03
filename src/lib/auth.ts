@@ -81,7 +81,7 @@ export const authOptions: NextAuthOptions = {
       } catch {
         // ignore invalid URLs, fall through to default
       }
-      return `${baseUrl}/dashboard/diary`;
+      return `${baseUrl}/dashboard`;
     },
 
     async signIn({ user, account }) {

@@ -23,7 +23,9 @@ export function PomodoroHeaderPill() {
   const phaseName = phase === "focus" ? "Фокус" : "Перерыв";
 
   return (
-    <div className="hidden items-center sm:flex">
+    // На телефоне пилюля появляется, только когда таймер уже идёт: «Начать
+    // таймер» там не помещается, а идущий отсчёт терять нельзя.
+    <div className={`items-center sm:flex ${hasStarted ? "flex" : "hidden"}`}>
       <button
         type="button"
         onClick={toggle}
@@ -59,7 +61,7 @@ export function PomodoroHeaderPill() {
           onClick={reset}
           aria-label="Сбросить таймер"
           title="Сбросить таймер"
-          className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-tm-faint outline-none transition-colors hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
+          className="-ml-1 hidden h-8 w-7 place-items-center rounded-r-full text-tm-faint outline-none transition-colors hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/30 sm:grid"
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </button>

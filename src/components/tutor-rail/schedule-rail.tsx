@@ -53,6 +53,7 @@ import {
   type ProposedStudyWindows,
 } from "@/lib/studyplan-chat";
 import "katex/dist/katex.min.css";
+import { useAskRail } from "@/contexts/ask-rail";
 import { RailShell, railPillButtonClass } from "./rail-shell";
 
 /** Сколько последних реплик уходит в контекст. Столько же было у панели. */
@@ -213,6 +214,37 @@ export function ScheduleRail() {
     [markPendingTarget, scheduleId, selectSchedule],
   );
 
+  // Просьба извне — «Перенести» и «Изменить план» на главной. Ждём, пока
+  // страница сообщит расписание: без него помощнику не к чему применять
+  // запрос. Если просьба про конкретное расписание, сначала переключаемся на
+  // него: помощник правит только то расписание, что выбрано, и перенос
+  // алгебры, отправленный в физику, ничего бы не перенёс.
+  const { pending, consumePrompt } = useAskRail();
+  useEffect(() => {
+    if (!pending || pending.target !== "schedule") return;
+    if (!ready || thinking || selectingTarget) return;
+    if (pending.scheduleId && pending.scheduleId !== scheduleId) {
+      if (scheduleOptions.some((option) => option.id === pending.scheduleId)) {
+        selectKnownSchedule(pending.scheduleId);
+      } else {
+        consumePrompt(pending.id);
+      }
+      return;
+    }
+    consumePrompt(pending.id);
+    if (pending.text && pending.send) void send(pending.text, "plan");
+  }, [
+    consumePrompt,
+    pending,
+    ready,
+    scheduleId,
+    scheduleOptions,
+    selectKnownSchedule,
+    selectingTarget,
+    send,
+    thinking,
+  ]);
+
   const setupCreated = useCallback((result: { schedule: { id: string } }) => {
     // Пока страница перечитывает созданный id, composer заблокирован и не
     // может отправить запрос в предыдущее расписание. Страница выбирает id
@@ -328,6 +360,7 @@ export function ScheduleRail() {
 
   return (
     <RailShell
+      mode="schedule"
       edgeLabel="Помощник по расписанию"
       newLabel="Начать заново"
       onNew={turns.length || setupOpen ? clear : undefined}

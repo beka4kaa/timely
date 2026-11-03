@@ -7,13 +7,17 @@ import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
 import { ActiveSubjectProvider } from "@/contexts/active-subject"
 import { ActiveScheduleProvider } from "@/contexts/active-schedule"
 import { AskRailProvider } from "@/contexts/ask-rail"
+import { DashboardShellProvider } from "@/contexts/dashboard-shell"
+import { MobileTabBar } from "@/components/nav/mobile-tab-bar"
 import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
 
 export const metadata: Metadata = {
   title: {
-    default: "Dashboard",
-    template: "%s | TimelyPlan",
+    // Страницы раздела в основном клиентские и своего заголовка не задают —
+    // им достаётся имя продукта, а не чужой раздел.
+    default: "Timely",
+    template: "%s | Timely",
   },
   description: "Личный кабинет TimelyPlan: дневник, цели, расписание, привычки и учебные инструменты.",
   robots: {
@@ -33,6 +37,7 @@ export default function DashboardLayout({
         <ActiveSubjectProvider>
         <ActiveScheduleProvider>
         <AskRailProvider>
+        <DashboardShellProvider>
         {/* Цвета — токены из globals.css (светлая и тёмная тема), без
             локальных переопределений. */}
         <div className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-tm-bg text-tm-ink">
@@ -50,7 +55,10 @@ export default function DashboardLayout({
               На «Плане» это помощник по расписанию, на остальных страницах —
               вопросы по книге предмета; выбор режима внутри самой панели. */}
           <SubjectAskRail />
+          {/* Разделы на телефоне: на ≥768 px их показывает рейл слева. */}
+          <MobileTabBar />
         </div>
+        </DashboardShellProvider>
         </AskRailProvider>
         </ActiveScheduleProvider>
         </ActiveSubjectProvider>

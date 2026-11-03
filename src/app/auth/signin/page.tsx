@@ -32,15 +32,15 @@ import {
  * требует Suspense-границы вокруг страницы, и без неё падает сборка.
  */
 function safeCallback(raw: string | null): string {
-  if (!raw) return '/dashboard/diary'
-  if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard/diary'
+  if (!raw) return '/dashboard'
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard'
   return raw
 }
 
 export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
-  const [callbackUrl, setCallbackUrl] = useState('/dashboard/diary')
+  const [callbackUrl, setCallbackUrl] = useState('/dashboard')
 
   useEffect(() => {
     const raw = new URLSearchParams(window.location.search).get('callbackUrl')
@@ -135,7 +135,7 @@ export default function SignInPage() {
         <SubmitButton disabled={isLoading}>{isLoading ? 'Входим…' : 'Войти'}</SubmitButton>
 
         {process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === 'true' && (
-          <SecondaryButton onClick={() => router.push('/dashboard/diary')} disabled={isLoading}>
+          <SecondaryButton onClick={() => router.push('/dashboard')} disabled={isLoading}>
             Войти без аккаунта (dev)
           </SecondaryButton>
         )}
