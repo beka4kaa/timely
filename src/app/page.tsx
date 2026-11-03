@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
+  ArrowUpRight,
   Atom,
   BookOpen,
   CalendarDays,
@@ -217,6 +218,7 @@ export default function HomePage() {
             </Link>
             <Link href={appLink()} className={styles.darkButton}>
               Открыть Timely
+              <ArrowUpRight size={17} strokeWidth={2.2} aria-hidden="true" />
             </Link>
           </div>
         </div>
@@ -493,6 +495,7 @@ export default function HomePage() {
                   <div className={styles.ctaActions}>
                     <Link href={appLink()} className={styles.darkButton}>
                       Открыть Timely
+                      <ArrowUpRight size={17} strokeWidth={2.2} aria-hidden="true" />
                     </Link>
                     <Link href={appLink("/auth/register")} className={styles.lightButton}>
                       Создать аккаунт
