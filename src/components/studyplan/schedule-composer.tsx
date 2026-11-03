@@ -150,9 +150,9 @@ export function ScheduleComposer({
           id={menuId}
           role="listbox"
           aria-label="Команды помощника по расписанию"
-          className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-30 overflow-hidden rounded-[15px] border border-[#d9dde7] bg-[#fffefa] p-1.5 shadow-[0_16px_42px_rgba(38,52,77,0.16)]"
+          className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-30 overflow-hidden rounded-[15px] border border-tm-line bg-tm-surface p-1.5 shadow-[0_16px_42px_rgba(0,0,0,0.16)]"
         >
-          <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#9299a8]">
+          <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-tm-faint">
             Навыки расписания
           </div>
           {matches.length ? (
@@ -167,24 +167,24 @@ export function ScheduleComposer({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => chooseCommand(item)}
                 className={`group flex w-full items-start gap-3 rounded-[11px] px-2.5 py-2 text-left outline-none transition-colors ${
-                  index === activeIndex ? "bg-[#eef4ff]" : "hover:bg-[#f4f6fa]"
+                  index === activeIndex ? "bg-tm-surface-2" : "hover:bg-tm-surface-2"
                 } ${item.available ? "" : "opacity-55"}`}
               >
-                <span className="min-w-[54px] pt-px font-mono text-[12px] font-semibold text-[#2563eb] decoration-[#2563eb] decoration-dotted underline-offset-4 group-hover:underline group-focus-visible:underline">
+                <span className="min-w-[54px] pt-px font-mono text-[12px] font-semibold text-[#2563eb] decoration-[#2563eb] dark:text-[#93b4ff] dark:decoration-[#93b4ff] decoration-dotted underline-offset-4 group-hover:underline group-focus-visible:underline">
                   {item.command}
                 </span>
                 <span className="min-w-0">
-                  <span className="block font-serif text-[12px] font-semibold text-[#3f4652]">
+                  <span className="block font-serif text-[12px] font-semibold text-tm-ink">
                     {item.title}
                   </span>
-                  <span className="mt-0.5 block text-[10.5px] leading-snug text-[#858c98]">
+                  <span className="mt-0.5 block text-[10.5px] leading-snug text-tm-faint">
                     {item.available ? item.description : item.unavailableReason}
                   </span>
                 </span>
               </button>
             ))
           ) : (
-            <div className="px-2.5 py-2 text-[11.5px] text-[#8a6a5d]">
+            <div className="px-2.5 py-2 text-[11.5px] text-tm-muted">
               Такой команды нет. Доступны <CommandWord>/start</CommandWord> и{" "}
               <CommandWord>/plan</CommandWord>.
             </div>
@@ -200,7 +200,7 @@ export function ScheduleComposer({
               type="button"
               onClick={() => execute(prompt)}
               disabled={busy || disabled}
-              className="shrink-0 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] px-3 py-1.5 font-serif text-[12px] text-[#7e776e] transition-colors hover:border-[#8caaf1] hover:text-[#2459bd] disabled:cursor-not-allowed disabled:opacity-45"
+              className="shrink-0 rounded-full border border-tm-line bg-tm-surface px-3 py-1.5 font-serif text-[12px] text-tm-muted transition-colors hover:border-tm-line-strong hover:text-tm-ink disabled:cursor-not-allowed disabled:opacity-45"
             >
               {prompt}
             </button>
@@ -208,7 +208,7 @@ export function ScheduleComposer({
         </div>
       ) : null}
 
-      <div className="flex items-end gap-2 rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] px-3 py-2 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#6f95e8] focus-within:shadow-[0_10px_30px_rgba(43,96,190,0.10)]">
+      <div className="flex items-end gap-2 rounded-[17px] border border-tm-line bg-tm-surface px-3 py-2 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#6f95e8] focus-within:shadow-[0_10px_30px_rgba(43,96,190,0.10)]">
         {pendingMode === "plan" ? (
           <button
             type="button"
@@ -218,7 +218,7 @@ export function ScheduleComposer({
               textareaRef.current?.focus();
             }}
             aria-label="Отключить навык /plan"
-            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-[#b8caf5] bg-[#edf3ff] px-2 font-mono text-[11px] font-semibold text-[#2563eb] outline-none hover:underline hover:decoration-dotted hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-[#6f95e8]/35"
+            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-[#b8caf5] bg-[#edf3ff] px-2 font-mono text-[11px] font-semibold text-[#2563eb] dark:border-tm-line dark:bg-tm-sky dark:text-[#93b4ff] outline-none hover:underline hover:decoration-dotted hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-[#6f95e8]/35"
           >
             /plan
             <X className="h-3 w-3" aria-hidden />
@@ -287,7 +287,7 @@ export function ScheduleComposer({
             }
           }}
           style={{ maxHeight: 160 }}
-          className="min-h-[24px] min-w-0 flex-1 resize-none self-center bg-transparent py-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
+          className="min-h-[24px] min-w-0 flex-1 resize-none self-center bg-transparent py-1 font-serif text-[14px] leading-relaxed text-tm-ink outline-none placeholder:text-tm-faint"
         />
 
         <TooltipProvider delayDuration={300}>
@@ -298,7 +298,7 @@ export function ScheduleComposer({
                 onClick={() => (busy && onStop ? onStop() : execute(draft))}
                 disabled={busy ? !onStop : !draft.trim() || disabled}
                 aria-label={busy && onStop ? "Остановить" : "Отправить"}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#567fd8] text-white outline-none transition-colors hover:bg-[#3d67c2] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b]"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#567fd8] text-white outline-none transition-colors hover:bg-[#3d67c2] disabled:bg-tm-surface-3 disabled:text-tm-faint"
               >
                 {busy ? (
                   onStop ? (
@@ -319,7 +319,7 @@ export function ScheduleComposer({
       </div>
 
       {error ? (
-        <p className="mt-1.5 px-1 text-[11px] leading-snug text-[#a2543a]" role="alert">
+        <p className="mt-1.5 px-1 text-[11px] leading-snug text-tm-danger" role="alert">
           {error}
         </p>
       ) : pendingMode === "plan" ? (
@@ -333,7 +333,7 @@ export function ScheduleComposer({
 
 export function CommandWord({ children }: { children: React.ReactNode }) {
   return (
-    <span className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] decoration-dotted underline-offset-4 hover:underline">
+    <span className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] dark:text-[#93b4ff] dark:decoration-[#93b4ff] decoration-dotted underline-offset-4 hover:underline">
       {children}
     </span>
   );

@@ -88,7 +88,7 @@ const FALLBACK_WEEKLY_LIMIT = 100_000;
 const chartConfig = {
   tokens: {
     label: "Timely-токены",
-    color: "#b77a2d",
+    color: "rgb(var(--tm-accent))",
   },
 } satisfies ChartConfig;
 
@@ -213,24 +213,24 @@ function UsageBar({
     <div className="space-y-1.5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="mt-0.5 text-[#9b7a50]">{icon}</span>
+          <span className="mt-0.5 text-tm-muted">{icon}</span>
           <div className="min-w-0">
-            <p className="truncate text-[12px] font-medium text-[#484139]">
+            <p className="truncate text-[12px] font-medium text-tm-ink-2">
               {label}
             </p>
             {detail && (
-              <p className="truncate text-[10px] text-[#a39b91]">{detail}</p>
+              <p className="truncate text-[10px] text-tm-faint">{detail}</p>
             )}
           </div>
         </div>
-        <span className="shrink-0 text-[11px] tabular-nums text-[#736b62]">
+        <span className="shrink-0 text-[11px] tabular-nums text-tm-muted">
           {value}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[#e9e4dc]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-tm-surface-3">
         <div
           className={`h-full rounded-full transition-[width] duration-500 ${
-            accent ? "bg-[#bd7c29]" : "bg-[#62584d]"
+            accent ? "bg-tm-accent" : "bg-tm-muted"
           }`}
           style={{ width: `${safePercent}%` }}
         />
@@ -306,12 +306,12 @@ export function AIUsageIndicator({
           type="button"
           aria-label="Показать лимиты AI"
           title="Лимиты"
-          className="relative grid h-8 w-8 place-items-center rounded-full outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+          className="relative grid h-8 w-8 place-items-center rounded-full outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-tm-accent/35"
           style={{
-            background: `conic-gradient(#b7792d ${ringPercent * 3.6}deg, #e5dfd6 0deg)`,
+            background: `conic-gradient(rgb(var(--tm-accent)) ${ringPercent * 3.6}deg, rgb(var(--tm-line)) 0deg)`,
           }}
         >
-          <span className="grid h-[25px] w-[25px] place-items-center rounded-full bg-[#fbfaf7] text-[#7a6751]">
+          <span className="grid h-[25px] w-[25px] place-items-center rounded-full bg-tm-surface text-tm-muted">
             <Coins
               className={`h-3.5 w-3.5 ${isLoading ? "animate-pulse" : ""}`}
             />
@@ -323,7 +323,7 @@ export function AIUsageIndicator({
         side="top"
         align="end"
         sideOffset={10}
-        className="z-[160] w-[310px] rounded-[18px] border-[#d8d1c7] bg-[#fbfaf7] p-4 text-[#3d3832] shadow-[0_24px_70px_rgba(58,47,34,0.18)]"
+        className="z-[160] w-[310px] rounded-[18px] border-tm-line bg-tm-surface p-4 text-tm-ink shadow-[0_24px_70px_rgba(58,47,34,0.18)]"
       >
         <UsageLimits summary={summary} context={context} />
       </PopoverContent>
@@ -386,26 +386,26 @@ export function UsageAnalyticsPanel({
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="rounded-[18px] border border-[#ded8cf] bg-white/55 p-4">
-          <p className="mb-4 font-serif text-[15px] font-semibold text-[#403a34]">
+        <section className="rounded-[18px] border border-tm-line bg-tm-surface/55 p-4">
+          <p className="mb-4 font-serif text-[15px] font-semibold text-tm-ink-2">
             Текущие лимиты
           </p>
           <UsageLimits summary={summary} context={context} />
         </section>
 
-        <section className="rounded-[18px] border border-[#ded8cf] bg-white/55 p-4">
+        <section className="rounded-[18px] border border-tm-line bg-tm-surface/55 p-4">
           <div className="mb-2 flex items-center justify-between">
-            <p className="font-serif text-[15px] font-semibold text-[#403a34]">
+            <p className="font-serif text-[15px] font-semibold text-tm-ink-2">
               Последние 7 дней
             </p>
-            <span className="text-[10px] text-[#9b9389]">
+            <span className="text-[10px] text-tm-faint">
               по фактическим вызовам
             </span>
           </div>
           {hasUsage ? (
             <ChartContainer config={chartConfig} className="h-[170px] w-full">
               <BarChart accessibilityLayer data={chartData}>
-                <CartesianGrid vertical={false} stroke="#e4ded5" />
+                <CartesianGrid vertical={false} stroke="rgb(var(--tm-line))" />
                 <XAxis
                   dataKey="day"
                   tickLine={false}
@@ -414,7 +414,7 @@ export function UsageAnalyticsPanel({
                   fontSize={10}
                 />
                 <ChartTooltip
-                  cursor={{ fill: "#f3ede4" }}
+                  cursor={{ fill: "rgb(var(--tm-surface-2))" }}
                   content={<ChartTooltipContent hideLabel />}
                 />
                 <Bar
@@ -425,10 +425,10 @@ export function UsageAnalyticsPanel({
               </BarChart>
             </ChartContainer>
           ) : (
-            <div className="grid h-[170px] place-items-center rounded-[13px] border border-dashed border-[#ddd6cc] bg-[#fbfaf7]/65 text-center">
+            <div className="grid h-[170px] place-items-center rounded-[13px] border border-dashed border-tm-line bg-tm-surface/65 text-center">
               <div>
-                <p className="text-[12px] text-[#756d64]">Пока нет данных</p>
-                <p className="mt-1 text-[10px] text-[#aaa198]">
+                <p className="text-[12px] text-tm-muted">Пока нет данных</p>
+                <p className="mt-1 text-[10px] text-tm-faint">
                   График появится после первого AI-запроса
                 </p>
               </div>
@@ -438,8 +438,8 @@ export function UsageAnalyticsPanel({
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <section className="rounded-[18px] border border-[#ded8cf] bg-white/55 p-4">
-          <p className="mb-3 font-serif text-[15px] font-semibold text-[#403a34]">
+        <section className="rounded-[18px] border border-tm-line bg-tm-surface/55 p-4">
+          <p className="mb-3 font-serif text-[15px] font-semibold text-tm-ink-2">
             Модели
           </p>
           {summary?.by_model.length ? (
@@ -447,16 +447,16 @@ export function UsageAnalyticsPanel({
               {summary.by_model.map((item) => (
                 <div key={item.model}>
                   <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]">
-                    <span className="truncate text-[#625b53]">
+                    <span className="truncate text-tm-muted">
                       {shortModelName(item.model)}
                     </span>
-                    <span className="shrink-0 tabular-nums text-[#978f85]">
+                    <span className="shrink-0 tabular-nums text-tm-faint">
                       {compactUsageNumber(item.tokens)}
                     </span>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-[#ebe6df]">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-tm-surface-3">
                     <div
-                      className="h-full rounded-full bg-[#b98546]"
+                      className="h-full rounded-full bg-tm-accent"
                       style={{
                         width: `${Math.max(3, Math.round((item.tokens / maxModelTokens) * 100))}%`,
                       }}
@@ -466,12 +466,12 @@ export function UsageAnalyticsPanel({
               ))}
             </div>
           ) : (
-            <p className="text-[11px] text-[#9c948a]">Вызовов моделей пока нет.</p>
+            <p className="text-[11px] text-tm-faint">Вызовов моделей пока нет.</p>
           )}
         </section>
 
-        <section className="rounded-[18px] border border-[#ded8cf] bg-white/55 p-4">
-          <p className="mb-3 font-serif text-[15px] font-semibold text-[#403a34]">
+        <section className="rounded-[18px] border border-tm-line bg-tm-surface/55 p-4">
+          <p className="mb-3 font-serif text-[15px] font-semibold text-tm-ink-2">
             По функциям
           </p>
           {summary?.by_feature.length ? (
@@ -479,7 +479,7 @@ export function UsageAnalyticsPanel({
               {summary.by_feature.map((item) => (
                 <span
                   key={item.feature}
-                  className="rounded-full border border-[#ded7ce] bg-[#fbfaf7] px-2.5 py-1.5 text-[10px] text-[#756c62]"
+                  className="rounded-full border border-tm-line bg-tm-surface px-2.5 py-1.5 text-[10px] text-tm-muted"
                 >
                   {featureLabels[item.feature] ?? item.feature} ·{" "}
                   {compactUsageNumber(item.tokens)}
@@ -487,7 +487,7 @@ export function UsageAnalyticsPanel({
               ))}
             </div>
           ) : (
-            <p className="text-[11px] text-[#9c948a]">Разбивки пока нет.</p>
+            <p className="text-[11px] text-tm-faint">Разбивки пока нет.</p>
           )}
         </section>
       </div>
@@ -507,15 +507,15 @@ function AnalyticsStat({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-[16px] border border-[#ded8cf] bg-white/55 p-3.5">
-      <div className="flex items-center gap-2 text-[#a1733a]">
+    <div className="rounded-[16px] border border-tm-line bg-tm-surface/55 p-3.5">
+      <div className="flex items-center gap-2 text-tm-accent">
         {icon}
         <span className="text-[10px] uppercase tracking-[0.09em]">{label}</span>
       </div>
-      <p className="mt-2 font-serif text-[20px] font-semibold tabular-nums text-[#3e3933]">
+      <p className="mt-2 font-serif text-[20px] font-semibold tabular-nums text-tm-ink-2">
         {value}
       </p>
-      <p className="mt-0.5 truncate text-[9px] text-[#9c948a]">{detail}</p>
+      <p className="mt-0.5 truncate text-[9px] text-tm-faint">{detail}</p>
     </div>
   );
 }
@@ -550,7 +550,7 @@ export function CollapsedUsageMeters({
           title={`${meter.label}: ${meter.percent}%`}
         >
           <span
-            className="min-h-0 flex-1 truncate text-[8px] tracking-[0.04em] text-[#958d83]"
+            className="min-h-0 flex-1 truncate text-[8px] tracking-[0.04em] text-tm-faint"
             style={{
               writingMode: "vertical-rl",
               transform: "rotate(180deg)",
@@ -558,9 +558,9 @@ export function CollapsedUsageMeters({
           >
             {meter.label}
           </span>
-          <span className="relative block h-14 w-1.5 shrink-0 overflow-hidden rounded-full bg-[#e6e0d8]">
+          <span className="relative block h-14 w-1.5 shrink-0 overflow-hidden rounded-full bg-tm-surface-3">
             <span
-              className="absolute inset-x-0 bottom-0 block rounded-full bg-[#b47a35] transition-[height] duration-500"
+              className="absolute inset-x-0 bottom-0 block rounded-full bg-tm-accent transition-[height] duration-500"
               style={{ height: `${clampPercent(meter.percent)}%` }}
             />
           </span>

@@ -146,7 +146,7 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
   return (
     <div
       ref={containerRef}
-      className={`absolute group cursor-move ${showSelectionRing ? 'ring-1 ring-[#b7792d]/75 ring-offset-2 ring-offset-[#f7f5f1]' : ''}`}
+      className={`absolute group cursor-move ${showSelectionRing ? 'ring-1 ring-tm-accent/75 ring-offset-2 ring-offset-tm-bg' : ''}`}
       style={{
         width: width,
         height: height,
@@ -164,16 +164,16 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({ element,
         <>
           {/* Resize Handle (bottom right) */}
           <div
-            className="absolute -bottom-1.5 -right-1.5 z-50 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-[#b7792d]"
+            className="absolute -bottom-1.5 -right-1.5 z-50 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-tm-accent"
             onPointerDown={(e) => handlePointerDown(e, 'resize')}
           />
           
           {/* Rotate Handle (top center) */}
           <div
-            className="absolute -top-7 left-1/2 z-50 flex h-3 w-3 -translate-x-1/2 cursor-grab flex-col items-center justify-end rounded-full border-2 border-white bg-[#777168]"
+            className="absolute -top-7 left-1/2 z-50 flex h-3 w-3 -translate-x-1/2 cursor-grab flex-col items-center justify-end rounded-full border-2 border-white bg-tm-muted"
             onPointerDown={(e) => handlePointerDown(e, 'rotate')}
           >
-            <div className="absolute top-3 h-4 w-px bg-[#9c958c]" />
+            <div className="absolute top-3 h-4 w-px bg-tm-line-strong" />
           </div>
         </>
       )}

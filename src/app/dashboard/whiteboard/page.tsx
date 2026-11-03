@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { LogoMark } from "@/components/landing/logo-mark";
 import {
   useCallback,
   useEffect,
@@ -129,6 +129,14 @@ async function copyText(text: string) {
 
 export default function WhiteboardPage() {
   const { me } = useMe();
+
+  // Доска всегда светлая (холст рисуется фиксированными цветами). Класс на
+  // оболочке не достаёт до поповеров и подсказок: Radix порталит их в <body>.
+  // Поэтому пока доска открыта, светлые токены висят и на самом <body>.
+  useEffect(() => {
+    document.body.classList.add("tm-light");
+    return () => document.body.classList.remove("tm-light");
+  }, []);
   const [isChatOpen, setIsChatOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [tutorWidth, setTutorWidth] = useState(DEFAULT_TUTOR_WIDTH);
@@ -448,23 +456,16 @@ export default function WhiteboardPage() {
   );
 
   return (
-    <div className="timely-whiteboard-shell fixed inset-0 z-[100] overflow-hidden bg-[#f7f5f1] text-[#2f2c28] [color-scheme:light]">
-      <header className="absolute inset-x-0 top-0 z-[90] flex h-12 items-center border-b border-[#dedbd4] bg-[#fbfaf7]/95 px-2.5 backdrop-blur-xl md:px-3">
+    <div className="timely-whiteboard-shell tm-light fixed inset-0 z-[100] overflow-hidden bg-tm-bg text-tm-ink [color-scheme:light]">
+      <header className="absolute inset-x-0 top-0 z-[90] flex h-12 items-center border-b border-tm-line bg-tm-surface/95 px-2.5 backdrop-blur-xl md:px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <Image
-            src="/logo.svg"
-            alt="Timely"
-            width={24}
-            height={24}
-            priority
-            className="shrink-0"
-          />
-          <div className="hidden h-6 w-px bg-[#d8d4cc] sm:block" />
+          <LogoMark size={26} />
+          <div className="hidden h-6 w-px bg-tm-line sm:block" />
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="font-serif text-[15px] font-semibold tracking-[-0.02em] text-[#8a5b24]">
+            <span className="text-[15px] font-semibold tracking-[-0.02em] text-tm-ink">
               Timely
             </span>
-            <span className="hidden truncate font-serif text-[14px] text-[#34302b] sm:inline">
+            <span className="hidden truncate font-serif text-[14.5px] text-tm-muted sm:inline">
               Научная доска
             </span>
           </div>
@@ -482,10 +483,10 @@ export default function WhiteboardPage() {
                     ? "Продолжить таймер"
                     : "Начать таймер"
               }
-              className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+              className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
                 isTimerRunning
-                  ? "border-[#c99a5a] bg-[#fff8eb] text-[#83561f]"
-                  : "border-[#ddd9d1] bg-white/70 text-[#746f67] hover:border-[#c9c3b9] hover:bg-white"
+                  ? "border-tm-accent bg-tm-bg text-tm-accent"
+                  : "border-tm-line bg-tm-surface/70 text-tm-muted hover:border-tm-line-strong hover:bg-tm-surface"
               }`}
             >
               {isTimerRunning ? (
@@ -505,7 +506,7 @@ export default function WhiteboardPage() {
                 onClick={resetTimer}
                 aria-label="Сбросить таймер"
                 title="Сбросить таймер"
-                className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-[#9a9389] outline-none transition-colors hover:text-[#4c453d] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-tm-faint outline-none transition-colors hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>
@@ -515,7 +516,7 @@ export default function WhiteboardPage() {
           <button
             type="button"
             onClick={handleExport}
-            className="hidden h-8 items-center gap-1.5 rounded-full border border-[#ddd9d1] bg-white/70 px-2.5 text-[11px] text-[#746f67] outline-none transition-colors hover:border-[#c9c3b9] hover:bg-white hover:text-[#2f2c28] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 sm:flex"
+            className="hidden h-8 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/70 px-2.5 text-[11px] text-tm-muted outline-none transition-colors hover:border-tm-line-strong hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35 sm:flex"
           >
             <Download className="h-3.5 w-3.5" />
             Экспорт
@@ -526,7 +527,7 @@ export default function WhiteboardPage() {
             onClick={() => setIsSettingsOpen(true)}
             aria-label="Открыть настройки"
             title="Настройки"
-            className="grid h-8 w-8 place-items-center rounded-full border border-[#ddd9d1] bg-white/70 text-[#817a71] outline-none transition-colors hover:bg-white hover:text-[#2f2c28] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 md:hidden"
+            className="grid h-8 w-8 place-items-center rounded-full border border-tm-line bg-tm-surface/70 text-tm-muted outline-none transition-colors hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35 md:hidden"
           >
             <Settings2 className="h-3.5 w-3.5" />
           </button>
@@ -534,7 +535,7 @@ export default function WhiteboardPage() {
           <button
             type="button"
             onClick={openShareDialog}
-            className="flex h-8 items-center gap-1.5 rounded-full bg-[#302d2a] px-3 text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#181715] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/40"
+            className="flex h-8 items-center gap-1.5 rounded-full bg-tm-strong px-3 text-[11px] font-medium text-tm-on-strong outline-none transition-colors hover:bg-tm-strong/85 focus-visible:ring-2 focus-visible:ring-tm-accent/40"
           >
             <Share2 className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Поделиться</span>
@@ -544,7 +545,7 @@ export default function WhiteboardPage() {
         </div>
       </header>
 
-      <aside className="absolute bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-[#dedbd4] bg-[#fbfaf7] py-2 md:flex">
+      <aside className="absolute bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-tm-line bg-tm-surface py-2 md:flex">
         <TooltipProvider delayDuration={120}>
           <nav
             aria-label="Разделы Timely"
@@ -566,10 +567,10 @@ export default function WhiteboardPage() {
                           href={item.url}
                           aria-label={item.title}
                           aria-current={active ? "page" : undefined}
-                          className={`grid h-8 w-10 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+                          className={`grid h-8 w-10 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
                             active
-                              ? "border border-[#d9ad70] bg-[#fffaf1] text-[#a76b22] shadow-[0_3px_12px_rgba(116,75,28,0.07)]"
-                              : "text-[#908a81] hover:bg-[#efede8] hover:text-[#34302b]"
+                              ? "border border-tm-accent bg-tm-bg text-tm-accent shadow-[0_3px_12px_rgba(116,75,28,0.07)]"
+                              : "text-tm-faint hover:bg-tm-surface-2 hover:text-tm-ink"
                           }`}
                         >
                           <Icon className="h-4 w-4" />
@@ -578,7 +579,7 @@ export default function WhiteboardPage() {
                       <TooltipContent
                         side="right"
                         sideOffset={8}
-                        className="border-[#302d2a] bg-[#302d2a] px-2.5 py-1.5 text-[11px] text-white"
+                        className="border-tm-strong bg-tm-strong px-2.5 py-1.5 text-[11px] text-tm-on-strong"
                       >
                         {item.title}
                       </TooltipContent>
@@ -586,7 +587,7 @@ export default function WhiteboardPage() {
                   );
                 })}
                 {groupIndex < navigationGroups.length - 1 && (
-                  <span className="my-1 h-px w-5 bg-[#e0dcd5]" />
+                  <span className="my-1 h-px w-5 bg-tm-surface-3" />
                 )}
               </div>
             ))}
@@ -599,7 +600,7 @@ export default function WhiteboardPage() {
             onClick={() => setIsSettingsOpen(true)}
             aria-label="Настройки"
             title="Настройки"
-            className="grid h-9 w-10 place-items-center rounded-[10px] text-[#8f8a81] outline-none transition-colors hover:bg-[#efede8] hover:text-[#34302b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+            className="grid h-9 w-10 place-items-center rounded-[10px] text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
           >
             <Settings2 className="h-4 w-4" />
           </button>
@@ -607,7 +608,7 @@ export default function WhiteboardPage() {
             href="/dashboard/profile"
             aria-label="Профиль"
             title="Профиль"
-            className="grid h-9 w-10 place-items-center rounded-[10px] text-[#8f8a81] outline-none transition-colors hover:bg-[#efede8] hover:text-[#34302b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+            className="grid h-9 w-10 place-items-center rounded-[10px] text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
           >
             <UserAvatar size={26} />
           </Link>
@@ -638,7 +639,7 @@ export default function WhiteboardPage() {
       </main>
 
       <aside
-        className={`absolute bottom-0 top-12 z-[80] overflow-visible border-l border-[#dcd8d0] bg-[#f8f6f2] ${
+        className={`absolute bottom-0 top-12 z-[80] overflow-visible border-l border-tm-line bg-tm-bg ${
           isTutorResizing
             ? ""
             : "transition-[width,transform] duration-300 ease-out"
@@ -673,8 +674,8 @@ export default function WhiteboardPage() {
             <span
               className={`h-14 w-[3px] rounded-full transition-[height,background-color,box-shadow] ${
                 isTutorResizing
-                  ? "h-20 bg-[#a9773b] shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
-                  : "bg-[#d4cec4] group-hover:h-20 group-hover:bg-[#aa7a42] group-focus-visible:h-20 group-focus-visible:bg-[#aa7a42] group-focus-visible:shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
+                  ? "h-20 bg-tm-accent shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
+                  : "bg-tm-surface-3 group-hover:h-20 group-hover:bg-tm-accent group-focus-visible:h-20 group-focus-visible:bg-tm-accent group-focus-visible:shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
               }`}
             />
           </div>
@@ -699,7 +700,7 @@ export default function WhiteboardPage() {
       {!isChatOpen && !isMobile && (
         <aside
           aria-label="Свернутый AI Tutor"
-          className="absolute bottom-0 right-0 top-12 z-[82] border-l border-[#dcd8d0] bg-[#fbfaf7]"
+          className="absolute bottom-0 right-0 top-12 z-[82] border-l border-tm-line bg-tm-surface"
           style={{ width: COLLAPSED_TUTOR_WIDTH }}
         >
           <button
@@ -707,17 +708,17 @@ export default function WhiteboardPage() {
             onClick={toggleChat}
             aria-label={`Открыть AI Tutor. Последний запрос: ${collapsedChatTopic}`}
             title={`Открыть AI Tutor · ${collapsedChatTopic}`}
-            className="flex h-full w-full flex-col items-center text-[#8e877e] outline-none transition-colors hover:bg-[#f3f0ea] hover:text-[#4a433c] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#c9a16c]/35"
+            className="flex h-full w-full flex-col items-center text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tm-accent/35"
           >
-            <span className="mt-4 shrink-0 font-serif text-[10px] font-semibold tracking-[0.08em] text-[#8b6436]">
+            <span className="mt-4 shrink-0 font-serif text-[10px] font-semibold tracking-[0.08em] text-tm-accent">
               AI
             </span>
 
-            <span className="my-3 h-px w-5 shrink-0 bg-[#dfdad2]" />
+            <span className="my-3 h-px w-5 shrink-0 bg-tm-surface-3" />
 
             <span className="flex min-h-0 flex-1 items-center overflow-hidden py-2">
               <span
-                className="max-h-[220px] truncate font-serif text-[11px] tracking-[0.03em] text-[#746c63]"
+                className="max-h-[220px] truncate font-serif text-[11px] tracking-[0.03em] text-tm-muted"
                 style={{
                   writingMode: "vertical-rl",
                   transform: "rotate(180deg)",
@@ -741,7 +742,7 @@ export default function WhiteboardPage() {
           onClick={toggleChat}
           aria-label={`Открыть AI Tutor. Последний запрос: ${collapsedChatTopic}`}
           title="Открыть AI Tutor"
-          className="absolute right-2 top-[calc(50%+24px)] z-[82] grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-[#d9d3ca] bg-[#fbfaf7]/96 text-[#756e65] shadow-[0_10px_30px_rgba(66,52,37,0.14)] outline-none backdrop-blur-xl transition-[background-color,color,transform] hover:bg-white hover:text-[#2f2c28] active:-translate-y-1/2 active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 md:hidden"
+          className="absolute right-2 top-[calc(50%+24px)] z-[82] grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-tm-line bg-tm-surface/96 text-tm-muted shadow-[0_10px_30px_rgba(66,52,37,0.14)] outline-none backdrop-blur-xl transition-[background-color,color,transform] hover:bg-tm-surface hover:text-tm-ink active:-translate-y-1/2 active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/35 md:hidden"
         >
           <PanelRightOpen className="h-4 w-4" />
         </button>
@@ -768,7 +769,7 @@ export default function WhiteboardPage() {
 
       {isShareDialogOpen && (
         <div
-          className="fixed inset-0 z-[140] grid place-items-center bg-[#2f2c28]/20 p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[140] grid place-items-center bg-tm-strong/20 p-4 backdrop-blur-[2px]"
           role="presentation"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target) {
@@ -780,40 +781,40 @@ export default function WhiteboardPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="share-dialog-title"
-            className="relative w-full max-w-[460px] rounded-[22px] border border-[#d8d3ca] bg-[#fbfaf7] p-5 shadow-[0_24px_80px_rgba(47,44,40,0.22)]"
+            className="relative w-full max-w-[460px] rounded-[22px] border border-tm-line bg-tm-surface p-5 shadow-[0_24px_80px_rgba(47,44,40,0.22)]"
           >
             <button
               type="button"
               onClick={() => setIsShareDialogOpen(false)}
               aria-label="Закрыть окно «Поделиться»"
-              className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-[#928c83] outline-none transition-colors hover:bg-[#efede8] hover:text-[#302d2a] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+              className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
             >
               <X className="h-4 w-4" />
             </button>
 
             <h2
               id="share-dialog-title"
-              className="pr-10 font-serif text-[20px] font-medium tracking-[-0.02em] text-[#302d2a]"
+              className="pr-10 font-serif text-[20px] font-medium tracking-[-0.02em] text-tm-ink"
             >
               Поделиться доской
             </h2>
-            <p className="mt-1 text-[12px] leading-5 text-[#817b72]">
+            <p className="mt-1 text-[12px] leading-5 text-tm-muted">
               Отправьте эту ссылку — она уже выделена для копирования.
             </p>
 
-            <div className="mt-4 flex items-center gap-2 rounded-[14px] border border-[#d9d4cb] bg-white p-1.5">
+            <div className="mt-4 flex items-center gap-2 rounded-[14px] border border-tm-line bg-tm-surface p-1.5">
               <input
                 ref={shareInputRef}
                 value={shareUrl}
                 readOnly
                 aria-label="Ссылка на научную доску"
                 onFocus={(event) => event.currentTarget.select()}
-                className="min-w-0 flex-1 bg-transparent px-2 text-[12px] text-[#625c54] outline-none"
+                className="min-w-0 flex-1 bg-transparent px-2 text-[12px] text-tm-muted outline-none"
               />
               <button
                 type="button"
                 onClick={handleCopyShareLink}
-                className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-[#302d2a] px-3 text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#191816] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/40"
+                className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] bg-tm-strong px-3 text-[11px] font-medium text-tm-on-strong outline-none transition-colors hover:bg-tm-strong/85 focus-visible:ring-2 focus-visible:ring-tm-accent/40"
               >
                 {shareCopyLabel === "Ссылка скопирована" ? (
                   <Check className="h-3.5 w-3.5" />

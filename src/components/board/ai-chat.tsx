@@ -1452,12 +1452,12 @@ export function AIChat({
 
   return (
     <div
-      className={`flex h-full min-h-0 flex-col bg-[#f8f6f2] text-[#37322c] ${className ?? ""}`}
+      className={`flex h-full min-h-0 flex-col bg-tm-bg text-tm-ink ${className ?? ""}`}
     >
       {/* ── Compact header: режим тьютора + история. ── */}
-      <div className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#dedbd4] bg-[#fbfaf7] px-3.5">
+      <div className="flex h-[46px] shrink-0 items-center justify-between border-b border-tm-line bg-tm-surface px-3.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <h2 className="shrink-0 font-serif text-[14px] font-semibold tracking-[-0.015em] text-[#37322c]">
+          <h2 className="shrink-0 font-serif text-[14px] font-semibold tracking-[-0.015em] text-tm-ink">
             AI тьютор
           </h2>
           {/* Переключатель режима (§5.2). Правила режима применяет сервер —
@@ -1467,7 +1467,7 @@ export function AIChat({
               <button
                 type="button"
                 title="Режим занятия"
-                className="flex min-w-0 items-center gap-1 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2 py-[3px] text-[10px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#d3cdc2] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                className="flex min-w-0 items-center gap-1 rounded-full border border-tm-line bg-tm-surface-2 px-2 py-[3px] text-[10px] font-medium text-tm-muted outline-none transition-colors hover:border-tm-line-strong hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
               >
                 <span className="truncate">{tutorModeTitle(tutorMode)}</span>
                 <ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
@@ -1475,9 +1475,9 @@ export function AIChat({
             </PopoverTrigger>
             <PopoverContent
               align="start"
-              className="w-64 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+              className="w-64 border-tm-line bg-tm-surface p-0 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
             >
-              <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+              <div className="border-b border-tm-line px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
                 Режим занятия
               </div>
               <div className="py-1">
@@ -1495,19 +1495,19 @@ export function AIChat({
                       }
                       setModePickerOpen(false);
                     }}
-                    className={`block w-full px-3 py-2 text-left transition-colors hover:bg-[#f1ede6] ${
-                      option.slug === tutorMode ? "bg-[#f4f0e9]" : ""
+                    className={`block w-full px-3 py-2 text-left transition-colors hover:bg-tm-surface-2 ${
+                      option.slug === tutorMode ? "bg-tm-surface-2" : ""
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-medium text-[#37322c]">
+                      <span className="text-[12px] font-medium text-tm-ink">
                         {option.title}
                       </span>
                       {option.slug === tutorMode && (
-                        <Check className="h-3 w-3 text-[#8a7a5e]" />
+                        <Check className="h-3 w-3 text-tm-muted" />
                       )}
                     </div>
-                    <div className="mt-0.5 text-[10px] leading-snug text-[#8f887f]">
+                    <div className="mt-0.5 text-[10px] leading-snug text-tm-faint">
                       {option.goal}
                     </div>
                   </button>
@@ -1516,7 +1516,7 @@ export function AIChat({
             </PopoverContent>
           </Popover>
         </div>
-        <div className="flex items-center gap-0.5 text-[#918b82]">
+        <div className="flex items-center gap-0.5 text-tm-faint">
           {/* Статус автосохранения доски. Раньше отказ был полностью молчалив:
               ученик рисовал, ничего не сохранялось, и на экране не было ни
               одного признака проблемы. Показываем состояние, а не празднуем
@@ -1526,7 +1526,7 @@ export function AIChat({
               role="status"
               title={canvasSaveError || undefined}
               className={`mr-1.5 whitespace-nowrap text-[10px] ${
-                canvasSaveStatus === "error" ? "text-[#a9773b]" : "text-[#aaa49b]"
+                canvasSaveStatus === "error" ? "text-tm-accent" : "text-tm-faint"
               }`}
             >
               {canvasSaveStatus === "saving" && "Сохраняем…"}
@@ -1540,7 +1540,7 @@ export function AIChat({
               кнопкой не значит ничего. Показываем то, чего от него ждут. */}
           {historyItems.length > 0 && (
             <span
-              className="mr-1 text-[10px] tabular-nums text-[#aaa49b]"
+              className="mr-1 text-[10px] tabular-nums text-tm-faint"
               title={`Сохранённых чатов: ${historyItems.length}`}
             >
               {historyItems.length}
@@ -1552,32 +1552,32 @@ export function AIChat({
                 type="button"
                 aria-label="История чатов"
                 title="История чатов"
-                className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
               >
                 <History className="h-3.5 w-3.5" />
               </button>
             </PopoverTrigger>
             <PopoverContent
               align="end"
-              className="w-72 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+              className="w-72 border-tm-line bg-tm-surface p-0 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
             >
-              <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+              <div className="border-b border-tm-line px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
                 История чатов
               </div>
               <div className="max-h-80 overflow-y-auto">
                 {historyLoading && (
-                  <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-[#8f887f]">
+                  <div className="flex items-center gap-2 px-3 py-4 text-[12px] text-tm-faint">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Загружаем…
                   </div>
                 )}
                 {!historyLoading && historyError && (
-                  <div className="px-3 py-4 text-[12px] text-[#b0473e]">
+                  <div className="px-3 py-4 text-[12px] text-tm-danger">
                     {historyError}
                   </div>
                 )}
                 {!historyLoading && !historyError && historyItems.length === 0 && (
-                  <div className="px-3 py-4 text-[12px] text-[#8f887f]">
+                  <div className="px-3 py-4 text-[12px] text-tm-faint">
                     Пока нет сохранённых чатов
                   </div>
                 )}
@@ -1586,8 +1586,8 @@ export function AIChat({
                   historyItems.map((item) => (
                     <div
                       key={item.id}
-                      className={`group flex items-start gap-1.5 border-b border-[#efece5] px-3 py-2.5 last:border-b-0 ${
-                        item.id === currentSessionId ? "bg-[#f4f0e9]" : ""
+                      className={`group flex items-start gap-1.5 border-b border-tm-line px-3 py-2.5 last:border-b-0 ${
+                        item.id === currentSessionId ? "bg-tm-surface-2" : ""
                       }`}
                     >
                       <button
@@ -1595,17 +1595,17 @@ export function AIChat({
                         onClick={() => void handleSelectHistorySession(item.id)}
                         className="min-w-0 flex-1 text-left outline-none"
                       >
-                        <div className="truncate text-[12px] font-medium text-[#4a433b]">
+                        <div className="truncate text-[12px] font-medium text-tm-ink-2">
                           {item.title || "Новый чат"}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[#a39c93]">
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-tm-faint">
                           <span>{formatSessionDate(item.updated_at)}</span>
                           {/* Бейдж режима: по нему видно, чем была сессия —
                               объяснением темы или контестом. Сессии, сохранённые
                               до появления режимов, приходят с пустым `mode`, и
                               бейджа у них просто нет. */}
                           {tutorModeTitle(item.mode) && (
-                            <span className="rounded-full bg-[#efece5] px-1.5 py-[1px] text-[9px] text-[#8b8479]">
+                            <span className="rounded-full bg-tm-surface-2 px-1.5 py-[1px] text-[9px] text-tm-muted">
                               {tutorModeTitle(item.mode)}
                             </span>
                           )}
@@ -1618,7 +1618,7 @@ export function AIChat({
                             onClick={() => void handleDeleteHistorySession(item.id)}
                             aria-label="Подтвердить удаление"
                             title="Подтвердить удаление"
-                            className="grid h-6 w-6 place-items-center rounded-full text-[#b0473e] outline-none transition-colors hover:bg-[#f6e4e1]"
+                            className="grid h-6 w-6 place-items-center rounded-full text-tm-danger outline-none transition-colors hover:bg-tm-danger-soft"
                           >
                             <Check className="h-3 w-3" />
                           </button>
@@ -1627,7 +1627,7 @@ export function AIChat({
                             onClick={() => setConfirmDeleteId(null)}
                             aria-label="Отменить удаление"
                             title="Отменить удаление"
-                            className="grid h-6 w-6 place-items-center rounded-full text-[#8f887f] outline-none transition-colors hover:bg-[#efece5]"
+                            className="grid h-6 w-6 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -1638,7 +1638,7 @@ export function AIChat({
                           onClick={() => setConfirmDeleteId(item.id)}
                           aria-label="Удалить чат"
                           title="Удалить чат"
-                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#c2bcb2] opacity-0 outline-none transition-colors hover:bg-[#efece5] hover:text-[#8f887f] focus-visible:opacity-100 group-hover:opacity-100"
+                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-tm-faint opacity-0 outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-muted focus-visible:opacity-100 group-hover:opacity-100"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -1653,7 +1653,7 @@ export function AIChat({
             onClick={clearChat}
             aria-label="Новый чат"
             title="Новый чат"
-            className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+            className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1663,7 +1663,7 @@ export function AIChat({
               onClick={onClose}
               aria-label="Скрыть AI Tutor"
               title="Скрыть AI Tutor"
-              className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+              className="grid h-7 w-7 place-items-center rounded-full outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
             >
               <PanelRightClose className="h-3.5 w-3.5" />
             </button>
@@ -1672,7 +1672,7 @@ export function AIChat({
       </div>
 
       {currentLessonPlan && (
-        <div className="shrink-0 border-b border-[#e4e0d8] bg-[#fbfaf7]/72 px-3 py-2">
+        <div className="shrink-0 border-b border-tm-line bg-tm-surface/72 px-3 py-2">
           <LessonPlanProgress
             plan={currentLessonPlan}
             activeTaskIndex={currentTaskIndex}
@@ -1689,7 +1689,7 @@ export function AIChat({
             <LoadingMark
               size={38}
               label="Открываем ваши занятия…"
-              className="text-[#b98343]"
+              className="text-tm-accent"
             />
           </div>
         ) : !hasChatAccess ? (
@@ -1699,9 +1699,9 @@ export function AIChat({
               .map((message) => (
                 <div
                   key={message.id}
-                  className="flex items-center gap-2 px-1 text-[10px] text-[#8e877e]"
+                  className="flex items-center gap-2 px-1 text-[10px] text-tm-faint"
                 >
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-[#b98343]" />
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-tm-accent" />
                   <span className="truncate">{message.content}</span>
                 </div>
               ))}
@@ -1718,12 +1718,12 @@ export function AIChat({
             {messages.length === 0 && !isLoading && (
               <div className="flex flex-col gap-3 py-1">
                 <div>
-                  <h3 className="font-serif text-[18px] font-medium tracking-[-0.025em] text-[#38332d]">
+                  <h3 className="font-serif text-[18px] font-medium tracking-[-0.025em] text-tm-ink">
                     {currentLessonTask
                       ? `Начнём: ${currentLessonTask.title}`
                       : greeting}
                   </h3>
-                  <p className="mt-1 max-w-[310px] text-[11px] leading-relaxed text-[#908a81]">
+                  <p className="mt-1 max-w-[310px] text-[11px] leading-relaxed text-tm-faint">
                     {currentLessonTask?.description ??
                       (currentLessonPlan
                         ? "План готов. Задай первый вопрос, и мы пройдём его по шагам."
@@ -1752,12 +1752,12 @@ export function AIChat({
                         key={title}
                         type="button"
                         onClick={() => preparePrompt(description)}
-                        className="block w-full rounded-[12px] border border-[#ddd9d1] bg-white/55 px-3 py-2.5 text-left outline-none transition-colors hover:border-[#c8a877] hover:bg-[#fffaf1] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25"
+                        className="block w-full rounded-[12px] border border-tm-line bg-tm-surface/55 px-3 py-2.5 text-left outline-none transition-colors hover:border-tm-accent hover:bg-tm-bg focus-visible:ring-2 focus-visible:ring-tm-accent/25"
                       >
-                        <span className="block font-serif text-[13px] font-semibold text-[#49423a]">
+                        <span className="block font-serif text-[13px] font-semibold text-tm-ink-2">
                           {title}
                         </span>
-                        <span className="mt-0.5 block text-[11px] leading-relaxed text-[#9b958c]">
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-tm-faint">
                           {description}
                         </span>
                       </button>
@@ -1771,9 +1771,9 @@ export function AIChat({
               msg.planningEvent ? (
                 <div
                   key={msg.id}
-                  className="flex items-center gap-2 px-1 text-[10px] text-[#8e877e]"
+                  className="flex items-center gap-2 px-1 text-[10px] text-tm-faint"
                 >
-                  <span className="h-1 w-1 shrink-0 rounded-full bg-[#b98343]" />
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-tm-accent" />
                   <span className="truncate">{msg.content}</span>
                 </div>
               ) : (
@@ -1793,8 +1793,8 @@ export function AIChat({
                   <div
                     className={`flex flex-col gap-3 px-3.5 py-2.5 text-[13px] leading-[1.55] ${
                       msg.role === "assistant"
-                        ? "rounded-[16px] border border-[#dedad3] bg-white/62 text-[#514b43]"
-                        : "whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9]"
+                        ? "rounded-[16px] border border-tm-line bg-tm-surface/62 text-tm-ink-2"
+                        : "whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-tm-strong text-tm-on-strong"
                     }`}
                   >
                     {/* Markdown только у ответа: реплика ученика — это то, что
@@ -1832,14 +1832,14 @@ export function AIChat({
                           }}
                           className={`rounded-xl border px-3 py-2 text-left transition-colors disabled:cursor-default disabled:opacity-50 ${
                             opt.recommended
-                              ? "border-[#c8944d] bg-[#fff7e9] hover:bg-[#fff1d9]"
-                              : "border-[#d8d3cb] bg-white/55 hover:bg-white"
+                              ? "border-tm-accent bg-tm-bg hover:bg-tm-accent-soft"
+                              : "border-tm-line bg-tm-surface/55 hover:bg-tm-surface"
                           }`}
                         >
                           <span className="flex items-center gap-1.5">
                             <span className="font-medium">{opt.label}</span>
                             {opt.recommended && (
-                              <span className="text-[10px] text-[#a56820]">
+                              <span className="text-[10px] text-tm-accent">
                                 рекомендуется
                               </span>
                             )}
@@ -1855,7 +1855,7 @@ export function AIChat({
                           type="button"
                           disabled={msg.clarifyAnswered || isLoading}
                           onClick={() => textareaRef.current?.focus()}
-                          className="rounded-xl border border-dashed border-[#d2cdc5] px-3 py-2 text-left text-[12px] opacity-70 transition-opacity hover:opacity-100 disabled:cursor-default disabled:opacity-40"
+                          className="rounded-xl border border-dashed border-tm-line-strong px-3 py-2 text-left text-[12px] opacity-70 transition-opacity hover:opacity-100 disabled:cursor-default disabled:opacity-40"
                         >
                           Другое — напишу сам
                         </button>
@@ -1883,7 +1883,7 @@ export function AIChat({
                   streaming
                 />
                 {streamingContent && (
-                  <div className="max-w-[94%] rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]">
+                  <div className="max-w-[94%] rounded-[16px] border border-tm-line bg-tm-surface/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-tm-ink-2">
                     <MarkdownMessage content={streamingContent} />
                   </div>
                 )}
@@ -1912,7 +1912,7 @@ export function AIChat({
                       ? "Подсказки на этом этапе закончились"
                       : "Следующая подсказка"
                   }
-                  className="flex shrink-0 items-center gap-1 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] px-3 py-1.5 font-serif text-[12px] text-[#7e776e] transition-colors hover:border-[#c5a474] hover:text-[#6f481c] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[#d9d4cc] disabled:hover:text-[#7e776e]"
+                  className="flex shrink-0 items-center gap-1 rounded-full border border-tm-line bg-tm-surface px-3 py-1.5 font-serif text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-tm-line disabled:hover:text-tm-muted"
                 >
                   <Lightbulb className="h-3 w-3 shrink-0" />
                   Подсказка
@@ -1931,7 +1931,7 @@ export function AIChat({
                   key={prompt}
                   type="button"
                   onClick={() => preparePrompt(prompt)}
-                  className="shrink-0 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] px-3 py-1.5 font-serif text-[12px] text-[#7e776e] transition-colors hover:border-[#c5a474] hover:text-[#6f481c]"
+                  className="shrink-0 rounded-full border border-tm-line bg-tm-surface px-3 py-1.5 font-serif text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-accent"
                 >
                   {prompt}
                 </button>
@@ -1946,7 +1946,7 @@ export function AIChat({
             className="shrink-0 px-3 pt-2"
             style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
           >
-            <div className="flex flex-col rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] px-3 pb-2 pt-3 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#c79a5b] focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)]">
+            <div className="flex flex-col rounded-[17px] border border-tm-line bg-tm-surface px-3 pb-2 pt-3 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-tm-accent focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)]">
               <textarea
                 ref={textareaRef}
                 placeholder="Спроси или попроси нарисовать…"
@@ -1955,7 +1955,7 @@ export function AIChat({
                 onChange={(event) => setInputValue(event.target.value)}
                 onInput={handleInput}
                 onKeyDown={handleKeyDown}
-                className="mb-2 min-h-[30px] max-h-[160px] w-full resize-none bg-transparent px-1 font-serif text-[14px] leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b]"
+                className="mb-2 min-h-[30px] max-h-[160px] w-full resize-none bg-transparent px-1 font-serif text-[14px] leading-relaxed text-tm-ink outline-none placeholder:text-tm-faint"
               />
 
               {/* Настройки генерации собраны в одну группу и умеют переноситься:
@@ -2005,7 +2005,7 @@ export function AIChat({
                           size="icon"
                           onClick={() => sendMessage()}
                           disabled={isLoading || !inputValue.trim()}
-                          className="ml-1 h-8 w-8 rounded-full bg-[#c9a16c] text-white transition-colors hover:bg-[#af7d3d] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b]"
+                          className="ml-1 h-8 w-8 rounded-full bg-tm-accent text-tm-on-strong transition-colors hover:bg-tm-accent/90 disabled:bg-tm-surface-3 disabled:text-tm-faint"
                         >
                           {isLoading ? (
                             <Loader2 className="h-4 w-4 animate-spin" />

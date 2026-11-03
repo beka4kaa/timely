@@ -148,14 +148,14 @@ export async function saveNutritionProfile(input: NutritionProfileInput): Promis
 // светлый бордер, мягкая многослойная тень. saturate — ключ к «дорогому»
 // ощущению, без него dark-стекло выглядит плоско-серым.
 export const GLASS =
-  'bg-white/70 dark:bg-white/[0.055] backdrop-blur-2xl backdrop-saturate-150 ' +
+  'bg-tm-surface/70 dark:bg-white/[0.055] backdrop-blur-2xl backdrop-saturate-150 ' +
   'border border-white/60 dark:border-white/[0.08] shadow-[0_8px_30px_rgba(15,23,42,0.08)]'
 
 /** Подсвеченное стекло для интерактивных кнопок (hover-отклик). */
 export const GLASS_INTERACTIVE =
-  'bg-white/60 dark:bg-white/[0.05] backdrop-blur-2xl backdrop-saturate-150 ' +
+  'bg-tm-surface/60 dark:bg-white/[0.05] backdrop-blur-2xl backdrop-saturate-150 ' +
   'border border-white/60 dark:border-white/[0.08] shadow-[0_8px_30px_rgba(15,23,42,0.08)] ' +
-  'transition-all duration-200 hover:bg-white/80 dark:hover:bg-white/[0.09] ' +
+  'transition-all duration-200 hover:bg-tm-surface/80 dark:hover:bg-white/[0.09] ' +
   'hover:shadow-[0_12px_40px_rgba(15,23,42,0.12)] hover:-translate-y-0.5'
 
 /** Фирменный peach → lavender акцент (как в habits). */

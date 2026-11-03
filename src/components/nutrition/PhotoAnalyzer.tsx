@@ -86,9 +86,9 @@ export function PhotoAnalyzer({ open, onClose, onAdd }: PhotoAnalyzerProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="gap-4 border-white/60 bg-white/85 backdrop-blur-2xl dark:border-white/10 dark:bg-[#13131a]/85 sm:max-w-md">
+      <DialogContent className="gap-4 border-white/60 bg-tm-surface/85 backdrop-blur-2xl dark:border-white/10 dark:bg-[#13131a]/85 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-plus-jakarta text-lg">
+          <DialogTitle className="flex items-center gap-2 font-sans text-lg">
             {phase.step === 'portion' ? 'Порция' : (<>Анализ по фото <Sparkles className="h-4 w-4 text-amber-400" /></>)}
           </DialogTitle>
         </DialogHeader>

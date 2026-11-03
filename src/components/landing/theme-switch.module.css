@@ -6,10 +6,11 @@
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 1px solid var(--line);
+  /* На лендинге — его переменные, в приложении — токены tm-* из globals.css. */
+  border: 1px solid var(--line, rgb(var(--tm-line)));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  color: var(--ink);
+  background: color-mix(in srgb, var(--surface, rgb(var(--tm-surface))) 70%, transparent);
+  color: var(--ink, rgb(var(--tm-ink)));
   cursor: pointer;
   transition:
     background 160ms ease,
@@ -17,13 +18,18 @@
 }
 
 .switch:hover {
-  background: var(--surface);
+  background: var(--surface, rgb(var(--tm-surface)));
   transform: translateY(-1px);
 }
 
 .switch:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--ink, rgb(var(--tm-ink)));
   outline-offset: 3px;
+}
+
+.compact {
+  width: 32px;
+  height: 32px;
 }
 
 /* Иконка показывает, во что переключит кнопка: в светлой — луна, в тёмной — солнце. */

@@ -30,7 +30,7 @@ function SheetAction({
       className={cn(
         GLASS,
         'flex w-full items-center gap-3.5 rounded-2xl p-4 text-left transition-colors',
-        'hover:bg-white/80 dark:hover:bg-white/[0.09]',
+        'hover:bg-tm-surface/80 dark:hover:bg-white/[0.09]',
       )}
     >
       <span

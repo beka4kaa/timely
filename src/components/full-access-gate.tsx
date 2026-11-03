@@ -42,7 +42,7 @@ export function FullAccessGate({ children }: { children: ReactNode }) {
     <div className="mx-auto max-w-[440px] px-5 py-16">
       <div className={`${paperCard} p-6 text-center`}>
         <div className={paperCaption}>Раздел закрыт</div>
-        <p className="mt-2 text-[13.5px] leading-relaxed text-[#5f584f]">
+        <p className="mt-2 text-[13.5px] leading-relaxed text-tm-ink-2">
           Доступ к этому разделу выключен для вашего аккаунта. Его включает
           администратор.
         </p>

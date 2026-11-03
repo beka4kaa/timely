@@ -295,7 +295,7 @@ export default function ProfilePage() {
                     <CardHeader>
                         <div className="flex items-center justify-between">
                             <CardTitle className="text-lg flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-[#a56e32]" />
+                            <Sparkles className="h-5 w-5 text-tm-accent" />
                                 Память AI
                             </CardTitle>
                             {memories.length > 0 && (

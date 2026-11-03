@@ -35,10 +35,10 @@ export function PomodoroHeaderPill() {
               ? "Продолжить помодоро"
               : "Начать помодоро"
         }
-        className={`flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+        className={`flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
           running
-            ? "border-[#c99a5a] bg-[#fff8eb] text-[#83561f]"
-            : "border-[#ddd9d1] bg-white/70 text-[#746f67] hover:border-[#c9c3b9] hover:bg-white"
+            ? "border-tm-accent bg-tm-bg text-tm-accent"
+            : "border-tm-line bg-tm-surface/70 text-tm-muted hover:border-tm-line-strong hover:bg-tm-surface"
         }`}
       >
         {running ? (
@@ -59,7 +59,7 @@ export function PomodoroHeaderPill() {
           onClick={reset}
           aria-label="Сбросить таймер"
           title="Сбросить таймер"
-          className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-[#9a9389] outline-none transition-colors hover:text-[#4c453d] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+          className="-ml-1 grid h-8 w-7 place-items-center rounded-r-full text-tm-faint outline-none transition-colors hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </button>

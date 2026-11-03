@@ -202,7 +202,7 @@ export const TextRenderer: React.FC<TextRendererProps> = ({
             finishEditing(true);
           }
         }}
-        className="resize-none overflow-hidden rounded-md border border-[#c7a06c] bg-[#fffdf9]/95 px-2 py-1.5 text-[#302d2a] shadow-[0_8px_24px_rgba(65,54,41,0.12)] outline-none"
+        className="resize-none overflow-hidden rounded-md border border-tm-accent bg-tm-surface/95 px-2 py-1.5 text-tm-ink shadow-[0_8px_24px_rgba(65,54,41,0.12)] outline-none"
         style={{
           width: width ?? 280,
           minHeight: effectiveFontSize * effectiveLineHeight + 14,
@@ -227,8 +227,8 @@ export const TextRenderer: React.FC<TextRendererProps> = ({
         setIsEditing(true);
       }}
       className={[
-        'whitespace-pre-wrap break-words !text-[#302d2a]',
-        onContentChange ? 'cursor-text rounded-md transition-colors hover:bg-[#ebe6de]/55' : '',
+        'whitespace-pre-wrap break-words !text-tm-ink',
+        onContentChange ? 'cursor-text rounded-md transition-colors hover:bg-tm-surface-3/55' : '',
       ].join(' ')}
       style={{
         width,
@@ -445,10 +445,10 @@ export const GraphRenderer: React.FC<GraphRendererProps> = ({
         event.stopPropagation();
         setIsEditing(true);
       }}
-      className="relative overflow-hidden rounded-[18px] border border-[#d8d3cb] bg-[#fbfaf7] shadow-[0_10px_30px_rgba(64,54,42,0.09)]"
+      className="relative overflow-hidden rounded-[18px] border border-tm-line bg-tm-surface shadow-[0_10px_30px_rgba(64,54,42,0.09)]"
     >
-      <div className="flex h-10 items-center justify-between gap-3 border-b border-[#e2ded7] px-3.5">
-        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.13em] text-[#a09a91]">
+      <div className="flex h-10 items-center justify-between gap-3 border-b border-tm-line px-3.5">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.13em] text-tm-faint">
           График
         </span>
         {isEditing ? (
@@ -464,10 +464,10 @@ export const GraphRenderer: React.FC<GraphRendererProps> = ({
               if (event.key === 'Enter') finishGraphEditing(true);
               if (event.key === 'Escape') finishGraphEditing(false);
             }}
-            className="h-7 min-w-0 flex-1 rounded-md border border-[#c7a06c] bg-white px-2 font-mono text-sm text-[#302d2a] outline-none"
+            className="h-7 min-w-0 flex-1 rounded-md border border-tm-accent bg-tm-surface px-2 font-mono text-sm text-tm-ink outline-none"
           />
         ) : (
-          <span className="min-w-0 truncate font-serif text-[13px] tracking-tight text-[#5f574e]">
+          <span className="min-w-0 truncate font-serif text-[13px] tracking-tight text-tm-ink-2">
             y = {func.replace(/\*/g, '·')}
           </span>
         )}

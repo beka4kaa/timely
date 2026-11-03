@@ -460,21 +460,21 @@ function ChoiceCard({
       onClick={onClick}
       disabled={disabled}
       aria-pressed={selected}
-      className={`w-full rounded-[13px] border text-left outline-none transition-[border-color,background-color,opacity,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30 disabled:cursor-default ${
+      className={`w-full rounded-[13px] border text-left outline-none transition-[border-color,background-color,opacity,transform] duration-150 focus-visible:ring-2 focus-visible:ring-tm-accent/30 disabled:cursor-default ${
         compact ? "px-2.5 py-2" : "px-3 py-2.5"
       } ${
         selected
-          ? "border-[#b9803b] bg-[#fff8ec] text-[#443b31]"
+          ? "border-tm-accent bg-tm-bg text-tm-ink-2"
           : disabled
-            ? "border-[#e1ddd6] bg-white/35 opacity-35"
-            : "border-[#ddd8d0] bg-white/62 text-[#514a42] hover:border-[#c9b28e] hover:bg-white"
+            ? "border-tm-line bg-white/35 opacity-35"
+            : "border-tm-line bg-tm-surface/62 text-tm-ink-2 hover:border-tm-accent hover:bg-tm-surface"
       }`}
     >
       <span className="block font-serif text-[12px] font-semibold leading-tight">
         {option.label}
       </span>
       {option.description && (
-        <span className="mt-1 block text-[10px] leading-snug text-[#938c83]">
+        <span className="mt-1 block text-[10px] leading-snug text-tm-faint">
           {option.description}
         </span>
       )}
@@ -814,18 +814,18 @@ export function LessonPlanningForm({
                 onChange={(event) => setTopic(event.target.value)}
                 placeholder="Например: второй закон Ньютона"
                 maxLength={240}
-                className="h-11 w-full rounded-[13px] border border-[#d8d2c9] bg-white/72 px-3.5 font-serif text-[14px] text-[#3c3630] outline-none transition-colors placeholder:text-[#aaa49b] focus:border-[#b98545]"
+                className="h-11 w-full rounded-[13px] border border-tm-line bg-tm-surface/72 px-3.5 font-serif text-[14px] text-tm-ink outline-none transition-colors placeholder:text-tm-faint focus:border-tm-accent"
               />
             </label>
             {error && (
-              <p className="mt-2 text-[10px] text-[#a44f45]" role="alert">
+              <p className="mt-2 text-[10px] text-tm-danger" role="alert">
                 {error}
               </p>
             )}
             <button
               type="submit"
               disabled={topic.trim().length < 3}
-              className="mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#302d2a] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#1f1d1b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 disabled:cursor-not-allowed disabled:bg-[#dfdbd4] disabled:text-[#a7a097]"
+              className="mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-[12px] bg-tm-strong text-[11px] font-medium text-tm-on-strong outline-none transition-colors hover:bg-tm-strong/85 focus-visible:ring-2 focus-visible:ring-tm-accent/35 disabled:cursor-not-allowed disabled:bg-tm-surface-3 disabled:text-tm-faint"
             >
               Продолжить
               <ArrowRight className="h-3.5 w-3.5" />
@@ -882,7 +882,7 @@ export function LessonPlanningForm({
                   setOtherOpen(true);
                   setSelectedChoiceId("other");
                 }}
-                className="w-full rounded-[12px] border border-dashed border-[#d5cfc6] px-3 py-2 text-left text-[11px] text-[#837c73] outline-none transition-colors hover:border-[#bda47e] hover:bg-white/60 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 disabled:opacity-35"
+                className="w-full rounded-[12px] border border-dashed border-tm-line px-3 py-2 text-left text-[11px] text-tm-muted outline-none transition-colors hover:border-tm-muted hover:bg-tm-surface/60 focus-visible:ring-2 focus-visible:ring-tm-accent/25 disabled:opacity-35"
               >
                 Другое — напишу сам
               </button>
@@ -900,13 +900,13 @@ export function LessonPlanningForm({
                   onChange={(event) => setOtherValue(event.target.value)}
                   placeholder="Короткий ответ"
                   maxLength={120}
-                  className="h-9 min-w-0 flex-1 rounded-[11px] border border-[#d8d2c9] bg-white/75 px-3 font-serif text-[12px] outline-none placeholder:text-[#aaa49b] focus:border-[#b98545]"
+                  className="h-9 min-w-0 flex-1 rounded-[11px] border border-tm-line bg-tm-surface/75 px-3 font-serif text-[12px] outline-none placeholder:text-tm-faint focus:border-tm-accent"
                 />
                 <button
                   type="submit"
                   disabled={!otherValue.trim()}
                   aria-label="Сохранить свой ответ"
-                  className="grid h-9 w-9 place-items-center rounded-[11px] bg-[#302d2a] text-white disabled:bg-[#ded9d1] disabled:text-[#aaa49b]"
+                  className="grid h-9 w-9 place-items-center rounded-[11px] bg-tm-strong text-tm-on-strong disabled:bg-tm-surface-3 disabled:text-tm-faint"
                 >
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
@@ -918,7 +918,7 @@ export function LessonPlanningForm({
         {screen === "context" && (
           <div className="space-y-3.5">
             <fieldset>
-              <legend className="mb-1.5 text-[10px] font-medium text-[#756e66]">
+              <legend className="mb-1.5 text-[10px] font-medium text-tm-muted">
                 Текущий уровень
               </legend>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-1.5">
@@ -935,7 +935,7 @@ export function LessonPlanningForm({
             </fieldset>
 
             <fieldset>
-              <legend className="mb-1.5 text-[10px] font-medium text-[#756e66]">
+              <legend className="mb-1.5 text-[10px] font-medium text-tm-muted">
                 Сколько времени есть?
               </legend>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(76px,1fr))] gap-1.5">
@@ -948,10 +948,10 @@ export function LessonPlanningForm({
                       setCustomDurationOpen(false);
                     }}
                     aria-pressed={durationMinutes === duration}
-                    className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 ${
+                    className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/25 ${
                       durationMinutes === duration
-                        ? "border-[#b9803b] bg-[#fff8ec] text-[#80521d]"
-                        : "border-[#ddd8d0] bg-white/62 text-[#817a71] hover:bg-white"
+                        ? "border-tm-accent bg-tm-bg text-tm-accent"
+                        : "border-tm-line bg-tm-surface/62 text-tm-muted hover:bg-tm-surface"
                     }`}
                   >
                     {duration} мин
@@ -968,10 +968,10 @@ export function LessonPlanningForm({
                     setCustomDurationOpen(true);
                   }}
                   aria-pressed={!isPresetDuration(durationMinutes) && durationMinutes !== null}
-                  className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 ${
+                  className={`h-9 rounded-[11px] border text-[11px] tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/25 ${
                     !isPresetDuration(durationMinutes) && durationMinutes !== null
-                      ? "border-[#b9803b] bg-[#fff8ec] text-[#80521d]"
-                      : "border-dashed border-[#d5cfc6] bg-white/62 text-[#837c73] hover:bg-white"
+                      ? "border-tm-accent bg-tm-bg text-tm-accent"
+                      : "border-dashed border-tm-line bg-tm-surface/62 text-tm-muted hover:bg-tm-surface"
                   }`}
                 >
                   {!isPresetDuration(durationMinutes) && durationMinutes !== null
@@ -1006,13 +1006,13 @@ export function LessonPlanningForm({
                     value={customDurationValue}
                     onChange={(event) => setCustomDurationValue(event.target.value)}
                     placeholder={`${MIN_CUSTOM_DURATION}–${MAX_CUSTOM_DURATION} мин`}
-                    className="h-9 min-w-0 flex-1 rounded-[11px] border border-[#d8d2c9] bg-white/75 px-3 font-serif text-[12px] outline-none placeholder:text-[#aaa49b] focus:border-[#b98545]"
+                    className="h-9 min-w-0 flex-1 rounded-[11px] border border-tm-line bg-tm-surface/75 px-3 font-serif text-[12px] outline-none placeholder:text-tm-faint focus:border-tm-accent"
                   />
                   <button
                     type="submit"
                     disabled={!customDurationValue.trim()}
                     aria-label="Сохранить время"
-                    className="grid h-9 w-9 place-items-center rounded-[11px] bg-[#302d2a] text-white disabled:bg-[#ded9d1] disabled:text-[#aaa49b]"
+                    className="grid h-9 w-9 place-items-center rounded-[11px] bg-tm-strong text-tm-on-strong disabled:bg-tm-surface-3 disabled:text-tm-faint"
                   >
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
@@ -1024,7 +1024,7 @@ export function LessonPlanningForm({
               type="button"
               onClick={() => void showSummary()}
               disabled={!level || !durationMinutes}
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#302d2a] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#1f1d1b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 disabled:cursor-not-allowed disabled:bg-[#dfdbd4] disabled:text-[#a7a097]"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-[12px] bg-tm-strong text-[11px] font-medium text-tm-on-strong outline-none transition-colors hover:bg-tm-strong/85 focus-visible:ring-2 focus-visible:ring-tm-accent/35 disabled:cursor-not-allowed disabled:bg-tm-surface-3 disabled:text-tm-faint"
             >
               Показать итог
               <ArrowRight className="h-3.5 w-3.5" />
@@ -1034,7 +1034,7 @@ export function LessonPlanningForm({
 
         {screen === "summary" && summary && (
           <div>
-            <dl className="divide-y divide-[#e5e0d8] rounded-[13px] border border-[#ded8cf] bg-white/55 px-3">
+            <dl className="divide-y divide-tm-line rounded-[13px] border border-tm-line bg-tm-surface/55 px-3">
               {[
                 ["Тема", summary.topic],
                 ["Цель", summary.goal],
@@ -1048,23 +1048,23 @@ export function LessonPlanningForm({
                   key={label}
                   className="grid grid-cols-[72px_1fr] gap-2 py-2 text-[10px]"
                 >
-                  <dt className="text-[#9a938a]">{label}</dt>
-                  <dd className="font-medium text-[#504940]">{value}</dd>
+                  <dt className="text-tm-faint">{label}</dt>
+                  <dd className="font-medium text-tm-ink-2">{value}</dd>
                 </div>
               ))}
             </dl>
 
             <div className="mt-3">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#9b7548]">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-tm-accent">
                 Урок завершён, когда
               </span>
               <ul className="mt-1.5 space-y-1">
                 {summary.success_criteria.map((criterion) => (
                   <li
                     key={criterion}
-                    className="flex items-start gap-2 text-[10px] leading-relaxed text-[#756e66]"
+                    className="flex items-start gap-2 text-[10px] leading-relaxed text-tm-muted"
                   >
-                    <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#a56e2f]" />
+                    <Check className="mt-0.5 h-3 w-3 shrink-0 text-tm-accent" />
                     {criterion}
                   </li>
                 ))}
@@ -1075,7 +1075,7 @@ export function LessonPlanningForm({
               <button
                 type="button"
                 onClick={editAnswers}
-                className="h-9 rounded-[12px] border border-[#d7d1c8] bg-white/60 text-[11px] text-[#6f675e] outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25"
+                className="h-9 rounded-[12px] border border-tm-line bg-tm-surface/60 text-[11px] text-tm-muted outline-none transition-colors hover:bg-tm-surface focus-visible:ring-2 focus-visible:ring-tm-accent/25"
               >
                 Изменить
               </button>
@@ -1083,7 +1083,7 @@ export function LessonPlanningForm({
                 type="button"
                 onClick={() => void startLesson()}
                 disabled={confirming}
-                className="flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-[#302d2a] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#1f1d1b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 disabled:bg-[#78726b]"
+                className="flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-tm-strong text-[11px] font-medium text-tm-on-strong outline-none transition-colors hover:bg-tm-strong/85 focus-visible:ring-2 focus-visible:ring-tm-accent/35 disabled:bg-tm-muted"
               >
                 {confirming ? (
                   <>
@@ -1152,14 +1152,14 @@ export function LessonPlanProgress({
       type="button"
       onClick={onOpen}
       aria-label={`Открыть подробный план урока «${plan.topic}»`}
-      className={`flex min-w-0 items-center gap-1 rounded-[14px] border border-[#ded9d1] bg-[#fbfaf7]/96 p-1 text-left outline-none backdrop-blur-xl transition-[border-color,box-shadow] hover:border-[#cdb184] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30 ${
+      className={`flex min-w-0 items-center gap-1 rounded-[14px] border border-tm-line bg-tm-surface/96 p-1 text-left outline-none backdrop-blur-xl transition-[border-color,box-shadow] hover:border-tm-accent focus-visible:ring-2 focus-visible:ring-tm-accent/30 ${
         floating
           ? "w-[min(680px,calc(100vw-160px))] shadow-[0_10px_34px_rgba(61,49,36,0.12)]"
           : "w-full"
       } ${className}`}
     >
       {hasBefore && (
-        <span className="grid h-7 w-6 shrink-0 place-items-center text-[12px] text-[#aaa49b]">
+        <span className="grid h-7 w-6 shrink-0 place-items-center text-[12px] text-tm-faint">
           …
         </span>
       )}
@@ -1174,10 +1174,10 @@ export function LessonPlanProgress({
             key={task.id}
             className={`flex h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-[9px] px-2 text-[10px] ${
               isCurrent
-                ? "bg-[#302d2a] font-medium text-[#fffdf9] shadow-[0_3px_10px_rgba(47,44,40,0.12)]"
+                ? "bg-tm-strong font-medium text-tm-on-strong shadow-[0_3px_10px_rgba(47,44,40,0.12)]"
                 : isComplete
-                  ? "text-[#8a5b24]"
-                  : "text-[#aaa49b]"
+                  ? "text-tm-accent"
+                  : "text-tm-faint"
             }`}
           >
             {isComplete ? (
@@ -1191,7 +1191,7 @@ export function LessonPlanProgress({
       })}
 
       {hasAfter && (
-        <span className="grid h-7 w-6 shrink-0 place-items-center text-[12px] text-[#aaa49b]">
+        <span className="grid h-7 w-6 shrink-0 place-items-center text-[12px] text-tm-faint">
           …
         </span>
       )}
@@ -1220,7 +1220,7 @@ export function LessonPlanDetailsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[135] grid place-items-center bg-[#2f2c28]/18 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[135] grid place-items-center bg-tm-strong/18 p-4 backdrop-blur-[2px]"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) onClose();
@@ -1230,57 +1230,57 @@ export function LessonPlanDetailsDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="lesson-plan-title"
-        className="relative max-h-[min(720px,calc(100vh-32px))] w-full max-w-[560px] overflow-y-auto rounded-[22px] border border-[#d8d3ca] bg-[#fbfaf7] p-5 shadow-[0_24px_80px_rgba(47,44,40,0.22)]"
+        className="relative max-h-[min(720px,calc(100vh-32px))] w-full max-w-[560px] overflow-y-auto rounded-[22px] border border-tm-line bg-tm-surface p-5 shadow-[0_24px_80px_rgba(47,44,40,0.22)]"
       >
         <button
           type="button"
           onClick={onClose}
           aria-label="Закрыть подробный план"
-          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-[#928c83] outline-none transition-colors hover:bg-[#efede8] hover:text-[#302d2a] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
         >
           <X className="h-4 w-4" />
         </button>
 
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9c7a50]">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-muted">
           План урока
         </span>
         <h2
           id="lesson-plan-title"
-          className="mt-1 pr-10 font-serif text-[22px] font-medium tracking-[-0.025em] text-[#302d2a]"
+          className="mt-1 pr-10 font-serif text-[22px] font-medium tracking-[-0.025em] text-tm-ink"
         >
           {plan.topic}
         </h2>
 
-        <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-[#756e65]">
-          <span className="flex items-center gap-1.5 rounded-full border border-[#ddd8cf] bg-white/60 px-2.5 py-1.5">
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-tm-muted">
+          <span className="flex items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/60 px-2.5 py-1.5">
             <Target className="h-3 w-3" />
             {plan.goalLabel}
           </span>
-          <span className="rounded-full border border-[#ddd8cf] bg-white/60 px-2.5 py-1.5">
+          <span className="rounded-full border border-tm-line bg-tm-surface/60 px-2.5 py-1.5">
             {plan.levelLabel}
           </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-[#ddd8cf] bg-white/60 px-2.5 py-1.5 tabular-nums">
+          <span className="flex items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/60 px-2.5 py-1.5 tabular-nums">
             <Clock3 className="h-3 w-3" />
             {plan.durationMinutes} мин
           </span>
         </div>
 
-        <p className="mt-3 text-[12px] leading-relaxed text-[#817a71]">
+        <p className="mt-3 text-[12px] leading-relaxed text-tm-muted">
           {plan.objective}
         </p>
 
         {plan.successCriteria && plan.successCriteria.length > 0 && (
-          <div className="mt-4 rounded-[14px] border border-[#e0dbd3] bg-white/48 px-3 py-2.5">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#9c7a50]">
+          <div className="mt-4 rounded-[14px] border border-tm-line bg-white/48 px-3 py-2.5">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-tm-muted">
               Критерии успеха
             </span>
             <ul className="mt-1.5 space-y-1">
               {plan.successCriteria.map((criterion) => (
                 <li
                   key={criterion}
-                  className="flex items-start gap-2 text-[10px] leading-relaxed text-[#7e776e]"
+                  className="flex items-start gap-2 text-[10px] leading-relaxed text-tm-muted"
                 >
-                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#a56e2f]" />
+                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-tm-accent" />
                   {criterion}
                 </li>
               ))}
@@ -1301,19 +1301,19 @@ export function LessonPlanDetailsDialog({
                   onSelectTask(index);
                   onClose();
                 }}
-                className={`flex w-full items-start gap-3 rounded-[14px] border px-3 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 ${
+                className={`flex w-full items-start gap-3 rounded-[14px] border px-3 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/25 ${
                   isCurrent
-                    ? "border-[#c89a5c] bg-[#fff8ed]"
-                    : "border-[#dfdad2] bg-white/50 hover:bg-white"
+                    ? "border-tm-accent bg-tm-bg"
+                    : "border-tm-line bg-tm-surface/50 hover:bg-tm-surface"
                 }`}
               >
                 <span
                   className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ${
                     isComplete
-                      ? "bg-[#9d6b2e] text-white"
+                      ? "bg-tm-accent text-tm-on-strong"
                       : isCurrent
-                        ? "border border-[#b87c35] text-[#9d6b2e]"
-                        : "text-[#b5aea5]"
+                        ? "border border-tm-accent text-tm-accent"
+                        : "text-tm-faint"
                   }`}
                 >
                   {isComplete ? (
@@ -1324,14 +1324,14 @@ export function LessonPlanDetailsDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-3">
-                    <span className="font-serif text-[13px] font-semibold text-[#484139]">
+                    <span className="font-serif text-[13px] font-semibold text-tm-ink-2">
                       {index + 1}. {task.title}
                     </span>
-                    <span className="shrink-0 text-[9px] tabular-nums text-[#a39c93]">
+                    <span className="shrink-0 text-[9px] tabular-nums text-tm-faint">
                       {task.durationMinutes} мин
                     </span>
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-relaxed text-[#918a81]">
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-tm-faint">
                     {task.description}
                   </span>
                 </span>
@@ -1340,7 +1340,7 @@ export function LessonPlanDetailsDialog({
           })}
         </div>
 
-        <p className="mt-4 text-[10px] leading-relaxed text-[#aaa39a]">
+        <p className="mt-4 text-[10px] leading-relaxed text-tm-faint">
           Активный этап меняется автоматически после законченного ответа. При
           необходимости можно выбрать этап вручную.
         </p>

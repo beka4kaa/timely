@@ -45,14 +45,14 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
 
   function tabClass(active: boolean) {
     return `bg-transparent p-0 text-sm transition-colors ${
-      active ? "font-semibold text-[#302b26]" : "text-[#a49a8e] hover:text-[#6f665c]"
+      active ? "font-semibold text-tm-ink" : "text-tm-faint hover:text-tm-muted"
     }`;
   }
 
   return (
     <section className="mt-8">
       <header className="mb-[18px] flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="font-serif text-xl font-medium tracking-[-0.025em] text-[#302b26]">
+        <h2 className="font-serif text-xl font-medium tracking-[-0.025em] text-tm-ink">
           Активность учёбы
         </h2>
         <div className="flex items-baseline gap-5">
@@ -99,7 +99,7 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
                       }`}
                       style={{
                         background: cell.color,
-                        boxShadow: cell.isToday ? "0 0 0 1.5px #a76b22" : undefined,
+                        boxShadow: cell.isToday ? "0 0 0 1px rgb(var(--tm-bg)), 0 0 0 2.5px rgb(var(--tm-accent))" : undefined,
                       }}
                     />
                   ))}
@@ -111,7 +111,7 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
               {weeks.map((week) => (
                 <span
                   key={`${week.key}-month`}
-                  className="min-w-0 flex-1 whitespace-nowrap text-[11px] text-[#a89e92]"
+                  className="min-w-0 flex-1 whitespace-nowrap text-[11px] text-tm-faint"
                 >
                   {week.month}
                 </span>
@@ -119,14 +119,14 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
             </div>
           </div>
 
-          <div className="mt-[18px] flex flex-wrap items-center justify-between gap-3 border-t border-[#e5dfd5] pt-3.5">
-            <span className="text-[11px] text-[#91887e]">
+          <div className="mt-[18px] flex flex-wrap items-center justify-between gap-3 border-t border-tm-line pt-3.5">
+            <span className="text-[11px] text-tm-faint">
               {heat.activeDays} активных дней · всего {hm(heat.totalSeconds)}
               {heat.best
                 ? ` · лучший день ${heat.best.label} (${hm(heat.best.seconds)})`
                 : ""}
             </span>
-            <div className="flex items-center gap-1.5 text-[10px] text-[#a09587]">
+            <div className="flex items-center gap-1.5 text-[10px] text-tm-faint">
               меньше
               {HEAT_COLORS.map((color) => (
                 <span
@@ -141,7 +141,7 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
         </div>
       ) : (
         <div>
-          <div className="flex h-[220px] items-end gap-1.5 border-b border-[#e2dcd3]">
+          <div className="flex h-[220px] items-end gap-1.5 border-b border-tm-line">
             {bars.map((bar) => (
               <div
                 key={bar.key}
@@ -149,7 +149,7 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
                 onMouseLeave={() => setTip(null)}
                 className="flex h-full min-w-0 flex-1 cursor-default flex-col items-center justify-end gap-1.5"
               >
-                <span className="text-[9px] tabular-nums text-[#a89e92]">
+                <span className="text-[9px] tabular-nums text-tm-faint">
                   {bar.seconds > 0 ? Math.round(bar.seconds / 60) : ""}
                 </span>
                 <div
@@ -157,10 +157,10 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
                   style={{
                     height: `${Math.max(3, Math.round(bar.ratio * CHART_AREA_PX))}px`,
                     background: bar.isToday
-                      ? "linear-gradient(180deg, #c99a5a, #a76b22)"
+                      ? "linear-gradient(180deg, rgb(var(--tm-accent) / 0.7), rgb(var(--tm-accent)))"
                       : bar.reachedGoal
-                        ? "#b8823a"
-                        : "#ddd0bb",
+                        ? "rgb(var(--tm-accent) / 0.75)"
+                        : "rgb(var(--tm-line-strong))",
                   }}
                 />
               </div>
@@ -172,7 +172,7 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
               <span
                 key={`${bar.key}-label`}
                 className={`min-w-0 flex-1 text-center text-[9px] tabular-nums ${
-                  bar.isToday ? "text-[#8a6137]" : "text-[#a89e92]"
+                  bar.isToday ? "text-tm-accent" : "text-tm-faint"
                 }`}
               >
                 {bar.label}
@@ -180,12 +180,12 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
             ))}
           </div>
 
-          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e5dfd5] pt-3.5">
-            <span className="text-[11px] text-[#91887e]">
+          <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-tm-line pt-3.5">
+            <span className="text-[11px] text-tm-faint">
               За {streakLabel(bars.length)} — {hm(barsTotal)}
             </span>
-            <div className="flex items-center gap-1.5 text-[10px] text-[#a09587]">
-              <span className="h-0.5 w-[22px] bg-[#c99a5a]" />
+            <div className="flex items-center gap-1.5 text-[10px] text-tm-faint">
+              <span className="h-0.5 w-[22px] bg-tm-accent" />
               среднее {hm(bars.length ? barsTotal / bars.length : 0)}
             </div>
           </div>
@@ -194,11 +194,11 @@ export function ActivityPanel({ weeks, bars }: ActivityPanelProps) {
 
       {tip && (
         <div
-          className="pointer-events-none fixed z-[200] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[10px] border border-[#302d2a] bg-[#302d2a] px-2.5 py-[7px] text-[11px] leading-[1.35] text-[#fdfbf7] shadow-[0_10px_24px_rgba(48,45,42,0.28)]"
+          className="pointer-events-none fixed z-[200] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[10px] border border-tm-strong bg-tm-strong px-2.5 py-[7px] text-[11px] leading-[1.35] text-tm-on-strong shadow-[0_10px_24px_rgba(48,45,42,0.28)]"
           style={{ left: `${tip.x}px`, top: `${tip.y}px` }}
         >
           <span className="block font-semibold">{tip.title}</span>
-          <span className="block text-[10px] text-[#cdc4b6]">{tip.sub}</span>
+          <span className="block text-[10px] text-tm-on-strong/70">{tip.sub}</span>
         </div>
       )}
     </section>

@@ -170,7 +170,7 @@ export function NutritionTracker() {
       {/* Заголовок */}
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-plus-jakarta text-2xl font-extrabold tracking-tight">Калории и БЖУ</h1>
+          <h1 className="font-sans text-2xl font-extrabold tracking-tight">Калории и БЖУ</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {tab === 'analytics' ? 'Твой день в цифрах' : 'Найди и добавь продукт'}
           </p>

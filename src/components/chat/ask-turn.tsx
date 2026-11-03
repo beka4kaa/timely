@@ -34,7 +34,7 @@ export function AskTurn({
     return (
       <div className="flex justify-end" id={id}>
         <div
-          className={`whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-[#302d2a] text-[#fffdf9] ${
+          className={`whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-tm-strong text-tm-on-strong ${
             page
               ? "max-w-[84%] px-4 py-3 text-[15px] leading-[1.6]"
               : "max-w-[94%] px-3.5 py-2.5 text-[13px] leading-[1.55]"
@@ -66,15 +66,15 @@ export function AskTurn({
           <div
             className={
               page
-                ? "text-[15px] leading-[1.7] text-[#413b34]"
-                : "rounded-[16px] border border-[#dedad3] bg-white/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-[#514b43]"
+                ? "text-[15px] leading-[1.7] text-tm-ink-2"
+                : "rounded-[16px] border border-tm-line bg-tm-surface/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-tm-ink-2"
             }
           >
-            {turn.error && <span className="text-[#b0473e]">{turn.error}</span>}
+            {turn.error && <span className="text-tm-danger">{turn.error}</span>}
             {/* Только когда книга была: в разговоре без книги пометка
                 сообщала бы об отсутствии того, чего никто не открывал. */}
             {turn.grounded === false && turn.library !== false && !!turn.content && (
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
                 В книге этого нет
               </div>
             )}
@@ -114,15 +114,15 @@ export function Citations({
 
   return (
     <div className={variant === "page" ? "" : "px-1"}>
-      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[#a09890]">
-        <BookOpen className="h-3 w-3 shrink-0 text-[#b98343]" />
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-tm-faint">
+        <BookOpen className="h-3 w-3 shrink-0 text-tm-accent" />
         <span className="truncate">{title || "Источник"}</span>
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
         {spots.map((spot) => (
           <span
             key={spot}
-            className="rounded-full border border-[#e4e0d8] bg-[#fbfaf7] px-2 py-[2px] text-[10.5px] tabular-nums text-[#8a8177]"
+            className="rounded-full border border-tm-line bg-tm-surface px-2 py-[2px] text-[10.5px] tabular-nums text-tm-muted"
           >
             {spot}
           </span>

@@ -41,26 +41,26 @@ export function PlanModuleStrip({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className={`${paperFocus} flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-[#f8f3ea]`}
+        className={`${paperFocus} flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-tm-surface-2`}
       >
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
-            <span className={`${paperNumber} shrink-0 text-[13px] text-[#a1978b]`}>
+            <span className={`${paperNumber} shrink-0 text-[13px] text-tm-faint`}>
               {/* Номер главы из книги, если он есть: рядом с «Глава 3» свой
                   порядковый номер списка читался бы как «6 Глава 3». */}
               {courseModule.number_label || index + 1}
             </span>
-            <span className="truncate font-serif text-[17px] tracking-[-0.02em] text-[#302b26]">
+            <span className="truncate font-serif text-[17px] tracking-[-0.02em] text-tm-ink">
               {courseModule.title}
             </span>
           </span>
           {courseModule.objective && (
-            <span className="mt-1 block text-[12px] leading-5 text-[#7f776e]">
+            <span className="mt-1 block text-[12px] leading-5 text-tm-muted">
               {courseModule.objective}
             </span>
           )}
         </span>
-        <span className="flex shrink-0 items-center gap-3 pt-1 text-[11px] text-[#9b9186]">
+        <span className="flex shrink-0 items-center gap-3 pt-1 text-[11px] text-tm-faint">
           <span className={paperNumber}>
             {courseModule.topics.length} тем · {formatMinutes(minutes)}
           </span>
@@ -71,7 +71,7 @@ export function PlanModuleStrip({
       </button>
 
       {open && (
-        <ul className="border-t border-[#e7e1d7] px-2 pb-2 pt-1">
+        <ul className="border-t border-tm-line px-2 pb-2 pt-1">
           {courseModule.topics.map((topic) => (
             <PlanTopicRow
               key={topic.id}

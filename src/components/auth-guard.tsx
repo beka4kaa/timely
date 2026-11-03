@@ -35,8 +35,8 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   // Показываем загрузчик пока проверяем сессию
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fbfaf7] dark:bg-[#17150f]">
-        <LoadingMark size={46} className="text-[#b98343] dark:text-[#d0a05c]" />
+      <div className="flex min-h-screen items-center justify-center bg-tm-bg">
+        <LoadingMark size={46} className="text-tm-accent" />
       </div>
     )
   }

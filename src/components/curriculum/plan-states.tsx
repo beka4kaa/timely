@@ -23,13 +23,13 @@ export function PlanPageSkeleton() {
   return (
     <Shell>
       <div className="space-y-4" aria-busy>
-        <div className="h-[132px] animate-pulse rounded-[18px] border border-[#ded7cd] bg-[#f3efe8]" />
+        <div className="h-[132px] animate-pulse rounded-[18px] border border-tm-line bg-tm-surface-2" />
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
-            <div className="h-24 animate-pulse rounded-[20px] border border-[#ddd7cd] bg-[#f3efe8]" />
-            <div className="h-24 animate-pulse rounded-[20px] border border-[#ddd7cd] bg-[#f3efe8]" />
+            <div className="h-24 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
+            <div className="h-24 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
           </div>
-          <div className="h-56 animate-pulse rounded-[20px] border border-[#ddd7cd] bg-[#f3efe8]" />
+          <div className="h-56 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
         </div>
       </div>
     </Shell>
@@ -54,10 +54,10 @@ export function PlanPageError({
   return (
     <Shell>
       <div className={`${paperCard} max-w-xl p-6`}>
-        <h2 className="font-serif text-[20px] tracking-[-0.02em] text-[#302b26]">
+        <h2 className="font-serif text-[20px] tracking-[-0.02em] text-tm-ink">
           {TITLES[kind]}
         </h2>
-        <p className="mt-2 text-[13px] leading-6 text-[#7f776e]">{message}</p>
+        <p className="mt-2 text-[13px] leading-6 text-tm-muted">{message}</p>
 
         <div className="mt-5 flex flex-wrap gap-3">
           {kind === "network" ? (

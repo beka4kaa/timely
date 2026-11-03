@@ -49,14 +49,14 @@ export function ChatTree({
   const visible = expanded ? chats : chats.slice(0, VISIBLE_CHATS);
 
   return (
-    <div className="text-[#49423a]">
-      <div className="border-b border-[#e4e0d8] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+    <div className="text-tm-ink-2">
+      <div className="border-b border-tm-line px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
         Чаты
       </div>
 
       <div className="max-h-80 overflow-y-auto py-1">
         {!subjects.length && (
-          <div className="px-3 py-4 text-[12px] text-[#8f887f]">
+          <div className="px-3 py-4 text-[12px] text-tm-faint">
             Предметов пока нет
           </div>
         )}
@@ -68,27 +68,27 @@ export function ChatTree({
               <button
                 type="button"
                 onClick={() => onSelectSubject(subject.goalId)}
-                className="flex w-full items-center gap-1 px-3 py-1.5 text-left transition-colors hover:bg-[#f1ede6]"
+                className="flex w-full items-center gap-1 px-3 py-1.5 text-left transition-colors hover:bg-tm-surface-2"
               >
                 {open ? (
-                  <ChevronDown className="h-3 w-3 shrink-0 text-[#a09890]" />
+                  <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
                 ) : (
-                  <ChevronRight className="h-3 w-3 shrink-0 text-[#a09890]" />
+                  <ChevronRight className="h-3 w-3 shrink-0 text-tm-faint" />
                 )}
-                <span className="min-w-0 flex-1 truncate font-serif text-[12.5px] font-semibold text-[#37322c]">
+                <span className="min-w-0 flex-1 truncate font-serif text-[12.5px] font-semibold text-tm-ink">
                   {subject.title}
                 </span>
                 {!open && (
-                  <span className="shrink-0 text-[10px] tabular-nums text-[#a09890]">
+                  <span className="shrink-0 text-[10px] tabular-nums text-tm-faint">
                     {subject.books ? "" : "без книг"}
                   </span>
                 )}
               </button>
 
               {open && (
-                <div className="ml-[18px] border-l border-[#dcd5c8] pl-1.5">
+                <div className="ml-[18px] border-l border-tm-line pl-1.5">
                   {!chats.length && (
-                    <div className="px-2 py-1.5 text-[11px] text-[#a09890]">
+                    <div className="px-2 py-1.5 text-[11px] text-tm-faint">
                       Здесь пока пусто
                     </div>
                   )}
@@ -96,19 +96,19 @@ export function ChatTree({
                     <div
                       key={chat.id}
                       className={`group flex items-center gap-1 rounded-[6px] pr-1 ${
-                        chat.id === selectedChatId ? "bg-[#f4f0e9]" : ""
+                        chat.id === selectedChatId ? "bg-tm-surface-2" : ""
                       }`}
                     >
                       <button
                         type="button"
                         onClick={() => onSelectChat(chat.id)}
-                        className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px] text-[#4a433b] transition-colors hover:text-[#37322c]"
+                        className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12px] text-tm-ink-2 transition-colors hover:text-tm-ink"
                       >
                         {chat.title || "Новый чат"}
                       </button>
 
                       {chat.id === selectedChatId && (
-                        <Check className="h-3 w-3 shrink-0 text-[#8a7a5e]" />
+                        <Check className="h-3 w-3 shrink-0 text-tm-muted" />
                       )}
 
                       {confirmDeleteId === chat.id ? (
@@ -121,7 +121,7 @@ export function ChatTree({
                             }}
                             aria-label="Удалить чат"
                             title="Удалить"
-                            className="grid h-5 w-5 place-items-center rounded-full text-[#b0473e] transition-colors hover:bg-[#f6e4e1]"
+                            className="grid h-5 w-5 place-items-center rounded-full text-tm-danger transition-colors hover:bg-tm-danger-soft"
                           >
                             <Check className="h-3 w-3" />
                           </button>
@@ -129,7 +129,7 @@ export function ChatTree({
                             type="button"
                             onClick={() => setConfirmDeleteId(null)}
                             aria-label="Отменить удаление"
-                            className="grid h-5 w-5 place-items-center rounded-full text-[#8f887f] transition-colors hover:bg-[#efece5]"
+                            className="grid h-5 w-5 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -142,7 +142,7 @@ export function ChatTree({
                           title="Удалить чат"
                           // Удаление в два шага, как в истории чатов доски:
                           // разговор восстановить нельзя.
-                          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#c2bcb2] opacity-0 transition-colors hover:bg-[#efece5] hover:text-[#8f887f] focus-visible:opacity-100 group-hover:opacity-100"
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-tm-faint opacity-0 transition-colors hover:bg-tm-surface-2 hover:text-tm-muted focus-visible:opacity-100 group-hover:opacity-100"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -154,7 +154,7 @@ export function ChatTree({
                     <button
                       type="button"
                       onClick={() => setExpanded(true)}
-                      className="px-2 py-1.5 text-[11px] text-[#a09890] transition-colors hover:text-[#61574c]"
+                      className="px-2 py-1.5 text-[11px] text-tm-faint transition-colors hover:text-tm-ink-2"
                     >
                       Показать ещё {chats.length - VISIBLE_CHATS}
                     </button>
@@ -170,7 +170,7 @@ export function ChatTree({
         type="button"
         onClick={onCreate}
         disabled={!selectedGoalId}
-        className="flex w-full items-center gap-1.5 border-t border-[#e4e0d8] px-3 py-2 text-left text-[12px] text-[#6d665d] transition-colors hover:bg-[#f1ede6] hover:text-[#37322c] disabled:opacity-50"
+        className="flex w-full items-center gap-1.5 border-t border-tm-line px-3 py-2 text-left text-[12px] text-tm-muted transition-colors hover:bg-tm-surface-2 hover:text-tm-ink disabled:opacity-50"
       >
         <Plus className="h-3.5 w-3.5" />
         Новый чат

@@ -498,7 +498,7 @@ export function WeekGrid({
           Вертикальных швов здесь нет: те же линии рисует тело сетки, и в
           шапке каждый шов выходил дважды. Выходные не тонируются — они уже
           подписаны, а лишняя заливка спорит с лентой нагрузки. */}
-      <div className="flex shrink-0 border-b border-[#eee8de]">
+      <div className="flex shrink-0 border-b border-tm-line">
         <div className={`${TIME_COLUMN} shrink-0`} aria-hidden />
         {columns.map((column, index) => {
           const isToday = column.dateKey === todayKey;
@@ -509,7 +509,7 @@ export function WeekGrid({
               key={column.dateKey}
               className="flex-1 px-1.5 pb-1 pt-1.5 text-center"
             >
-              <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#a1978b]">
+              <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-tm-faint">
                 {weekdayShort(column.weekday)}
               </div>
               {/* Число, а не «18 августа»: месяц уже написан в заголовке недели,
@@ -520,8 +520,8 @@ export function WeekGrid({
               <div
                 className={`mx-auto mt-0.5 grid h-[26px] w-[26px] place-items-center font-serif text-[15px] tabular-nums ${
                   isToday
-                    ? "rounded-full bg-[#fdf3e6] font-medium text-[#8a5b24]"
-                    : "text-[#4a443d]"
+                    ? "rounded-full bg-tm-surface-2 font-medium text-tm-accent"
+                    : "text-tm-ink-2"
                 }`}
               >
                 {dayNumber}
@@ -552,10 +552,10 @@ export function WeekGrid({
                 ) : (
                   // Свободный день — не пустое место, а плоское основание:
                   // так семь дней остаются одним рядом, а не рваной строкой.
-                  <span className="h-px w-4 rounded-full bg-[#e0dbd2]" />
+                  <span className="h-px w-4 rounded-full bg-tm-surface-3" />
                 )}
               </div>
-              <div className="text-[10px] tabular-nums leading-tight text-[#a1978b]">
+              <div className="text-[10px] tabular-nums leading-tight text-tm-faint">
                 {day && day.totalMinutes > 0 ? durationLabel(day.totalMinutes) : "—"}
               </div>
             </div>
@@ -572,7 +572,7 @@ export function WeekGrid({
               разошлись бы с линиями. Ширина фиксированная: от неё зависит,
               стоят ли числа шапки над своими колонками. */}
           <div
-            className={`${TIME_COLUMN} shrink-0 border-r border-[#f0eae0]`}
+            className={`${TIME_COLUMN} shrink-0 border-r border-tm-line`}
             style={{ minHeight: bodyHeight }}
             aria-hidden
           >
@@ -588,7 +588,7 @@ export function WeekGrid({
                   right: 8,
                 }}
               >
-                <span className="text-[11px] font-medium tabular-nums leading-[14px] text-[#8d857b]">
+                <span className="text-[11px] font-medium tabular-nums leading-[14px] text-tm-muted">
                   {formatMinutes(minutes)}
                 </span>
               </div>
@@ -610,7 +610,7 @@ export function WeekGrid({
             {halfMarks.map((minutes) => (
               <div
                 key={`half-${minutes}`}
-                className="pointer-events-none absolute inset-x-0 border-t border-[#f7f3ec]"
+                className="pointer-events-none absolute inset-x-0 border-t border-tm-line/50"
                 style={{ top: minutesToOffset(minutes, range.startMinutes) }}
                 aria-hidden
               />
@@ -618,7 +618,7 @@ export function WeekGrid({
             {marks.map((minutes) => (
               <div
                 key={minutes}
-                className="pointer-events-none absolute inset-x-0 border-t border-[#f0eae0]"
+                className="pointer-events-none absolute inset-x-0 border-t border-tm-line"
                 style={{ top: minutesToOffset(minutes, range.startMinutes) }}
                 aria-hidden
               />
@@ -627,17 +627,17 @@ export function WeekGrid({
             {columns.map((column) => (
               <div
                 key={column.dateKey}
-                className={`relative min-w-0 flex-1 border-l border-[#f4efe7] ${
-                  column.dateKey === todayKey ? "bg-[#fffbf4]" : ""
+                className={`relative min-w-0 flex-1 border-l border-tm-line ${
+                  column.dateKey === todayKey ? "bg-tm-accent-soft/40" : ""
                 }`}
               >
                 {marker?.dateKey === column.dateKey ? (
                   <div
-                    className="pointer-events-none absolute inset-x-0 z-20 border-t border-[#c0512f]"
+                    className="pointer-events-none absolute inset-x-0 z-20 border-t border-tm-danger"
                     style={{ top: marker.offset }}
                     aria-hidden
                   >
-                    <span className="absolute -left-1 -top-[3px] h-1.5 w-1.5 rounded-full bg-[#c0512f]" />
+                    <span className="absolute -left-1 -top-[3px] h-1.5 w-1.5 rounded-full bg-tm-danger" />
                   </div>
                 ) : null}
 
@@ -848,7 +848,7 @@ export function WeekGrid({
 
             {marquee ? (
               <div
-                className="pointer-events-none absolute z-50 rounded-[6px] border border-[#8a5b24] bg-[#8a5b24]/10"
+                className="pointer-events-none absolute z-50 rounded-[6px] border border-tm-accent bg-tm-accent/10"
                 style={{
                   left: Math.min(marquee.x1, marquee.x2),
                   top: Math.min(marquee.y1, marquee.y2),
@@ -889,14 +889,14 @@ export function WeekGrid({
               // подложкой, а сетка за ним остаётся призраком: видно, что это
               // календарь, а не ошибка загрузки.
               <div
-                className="absolute inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-[#fbfaf7]/70 via-[#fbfaf7]/92 to-[#fbfaf7]/70 px-6"
+                className="absolute inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-tm-surface/70 via-tm-surface/92 to-tm-surface/70 px-6"
                 aria-live="polite"
               >
                 <div className="max-w-[380px] text-center">
-                  <div className="font-serif text-[17px] tracking-[-0.02em] text-[#3b352f]">
+                  <div className="font-serif text-[17px] tracking-[-0.02em] text-tm-ink">
                     Свободная неделя
                   </div>
-                  <p className="mx-auto mt-1.5 text-[12.5px] leading-relaxed text-[#7b7168]">
+                  <p className="mx-auto mt-1.5 text-[12.5px] leading-relaxed text-tm-muted">
                     Попроси помощника справа поставить учебную программу — её
                     занятия появятся здесь вместе с остальным занятым временем.
                   </p>

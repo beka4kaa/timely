@@ -49,7 +49,7 @@ export function BottomNav({
 }: { tab: NutritionTab; onTab: (t: NutritionTab) => void; onFab: () => void }) {
   return (
     <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2">
-      <div className="flex items-center gap-1 rounded-full border border-white/60 bg-white/70 p-1.5 shadow-[0_6px_20px_rgba(15,23,42,0.12)] backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-white/[0.08]">
+      <div className="flex items-center gap-1 rounded-full border border-white/60 bg-tm-surface/70 p-1.5 shadow-[0_6px_20px_rgba(15,23,42,0.12)] backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-white/[0.08]">
         <TabButton
           active={tab === 'analytics'}
           icon={<BarChart3 className="h-5 w-5" />}

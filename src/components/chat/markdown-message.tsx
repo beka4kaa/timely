@@ -79,35 +79,35 @@ function buildComponents(s: Scale): Components {
 
     h1: ({ children }) => (
       <h3
-        className={`mb-1.5 ${s.headGap} font-serif ${s.h1} font-semibold text-[#37322c] first:mt-0`}
+        className={`mb-1.5 ${s.headGap} font-serif ${s.h1} font-semibold text-tm-ink first:mt-0`}
       >
         {children}
       </h3>
     ),
     h2: ({ children }) => (
       <h4
-        className={`mb-1.5 ${s.headGap} font-serif ${s.h2} font-semibold text-[#37322c] first:mt-0`}
+        className={`mb-1.5 ${s.headGap} font-serif ${s.h2} font-semibold text-tm-ink first:mt-0`}
       >
         {children}
       </h4>
     ),
     h3: ({ children }) => (
       <h5
-        className={`mb-1 mt-2.5 ${s.h3} font-semibold text-[#4a433b] first:mt-0`}
+        className={`mb-1 mt-2.5 ${s.h3} font-semibold text-tm-ink-2 first:mt-0`}
       >
         {children}
       </h5>
     ),
     h4: ({ children }) => (
       <h6
-        className={`mb-1 mt-2.5 ${s.h4} font-semibold text-[#4a433b] first:mt-0`}
+        className={`mb-1 mt-2.5 ${s.h4} font-semibold text-tm-ink-2 first:mt-0`}
       >
         {children}
       </h6>
     ),
 
     strong: ({ children }) => (
-      <strong className="font-semibold text-[#37322c]">{children}</strong>
+      <strong className="font-semibold text-tm-ink">{children}</strong>
     ),
     em: ({ children }) => <em className="italic">{children}</em>,
 
@@ -122,7 +122,7 @@ function buildComponents(s: Scale): Components {
       </ol>
     ),
     li: ({ children }) => (
-      <li className="marker:text-[#b98343] [&>p]:mb-0">{children}</li>
+      <li className="marker:text-tm-accent [&>p]:mb-0">{children}</li>
     ),
 
     a: ({ href, children }) => (
@@ -132,7 +132,7 @@ function buildComponents(s: Scale): Components {
         // noreferrer обязателен: ссылка приходит из ответа модели, и открытая
         // вкладка не должна получить доступ к `window.opener`.
         rel="noopener noreferrer"
-        className="underline decoration-[#c9a16c] underline-offset-2 hover:text-[#6f481c]"
+        className="underline decoration-tm-accent underline-offset-2 hover:text-tm-accent"
       >
         {children}
       </a>
@@ -156,10 +156,10 @@ function buildComponents(s: Scale): Components {
         return (
           <span
             title={label ? `Помощник ${label}` : undefined}
-            className={`inline-flex items-center gap-1 rounded-full border border-[#d9c6a8] bg-[#fdf6ea] px-1.5 py-[1px] align-baseline font-sans ${s.code} font-medium text-[#8a5b24]`}
+            className={`inline-flex items-center gap-1 rounded-full border border-tm-accent-line bg-tm-bg px-1.5 py-[1px] align-baseline font-sans ${s.code} font-medium text-tm-accent`}
           >
             <span
-              className="h-[5px] w-[5px] shrink-0 rounded-full bg-[#c9a16c]"
+              className="h-[5px] w-[5px] shrink-0 rounded-full bg-tm-accent"
               aria-hidden
             />
             {label || text}
@@ -168,7 +168,7 @@ function buildComponents(s: Scale): Components {
       }
       return (
         <code
-          className={`rounded-[5px] bg-[#efece5] px-1 py-[1px] font-mono ${s.code} text-[#4a433b]`}
+          className={`rounded-[5px] bg-tm-surface-2 px-1 py-[1px] font-mono ${s.code} text-tm-ink-2`}
         >
           {children}
         </code>
@@ -176,7 +176,7 @@ function buildComponents(s: Scale): Components {
     },
     pre: ({ children }) => (
       <pre
-        className={`${s.gap} overflow-x-auto rounded-[10px] border border-[#e4e0d8] bg-[#f2efe8] ${s.pad} last:mb-0`}
+        className={`${s.gap} overflow-x-auto rounded-[10px] border border-tm-line bg-tm-surface-2 ${s.pad} last:mb-0`}
       >
         {children}
       </pre>
@@ -184,13 +184,13 @@ function buildComponents(s: Scale): Components {
 
     blockquote: ({ children }) => (
       <blockquote
-        className={`${s.gap} border-l-2 border-[#dcd5c8] pl-2.5 italic text-[#6d665d] last:mb-0`}
+        className={`${s.gap} border-l-2 border-tm-line pl-2.5 italic text-tm-muted last:mb-0`}
       >
         {children}
       </blockquote>
     ),
 
-    hr: () => <hr className="my-3 border-[#e4e0d8]" />,
+    hr: () => <hr className="my-3 border-tm-line" />,
 
     // Таблица прокручивается в своём контейнере: панель узкая, и без этого
     // широкая таблица растянула бы всю ленту сообщений.
@@ -200,12 +200,12 @@ function buildComponents(s: Scale): Components {
       </div>
     ),
     th: ({ children }) => (
-      <th className="border border-[#e4e0d8] bg-[#f4f1ea] px-2 py-1 text-left font-semibold">
+      <th className="border border-tm-line bg-tm-surface-2 px-2 py-1 text-left font-semibold">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="border border-[#e4e0d8] px-2 py-1 align-top">{children}</td>
+      <td className="border border-tm-line px-2 py-1 align-top">{children}</td>
     ),
   };
 }

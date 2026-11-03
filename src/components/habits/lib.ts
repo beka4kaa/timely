@@ -148,7 +148,7 @@ export function softHaptic() {
 /** Glassmorphism 2.0 surface — translucent, blurred + saturated (Apple-like),
  *  soft layered shadow. backdrop-saturate оживляет цвета за стеклом. */
 export const GLASS =
-  'bg-white/70 dark:bg-white/[0.055] backdrop-blur-xl backdrop-saturate-150 ' +
+  'bg-tm-surface/70 dark:bg-white/[0.055] backdrop-blur-xl backdrop-saturate-150 ' +
   'border border-white/60 dark:border-white/[0.08] shadow-[0_8px_30px_rgba(15,23,42,0.08)]'
 
 /** Signature peach → lavender accent gradient used across the chrome. */

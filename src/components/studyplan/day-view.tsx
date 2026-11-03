@@ -72,7 +72,7 @@ export function DayView({
             {weekdayShort(column?.weekday ?? 0)}
             {dateKey === todayKey ? " · сегодня" : ""}
           </div>
-          <div className="text-[15px] text-[#312c27]">{dayLabel(dateKey)}</div>
+          <div className="text-[15px] text-tm-ink">{dayLabel(dateKey)}</div>
         </div>
         <button
           type="button"
@@ -84,7 +84,7 @@ export function DayView({
       </div>
 
       {blocks.length === 0 ? (
-        <div className={`${paperTile} px-4 py-6 text-center text-[13px] text-[#7b7168]`}>
+        <div className={`${paperTile} px-4 py-6 text-center text-[13px] text-tm-muted`}>
           В этот день пока ничего нет. Время свободно.
         </div>
       ) : (

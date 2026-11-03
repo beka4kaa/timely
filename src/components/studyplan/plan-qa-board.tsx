@@ -158,7 +158,7 @@ export function PlanQaBoard() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className={paperCaption}>Стенд календаря</div>
-          <p className="mt-0.5 text-[12.5px] text-[#7b7168]">
+          <p className="mt-0.5 text-[12.5px] text-tm-muted">
             Пересечения, длинный и короткий блок, предложение, отменённое,
             занятое время, линия «сейчас», пустая неделя.
           </p>
@@ -178,7 +178,7 @@ export function PlanQaBoard() {
           >
             {mode === "week" ? "День" : "Неделя"}
           </button>
-          <span className="text-[12px] text-[#8d857b]">
+          <span className="text-[12px] text-tm-muted">
             выделено: {selectedIds.length}
           </span>
         </div>

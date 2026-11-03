@@ -126,75 +126,129 @@
 }
 
 @layer base {
+  /*
+   * Палитра Timely (как на лендинге): тёплая бумага, почти чёрные чернила,
+   * сиреневый акцент. `--tm-*` — RGB-тройки для Tailwind-цветов `tm-*`
+   * (с поддержкой прозрачности: `bg-tm-surface/80`), shadcn-переменные ниже
+   * собраны из тех же значений.
+   */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --tm-bg: 251 250 247;
+    --tm-surface: 255 255 255;
+    --tm-surface-2: 244 242 238;
+    --tm-surface-3: 234 232 226;
+    --tm-line: 231 228 221;
+    --tm-line-strong: 211 208 200;
+    --tm-ink: 23 23 31;
+    --tm-ink-2: 59 59 71;
+    --tm-muted: 98 98 109;
+    --tm-faint: 154 154 165;
+    --tm-strong: 22 22 29;
+    --tm-on-strong: 255 255 255;
+    --tm-accent: 116 72 196;
+    --tm-accent-soft: 239 231 252;
+    --tm-accent-line: 205 184 242;
+    --tm-pink: 248 210 226;
+    --tm-lilac: 224 208 247;
+    --tm-sky: 207 229 248;
+    --tm-mint: 211 240 228;
+    --tm-dot: 23 23 31;
+    --tm-danger: 176 71 62;
+    --tm-danger-soft: 251 238 236;
+    --tm-danger-line: 236 200 195;
+
+    --background: 45 33% 98%;
+    --foreground: 240 15% 11%;
+    --primary: 240 14% 10%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 21% 95%;
+    --secondary-foreground: 240 15% 11%;
+    --muted: 40 21% 95%;
+    --muted-foreground: 240 5% 41%;
+    --accent: 40 21% 95%;
+    --accent-foreground: 240 15% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 42 17% 89%;
+    --input: 42 17% 89%;
+    --ring: 261 51% 53%;
     --radius: 0.5rem;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 240 15% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --popover-foreground: 240 15% 11%;
+    --chart-1: 261 51% 53%;
+    --chart-2: 207 65% 47%;
+    --chart-3: 335 52% 51%;
+    --chart-4: 160 59% 33%;
+    --chart-5: 38 80% 55%;
+    --sidebar-background: 45 33% 98%;
+    --sidebar-foreground: 240 15% 11%;
+    --sidebar-primary: 240 14% 10%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 40 21% 95%;
+    --sidebar-accent-foreground: 240 15% 11%;
+    --sidebar-border: 42 17% 89%;
+    --sidebar-ring: 261 51% 53%;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 240 10% 3.9%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --tm-bg: 13 14 21;
+    --tm-surface: 22 23 34;
+    --tm-surface-2: 28 29 41;
+    --tm-surface-3: 37 38 53;
+    --tm-line: 42 43 57;
+    --tm-line-strong: 59 60 76;
+    --tm-ink: 238 238 245;
+    --tm-ink-2: 210 210 222;
+    --tm-muted: 165 166 180;
+    --tm-faint: 111 112 128;
+    --tm-strong: 241 241 246;
+    --tm-on-strong: 17 17 24;
+    --tm-accent: 196 168 255;
+    --tm-accent-soft: 38 31 66;
+    --tm-accent-line: 75 60 125;
+    --tm-pink: 74 34 57;
+    --tm-lilac: 51 39 92;
+    --tm-sky: 27 52 82;
+    --tm-mint: 22 58 48;
+    --tm-dot: 255 255 255;
+    --tm-danger: 255 155 143;
+    --tm-danger-soft: 58 28 32;
+    --tm-danger-line: 107 47 53;
+
+    --background: 232 24% 7%;
+    --foreground: 240 26% 95%;
+    --primary: 240 22% 95%;
+    --primary-foreground: 240 17% 8%;
+    --secondary: 235 19% 14%;
+    --secondary-foreground: 240 26% 95%;
+    --muted: 235 19% 14%;
+    --muted-foreground: 236 9% 68%;
+    --accent: 235 19% 14%;
+    --accent-foreground: 240 26% 95%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 236 15% 19%;
+    --input: 236 15% 19%;
+    --ring: 259 100% 83%;
+    --card: 235 21% 11%;
+    --card-foreground: 240 26% 95%;
+    --popover: 235 21% 11%;
+    --popover-foreground: 240 26% 95%;
+    --chart-1: 259 100% 83%;
+    --chart-2: 207 100% 77%;
+    --chart-3: 335 84% 79%;
+    --chart-4: 156 58% 68%;
+    --chart-5: 38 90% 65%;
+    --sidebar-background: 232 24% 7%;
+    --sidebar-foreground: 240 26% 95%;
+    --sidebar-primary: 240 22% 95%;
+    --sidebar-primary-foreground: 240 17% 8%;
+    --sidebar-accent: 235 19% 14%;
+    --sidebar-accent-foreground: 240 26% 95%;
+    --sidebar-border: 236 15% 19%;
+    --sidebar-ring: 259 100% 83%;
   }
 }
 
@@ -208,32 +262,126 @@
   }
 }
 
+/*
+ * Поддерево, которое всегда светлое, даже в тёмной теме: научная доска рисует
+ * холст фиксированными цветами, и тёмные токены вокруг него спорили бы с ним.
+ */
+.tm-light {
+  --tm-bg: 251 250 247;
+  --tm-surface: 255 255 255;
+  --tm-surface-2: 244 242 238;
+  --tm-surface-3: 234 232 226;
+  --tm-line: 231 228 221;
+  --tm-line-strong: 211 208 200;
+  --tm-ink: 23 23 31;
+  --tm-ink-2: 59 59 71;
+  --tm-muted: 98 98 109;
+  --tm-faint: 154 154 165;
+  --tm-strong: 22 22 29;
+  --tm-on-strong: 255 255 255;
+  --tm-accent: 116 72 196;
+  --tm-accent-soft: 239 231 252;
+  --tm-accent-line: 205 184 242;
+  --tm-pink: 248 210 226;
+  --tm-lilac: 224 208 247;
+  --tm-sky: 207 229 248;
+  --tm-mint: 211 240 228;
+  --tm-dot: 23 23 31;
+  --tm-danger: 176 71 62;
+  --tm-danger-soft: 251 238 236;
+  --tm-danger-line: 236 200 195;
+  --background: 45 33% 98%;
+  --foreground: 240 15% 11%;
+  --primary: 240 14% 10%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 21% 95%;
+  --secondary-foreground: 240 15% 11%;
+  --muted: 40 21% 95%;
+  --muted-foreground: 240 5% 41%;
+  --accent: 40 21% 95%;
+  --accent-foreground: 240 15% 11%;
+  --border: 42 17% 89%;
+  --input: 42 17% 89%;
+  --ring: 261 51% 53%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 15% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 15% 11%;
+  color-scheme: light;
+}
+
 .timely-dashboard-surface {
-  background-color: #f7f5f1;
+  background-color: rgb(var(--tm-bg));
   background-image: radial-gradient(
     circle at 1px 1px,
-    rgba(112, 92, 66, 0.105) 1px,
+    rgb(var(--tm-dot) / 0.06) 1px,
     transparent 1.15px
   );
   background-size: 28px 28px;
 }
 
+/* Цвет текста при выделении не задаём: внутри тёмных пузырей (bg-tm-strong)
+   он слился бы с фоном. */
 .timely-dashboard-shell ::selection {
-  background: rgba(194, 151, 92, 0.22);
-  color: #2f2c28;
+  background: rgb(var(--tm-accent) / 0.25);
 }
 
 .timely-dashboard-surface h1 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-literata), Georgia, "Times New Roman", serif;
   font-weight: 500;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
 }
 
 .timely-dashboard-surface [data-timely-card] {
-  border-radius: 18px;
+  border-radius: 20px;
 }
 
 @media print {
+  /* Печать всегда светлая, даже если интерфейс в тёмной теме. */
+  .dark {
+    --tm-bg: 251 250 247;
+    --tm-surface: 255 255 255;
+    --tm-surface-2: 244 242 238;
+    --tm-surface-3: 234 232 226;
+    --tm-line: 231 228 221;
+    --tm-line-strong: 211 208 200;
+    --tm-ink: 23 23 31;
+    --tm-ink-2: 59 59 71;
+    --tm-muted: 98 98 109;
+    --tm-faint: 154 154 165;
+    --tm-strong: 22 22 29;
+    --tm-on-strong: 255 255 255;
+    --tm-accent: 116 72 196;
+    --tm-accent-soft: 239 231 252;
+    --tm-accent-line: 205 184 242;
+    --tm-pink: 248 210 226;
+    --tm-lilac: 224 208 247;
+    --tm-sky: 207 229 248;
+    --tm-mint: 211 240 228;
+    --tm-dot: 23 23 31;
+    --tm-danger: 176 71 62;
+    --tm-danger-soft: 251 238 236;
+    --tm-danger-line: 236 200 195;
+    --background: 45 33% 98%;
+    --foreground: 240 15% 11%;
+    --primary: 240 14% 10%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 21% 95%;
+    --secondary-foreground: 240 15% 11%;
+    --muted: 40 21% 95%;
+    --muted-foreground: 240 5% 41%;
+    --accent: 40 21% 95%;
+    --accent-foreground: 240 15% 11%;
+    --border: 42 17% 89%;
+    --input: 42 17% 89%;
+    --ring: 261 51% 53%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 15% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 15% 11%;
+    color-scheme: light;
+  }
+
   .timely-dashboard-shell > header,
   .timely-dashboard-shell > aside {
     display: none !important;

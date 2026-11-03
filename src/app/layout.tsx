@@ -1,23 +1,21 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter, Plus_Jakarta_Sans, Onest } from 'next/font/google'
+import { Onest, Literata } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { Toaster } from '@/components/ui/sonner'
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-})
-
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-plus-jakarta',
-})
-
+// Основной шрифт интерфейса и заголовки — те же, что на лендинге. Кириллица
+// обязательна: без неё русский текст падал в системный шрифт.
 const onest = Onest({
-  subsets: ['latin'],
+  subsets: ['latin', 'cyrillic'],
   variable: '--font-onest',
+})
+
+const literata = Literata({
+  subsets: ['latin', 'cyrillic'],
+  axes: ['opsz'],
+  variable: '--font-literata',
 })
 // Handwriting font (Caveat) is self-hosted via @font-face in globals.css —
 // next/font/google can't reach Google Fonts in some environments.
@@ -102,7 +100,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" suppressHydrationWarning>
-      <body className={`${inter.variable} ${plusJakartaSans.variable} ${onest.variable} font-sans`} suppressHydrationWarning>
+      <body className={`${onest.variable} ${literata.variable} font-sans`} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"

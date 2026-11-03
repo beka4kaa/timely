@@ -74,7 +74,7 @@ export function PlanPath({
     <section className={`${paperStrip} p-5 sm:p-6`}>
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className={paperCaption}>Путь курса</p>
-        <p className={`${paperNumber} text-[12px] text-[#7f776e]`}>
+        <p className={`${paperNumber} text-[12px] text-tm-muted`}>
           {[
             formatMinutes(plan.estimated_total_minutes),
             forecast?.estimatedSessions
@@ -91,7 +91,7 @@ export function PlanPath({
           подзаголовком, а не в карточке сбоку. Кнопка появляется только там,
           где ритма нет: менять его иначе есть где, внизу страницы. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <p className="text-[12px] text-[#8b8278]">
+        <p className="text-[12px] text-tm-muted">
           {rhythm ?? "Ритм занятий не задан — без него календарь не построить."}
         </p>
         {!rhythm && <PlanPaceDialog plan={plan} onPlanChange={onPlanChange} />}
@@ -99,7 +99,7 @@ export function PlanPath({
 
       {/* ── Ось ─────────────────────────────────────────────────────────── */}
       <div
-        className="relative overflow-hidden rounded-[10px] border border-[#e0d9cd] bg-[#f5f0e7]"
+        className="relative overflow-hidden rounded-[10px] border border-tm-line bg-tm-surface-2"
         style={{ height: TRACK_HEIGHT }}
         role="img"
         aria-label={axisLabel(path, deadlineIso)}
@@ -119,7 +119,7 @@ export function PlanPath({
               title={blockTitle(block.title, block.startDate, block.endDate)}
               className={`timely-path-block absolute inset-y-0 grid place-items-center overflow-hidden rounded-[3px] transition-colors duration-150 ${
                 block.beyondDeadline
-                  ? "border border-[#a89a84] bg-transparent"
+                  ? "border border-tm-muted bg-transparent"
                   : "border border-transparent"
               }`}
               style={{
@@ -128,12 +128,12 @@ export function PlanPath({
                 background: block.beyondDeadline
                   ? undefined
                   : active
-                    ? "#b7792d"
-                    : "#6f6350",
+                    ? "rgb(var(--tm-accent))"
+                    : "rgb(var(--tm-muted))",
                 borderColor: block.beyondDeadline
                   ? active
-                    ? "#b7792d"
-                    : "#a89a84"
+                    ? "rgb(var(--tm-accent))"
+                    : "rgb(var(--tm-faint))"
                   : "transparent",
                 animationDelay: `${Math.min(index, 24) * 25}ms`,
               }}
@@ -143,7 +143,7 @@ export function PlanPath({
               {wide && (
                 <span
                   className={`${paperNumber} pointer-events-none text-[10px] leading-none ${
-                    block.beyondDeadline ? "text-[#8b8278]" : "text-[#f3ece0]"
+                    block.beyondDeadline ? "text-tm-muted" : "text-tm-on-strong"
                   }`}
                 >
                   {block.label}
@@ -158,7 +158,7 @@ export function PlanPath({
         {path.deadline && (
           <span
             aria-hidden
-            className="timely-path-mark absolute inset-y-0 w-px bg-[#b0473e]"
+            className="timely-path-mark absolute inset-y-0 w-px bg-tm-danger"
             style={{ left: `${path.deadline.atPct}%` }}
           />
         )}
@@ -169,7 +169,7 @@ export function PlanPath({
             key={milestone.id}
             aria-hidden
             title={milestone.title}
-            className="timely-path-mark absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-[#fffdfa] bg-[#e7c98f]"
+            className="timely-path-mark absolute top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rotate-45 border border-tm-line bg-tm-accent-soft"
             style={{ left: `${milestone.atPct}%` }}
           />
         ))}
@@ -180,7 +180,7 @@ export function PlanPath({
         {path.ticks.map((tick) => (
           <span
             key={`${tick.label}-${tick.atPct}`}
-            className={`${paperNumber} absolute top-0 text-[10px] leading-none text-[#a1978b]`}
+            className={`${paperNumber} absolute top-0 text-[10px] leading-none text-tm-faint`}
             style={{
               left: `${tick.atPct}%`,
               transform: tick.atPct > 92 ? "translateX(-100%)" : "translateX(0)",
@@ -197,7 +197,7 @@ export function PlanPath({
       {spread && (
         <div className="relative mt-1 h-3" aria-hidden>
           <span
-            className="absolute top-1/2 h-px -translate-y-1/2 bg-[#cfc6b8]"
+            className="absolute top-1/2 h-px -translate-y-1/2 bg-tm-line-strong"
             style={{
               left: `${spread[0].atPct}%`,
               width: `${Math.max(0, spread[1].atPct - spread[0].atPct)}%`,
@@ -210,7 +210,7 @@ export function PlanPath({
                 className="absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
                 style={{
                   left: `${mark.atPct}%`,
-                  background: index === 1 ? "#8a5b24" : "#cfc6b8",
+                  background: index === 1 ? "rgb(var(--tm-accent))" : "rgb(var(--tm-line-strong))",
                 }}
               />
             ) : null,
@@ -219,14 +219,14 @@ export function PlanPath({
       )}
 
       {/* ── Что всё это значит ───────────────────────────────────────────── */}
-      <div className="mt-4 space-y-1.5 border-t border-[#e7e1d7] pt-3">
+      <div className="mt-4 space-y-1.5 border-t border-tm-line pt-3">
         {(expected || spread) && (
-          <p className="text-[13px] leading-6 text-[#4a443d]">
+          <p className="text-[13px] leading-6 text-tm-ink-2">
             {spread
               ? `Закончите между ${formatShortDate(spread[0].date)} и ${formatShortDate(spread[1].date)}`
               : `Закончите ${formatPlanDate(expected?.date ?? null)}`}
             {expected && spread ? (
-              <span className="text-[#8b8278]">
+              <span className="text-tm-muted">
                 {" "}
                 · ожидаемо {formatShortDate(expected.date)}
               </span>
@@ -237,34 +237,34 @@ export function PlanPath({
         {/* Срок обсуждается, только если его задавали: `null` в
             `desired_deadline_feasible` — это «не спрашивали», а не «не успеете». */}
         {feasible !== null && (
-          <p className="text-[13px] leading-6 text-[#4a443d]">
+          <p className="text-[13px] leading-6 text-tm-ink-2">
             <span
               aria-hidden
-              className="mr-1.5 inline-block h-2 w-px translate-y-[1px] bg-[#b0473e]"
+              className="mr-1.5 inline-block h-2 w-px translate-y-[1px] bg-tm-danger"
             />
             {feasible
               ? `Успеваете к ${formatPlanDate(deadlineIso)}`
               : `К ${formatPlanDate(deadlineIso)} при таком темпе не выходит`}
-            {advice && <span className="text-[#6f675e]"> {advice}</span>}
+            {advice && <span className="text-tm-muted"> {advice}</span>}
           </p>
         )}
 
         {path.milestones.length > 0 && (
-          <p className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#8b8278]">
+          <p className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-tm-muted">
             {path.milestones.map((milestone) => (
               <span key={milestone.id}>
-                <span aria-hidden className="mr-1.5 text-[#c3a163]">
+                <span aria-hidden className="mr-1.5 text-tm-accent">
                   ◆
                 </span>
                 {milestone.title}
-                <span className="text-[#a1978b]"> · {milestone.moduleLabel}</span>
+                <span className="text-tm-faint"> · {milestone.moduleLabel}</span>
               </span>
             ))}
           </p>
         )}
 
         {forecast?.risk && (
-          <p className="flex items-center gap-2 text-[11px] text-[#7f776e]">
+          <p className="flex items-center gap-2 text-[11px] text-tm-muted">
             <span
               aria-hidden
               className="h-1.5 w-1.5 rounded-full"
@@ -285,7 +285,7 @@ export function PlanPath({
         {/* От книги остаётся строка, а не полоса: покрытие — метрика качества
             генератора, и герой экрана из неё выходил плохой. */}
         {bookLines.length > 0 && (
-          <p className="text-[11px] leading-5 text-[#9b9186]">
+          <p className="text-[11px] leading-5 text-tm-faint">
             {bookLines.join(" ")}
           </p>
         )}
@@ -293,7 +293,7 @@ export function PlanPath({
         {forecast && forecast.warnings.length > 0 && (
           <ul className="space-y-1 pt-1">
             {forecast.warnings.map((code) => (
-              <li key={code} className="text-[11px] leading-5 text-[#8b7a5e]">
+              <li key={code} className="text-[11px] leading-5 text-tm-muted">
                 {forecastWarningMessage(code)}
               </li>
             ))}

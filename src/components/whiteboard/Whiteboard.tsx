@@ -566,7 +566,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 z-0 select-none overflow-hidden bg-[#f7f5f1] text-[#3c3731]"
+      className="absolute inset-0 z-0 select-none overflow-hidden bg-tm-bg text-tm-ink"
       onPointerDown={(e) => {
         // Deselect if clicking on empty background
         useWhiteboardStore.getState().setSelectedElement(null);
@@ -580,7 +580,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
 
       {/* Infinite dot-grid background synced with camera */}
       <div
-        className="pointer-events-none absolute inset-0 text-[#9d978e] opacity-[0.25]"
+        className="pointer-events-none absolute inset-0 text-tm-faint opacity-[0.25]"
         style={{
           backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)",
           backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
@@ -730,10 +730,10 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
       {/* Компактная панель: редкие настройки раскрываются по запросу, а не
           занимают холст семью цветами и пятью датчиками толщины постоянно. */}
       <div
-        className="absolute left-5 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 text-[#777168]"
+        className="absolute left-5 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 text-tm-muted"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <div className="relative flex flex-col items-center gap-1 rounded-full border border-[#d8d3cb] bg-[#fbfaf7]/95 p-1.5 shadow-[0_12px_34px_rgba(64,54,42,0.13)] backdrop-blur-xl">
+        <div className="relative flex flex-col items-center gap-1 rounded-full border border-tm-line bg-tm-surface/95 p-1.5 shadow-[0_12px_34px_rgba(64,54,42,0.13)] backdrop-blur-xl">
         <button
           type="button"
           aria-label="Настройки пера"
@@ -745,14 +745,14 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           }}
           className={`relative grid h-9 w-9 place-items-center rounded-full transition-all ${
             inkPanelOpen
-              ? "bg-[#302d2a] text-white shadow-[0_5px_14px_rgba(48,45,42,0.24)]"
-              : "hover:bg-[#efede8] hover:text-[#302d2a]"
+              ? "bg-tm-strong text-tm-on-strong shadow-[0_5px_14px_rgba(48,45,42,0.24)]"
+              : "hover:bg-tm-surface-2 hover:text-tm-ink"
           }`}
         >
           <PenLine className="h-[17px] w-[17px]" />
           <span
             className={`absolute bottom-1 right-1 h-2 w-2 rounded-full border border-white/80 ${
-              strokeColor === AUTO_INK ? "bg-[#302d2a]" : ""
+              strokeColor === AUTO_INK ? "bg-tm-strong" : ""
             }`}
             style={strokeColor === AUTO_INK ? undefined : { backgroundColor: strokeColor }}
           />
@@ -763,7 +763,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           aria-label="Добавить текст"
           title="Добавить текст"
           onClick={addText}
-          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-[#efede8] hover:text-[#302d2a] active:scale-95"
+          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95"
         >
           <Type className="h-[17px] w-[17px]" />
         </button>
@@ -773,12 +773,12 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           aria-label="Добавить график"
           title="Добавить график"
           onClick={addGraph}
-          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-[#efede8] hover:text-[#302d2a] active:scale-95"
+          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95"
         >
           <BarChart3 className="h-[17px] w-[17px]" />
         </button>
 
-        <div className="my-0.5 h-px w-6 bg-[#ded9d1]" />
+        <div className="my-0.5 h-px w-6 bg-tm-surface-3" />
 
         <button
           type="button"
@@ -786,7 +786,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           title="Отменить последнее"
           onClick={undoLatest}
           disabled={!hasUndo}
-          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-[#efede8] hover:text-[#302d2a] active:scale-95 disabled:pointer-events-none disabled:opacity-25"
+          className="grid h-9 w-9 place-items-center rounded-full transition-all hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 disabled:pointer-events-none disabled:opacity-25"
         >
           <Undo2 className="h-[17px] w-[17px]" />
         </button>
@@ -797,7 +797,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
           title={isOCRProcessing ? "Распознаю…" : "Распознать рисунок"}
           onClick={handleOCR}
           disabled={isOCRProcessing || strokes.length === 0}
-          className="grid h-9 w-9 place-items-center rounded-full text-[#a66d28] transition-all hover:bg-[#f5eadb] active:scale-95 disabled:pointer-events-none disabled:opacity-25"
+          className="grid h-9 w-9 place-items-center rounded-full text-tm-accent transition-all hover:bg-tm-accent-soft active:scale-95 disabled:pointer-events-none disabled:opacity-25"
         >
           <Scan className={`h-[17px] w-[17px] ${isOCRProcessing ? "animate-pulse" : ""}`} />
         </button>
@@ -821,12 +821,12 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
         </button>
 
         {inkPanelOpen && (
-          <div className="absolute left-[calc(100%+10px)] top-0 w-[196px] rounded-2xl border border-[#d8d3cb] bg-[#fbfaf7]/95 p-3 shadow-[0_18px_55px_rgba(64,54,42,0.16)] backdrop-blur-xl">
+          <div className="absolute left-[calc(100%+10px)] top-0 w-[196px] rounded-2xl border border-tm-line bg-tm-surface/95 p-3 shadow-[0_18px_55px_rgba(64,54,42,0.16)] backdrop-blur-xl">
             <div className="mb-2.5 flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b958c]">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-tm-faint">
                 Чернила
               </span>
-              <span className="text-[11px] tabular-nums text-[#9b958c]">
+              <span className="text-[11px] tabular-nums text-tm-faint">
                 {lineWidth}px
               </span>
             </div>
@@ -839,18 +839,18 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
                   onClick={() => setStrokeColor(color)}
                   className={`h-5 w-5 rounded-full border transition-transform hover:scale-110 ${
                     color === AUTO_INK
-                      ? "border-black/15 bg-[#302d2a]"
+                      ? "border-black/15 bg-tm-strong"
                       : "border-white/70"
                   } ${
                     strokeColor === color
-                      ? "ring-2 ring-[#bd7d30] ring-offset-2 ring-offset-[#fbfaf7]"
+                      ? "ring-2 ring-tm-accent ring-offset-2 ring-offset-tm-surface"
                       : ""
                   }`}
                   style={color === AUTO_INK ? undefined : { backgroundColor: color }}
                 />
               ))}
             </div>
-            <div className="my-3 h-px bg-[#e1ddd6]" />
+            <div className="my-3 h-px bg-tm-surface-3" />
             <div className="flex items-center justify-between gap-1">
               {WIDTHS.map((width) => (
                 <button
@@ -860,8 +860,8 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
                   onClick={() => setLineWidth(width)}
                   className={`grid h-7 flex-1 place-items-center rounded-lg transition-colors ${
                     lineWidth === width
-                      ? "bg-[#f3e6d4] text-[#9a6425]"
-                      : "hover:bg-[#efede8]"
+                      ? "bg-tm-accent-soft text-tm-accent"
+                      : "hover:bg-tm-surface-2"
                   }`}
                 >
                   <span
@@ -875,15 +875,15 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
         )}
 
         {clearArmed && (
-          <div className="absolute bottom-0 left-[calc(100%+10px)] flex w-[210px] items-center gap-2 rounded-2xl border border-[#dfbbb6] bg-[#fbfaf7]/95 p-2.5 shadow-[0_18px_55px_rgba(64,54,42,0.18)] backdrop-blur-xl">
-            <span className="min-w-0 flex-1 pl-1 text-xs font-medium text-[#5d554c]">
+          <div className="absolute bottom-0 left-[calc(100%+10px)] flex w-[210px] items-center gap-2 rounded-2xl border border-[#dfbbb6] bg-tm-surface/95 p-2.5 shadow-[0_18px_55px_rgba(64,54,42,0.18)] backdrop-blur-xl">
+            <span className="min-w-0 flex-1 pl-1 text-xs font-medium text-tm-ink-2">
               Очистить всю доску?
             </span>
             <button
               type="button"
               aria-label="Отмена"
               onClick={() => setClearArmed(false)}
-              className="grid h-8 w-8 place-items-center rounded-lg text-[#938c82] transition-colors hover:bg-[#efede8] hover:text-[#4d463e]"
+              className="grid h-8 w-8 place-items-center rounded-lg text-tm-faint transition-colors hover:bg-tm-surface-2 hover:text-tm-ink-2"
             >
               <X className="h-4 w-4" />
             </button>
@@ -900,13 +900,13 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
         </div>
 
         {/* Масштаб — отдельная вертикальная капсула под инструментами. */}
-        <div className="flex flex-col items-center gap-0.5 rounded-full border border-[#d8d3cb] bg-[#fbfaf7]/95 p-1 text-[#827b72] shadow-[0_10px_30px_rgba(64,54,42,0.12)] backdrop-blur-xl">
+        <div className="flex flex-col items-center gap-0.5 rounded-full border border-tm-line bg-tm-surface/95 p-1 text-tm-muted shadow-[0_10px_30px_rgba(64,54,42,0.12)] backdrop-blur-xl">
           <button
             type="button"
             aria-label="Увеличить масштаб"
             title="Увеличить масштаб"
             onClick={() => zoomAroundCenter(camera.zoom * 1.2)}
-            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-[#efede8] hover:text-[#302d2a]"
+            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-tm-surface-2 hover:text-tm-ink"
           >
             <Plus className="h-4 w-4" />
           </button>
@@ -915,7 +915,7 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
             aria-label="Сбросить масштаб до 100%"
             title="Сбросить масштаб до 100%"
             onClick={() => zoomAroundCenter(1)}
-            className="grid h-9 w-9 place-items-center rounded-full text-[10px] font-medium tabular-nums transition-colors hover:bg-[#efede8] hover:text-[#302d2a]"
+            className="grid h-9 w-9 place-items-center rounded-full text-[10px] font-medium tabular-nums transition-colors hover:bg-tm-surface-2 hover:text-tm-ink"
           >
             {zoomPercent}%
           </button>
@@ -924,17 +924,17 @@ export default function Whiteboard({ onCrop }: WhiteboardProps) {
             aria-label="Уменьшить масштаб"
             title="Уменьшить масштаб"
             onClick={() => zoomAroundCenter(camera.zoom / 1.2)}
-            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-[#efede8] hover:text-[#302d2a]"
+            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-tm-surface-2 hover:text-tm-ink"
           >
             <Minus className="h-4 w-4" />
           </button>
-          <div className="my-0.5 h-px w-6 bg-[#ded9d1]" />
+          <div className="my-0.5 h-px w-6 bg-tm-surface-3" />
           <button
             type="button"
             aria-label="Показать всю доску"
             title="Показать всю доску"
             onClick={fitBoardToView}
-            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-[#efede8] hover:text-[#302d2a]"
+            className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-tm-surface-2 hover:text-tm-ink"
           >
             <Maximize2 className="h-4 w-4" />
           </button>

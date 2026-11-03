@@ -377,7 +377,7 @@ export function GoogleCalendarComponent() {
             <CardContent className="p-0">
               <div 
                 id="time-grid"
-                className="relative bg-white dark:bg-gray-950 min-h-[600px]"
+                className="relative bg-tm-surface dark:bg-gray-950 min-h-[600px]"
                 style={{ height: HOUR_HEIGHT * HOURS.length }}
               >
                 {/* Сетка времени */}

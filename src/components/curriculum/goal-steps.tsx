@@ -28,7 +28,7 @@ const EXAMPLES = [
   "Подтянуть органическую химию перед экзаменом",
 ];
 
-const fieldClass = `${paperFocus} w-full rounded-[12px] border border-[#ded7cd] bg-[#fffdfa] px-3.5 py-2.5 text-[14px] text-[#302b26] placeholder:text-[#b3a99c] disabled:opacity-55`;
+const fieldClass = `${paperFocus} w-full rounded-[12px] border border-tm-line bg-tm-surface px-3.5 py-2.5 text-[14px] text-tm-ink placeholder:text-tm-faint disabled:opacity-55`;
 
 export function GoalStep() {
   const submitGoal = useCurriculumStore((s) => s.submitGoal);
@@ -40,10 +40,10 @@ export function GoalStep() {
   return (
     <section className="space-y-5">
       <header className="space-y-1.5">
-        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-[#302b26]">
+        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-tm-ink">
           Что вы хотите выучить?
         </h2>
-        <p className="text-[13px] leading-6 text-[#7f776e]">
+        <p className="text-[13px] leading-6 text-tm-muted">
           Опишите своими словами. Программу построим по вашему учебнику, со
           ссылками на конкретные страницы.
         </p>
@@ -65,7 +65,7 @@ export function GoalStep() {
             type="button"
             onClick={() => setText(example)}
             disabled={busy}
-            className={`${paperFocus} rounded-full border border-[#e0d9cd] bg-[#fffdfa] px-3.5 py-1.5 text-[12px] text-[#7f776e] transition-colors hover:border-[#c7aa82] hover:text-[#312c27] disabled:opacity-50`}
+            className={`${paperFocus} rounded-full border border-tm-line bg-tm-surface px-3.5 py-1.5 text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-ink disabled:opacity-50`}
           >
             {example}
           </button>
@@ -153,15 +153,15 @@ export function GoalConfirmStep() {
   return (
     <section className="space-y-5">
       <header className="space-y-1.5">
-        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-[#302b26]">
+        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-tm-ink">
           Под кого строим курс
         </h2>
-        <p className="text-[13px] leading-6 text-[#7f776e]">
+        <p className="text-[13px] leading-6 text-tm-muted">
           Так мы поняли вашу формулировку. Поправьте, если что-то не так.
         </p>
       </header>
 
-      <blockquote className="border-l-2 border-[#dec9ab] py-1 pl-4 font-serif text-[15px] leading-6 text-[#5f584f]">
+      <blockquote className="border-l-2 border-tm-accent-line py-1 pl-4 font-serif text-[15px] leading-6 text-tm-ink-2">
         {goal.original_text}
       </blockquote>
 
@@ -211,18 +211,18 @@ export function GoalConfirmStep() {
                 onClick={() => setBalance(option.value)}
                 className={`${paperTile} ${paperFocus} px-3.5 py-3 text-left transition-colors ${
                   selected
-                    ? "border-[#dec9ab] bg-[#fffaf1]"
-                    : "hover:border-[#d5cbbc]"
+                    ? "border-tm-accent-line !bg-tm-accent-soft"
+                    : "hover:border-tm-line-strong"
                 }`}
               >
                 <span
                   className={`block text-[13px] ${
-                    selected ? "text-[#8a5b24]" : "text-[#4a443d]"
+                    selected ? "text-tm-accent" : "text-tm-ink-2"
                   }`}
                 >
                   {option.label}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-[#9b9186]">
+                <span className="mt-0.5 block text-[11px] text-tm-faint">
                   {option.hint}
                 </span>
               </button>
@@ -249,7 +249,7 @@ export function GoalConfirmStep() {
               type="button"
               onClick={() => setFinishDate(isoAfterMonths(quick.months))}
               disabled={busy}
-              className={`${paperFocus} rounded-full border border-[#e0d9cd] bg-[#fffdfa] px-3.5 py-1.5 text-[12px] text-[#7f776e] transition-colors hover:border-[#c7aa82] hover:text-[#312c27] disabled:opacity-50`}
+              className={`${paperFocus} rounded-full border border-tm-line bg-tm-surface px-3.5 py-1.5 text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-ink disabled:opacity-50`}
             >
               {quick.label}
             </button>
@@ -259,13 +259,13 @@ export function GoalConfirmStep() {
               type="button"
               onClick={() => setFinishDate("")}
               disabled={busy}
-              className="text-[12px] text-[#9b9186] underline-offset-4 hover:underline"
+              className="text-[12px] text-tm-faint underline-offset-4 hover:underline"
             >
               Без срока
             </button>
           )}
         </div>
-        <p className="mt-3 text-[12px] leading-5 text-[#7f776e]">
+        <p className="mt-3 text-[12px] leading-5 text-tm-muted">
           Это пожелание, а не обещание: успеваете вы или нет, посчитаем после
           того, как программа будет построена.
         </p>

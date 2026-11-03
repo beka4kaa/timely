@@ -149,7 +149,7 @@ function AskRail() {
           </PopoverTrigger>
           <PopoverContent
             align="start"
-            className="w-72 border-[#dcd7cf] bg-[#fbfaf7] p-0 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+            className="w-72 border-tm-line bg-tm-surface p-0 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
           >
             <ChatTree
               subjects={subjects ?? []}
@@ -190,14 +190,14 @@ function AskRail() {
 function EmptyState({ subject }: { subject: Subject | null }) {
   if (subject && !subject.books) {
     return (
-      <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+      <p className="px-1 text-[13px] leading-[1.55] text-tm-faint">
         У предмета «{subject.title}» пока нет обработанной книги. Загрузите
         учебник — и можно будет спрашивать по нему.
       </p>
     );
   }
   return (
-    <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+    <p className="px-1 text-[13px] leading-[1.55] text-tm-faint">
       Спросите что-нибудь по книге предмета. Ответ придёт со ссылкой на раздел и
       страницу.
     </p>

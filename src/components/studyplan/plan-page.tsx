@@ -443,7 +443,7 @@ export function StudyPlanPage() {
     return (
       <CoffeePageShell>
         <div className={`${paperCard} p-6`}>
-          <p className="text-[14px] text-[#4a443d]">{schedule.data.message}</p>
+          <p className="text-[14px] text-tm-ink-2">{schedule.data.message}</p>
           <button
             type="button"
             className={`${paperButton} mt-4`}
@@ -471,10 +471,10 @@ export function StudyPlanPage() {
             стоит в один ряд: дата, сводка, легенда, навигация. */}
         <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-[18px] tracking-[-0.02em] text-[#312c27]">
+            <h1 className="text-[18px] tracking-[-0.02em] text-tm-ink">
               {weekLabel(schedule.days)}
             </h1>
-            <p className="text-[12px] text-[#8d857b]">
+            <p className="text-[12px] text-tm-muted">
               {weekMinutes > 0 ? (
                 <>
                   {durationLabel(weekMinutes)} учёбы
@@ -693,9 +693,9 @@ function CalendarNotice({
   if (cancelledCount > 0) {
     return (
       <div className={row}>
-        <span className="text-[#5f584f]">
+        <span className="text-tm-ink-2">
           Удалено {cancelledCount} {blockWord(cancelledCount)}
-          <span className="ml-2 text-[#8d857b]">
+          <span className="ml-2 text-tm-muted">
             Ctrl+Shift+Z — удалить снова
           </span>
         </span>
@@ -714,7 +714,7 @@ function CalendarNotice({
   if (notice) {
     return (
       <div className={row}>
-        <span className="min-w-0 truncate text-[#a2543a]">{notice}</span>
+        <span className="min-w-0 truncate text-tm-danger">{notice}</span>
         <button
           type="button"
           className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
@@ -729,7 +729,7 @@ function CalendarNotice({
   if (hasUndo) {
     return (
       <div className={row}>
-        <span className="text-[#5f584f]">Занятие перенесено</span>
+        <span className="text-tm-ink-2">Занятие перенесено</span>
         <button
           type="button"
           className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
@@ -746,7 +746,7 @@ function CalendarNotice({
   if (feasible) {
     return (
       <div className={row}>
-        <span className="text-[#5f584f]">
+        <span className="text-tm-ink-2">
           Новое расписание показано пунктиром
         </span>
         <button
@@ -766,10 +766,10 @@ function CalendarNotice({
     // умеет и продлить курс, и разгрузить дни, а страница только сообщает факт.
     return (
       <div className={row}>
-        <span className="text-[#a2543a]">
+        <span className="text-tm-danger">
           Программа не помещается в свободное время
         </span>
-        <span className="shrink-0 text-[#8d857b]">
+        <span className="shrink-0 text-tm-muted">
           спроси помощника, что подвинуть
         </span>
       </div>

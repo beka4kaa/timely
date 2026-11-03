@@ -176,8 +176,8 @@ export function LevelSpan({
       >
         <span
           aria-hidden
-          className={`block h-3.5 w-3.5 rounded-full border-2 border-[#fffdfa] shadow-[0_2px_6px_rgba(70,54,36,0.28)] ${
-            which === "current" ? "bg-[#b79261]" : "bg-[#8a5b24]"
+          className={`block h-3.5 w-3.5 rounded-full border-2 shadow-[0_2px_6px_rgba(0,0,0,0.25)] ${
+            which === "current" ? "border-tm-accent bg-tm-surface" : "border-tm-surface bg-tm-accent"
           }`}
         />
       </motion.div>
@@ -188,7 +188,7 @@ export function LevelSpan({
     <div className={`${paperStrip} p-5`}>
       <div className="flex items-baseline justify-between gap-3">
         <p className={paperCaption}>Уровень</p>
-        <p className="text-[11px] text-[#9b9186]">
+        <p className="text-[11px] text-tm-faint">
           {levelLabel(value.current)} → {levelLabel(value.target)}
         </p>
       </div>
@@ -196,20 +196,20 @@ export function LevelSpan({
       <div
         ref={trackRef}
         onPointerDown={onTrackPointerDown}
-        className="relative mx-[15px] my-6 h-1.5 touch-none rounded-full bg-[#e9e2d7]"
+        className="relative mx-[15px] my-6 h-1.5 touch-none rounded-full bg-tm-surface-3"
       >
         {LEVEL_ORDER.map((level) => (
           <span
             key={level}
             aria-hidden
-            className="absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#cfc6b8]"
+            className="absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-tm-line-strong"
             style={{ left: `${fractionForLevel(level) * 100}%` }}
           />
         ))}
 
         <motion.span
           aria-hidden
-          className="absolute inset-y-0 rounded-full bg-[#c9a878]"
+          className="absolute inset-y-0 rounded-full bg-tm-accent/40"
           initial={false}
           animate={{
             left: `${(currentIndex / LAST_INDEX) * 100}%`,
@@ -222,12 +222,12 @@ export function LevelSpan({
         {marker("target")}
       </div>
 
-      <div className="flex items-baseline justify-between text-[10px] text-[#a1978b]">
+      <div className="flex items-baseline justify-between text-[10px] text-tm-faint">
         <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[0]]}</span>
         <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[LAST_INDEX]]}</span>
       </div>
 
-      <p className="mt-3 text-[12px] leading-5 text-[#7f776e]">{spanCaption(value)}</p>
+      <p className="mt-3 text-[12px] leading-5 text-tm-muted">{spanCaption(value)}</p>
 
       {/* Смысл контрола — пролёт целиком, и ни один слайдер сам по себе его
           объявить не может. */}

@@ -24,17 +24,17 @@ export function StyleSelectorDropdown({ value, onChange }: StyleSelectorDropdown
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Стиль иллюстрации: ${activePreset.label}`}
-        className="flex h-8 items-center gap-1.5 rounded-full border border-[#ded9d1] bg-white/55 px-2.5 text-[#706960] outline-none transition-colors hover:border-[#c7a06c] hover:bg-[#fffaf1] hover:text-[#4a433b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+        className="flex h-8 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/55 px-2.5 text-tm-muted outline-none transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
       >
         <ActiveIcon className="h-3.5 w-3.5 shrink-0" />
         <span className="text-[10px] font-medium">{activePreset.label}</span>
-        <ChevronDown className="h-3 w-3 text-[#a39c93]" />
+        <ChevronDown className="h-3 w-3 text-tm-faint" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-56 border-[#dcd7cf] bg-[#fbfaf7] text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-56 border-tm-line bg-tm-surface text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
-        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
           Стиль иллюстрации
         </div>
         {STYLE_PRESETS.map((preset) => {
@@ -44,16 +44,16 @@ export function StyleSelectorDropdown({ value, onChange }: StyleSelectorDropdown
             <DropdownMenuItem
               key={preset.id}
               onClick={() => onChange(preset.id)}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 focus:bg-[#f1eee8] focus:text-[#302d2a]"
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 focus:bg-tm-surface-2 focus:text-tm-ink"
             >
-              <PresetIcon className="h-4 w-4 text-[#938c82]" />
+              <PresetIcon className="h-4 w-4 text-tm-faint" />
               <span className="flex-1">{preset.label}</span>
-              {isActive && <Check className="h-4 w-4 text-[#b7792d]" />}
+              {isActive && <Check className="h-4 w-4 text-tm-accent" />}
             </DropdownMenuItem>
           );
         })}
-        <DropdownMenuSeparator className="my-1 bg-[#e4e0d9]" />
-        <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-[#8f887f] focus:bg-[#f1eee8] focus:text-[#4a433b]">
+        <DropdownMenuSeparator className="my-1 bg-tm-surface-3" />
+        <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-tm-faint focus:bg-tm-surface-2 focus:text-tm-ink-2">
           <Plus className="w-4 h-4" />
           <span>Добавить стиль</span>
         </DropdownMenuItem>
@@ -74,7 +74,7 @@ export function PaletteSelectorDropdown({ value, onChange }: PaletteSelectorDrop
     <Popover>
       <PopoverTrigger
         aria-label={`Цветовая палитра: ${activePalette.label}`}
-        className="flex h-8 max-w-[150px] items-center gap-1.5 rounded-full border border-[#ded9d1] bg-white/55 px-2.5 text-[#706960] outline-none transition-colors hover:border-[#c7a06c] hover:bg-[#fffaf1] hover:text-[#4a433b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+        className="flex h-8 max-w-[150px] items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/55 px-2.5 text-tm-muted outline-none transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
       >
         <span className="flex shrink-0 -space-x-0.5">
           {activePalette.colors.slice(0, 3).map((color) => (
@@ -88,14 +88,14 @@ export function PaletteSelectorDropdown({ value, onChange }: PaletteSelectorDrop
         <span className="min-w-0 truncate text-[10px] font-medium">
           {activePalette.label}
         </span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-[#a39c93]" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
       </PopoverTrigger>
 
       <PopoverContent
         align="start"
-        className="w-64 border-[#dcd7cf] bg-[#fbfaf7] p-3 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-64 border-tm-line bg-tm-surface p-3 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
-        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
           Цветовая палитра
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -107,8 +107,8 @@ export function PaletteSelectorDropdown({ value, onChange }: PaletteSelectorDrop
                 onClick={() => onChange(palette.id)}
                 className={`flex flex-col gap-2 p-2 rounded-md cursor-pointer border transition-colors ${
                   isActive
-                    ? "border-[#c8944d] bg-[#fff7e9]"
-                    : "border-[#dfdad2] hover:border-[#c5a474] hover:bg-[#f4f0e9]"
+                    ? "border-tm-accent bg-tm-bg"
+                    : "border-tm-line hover:border-tm-accent hover:bg-tm-surface-2"
                 }`}
               >
                 <div className="flex gap-1">
@@ -120,16 +120,16 @@ export function PaletteSelectorDropdown({ value, onChange }: PaletteSelectorDrop
                     />
                   ))}
                 </div>
-                <div className="truncate text-xs font-medium text-[#5f574e]">
+                <div className="truncate text-xs font-medium text-tm-ink-2">
                   {palette.label}
                 </div>
               </div>
             );
           })}
 
-          <div className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[#d3cdc4] p-2 transition-colors hover:border-[#b99667] hover:bg-[#f4f0e9]">
-            <Plus className="mb-1 h-4 w-4 text-[#9b958c]" />
-            <div className="text-center text-xs font-medium text-[#827b72]">
+          <div className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-tm-line-strong p-2 transition-colors hover:border-tm-accent hover:bg-tm-surface-2">
+            <Plus className="mb-1 h-4 w-4 text-tm-faint" />
+            <div className="text-center text-xs font-medium text-tm-muted">
               Своя палитра
             </div>
           </div>

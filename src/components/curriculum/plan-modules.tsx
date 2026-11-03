@@ -38,7 +38,7 @@ export function PlanModules({
         return (
           <div key={courseModule.id} className={partStarts && index > 0 ? "pt-4" : ""}>
             {partStarts && (
-              <h3 className="mb-3 font-serif text-[13px] uppercase tracking-[0.14em] text-[#a1978b]">
+              <h3 className="mb-3 font-serif text-[13px] uppercase tracking-[0.14em] text-tm-faint">
                 {courseModule.part_title}
               </h3>
             )}

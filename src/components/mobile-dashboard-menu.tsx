@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -9,6 +8,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import { LogoMark } from "@/components/landing/logo-mark";
 import { UserAvatar } from "@/components/user-avatar";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 import {
@@ -128,7 +128,7 @@ export function MobileDashboardMenu({
         onClick={openMenu}
         aria-label="Открыть разделы"
         aria-expanded={isMounted && isVisible}
-        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#ddd8d0] bg-white/72 text-[#756e65] outline-none transition-colors hover:bg-white hover:text-[#2f2c28] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 md:hidden ${className}`}
+        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full border border-tm-line bg-tm-surface/72 text-tm-muted outline-none transition-colors hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35 md:hidden ${className}`}
       >
         <Menu className="h-4 w-4" />
       </button>
@@ -139,21 +139,15 @@ export function MobileDashboardMenu({
             role="dialog"
             aria-modal="true"
             aria-label="Разделы Timely"
-            className={`fixed inset-0 z-[240] flex flex-col bg-[#f7f5f1] text-[#302d29] shadow-[0_30px_90px_rgba(50,40,28,0.18)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+            className={`fixed inset-0 z-[240] flex flex-col bg-tm-bg text-tm-ink shadow-[0_30px_90px_rgba(50,40,28,0.18)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
               isVisible ? "translate-y-0" : "-translate-y-full"
             }`}
           >
-          <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#ded9d1] bg-[#fbfaf7]/95 px-4 backdrop-blur-xl">
+          <header className="flex h-16 shrink-0 items-center justify-between border-b border-tm-line bg-tm-surface/95 px-4 backdrop-blur-xl">
             <div className="flex min-w-0 items-center gap-3">
-              <Image
-                src="/logo.svg"
-                alt="Timely"
-                width={28}
-                height={28}
-                priority
-              />
-              <span className="h-7 w-px bg-[#ddd8d0]" />
-              <span className="font-serif text-[16px] font-semibold text-[#7f5527]">
+              <LogoMark size={28} />
+              <span className="h-7 w-px bg-tm-line" />
+              <span className="text-[16px] font-semibold tracking-[-0.02em] text-tm-ink">
                 Timely
               </span>
             </div>
@@ -163,7 +157,7 @@ export function MobileDashboardMenu({
               type="button"
               onClick={() => closeMenu()}
               aria-label="Закрыть разделы"
-              className="grid h-10 w-10 place-items-center rounded-full border border-[#ddd8d0] bg-white/72 text-[#756e65] outline-none transition-colors hover:bg-white hover:text-[#2f2c28] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+              className="grid h-10 w-10 place-items-center rounded-full border border-tm-line bg-tm-surface/72 text-tm-muted outline-none transition-colors hover:bg-tm-surface hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
             >
               <X className="h-[18px] w-[18px]" />
             </button>
@@ -178,7 +172,7 @@ export function MobileDashboardMenu({
                 <section key={group.label} aria-labelledby={`mobile-${group.label}`}>
                   <h2
                     id={`mobile-${group.label}`}
-                    className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-[#a39789]"
+                    className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-tm-faint"
                   >
                     {group.label}
                   </h2>
@@ -194,17 +188,17 @@ export function MobileDashboardMenu({
                           href={item.url}
                           onClick={(event) => navigate(event, item.url)}
                           aria-current={active ? "page" : undefined}
-                          className={`group flex min-h-[58px] items-center gap-3 rounded-[18px] border px-3.5 py-2.5 outline-none transition-[border-color,background-color,transform] active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+                          className={`group flex min-h-[58px] items-center gap-3 rounded-[18px] border px-3.5 py-2.5 outline-none transition-[border-color,background-color,transform] active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
                             active
-                              ? "border-[#d4aa72] bg-[#fff8ed] text-[#6f471d]"
-                              : "border-[#ded8cf] bg-[#fbfaf7] text-[#4d463e] hover:border-[#cbb89c] hover:bg-white"
+                              ? "border-tm-accent bg-tm-bg text-tm-accent"
+                              : "border-tm-line bg-tm-surface text-tm-ink-2 hover:border-tm-line-strong hover:bg-tm-surface-2"
                           }`}
                         >
                           <span
                             className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${
                               active
-                                ? "bg-[#edd8bb] text-[#8b5921]"
-                                : "bg-[#f0ede7] text-[#817a71] group-hover:text-[#4b443c]"
+                                ? "bg-tm-accent-soft text-tm-accent"
+                                : "bg-tm-surface-2 text-tm-muted group-hover:text-tm-ink-2"
                             }`}
                           >
                             <Icon className="h-[18px] w-[18px]" />
@@ -212,7 +206,7 @@ export function MobileDashboardMenu({
                           <span className="min-w-0 flex-1 truncate font-serif text-[15px] font-semibold">
                             {item.title}
                           </span>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-[#b0a89e] transition-transform group-hover:translate-x-0.5" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-tm-faint transition-transform group-hover:translate-x-0.5" />
                         </Link>
                       );
                     })}
@@ -222,17 +216,17 @@ export function MobileDashboardMenu({
             </div>
           </nav>
 
-          <footer className="shrink-0 border-t border-[#ded9d1] bg-[#fbfaf7]/96 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+          <footer className="shrink-0 border-t border-tm-line bg-tm-surface/96 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
             <Link
               href="/dashboard/profile"
               onClick={(event) => navigate(event, "/dashboard/profile")}
-              className="mx-auto flex h-12 w-full max-w-2xl items-center gap-3 rounded-[16px] px-3 text-[#5f574e] outline-none transition-colors hover:bg-[#f0ede7] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+              className="mx-auto flex h-12 w-full max-w-2xl items-center gap-3 rounded-[16px] px-3 text-tm-ink-2 outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
             >
               <UserAvatar size={36} />
               <span className="font-serif text-[14px] font-semibold">
                 Профиль
               </span>
-              <ChevronRight className="ml-auto h-4 w-4 text-[#aaa298]" />
+              <ChevronRight className="ml-auto h-4 w-4 text-tm-faint" />
             </Link>
           </footer>
           </div>,

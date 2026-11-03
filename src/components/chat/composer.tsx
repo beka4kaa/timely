@@ -84,7 +84,7 @@ export function Composer({
           type="button"
           onClick={() => send(prompt)}
           disabled={busy || disabled}
-          className={`shrink-0 rounded-full border border-[#d9d4cc] bg-[#fbfaf7] font-serif text-[#7e776e] transition-colors hover:border-[#c5a474] hover:text-[#6f481c] disabled:cursor-not-allowed disabled:opacity-45 ${
+          className={`shrink-0 rounded-full border border-tm-line bg-tm-surface font-serif text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-accent disabled:cursor-not-allowed disabled:opacity-45 ${
             page ? "px-3.5 py-1.5 text-[13px]" : "px-3 py-1.5 text-[12px]"
           }`}
         >
@@ -106,7 +106,7 @@ export function Composer({
           чата доски, где его занимали пилюли генерации, и здесь оставался
           пустым — поле выходило вдвое выше нужного. */}
       <div
-        className={`flex items-end gap-2 rounded-[17px] border border-[#d8d3cb] bg-[#fbfaf7] shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#c79a5b] focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)] ${
+        className={`flex items-end gap-2 rounded-[17px] border border-tm-line bg-tm-surface shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-tm-accent focus-within:shadow-[0_10px_30px_rgba(138,91,36,0.10)] ${
           page ? "px-3 py-2.5" : "px-3 py-2"
         }`}
       >
@@ -131,7 +131,7 @@ export function Composer({
             }
           }}
           style={{ maxHeight }}
-          className={`min-h-[24px] flex-1 resize-none self-center bg-transparent py-1 font-serif leading-relaxed text-[#3b352f] outline-none placeholder:text-[#aaa49b] ${
+          className={`min-h-[24px] flex-1 resize-none self-center bg-transparent py-1 font-serif leading-relaxed text-tm-ink outline-none placeholder:text-tm-faint ${
             page ? "text-[15px]" : "text-[14px]"
           }`}
         />
@@ -143,7 +143,7 @@ export function Composer({
                 onClick={() => (busy && onStop ? onStop() : send())}
                 disabled={busy ? !onStop : !draft.trim() || disabled}
                 aria-label={busy && onStop ? "Остановить" : "Отправить"}
-                className={`grid shrink-0 place-items-center rounded-full bg-[#c9a16c] text-white outline-none transition-colors hover:bg-[#af7d3d] disabled:bg-[#e5dfd6] disabled:text-[#aaa49b] ${
+                className={`grid shrink-0 place-items-center rounded-full bg-tm-accent text-tm-on-strong outline-none transition-colors hover:bg-tm-accent/90 disabled:bg-tm-surface-3 disabled:text-tm-faint ${
                   page ? "h-9 w-9" : "h-8 w-8"
                 }`}
               >

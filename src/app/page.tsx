@@ -1,7 +1,6 @@
 import { Fragment, type CSSProperties } from "react";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
-import { Literata, Onest } from "next/font/google";
 import {
   ArrowRight,
   Atom,
@@ -41,19 +40,6 @@ import { SmoothScroll } from "@/components/landing/smooth-scroll";
 import { ThemeSwitch } from "@/components/landing/theme-switch";
 import { UseCases } from "@/components/landing/use-cases";
 import styles from "@/components/landing/landing.module.css";
-
-const serif = Literata({
-  subsets: ["latin", "cyrillic"],
-  axes: ["opsz"],
-  variable: "--font-landing-serif",
-  display: "swap",
-});
-
-const sans = Onest({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-landing-sans",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "TimelyPlan — AI-друг для учёбы",
@@ -201,7 +187,7 @@ function SubjectRow({ items, reverse }: { items: Subject[]; reverse?: boolean })
 
 export default function HomePage() {
   return (
-    <div className={`${styles.page} ${serif.variable} ${sans.variable}`}>
+    <div className={styles.page}>
       <SmoothScroll />
       <header className={styles.header}>
         <span className={styles.progress} aria-hidden="true" />

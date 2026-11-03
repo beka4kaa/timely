@@ -96,25 +96,25 @@ interface GrowthArea {
 }
 
 const INSECURITY_CATEGORIES = {
-  social: { label: 'Социальные', icon: Users, color: 'bg-blue-100 text-blue-800' },
-  professional: { label: 'Профессиональные', icon: Briefcase, color: 'bg-purple-100 text-purple-800' },
-  personal: { label: 'Личностные', icon: Brain, color: 'bg-green-100 text-green-800' },
-  physical: { label: 'Внешность', icon: User, color: 'bg-orange-100 text-orange-800' },
-  financial: { label: 'Финансовые', icon: DollarSign, color: 'bg-yellow-100 text-yellow-800' },
+  social: { label: 'Социальные', icon: Users, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
+  professional: { label: 'Профессиональные', icon: Briefcase, color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
+  personal: { label: 'Личностные', icon: Brain, color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
+  physical: { label: 'Внешность', icon: User, color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
+  financial: { label: 'Финансовые', icon: DollarSign, color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' },
 }
 
 const SEVERITY_LEVELS = {
-  high: { label: 'Сильно беспокоит', color: 'bg-red-100 text-red-800', icon: AlertTriangle },
-  medium: { label: 'Умеренно', color: 'bg-yellow-100 text-yellow-800', icon: Eye },
-  low: { label: 'Слегка', color: 'bg-green-100 text-green-800', icon: Shield },
+  high: { label: 'Сильно беспокоит', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300', icon: AlertTriangle },
+  medium: { label: 'Умеренно', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300', icon: Eye },
+  low: { label: 'Слегка', color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300', icon: Shield },
 }
 
 const MOODS = {
-  excellent: { label: 'Отлично', icon: Smile, color: 'bg-green-100 text-green-800' },
-  good: { label: 'Хорошо', icon: Smile, color: 'bg-blue-100 text-blue-800' },
-  neutral: { label: 'Нормально', icon: Meh, color: 'bg-gray-100 text-gray-800' },
-  bad: { label: 'Плохо', icon: Frown, color: 'bg-orange-100 text-orange-800' },
-  terrible: { label: 'Ужасно', icon: Frown, color: 'bg-red-100 text-red-800' },
+  excellent: { label: 'Отлично', icon: Smile, color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
+  good: { label: 'Хорошо', icon: Smile, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
+  neutral: { label: 'Нормально', icon: Meh, color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' },
+  bad: { label: 'Плохо', icon: Frown, color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
+  terrible: { label: 'Ужасно', icon: Frown, color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
 }
 
 export function SelfWorkComponent() {
@@ -305,20 +305,20 @@ export function SelfWorkComponent() {
   return (
     <div className="space-y-6">
       {/* Заголовок с мотивацией */}
-      <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
+      <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200 dark:from-tm-lilac dark:to-tm-accent-soft dark:border-tm-accent-line">
         <CardContent className="p-6">
           <div className="flex items-start space-x-4">
-            <div className="bg-indigo-100 p-3 rounded-full">
-              <Heart className="h-8 w-8 text-indigo-600" />
+            <div className="bg-indigo-100 p-3 rounded-full dark:bg-tm-accent-soft">
+              <Heart className="h-8 w-8 text-indigo-600 dark:text-tm-accent" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-indigo-900 mb-2">
+              <h3 className="text-lg font-semibold text-indigo-900 mb-2 dark:text-tm-ink">
                 💝 Работа с собой
               </h3>
-              <p className="text-indigo-700">
+              <p className="text-indigo-700 dark:text-tm-ink-2">
                 &ldquo;Знание себя — начало всей мудрости.&rdquo; — Аристотель
               </p>
-              <p className="text-sm text-indigo-600 mt-2">
+              <p className="text-sm text-indigo-600 mt-2 dark:text-tm-muted">
                 Честность с собой — это первый шаг к личностному росту и внутренней гармонии.
               </p>
             </div>
@@ -512,12 +512,12 @@ export function SelfWorkComponent() {
                       
                       {/* План действий */}
                       {insecurity.actionPlan && (
-                        <div className="bg-blue-50 p-3 rounded-lg">
+                        <div className="bg-blue-50 p-3 rounded-lg dark:bg-tm-sky">
                           <h5 className="text-sm font-medium mb-1 flex items-center">
-                            <Lightbulb className="h-4 w-4 mr-1 text-blue-600" />
+                            <Lightbulb className="h-4 w-4 mr-1 text-blue-600 dark:text-[#93b4ff]" />
                             План действий
                           </h5>
-                          <p className="text-sm text-blue-800">{insecurity.actionPlan}</p>
+                          <p className="text-sm text-blue-800 dark:text-tm-ink-2">{insecurity.actionPlan}</p>
                         </div>
                       )}
                     </CardContent>
@@ -696,28 +696,28 @@ export function SelfWorkComponent() {
                       
                       {reflection.achievements && (
                         <div>
-                          <h5 className="font-medium text-sm mb-1 text-green-700">✅ Достижения</h5>
+                          <h5 className="font-medium text-sm mb-1 text-green-700 dark:text-green-400">✅ Достижения</h5>
                           <p className="text-sm">{reflection.achievements}</p>
                         </div>
                       )}
                       
                       {reflection.challenges && (
                         <div>
-                          <h5 className="font-medium text-sm mb-1 text-orange-700">⚠️ Вызовы</h5>
+                          <h5 className="font-medium text-sm mb-1 text-orange-700 dark:text-orange-400">⚠️ Вызовы</h5>
                           <p className="text-sm">{reflection.challenges}</p>
                         </div>
                       )}
                       
                       {reflection.lessons && (
                         <div>
-                          <h5 className="font-medium text-sm mb-1 text-blue-700">💡 Уроки</h5>
+                          <h5 className="font-medium text-sm mb-1 text-blue-700 dark:text-blue-400">💡 Уроки</h5>
                           <p className="text-sm">{reflection.lessons}</p>
                         </div>
                       )}
                       
                       {reflection.gratitude && (
                         <div>
-                          <h5 className="font-medium text-sm mb-1 text-pink-700">🙏 Благодарность</h5>
+                          <h5 className="font-medium text-sm mb-1 text-pink-700 dark:text-pink-400">🙏 Благодарность</h5>
                           <p className="text-sm">{reflection.gratitude}</p>
                         </div>
                       )}
@@ -880,7 +880,7 @@ export function SelfWorkComponent() {
                         <h5 className="text-sm font-medium mb-2">Навыки для развития:</h5>
                         <div className="flex flex-wrap gap-1">
                           {area.skills.map(skill => (
-                            <Badge key={skill} className="bg-green-100 text-green-800">
+                            <Badge key={skill} className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
                               {skill}
                             </Badge>
                           ))}

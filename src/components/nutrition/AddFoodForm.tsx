@@ -68,9 +68,9 @@ export function AddFoodForm({ onAdd }: AddFoodFormProps) {
           aria-label="Название продукта"
           className={cn(
             'h-11 w-full rounded-xl px-3.5 text-sm outline-none',
-            'bg-white/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
+            'bg-tm-surface/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
             'placeholder:text-muted-foreground/60 transition-colors',
-            'focus:border-foreground/20 focus:bg-white/70 dark:focus:bg-white/[0.07]',
+            'focus:border-foreground/20 focus:bg-tm-surface/70 dark:focus:bg-white/[0.07]',
           )}
         />
 
@@ -89,9 +89,9 @@ export function AddFoodForm({ onAdd }: AddFoodFormProps) {
                 aria-label={`${f.label} (${f.unit})`}
                 className={cn(
                   'h-11 w-full rounded-xl px-3 text-sm tabular-nums outline-none',
-                  'bg-white/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
+                  'bg-tm-surface/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
                   'placeholder:text-muted-foreground/50 transition-colors',
-                  'focus:bg-white/70 dark:focus:bg-white/[0.07]',
+                  'focus:bg-tm-surface/70 dark:focus:bg-white/[0.07]',
                 )}
                 style={{ borderTopColor: values[f.key] ? f.color : undefined }}
               />

@@ -1,10 +1,9 @@
 'use client'
 
 import { Suspense } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react'
+import { AuthShell, authStyles } from '@/components/auth/auth-shell'
 
 function AuthErrorContent() {
   const searchParams = useSearchParams()
@@ -93,90 +92,50 @@ function AuthErrorContent() {
   const currentError = error ? errorMessages[error] : null
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <Card className="p-8">
-          <div className="text-center">
-            <AlertTriangle className="mx-auto h-12 w-12 text-red-500" />
-            <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-              {currentError?.title || 'Ошибка авторизации'}
-            </h2>
-            <p className="mt-2 text-sm text-gray-600">
-              {currentError?.description || 'Произошла неожиданная ошибка при авторизации'}
-            </p>
-          </div>
+    <AuthShell
+      title={currentError?.title || 'Не получилось войти'}
+      subtitle={currentError?.description || 'Произошла неожиданная ошибка при авторизации.'}
+      footer="Если ошибка повторяется, напишите администратору."
+    >
+      {error && (
+        <p className={authStyles.notice}>
+          Код ошибки: <strong>{error}</strong>
+          {errorDescription && <> — {errorDescription}</>}
+        </p>
+      )}
 
-          {error && (
-            <div className="mt-6 p-4 bg-red-50 rounded-md">
-              <p className="text-sm font-medium text-red-800">Код ошибки: {error}</p>
-              {errorDescription && (
-                <p className="text-sm text-red-700 mt-1">{errorDescription}</p>
-              )}
-            </div>
-          )}
+      {currentError?.solutions && (
+        <details className={authStyles.details}>
+          <summary>Что можно проверить</summary>
+          <ul>
+            {currentError.solutions.map((solution, index) => (
+              <li key={index}>{solution}</li>
+            ))}
+          </ul>
+        </details>
+      )}
 
-          {currentError?.solutions && (
-            <div className="mt-6">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Возможные решения:</h3>
-              <ul className="text-sm text-gray-600 space-y-2">
-                {currentError.solutions.map((solution, index) => (
-                  <li key={index} className="flex items-start">
-                    <span className="flex-shrink-0 h-1.5 w-1.5 bg-gray-400 rounded-full mt-2 mr-3" />
-                    {solution}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-8 space-y-3">
-            <Button 
-              onClick={() => window.location.href = '/auth/signin'}
-              className="w-full flex items-center justify-center"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Попробовать снова
-            </Button>
-            
-            <Button 
-              variant="outline"
-              onClick={() => window.location.href = '/'}
-              className="w-full flex items-center justify-center"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              На главную
-            </Button>
-
-            <Button 
-              variant="ghost"
-              onClick={() => window.location.href = '/debug-oauth'}
-              className="w-full flex items-center justify-center text-sm"
-            >
-              🔍 Диагностика (для разработчиков)
-            </Button>
-          </div>
-        </Card>
-
-        <div className="text-center">
-          <p className="text-xs text-gray-500">
-            Если проблема повторяется, обратитесь к администратору
-          </p>
-        </div>
+      <div className={authStyles.actions}>
+        <Link href="/auth/signin" className={authStyles.primary}>
+          Попробовать снова
+        </Link>
+        <Link href="/" className={authStyles.secondary}>
+          На главную
+        </Link>
       </div>
-    </div>
+    </AuthShell>
   )
 }
 
 export default function AuthErrorPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-2 text-sm text-gray-600">Загрузка...</p>
+    <Suspense
+      fallback={
+        <div className="grid min-h-svh place-items-center bg-tm-bg text-sm text-tm-muted">
+          Загрузка…
         </div>
-      </div>
-    }>
+      }
+    >
       <AuthErrorContent />
     </Suspense>
   )

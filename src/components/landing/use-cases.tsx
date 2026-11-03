@@ -229,7 +229,7 @@ export function UseCases() {
           aria-labelledby={`case-tab-${current.id}`}
           className={styles.panel}
         >
-          <div key={`text-${current.id}`} className={`${styles.card} ${styles.swap}`}>
+          <div key={`text-${current.id}`} className={`${styles.card} ${styles.swap} ${current.tint}`}>
             <span className={`${styles.icon} ${current.tint}`}>
               <Icon size={18} strokeWidth={1.9} />
             </span>

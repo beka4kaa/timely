@@ -33,7 +33,7 @@ export function IllustrationLeaderLines({
     <svg
       aria-hidden="true"
       data-illustration-leader-layer="true"
-      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-[#777168]"
+      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-tm-muted"
       style={{ zIndex: 15 }}
     >
       {visible.map(({ connector, index }) => {

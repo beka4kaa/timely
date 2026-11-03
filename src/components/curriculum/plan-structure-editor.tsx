@@ -25,7 +25,7 @@ import {
 import { paperButton, paperCaption, paperPrimaryButton, paperTile } from "./paper";
 
 const FIELD =
-  "w-full rounded-[10px] border border-[#ddd7cd] bg-[#fffdfa] px-3 py-1.5 text-[14px] text-[#3b352f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35";
+  "w-full rounded-[10px] border border-tm-line bg-tm-surface px-3 py-1.5 text-[14px] text-tm-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tm-accent/35";
 
 function toDraft(plan: CoursePlan): StructureModulePatch[] {
   return plan.modules.map((module) => ({
@@ -101,7 +101,7 @@ export function PlanStructureEditor({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[13px] text-[#8d857b]">
+        <p className="text-[13px] text-tm-muted">
           {totalTopics} тем · {Math.round(totalMinutes / 60)} ч
         </p>
         <button
@@ -137,7 +137,7 @@ export function PlanStructureEditor({
           </div>
 
           {module.topics.length === 0 ? (
-            <p className="mt-2 text-[12px] text-[#9b9186]">
+            <p className="mt-2 text-[12px] text-tm-faint">
               Все темы убраны — модуль исчезнет при сохранении.
             </p>
           ) : null}
@@ -217,7 +217,7 @@ export function PlanStructureEditor({
         </section>
       ))}
 
-      {error ? <p className="text-[12px] text-[#8c4b41]">{error}</p> : null}
+      {error ? <p className="text-[12px] text-tm-danger">{error}</p> : null}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -238,7 +238,7 @@ export function PlanStructureEditor({
           Отмена
         </button>
         {totalTopics === 0 ? (
-          <p className="w-full text-[12px] text-[#8c4b41]">
+          <p className="w-full text-[12px] text-tm-danger">
             В программе должна остаться хотя бы одна тема.
           </p>
         ) : null}

@@ -54,7 +54,7 @@ const GRADE_COLORS: Record<number, string> = {
   4: "text-blue-500",
   3: "text-amber-400",
   2: "text-red-500",
-  1: "text-red-700",
+  1: "text-red-700 dark:text-red-600",
 }
 
 export function LessonDetailDialog({

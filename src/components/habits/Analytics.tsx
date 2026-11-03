@@ -81,7 +81,7 @@ export function Analytics({ habits }: { habits: Habit[] }) {
       {/* Heatmap */}
       <div className={cn(GLASS, 'rounded-[24px] p-5 sm:p-6 overflow-hidden')}>
         <div className="mb-5">
-          <h3 className="font-plus-jakarta text-sm font-bold">Карта активности</h3>
+          <h3 className="font-sans text-sm font-bold">Карта активности</h3>
         </div>
 
         <div className="w-full overflow-x-auto pb-1">
@@ -141,7 +141,7 @@ export function Analytics({ habits }: { habits: Habit[] }) {
 
       {/* Per-habit breakdown */}
       <div className={cn(GLASS, 'rounded-[24px] p-5')}>
-        <h3 className="font-plus-jakarta text-sm font-bold mb-3">По привычкам</h3>
+        <h3 className="font-sans text-sm font-bold mb-3">По привычкам</h3>
         <div className="flex flex-col divide-y">
           {habits.map((h) => (
             <div key={h.id} className="flex items-center gap-3 py-2.5">

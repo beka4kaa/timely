@@ -31,7 +31,7 @@ function FoodResultCard({ food, onPick }: { food: FoodLibraryItem; onPick: () =>
       className={cn(
         GLASS,
         'flex items-center gap-3 rounded-2xl p-3 text-left transition-colors',
-        'hover:bg-white/80 dark:hover:bg-white/[0.09]',
+        'hover:bg-tm-surface/80 dark:hover:bg-white/[0.09]',
       )}
     >
       {food.image ? (

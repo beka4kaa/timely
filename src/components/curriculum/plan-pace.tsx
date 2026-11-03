@@ -18,7 +18,7 @@ import { type CoursePlan, updatePlanPace } from "@/lib/curriculum-api";
 import { paperButton, paperCaption, paperTile } from "./paper";
 
 const FIELD =
-  "w-full rounded-[10px] border border-[#ddd7cd] bg-[#fffdfa] px-3 py-1.5 text-[14px] text-[#3b352f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35";
+  "w-full rounded-[10px] border border-tm-line bg-tm-surface px-3 py-1.5 text-[14px] text-tm-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tm-accent/35";
 
 export function PlanPaceDialog({
   plan,
@@ -129,7 +129,7 @@ function PaceForm({
         </label>
       </div>
 
-      {error ? <p className="text-[12px] text-[#8c4b41]">{error}</p> : null}
+      {error ? <p className="text-[12px] text-tm-danger">{error}</p> : null}
 
       <div className="flex flex-wrap gap-2">
         <button

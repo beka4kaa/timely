@@ -13,7 +13,7 @@ export default function StudyPlannerPage() {
     return (
         <CoffeePageShell>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="mb-6 grid w-full grid-cols-2 rounded-full border border-[#ded8cf] bg-[#f0ece5] p-1">
+                <TabsList className="mb-6 grid w-full grid-cols-2 rounded-full border border-tm-line bg-tm-surface-2 p-1">
                     <TabsTrigger value="schedule" className="gap-2">
                         <Clock className="h-4 w-4" />
                         Schedule

@@ -56,7 +56,7 @@ export function UserAvatar({ size = 28, className = "" }: UserAvatarProps) {
     return (
       <div
         aria-hidden
-        className={`animate-pulse bg-[#eeeae3] ${className}`}
+        className={`animate-pulse bg-tm-surface-2 ${className}`}
         style={boxStyle}
       />
     );
@@ -69,14 +69,14 @@ export function UserAvatar({ size = 28, className = "" }: UserAvatarProps) {
 
   return (
     <Avatar
-      className={`border border-[#d9d2c8] bg-white shadow-sm ${className}`}
+      className={`border border-tm-line bg-tm-surface shadow-sm ${className}`}
       style={boxStyle}
     >
       {/* Рендерим только при реальном URL: несуществующий src — это 404,
           лишний сетевой запрос и мигание фолбэка. */}
       {image && <AvatarImage src={image} alt={name || email || "Профиль"} />}
       <AvatarFallback
-        className="bg-[#fff7e8] font-semibold text-[#8a5b2b]"
+        className="bg-tm-bg font-semibold text-tm-accent"
         style={{ borderRadius: radius, fontSize: Math.max(9, Math.round(size * 0.34)) }}
       >
         {initials}

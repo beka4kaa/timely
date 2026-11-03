@@ -267,7 +267,7 @@ export function ScheduleSetup({
         title="Настроим твою неделю"
         onCancel={onCancel ? cancel : undefined}
       >
-        <p className="text-[12.5px] leading-relaxed text-[#7b7168]">
+        <p className="text-[12.5px] leading-relaxed text-tm-muted">
           Ответь на несколько коротких вопросов. Сначала покажем черновик —
           ничего не попадёт в расписание без твоего подтверждения.
         </p>
@@ -291,7 +291,7 @@ export function ScheduleSetup({
         title={noPlans ? "Сначала нужна учебная программа" : "Нужен ещё один шаг"}
         onCancel={onCancel ? cancel : undefined}
       >
-        <p className="text-[12.5px] leading-relaxed text-[#7b7168]">{error}</p>
+        <p className="text-[12.5px] leading-relaxed text-tm-muted">{error}</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {noPlans ? (
             <Link href="/dashboard/curriculum" className={paperPrimaryButton}>
@@ -313,7 +313,7 @@ export function ScheduleSetup({
         title="Не удалось продолжить"
         onCancel={onCancel ? cancel : undefined}
       >
-        <p className="text-[12.5px] leading-relaxed text-[#a2543a]" role="alert">
+        <p className="text-[12.5px] leading-relaxed text-tm-danger" role="alert">
           {error}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -339,12 +339,12 @@ export function ScheduleSetup({
         title="Черновик готов"
         onCancel={onCancel ? cancel : undefined}
       >
-        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-[#5f584f]">
+        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-tm-ink-2">
           <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#3973b8]" />
           Проверь занятия в календаре и подтверди расписание отдельной кнопкой.
         </p>
         {error ? (
-          <p className="mt-3 text-[11.5px] text-[#a2543a]" role="alert">
+          <p className="mt-3 text-[11.5px] text-tm-danger" role="alert">
             {error}
           </p>
         ) : null}
@@ -365,13 +365,13 @@ export function ScheduleSetup({
       onCancel={onCancel ? cancel : undefined}
     >
       {notice ? (
-        <p className="mb-3 rounded-[10px] bg-[#f1ede6] px-2.5 py-2 text-[10.5px] text-[#7c746a]">
+        <p className="mb-3 rounded-[10px] bg-tm-surface-2 px-2.5 py-2 text-[10.5px] text-tm-muted">
           {notice}
         </p>
       ) : null}
 
       {phase === "loading" ? (
-        <div className="flex min-h-24 items-center justify-center gap-2 text-[11px] text-[#8c857c]">
+        <div className="flex min-h-24 items-center justify-center gap-2 text-[11px] text-tm-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
           Подбираю следующий вопрос…
         </div>
@@ -388,15 +388,15 @@ export function ScheduleSetup({
               onClick={() => answerQuestion(option.id, option.id, "option")}
               className={`w-full rounded-[13px] border px-3 py-2.5 text-left outline-none transition-colors ${paperFocus} ${
                 selectedOption === option.id
-                  ? "border-[#8aaed8] bg-[#eef5fd] text-[#263d5a]"
-                  : "border-[#ddd8d0] bg-white/60 text-[#514a42] hover:border-[#9bb8da] hover:bg-[#f5f9fe]"
+                  ? "border-[#8aaed8] bg-[#eef5fd] text-[#263d5a] dark:border-tm-accent-line dark:bg-tm-sky dark:text-tm-ink"
+                  : "border-tm-line bg-tm-surface/60 text-tm-ink-2 hover:border-tm-line-strong hover:bg-tm-sky/60"
               }`}
             >
               <span className="block font-serif text-[12px] font-semibold leading-tight">
                 {option.label}
               </span>
               {option.description ? (
-                <span className="mt-1 block text-[10px] leading-snug text-[#938c83]">
+                <span className="mt-1 block text-[10px] leading-snug text-tm-faint">
                   {option.description}
                 </span>
               ) : null}
@@ -406,7 +406,7 @@ export function ScheduleSetup({
           {question.has_more ? (
             <Link
               href="/dashboard/curriculum"
-              className={`block w-full rounded-[12px] border border-dashed border-[#d5cfc6] px-3 py-2 text-[11px] text-[#837c73] transition-colors hover:border-[#9bb8da] hover:bg-[#f5f9fe] ${paperFocus}`}
+              className={`block w-full rounded-[12px] border border-dashed border-tm-line px-3 py-2 text-[11px] text-tm-muted transition-colors hover:border-tm-line-strong hover:bg-tm-sky/60 hover:text-tm-ink ${paperFocus}`}
             >
               Показать все программы
             </Link>
@@ -419,7 +419,7 @@ export function ScheduleSetup({
                 setOtherOpen(true);
                 setError("");
               }}
-              className={`w-full rounded-[12px] border border-dashed border-[#d5cfc6] px-3 py-2 text-left text-[11px] text-[#837c73] transition-colors hover:border-[#9bb8da] hover:bg-[#f5f9fe] ${paperFocus}`}
+              className={`w-full rounded-[12px] border border-dashed border-tm-line px-3 py-2 text-left text-[11px] text-tm-muted transition-colors hover:border-tm-line-strong hover:bg-tm-sky/60 hover:text-tm-ink ${paperFocus}`}
             >
               Другое — напишу сам
             </button>
@@ -444,13 +444,13 @@ export function ScheduleSetup({
                 }}
                 placeholder={customPlaceholder(question.id)}
                 aria-label="Свой ответ"
-                className="h-9 min-w-0 flex-1 rounded-[11px] border border-[#d8d2c9] bg-white/75 px-3 font-serif text-[12px] text-[#3c3630] outline-none placeholder:text-[#aaa49b] focus:border-[#6d9acc]"
+                className="h-9 min-w-0 flex-1 rounded-[11px] border border-tm-line bg-tm-surface/75 px-3 font-serif text-[12px] text-tm-ink outline-none placeholder:text-tm-faint focus:border-[#6d9acc]"
               />
               <button
                 type="submit"
                 disabled={!otherValue.trim()}
                 aria-label="Сохранить свой ответ"
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#3973b8] text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-[#ded9d1] disabled:text-[#aaa49b]"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#3973b8] text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-tm-surface-3 disabled:text-tm-faint"
               >
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
@@ -458,7 +458,7 @@ export function ScheduleSetup({
           ) : null}
 
           {error ? (
-            <p className="pt-1 text-[10.5px] text-[#a2543a]" role="alert">
+            <p className="pt-1 text-[10.5px] text-tm-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -467,29 +467,29 @@ export function ScheduleSetup({
 
       {(phase === "summary" || phase === "creating") && summary ? (
         <div>
-          <p className="mb-3 text-[11px] leading-relaxed text-[#8f887f]">
+          <p className="mb-3 text-[11px] leading-relaxed text-tm-faint">
             Создадим только черновик. Затем ты проверишь занятия в календаре и
             подтвердишь их отдельно.
           </p>
-          <dl className="divide-y divide-[#e5e0d8] rounded-[13px] border border-[#ded8cf] bg-white/55 px-3">
+          <dl className="divide-y divide-tm-line rounded-[13px] border border-tm-line bg-tm-surface/55 px-3">
             {scheduleSetupSummaryRows(summary).map((row) => (
               <div
                 key={row.label}
                 className="grid grid-cols-[72px_1fr] gap-2 py-2 text-[10.5px]"
               >
-                <dt className="text-[#9a938a]">{row.label}</dt>
-                <dd className="font-medium text-[#504940]">{row.value}</dd>
+                <dt className="text-tm-faint">{row.label}</dt>
+                <dd className="font-medium text-tm-ink-2">{row.value}</dd>
               </div>
             ))}
           </dl>
 
-          <p className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-[#756e66]">
+          <p className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-tm-muted">
             <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#3973b8]" />
             Занятия появятся как предложение — их ещё можно проверить.
           </p>
 
           {error ? (
-            <p className="mt-3 text-[10.5px] text-[#a2543a]" role="alert">
+            <p className="mt-3 text-[10.5px] text-tm-danger" role="alert">
               {error}
             </p>
           ) : null}
@@ -498,7 +498,7 @@ export function ScheduleSetup({
             <button
               type="button"
               disabled={phase === "creating"}
-              className="h-9 rounded-[12px] border border-[#d7d1c8] bg-white/60 text-[11px] text-[#6f675e] outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#c9a16c]/25 disabled:opacity-50"
+              className="h-9 rounded-[12px] border border-tm-line bg-tm-surface/60 text-[11px] text-tm-muted outline-none transition-colors hover:bg-tm-surface focus-visible:ring-2 focus-visible:ring-tm-accent/25 disabled:opacity-50"
               onClick={begin}
             >
               Заново
@@ -506,7 +506,7 @@ export function ScheduleSetup({
             <button
               type="button"
               disabled={phase === "creating"}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-[#3973b8] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-[#78726b]"
+              className="flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-[#3973b8] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-[#62626d]"
               onClick={() => void createProposal()}
             >
               {phase === "creating" ? (
@@ -557,11 +557,11 @@ function SetupCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#3973b8]">
+          <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#3973b8] dark:text-[#93b4ff]">
             <span>Настройка недели</span>
             {step && totalSteps ? (
               <span
-                className="font-sans normal-case tracking-normal text-[#999188]"
+                className="font-sans normal-case tracking-normal text-tm-faint"
                 role="progressbar"
                 aria-label={`Шаг ${activeStep} из ${totalSteps}`}
                 aria-valuemin={1}
@@ -572,7 +572,7 @@ function SetupCard({
               </span>
             ) : null}
           </div>
-          <h2 className="mt-1.5 font-serif text-[18px] font-medium leading-[1.2] tracking-[-0.02em] text-[#39332d]">
+          <h2 className="mt-1.5 font-serif text-[18px] font-medium leading-[1.2] tracking-[-0.02em] text-tm-ink">
             {title}
           </h2>
         </div>
@@ -582,7 +582,7 @@ function SetupCard({
             onClick={onCancel}
             aria-label="Закрыть настройку"
             title="Закрыть настройку"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#999188] outline-none transition-colors hover:bg-[#f1ede6] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35"
           >
             <X className="h-3.5 w-3.5" />
           </button>

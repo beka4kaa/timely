@@ -324,9 +324,9 @@ export function EnhancedCalendarComponent() {
                             variant="secondary"
                             className={cn(
                               "text-xs capitalize",
-                              block.status === 'COMPLETED' && "bg-emerald-100 text-emerald-700",
-                              block.status === 'IN_PROGRESS' && "bg-blue-100 text-blue-700",
-                              block.status === 'SKIPPED' && "bg-gray-100 text-gray-600"
+                              block.status === 'COMPLETED' && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+                              block.status === 'IN_PROGRESS' && "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                              block.status === 'SKIPPED' && "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
                             )}
                           >
                             {block.status === 'IN_PROGRESS' ? 'Active' :

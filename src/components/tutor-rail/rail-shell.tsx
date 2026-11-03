@@ -71,7 +71,7 @@ export function RailShell({
       {/* ── Панель ──────────────────────────────────────────────────────── */}
       <aside
         style={{ width: isMobile ? "100%" : width || undefined }}
-        className={`fixed bottom-0 right-0 top-12 z-[115] border-l border-[#dedbd4] ${
+        className={`fixed bottom-0 right-0 top-12 z-[115] border-l border-tm-line ${
           dragging ? "" : "transition-transform duration-300 ease-in-out"
         } ${
           // Тень слева: лист, приподнятый над страницей, а не приклеенный к
@@ -89,17 +89,17 @@ export function RailShell({
         inert={open ? undefined : true}
       >
         {open && !isMobile && <RailResizer />}
-        <div className="flex h-full min-h-0 flex-col bg-[#f8f6f2] text-[#37322c]">
-          <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#dedbd4] bg-[#fbfaf7] px-3.5">
+        <div className="flex h-full min-h-0 flex-col bg-tm-bg text-tm-ink">
+          <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-tm-line bg-tm-surface px-3.5">
             {title}
-            <div className="flex items-center gap-0.5 text-[#918b82]">
+            <div className="flex items-center gap-0.5 text-tm-faint">
               {onNew ? (
                 <button
                   type="button"
                   onClick={onNew}
                   aria-label={newLabel}
                   title={newLabel}
-                  className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                  className="grid h-7 w-7 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -109,7 +109,7 @@ export function RailShell({
                 onClick={toggle}
                 aria-label="Свернуть панель"
                 title="Свернуть панель"
-                className="grid h-7 w-7 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] active:scale-95 focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+                className="grid h-7 w-7 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
               >
                 <PanelRightClose className="h-3.5 w-3.5" />
               </button>
@@ -137,7 +137,7 @@ export function RailShell({
 
 /** Плашка в шапке — общий вид для обоих режимов. */
 export const railPillClass =
-  "flex min-w-0 flex-1 items-center gap-1 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2.5 py-[3px] text-[11px] font-medium text-[#6d665d] outline-none transition-colors";
+  "flex min-w-0 flex-1 items-center gap-1 rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-[3px] text-[11px] font-medium text-tm-muted outline-none transition-colors";
 
 /** То же, но кликабельное: с подсветкой при наведении. */
-export const railPillButtonClass = `${railPillClass} hover:border-[#d3cdc2] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30`;
+export const railPillButtonClass = `${railPillClass} hover:border-tm-line-strong hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30`;

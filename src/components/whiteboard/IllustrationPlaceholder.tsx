@@ -41,7 +41,7 @@ export function IllustrationPlaceholder({
       className={`flex flex-col items-center justify-center gap-2 rounded-2xl border text-center px-4 ${
         failed
           ? "border-red-300/60 bg-red-50/60"
-          : "animate-pulse border-[#d8d3cb] bg-[#f2eee7]"
+          : "animate-pulse border-tm-line bg-tm-surface-2"
       }`}
       role="img"
       aria-label={failed ? `Иллюстрация не сгенерирована: ${error}` : loadingText}
@@ -55,8 +55,8 @@ export function IllustrationPlaceholder({
         </>
       ) : (
         <>
-          <Loader2 className="h-5 w-5 animate-spin text-[#a66d28]" />
-          <span className="text-[11px] text-[#827b72]">
+          <Loader2 className="h-5 w-5 animate-spin text-tm-accent" />
+          <span className="text-[11px] text-tm-muted">
             {loadingText}
           </span>
         </>

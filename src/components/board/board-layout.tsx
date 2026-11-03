@@ -130,7 +130,7 @@ function CanvasPlaceholder() {
       {/* Center label */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="flex flex-col items-center gap-3 text-zinc-700 select-none">
-          <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl bg-tm-surface/[0.03] border border-white/[0.06] flex items-center justify-center">
             <MessageSquare className="w-7 h-7 text-zinc-600" />
           </div>
           <p className="text-sm font-medium text-zinc-600">Canvas Area</p>

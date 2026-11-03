@@ -129,8 +129,11 @@ export function activityLabel(activityType: string): string {
   return ACTIVITY_LABELS[activityType] ?? activityType;
 }
 
-/** Бумага, на которой лежит блок: с ней смешивается акцент курса. */
-const SHEET = "#fffdfa";
+/**
+ * Бумага, на которой лежит блок: с ней смешивается акцент курса. Токен темы,
+ * а не hex — в тёмной теме блок тоже тёмный, а не светлое пятно.
+ */
+const SHEET = "rgb(var(--tm-surface))";
 
 /**
  * Занятое время — школа, репетитор, семейное.
@@ -142,10 +145,10 @@ const SHEET = "#fffdfa";
 export const OCCUPIED_ACCENT = "hsl(28 12% 55%)";
 
 const OCCUPIED = {
-  background: "hsl(30 10% 94%)",
-  border: "hsl(30 10% 86%)",
+  background: "rgb(var(--tm-surface-2))",
+  border: "rgb(var(--tm-line-strong))",
   accent: OCCUPIED_ACCENT,
-  text: "hsl(28 10% 34%)",
+  text: "rgb(var(--tm-ink-2))",
 };
 
 /**
@@ -166,7 +169,7 @@ export function blockTone(
   return {
     background: `color-mix(in srgb, ${accent} ${fill.toFixed(0)}%, ${SHEET})`,
     border: `color-mix(in srgb, ${accent} 42%, ${SHEET})`,
-    text: "#312c27",
+    text: "rgb(var(--tm-ink))",
   };
 }
 

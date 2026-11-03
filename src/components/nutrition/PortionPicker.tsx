@@ -68,8 +68,8 @@ export function PortionPicker({ food, onConfirm, onBack, initialGrams }: Portion
           autoFocus
           className={cn(
             'h-11 w-full rounded-xl px-3.5 text-sm tabular-nums outline-none',
-            'bg-white/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
-            'focus:bg-white/70 dark:focus:bg-white/[0.07]',
+            'bg-tm-surface/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
+            'focus:bg-tm-surface/70 dark:focus:bg-white/[0.07]',
           )}
         />
         <div className="mt-2 flex flex-wrap gap-1.5">

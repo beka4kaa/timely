@@ -56,9 +56,9 @@ interface Task {
 }
 
 const PRIORITIES = {
-  high: { label: 'Высокий', color: 'bg-red-100 text-red-800', icon: AlertCircle },
-  medium: { label: 'Средний', color: 'bg-yellow-100 text-yellow-800', icon: Flag },
-  low: { label: 'Низкий', color: 'bg-green-100 text-green-800', icon: Clock },
+  high: { label: 'Высокий', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300', icon: AlertCircle },
+  medium: { label: 'Средний', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300', icon: Flag },
+  low: { label: 'Низкий', color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300', icon: Clock },
 }
 
 const CATEGORIES = {
@@ -272,9 +272,9 @@ export function TasksComponent() {
     <div className="space-y-6">
       {/* Error State */}
       {error && (
-        <Card className="border-red-200 bg-red-50">
+        <Card className="border-red-200 bg-red-50 dark:border-tm-danger-line dark:bg-tm-danger-soft">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-red-600">
+            <div className="flex items-center gap-2 text-red-600 dark:text-tm-danger">
               <AlertCircle className="h-4 w-4" />
               <span>{error}</span>
             </div>
@@ -479,7 +479,7 @@ export function TasksComponent() {
             <Card key={task.id} className={cn(
               "transition-all duration-200",
               task.completed && "opacity-70",
-              isOverdue(task) && "border-red-200 bg-red-50"
+              isOverdue(task) && "border-red-200 bg-red-50 dark:border-tm-danger-line dark:bg-tm-danger-soft"
             )}>
               <CardContent className="p-4">
                 <div className="flex items-start space-x-3">
@@ -526,7 +526,7 @@ export function TasksComponent() {
                       )}
                       
                       {task.completed && task.completedAt && (
-                        <Badge variant="outline" className="text-green-700">
+                        <Badge variant="outline" className="text-green-700 dark:text-green-400">
                           <CheckSquare className="h-3 w-3 mr-1" />
                           Выполнено {new Date(task.completedAt).toLocaleDateString('ru-RU')}
                         </Badge>

@@ -103,7 +103,7 @@ function HabitForm({
           {EMOJIS.map((e) => (
             <button key={e} onClick={() => setEmoji(e)}
               className={cn('w-9 h-9 rounded-xl text-lg flex items-center justify-center transition-all hover:scale-110',
-                emoji === e ? 'bg-muted ring-2 ring-offset-1 ring-foreground/20' : 'hover:bg-muted')}>
+                emoji === e ? 'bg-muted ring-2 ring-offset-1 ring-offset-background ring-foreground/20' : 'hover:bg-muted')}>
               {e}
             </button>
           ))}
@@ -115,7 +115,7 @@ function HabitForm({
         <div className="flex gap-2 flex-wrap">
           {COLORS.map((c) => (
             <button key={c} onClick={() => setColor(c)}
-              className={cn('w-8 h-8 rounded-full transition-all hover:scale-110', color === c && 'ring-2 ring-offset-2 ring-foreground/30')}
+              className={cn('w-8 h-8 rounded-full transition-all hover:scale-110', color === c && 'ring-2 ring-offset-2 ring-offset-background ring-foreground/30')}
               style={{ backgroundColor: c }} />
           ))}
         </div>
@@ -160,7 +160,7 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
   ]
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
-      <div className="flex items-center gap-1 p-1.5 rounded-full bg-white/70 dark:bg-white/[0.08] backdrop-blur-2xl border border-white/60 dark:border-white/10 shadow-[0_6px_20px_rgba(15,23,42,0.1)]">
+      <div className="flex items-center gap-1 p-1.5 rounded-full bg-tm-surface/70 dark:bg-white/[0.08] backdrop-blur-2xl border border-white/60 dark:border-white/10 shadow-[0_6px_20px_rgba(15,23,42,0.1)]">
         {tabs.map((t) => (
           <motion.button
             key={t.id}
@@ -265,7 +265,7 @@ export function HabitsTracker() {
       {/* Header bento */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-plus-jakarta text-3xl font-extrabold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+          <h1 className="font-sans text-3xl font-extrabold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
             {greeting()}{firstName ? `, ${firstName}` : ''} 👋
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -346,9 +346,9 @@ export function HabitsTracker() {
 
       {/* Add / edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null) }}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto bg-white/80 dark:bg-[#13131a]/80 backdrop-blur-2xl border-white/60 dark:border-white/10">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto bg-tm-surface/80 dark:bg-[#13131a]/80 backdrop-blur-2xl border-white/60 dark:border-white/10">
           <DialogHeader>
-            <DialogTitle className="font-plus-jakarta text-xl">{editing ? 'Редактировать привычку' : 'Новая привычка'}</DialogTitle>
+            <DialogTitle className="font-sans text-xl">{editing ? 'Редактировать привычку' : 'Новая привычка'}</DialogTitle>
           </DialogHeader>
           <HabitForm
             initial={editing ?? undefined}

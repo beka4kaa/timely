@@ -46,17 +46,17 @@ export function ImageModelSelectorDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Модель изображения: ${activeLabel}`}
-        className="flex h-8 max-w-[160px] items-center gap-1.5 rounded-full border border-[#ded9d1] bg-white/55 px-2.5 text-[#706960] outline-none transition-colors hover:border-[#c7a06c] hover:bg-[#fffaf1] hover:text-[#4a433b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+        className="flex h-8 max-w-[160px] items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/55 px-2.5 text-tm-muted outline-none transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
       >
         <Sparkles className="h-3.5 w-3.5 shrink-0" />
         <span className="min-w-0 truncate text-[10px] font-medium">{activeLabel}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-[#a39c93]" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-72 border-[#dcd7cf] bg-[#fbfaf7] text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-72 border-tm-line bg-tm-surface text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
-        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
           Модель изображения
         </div>
         {models.map((model) => {
@@ -65,7 +65,7 @@ export function ImageModelSelectorDropdown({
             <DropdownMenuItem
               key={model.id}
               onClick={() => onChange(model.id)}
-              className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 focus:bg-[#f1eee8] focus:text-[#302d2a]"
+              className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 focus:bg-tm-surface-2 focus:text-tm-ink"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
@@ -73,7 +73,7 @@ export function ImageModelSelectorDropdown({
                   {/* Бейдж «Текущая» ведём от РЕАЛЬНОГО дефолта инсталляции,
                       который приходит с backend, а не от статического флага. */}
                   {model.default && (
-                    <span className="shrink-0 rounded-full bg-[#f0e7d7] px-1.5 py-0.5 text-[9px] font-medium text-[#8a6a33]">
+                    <span className="shrink-0 rounded-full bg-tm-accent-soft px-1.5 py-0.5 text-[9px] font-medium text-tm-accent">
                       Текущая
                     </span>
                   )}
@@ -83,11 +83,11 @@ export function ImageModelSelectorDropdown({
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-[#8f887f]">
+                <div className="mt-0.5 text-[11px] leading-snug text-tm-faint">
                   {model.description}
                 </div>
               </div>
-              {isActive && <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#b7792d]" />}
+              {isActive && <Check className="mt-0.5 h-4 w-4 shrink-0 text-tm-accent" />}
             </DropdownMenuItem>
           );
         })}
@@ -119,29 +119,29 @@ export function QualitySelectorDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Качество изображения (${modelLabel}): ${active.label}`}
-        className="flex h-8 items-center gap-1.5 rounded-full border border-[#ded9d1] bg-white/55 px-2.5 text-[#706960] outline-none transition-colors hover:border-[#c7a06c] hover:bg-[#fffaf1] hover:text-[#4a433b] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+        className="flex h-8 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface/55 px-2.5 text-tm-muted outline-none transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
       >
         <span className="text-[10px] font-medium">{active.label}</span>
-        <ChevronDown className="h-3 w-3 shrink-0 text-[#a39c93]" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-56 border-[#dcd7cf] bg-[#fbfaf7] text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-56 border-tm-line bg-tm-surface text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
-        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#9b958c]">
+        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
           Качество
         </div>
         {QUALITY_OPTIONS.map((option) => (
           <DropdownMenuItem
             key={option.id}
             onClick={() => onChange(option.id)}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 focus:bg-[#f1eee8] focus:text-[#302d2a]"
+            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 focus:bg-tm-surface-2 focus:text-tm-ink"
           >
             <span className="flex-1 text-[12px]">
               {option.label}
-              <span className="text-[#8f887f]"> — {option.description}</span>
+              <span className="text-tm-faint"> — {option.description}</span>
             </span>
-            {value === option.id && <Check className="h-4 w-4 shrink-0 text-[#b7792d]" />}
+            {value === option.id && <Check className="h-4 w-4 shrink-0 text-tm-accent" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

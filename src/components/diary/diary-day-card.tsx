@@ -28,8 +28,8 @@ export function DiaryDayCard({ day, weekId, isToday }: DiaryDayCardProps) {
   return (
     <div className={cn(
       "rounded-[24px] overflow-hidden backdrop-blur-xl border shadow-[0_6px_24px_rgba(15,23,42,0.06)]",
-      "bg-white/70 dark:bg-white/[0.06] border-white/60 dark:border-white/10",
-      isToday && "border-violet-400/30"
+      "bg-tm-surface/70 dark:bg-white/[0.06] border-white/60 dark:border-white/10",
+      isToday && "border-violet-400/30 dark:border-violet-400/30"
     )}>
       {/* Column headers */}
       {lessons.length > 0 && (

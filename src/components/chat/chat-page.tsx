@@ -224,7 +224,7 @@ export function ChatPage() {
   const empty = !chat.turns.length;
 
   return (
-    <div className="relative flex h-full min-h-0 overflow-hidden bg-[#f7f5f1]">
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-tm-bg">
       {/* ── История ─────────────────────────────────────────────────────── */}
       <aside
         // Позиционирование целиком в одной ветке: `absolute` и `relative`
@@ -232,10 +232,10 @@ export function ChatPage() {
         // порядком в строке, и на узком экране колонка осталась бы в потоке.
         className={
           narrow
-            ? `absolute inset-y-0 left-0 z-30 w-[280px] border-r border-[#dedbd4] bg-[#fbfaf7] shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
+            ? `absolute inset-y-0 left-0 z-30 w-[280px] border-r border-tm-line bg-tm-surface shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
                 listOpen ? "translate-x-0" : "-translate-x-full"
               }`
-            : `shrink-0 border-r border-[#dedbd4] bg-[#fbfaf7] ${
+            : `shrink-0 border-r border-tm-line bg-tm-surface ${
                 listOpen ? "w-[264px]" : "hidden"
               }`
         }
@@ -286,7 +286,7 @@ export function ChatPage() {
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              "radial-gradient(rgba(120,108,92,0.10) 1px, transparent 1px)",
+              "radial-gradient(rgb(var(--tm-dot) / 0.06) 1px, transparent 1px)",
             backgroundSize: "22px 22px",
           }}
         />
@@ -317,10 +317,10 @@ export function ChatPage() {
 
           {empty && (
             <div className="px-6 pb-6 text-center">
-              <h1 className="font-serif text-[26px] font-semibold text-[#37322c]">
+              <h1 className="font-serif text-[26px] font-semibold text-tm-ink">
                 Что разбираем?
               </h1>
-              <p className="mt-2 text-[13px] text-[#8f887f]">
+              <p className="mt-2 text-[13px] text-tm-faint">
                 {current
                   ? current.books
                     ? `Отвечу по книге предмета «${current.title}» со ссылкой на страницу.`
@@ -358,10 +358,10 @@ export function ChatPage() {
         style={{ width: narrow ? undefined : fold.width }}
         className={
           narrow
-            ? `absolute inset-y-0 right-0 z-30 w-[300px] border-l border-[#dedbd4] bg-[#fbfaf7] shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
+            ? `absolute inset-y-0 right-0 z-30 w-[300px] border-l border-tm-line bg-tm-surface shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
                 sourcesOpen ? "translate-x-0" : "translate-x-full"
               }`
-            : `relative shrink-0 border-l border-[#dedbd4] bg-[#fbfaf7] ${
+            : `relative shrink-0 border-l border-tm-line bg-tm-surface ${
                 sourcesOpen ? "" : "hidden"
               }`
         }
@@ -432,9 +432,9 @@ function SubjectPicker({
         <button
           type="button"
           title="По какой книге отвечать. Смена книги начинает новый разговор"
-          className="flex max-w-[11rem] shrink-0 items-center gap-1 self-center rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2.5 py-1 text-[11.5px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+          className="flex max-w-[11rem] shrink-0 items-center gap-1 self-center rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-1 text-[11.5px] font-medium text-tm-muted outline-none transition-colors hover:border-tm-accent hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
         >
-          <BookOpen className="h-3 w-3 shrink-0 text-[#b98343]" />
+          <BookOpen className="h-3 w-3 shrink-0 text-tm-accent" />
           <span className="truncate">{current?.title ?? "Без книги"}</span>
           <ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
         </button>
@@ -442,20 +442,20 @@ function SubjectPicker({
       <PopoverContent
         align="start"
         side="top"
-        className="w-64 border-[#dcd7cf] bg-[#fbfaf7] p-1 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-64 border-tm-line bg-tm-surface p-1 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
         <button
           type="button"
           onClick={() => onSelect(null)}
-          className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[#f1ede6] ${
-            selected === null ? "font-medium text-[#37322c]" : "text-[#4a433b]"
+          className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-tm-surface-2 ${
+            selected === null ? "font-medium text-tm-ink" : "text-tm-ink-2"
           }`}
         >
           Без книги
-          <span className="text-[10px] text-[#a09890]">общий вопрос</span>
+          <span className="text-[10px] text-tm-faint">общий вопрос</span>
         </button>
 
-        <div className="my-1 border-t border-[#e4e0d8]" />
+        <div className="my-1 border-t border-tm-line" />
 
         <div className="max-h-64 overflow-y-auto">
           {subjects.map((subject) => (
@@ -463,22 +463,22 @@ function SubjectPicker({
               key={subject.goalId}
               type="button"
               onClick={() => onSelect(subject.goalId)}
-              className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[#f1ede6] ${
+              className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-tm-surface-2 ${
                 subject.goalId === selected
-                  ? "font-medium text-[#37322c]"
-                  : "text-[#4a433b]"
+                  ? "font-medium text-tm-ink"
+                  : "text-tm-ink-2"
               }`}
             >
               <span className="min-w-0 truncate">{subject.title}</span>
               {!subject.books && (
-                <span className="shrink-0 text-[10px] text-[#a09890]">
+                <span className="shrink-0 text-[10px] text-tm-faint">
                   без книг
                 </span>
               )}
             </button>
           ))}
           {!subjects.length && (
-            <p className="px-2.5 py-2 text-[11.5px] text-[#a09890]">
+            <p className="px-2.5 py-2 text-[11.5px] text-tm-faint">
               Предметов пока нет
             </p>
           )}

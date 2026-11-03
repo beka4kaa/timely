@@ -19,18 +19,18 @@ export function SessionHistory({
   onClearDay,
 }: SessionHistoryProps) {
   return (
-    <section className="mt-5 overflow-hidden rounded-[20px] border border-[#ddd7cd] bg-[#fbfaf7]/95 shadow-[0_12px_40px_rgba(70,54,36,0.06)]">
-      <header className="flex items-center justify-between border-b border-[#e2dcd3] bg-[#f5f1ea] px-5 py-3">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9b9186]">
+    <section className="mt-5 overflow-hidden rounded-[20px] border border-tm-line bg-tm-surface/95 shadow-[0_12px_40px_rgba(70,54,36,0.06)]">
+      <header className="flex items-center justify-between border-b border-tm-line bg-tm-surface-2 px-5 py-3">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-tm-faint">
           История сессий
         </span>
-        <span className="text-[10px] text-[#9a9187]">
+        <span className="text-[10px] text-tm-faint">
           {rows.length} записей за сегодня
         </span>
       </header>
 
       {rows.length === 0 ? (
-        <p className="px-5 py-10 text-center text-[13px] text-[#8b8279]">
+        <p className="px-5 py-10 text-center text-[13px] text-tm-muted">
           Сегодня ещё нет завершённых сессий. Запустите таймер — записи появятся
           здесь.
         </p>
@@ -39,9 +39,9 @@ export function SessionHistory({
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid grid-cols-[64px_1fr_auto] items-center gap-3 border-t border-[#e8e2da] px-5 py-3.5 transition-colors hover:bg-[#f6f1e9] sm:grid-cols-[96px_1fr_130px_92px]"
+              className="grid grid-cols-[64px_1fr_auto] items-center gap-3 border-t border-tm-line px-5 py-3.5 transition-colors hover:bg-tm-surface-2 sm:grid-cols-[96px_1fr_130px_92px]"
             >
-              <span className="text-[11px] tabular-nums text-[#91887e]">
+              <span className="text-[11px] tabular-nums text-tm-faint">
                 {row.time}
               </span>
 
@@ -49,8 +49,8 @@ export function SessionHistory({
                 <span
                   className={`grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[10px] border ${
                     row.isFocus
-                      ? "border-[#dec9ab] bg-[#fffaf1] text-[#9a6630]"
-                      : "border-[#cfd8ce] bg-[#f1f4f0] text-[#5f7963]"
+                      ? "border-tm-accent-line bg-tm-bg text-tm-accent"
+                      : "border-tm-line bg-[#f1f4f0] text-[#5f7963] dark:bg-tm-mint dark:text-tm-ink-2"
                   }`}
                 >
                   {row.isFocus ? (
@@ -60,10 +60,10 @@ export function SessionHistory({
                   )}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-xs font-semibold text-[#3a3530]">
+                  <span className="block truncate text-xs font-semibold text-tm-ink">
                     {row.title}
                   </span>
-                  <span className="mt-0.5 block truncate text-[10px] text-[#91887e]">
+                  <span className="mt-0.5 block truncate text-[10px] text-tm-faint">
                     {row.meta}
                   </span>
                 </span>
@@ -78,15 +78,15 @@ export function SessionHistory({
                       background:
                         index < row.filledDots
                           ? row.isFocus
-                            ? "#c08a45"
+                            ? "rgb(var(--tm-accent))"
                             : "#a8bda9"
-                          : "#e6dfd4",
+                          : "rgb(var(--tm-line))",
                     }}
                   />
                 ))}
               </div>
 
-              <span className="text-right text-xs font-semibold tabular-nums text-[#8a6137]">
+              <span className="text-right text-xs font-semibold tabular-nums text-tm-accent">
                 {row.duration}
               </span>
             </div>
@@ -94,15 +94,15 @@ export function SessionHistory({
         </div>
       )}
 
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8e2da] bg-[#f8f5ef] px-5 py-3">
-        <span className="text-[11px] text-[#91887e]">
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-tm-line bg-tm-bg px-5 py-3">
+        <span className="text-[11px] text-tm-faint">
           Всего за неделю — {hm(weekSeconds)}
         </span>
         <button
           type="button"
           onClick={onClearDay}
           disabled={clearing || rows.length === 0}
-          className="rounded-full border border-[#d8d1c7] bg-[#fffdfa] px-3.5 py-1.5 text-[11px] text-[#5f584f] transition-colors hover:border-[#c7aa82] hover:bg-[#fff8ec] hover:text-[#312c27] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-full border border-tm-line bg-tm-surface px-3.5 py-1.5 text-[11px] text-tm-ink-2 transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink disabled:cursor-not-allowed disabled:opacity-50"
         >
           {clearing ? "Очищаем…" : "Очистить день"}
         </button>

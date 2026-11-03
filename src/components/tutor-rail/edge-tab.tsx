@@ -64,7 +64,7 @@ export function EdgeTab({
       aria-label={label}
       title={label}
       style={offsetY ? { top: `calc(50% + ${offsetY}px)` } : undefined}
-      className={`group absolute top-1/2 grid h-14 w-5 -translate-y-1/2 place-items-center border border-[#dedbd4] bg-[#fbfaf7]/95 text-[#8a827a] shadow-[0_8px_24px_rgba(67,57,45,0.10)] outline-none backdrop-blur-md transition-[width,transform,border-color,color,opacity] duration-300 ease-in-out hover:w-[22px] hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30 motion-reduce:transition-none ${
+      className={`group absolute top-1/2 grid h-14 w-5 -translate-y-1/2 place-items-center border border-tm-line bg-tm-surface/95 text-tm-muted shadow-[0_8px_24px_rgba(67,57,45,0.10)] outline-none backdrop-blur-md transition-[width,transform,border-color,color,opacity] duration-300 ease-in-out hover:w-[22px] hover:border-tm-accent hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30 motion-reduce:transition-none ${
         right
           ? "right-0 rounded-l-[10px] border-r-0"
           : "left-0 rounded-r-[10px] border-l-0"

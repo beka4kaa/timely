@@ -170,7 +170,7 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
         className={[
           "relative cursor-move rounded-xl transition-[box-shadow,filter] duration-200",
           isSelected
-            ? "ring-1 ring-[#b7792d]/75 ring-offset-2 ring-offset-[#f7f5f1] shadow-[0_14px_42px_rgba(64,54,42,0.14)]"
+            ? "ring-1 ring-tm-accent/75 ring-offset-2 ring-offset-tm-bg shadow-[0_14px_42px_rgba(64,54,42,0.14)]"
             : "hover:shadow-[0_12px_36px_rgba(64,54,42,0.10)]",
         ].join(" ")}
         style={{ width, pointerEvents: "auto" }}
@@ -182,7 +182,7 @@ export const DraggableBoardNode: React.FC<DraggableBoardNodeProps> = ({
           <div
             onPointerDown={beginResize}
             aria-label="Изменить размер"
-            className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-[#b7792d] shadow-[0_3px_10px_rgba(124,80,27,0.28)] transition-transform hover:scale-125"
+            className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-full border-2 border-white bg-tm-accent shadow-[0_3px_10px_rgba(124,80,27,0.28)] transition-transform hover:scale-125"
           />
         )}
       </div>

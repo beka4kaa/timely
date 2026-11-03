@@ -110,12 +110,12 @@ export function ChatList({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#fbfaf7] text-[#37322c]">
-      <div className="flex h-[46px] shrink-0 items-center gap-1 border-b border-[#dedbd4] px-2.5">
+    <div className="flex h-full min-h-0 flex-col bg-tm-surface text-tm-ink">
+      <div className="flex h-[46px] shrink-0 items-center gap-1 border-b border-tm-line px-2.5">
         <button
           type="button"
           onClick={onCreate}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-[#e0dcd4] bg-[#f4f1ea] px-2.5 py-1 text-[12px] font-medium text-[#6d665d] outline-none transition-colors hover:border-[#c5a474] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-1 text-[12px] font-medium text-tm-muted outline-none transition-colors hover:border-tm-accent hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
         >
           <Plus className="h-3.5 w-3.5 shrink-0" />
           Новый чат
@@ -125,7 +125,7 @@ export function ChatList({
           onClick={onCollapse}
           aria-label="Свернуть историю"
           title="Свернуть историю"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#918b82] outline-none transition-colors hover:bg-[#efede8] hover:text-[#37322c] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/30"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
         >
           <PanelLeftClose className="h-3.5 w-3.5" />
         </button>
@@ -133,10 +133,10 @@ export function ChatList({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
         {loading && !folders.length && (
-          <p className="px-2 py-3 text-[12px] text-[#a09890]">Загружаю…</p>
+          <p className="px-2 py-3 text-[12px] text-tm-faint">Загружаю…</p>
         )}
         {!loading && !folders.length && (
-          <p className="px-2 py-3 text-[12px] leading-[1.5] text-[#a09890]">
+          <p className="px-2 py-3 text-[12px] leading-[1.5] text-tm-faint">
             Предметов пока нет. Загрузите книгу в разделе «Предметы» — или
             спросите без книги, разговор появится здесь.
           </p>
@@ -149,7 +149,7 @@ export function ChatList({
           return (
             <div key={key} className="mb-0.5">
               {/* ── Папка ──────────────────────────────────────────────── */}
-              <div className="group/folder flex items-center gap-0.5 rounded-[8px] pr-1 transition-colors hover:bg-[#f4f1ea]">
+              <div className="group/folder flex items-center gap-0.5 rounded-[8px] pr-1 transition-colors hover:bg-tm-surface-2">
                 <button
                   type="button"
                   onClick={() => toggle(key)}
@@ -157,17 +157,17 @@ export function ChatList({
                   className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1.5 text-left outline-none"
                 >
                   {open ? (
-                    <ChevronDown className="h-3 w-3 shrink-0 text-[#a09890]" />
+                    <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
                   ) : (
-                    <ChevronRight className="h-3 w-3 shrink-0 text-[#a09890]" />
+                    <ChevronRight className="h-3 w-3 shrink-0 text-tm-faint" />
                   )}
-                  <span className="min-w-0 flex-1 truncate font-serif text-[12.5px] font-semibold text-[#37322c]">
+                  <span className="min-w-0 flex-1 truncate font-serif text-[12.5px] font-semibold text-tm-ink">
                     {folder.title}
                   </span>
                   {/* Число разговоров, а не число книг: в списке чатов важно,
                       сколько их. «Без книг» сказано в выборе книги. */}
                   {!!folder.chats.length && (
-                    <span className="shrink-0 text-[10px] tabular-nums text-[#a09890]">
+                    <span className="shrink-0 text-[10px] tabular-nums text-tm-faint">
                       {folder.chats.length}
                     </span>
                   )}
@@ -178,7 +178,7 @@ export function ChatList({
                   onClick={() => onCreateIn(folder.goalId)}
                   aria-label={`Новый чат: ${folder.title}`}
                   title="Новый чат по этому предмету"
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#c2bcb2] opacity-0 outline-none transition-colors hover:bg-[#efede8] hover:text-[#8f887f] focus-visible:opacity-100 group-hover/folder:opacity-100"
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-tm-faint opacity-0 outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-muted focus-visible:opacity-100 group-hover/folder:opacity-100"
                 >
                   <Plus className="h-3 w-3" />
                 </button>
@@ -186,9 +186,9 @@ export function ChatList({
 
               {/* ── Разговоры внутри ───────────────────────────────────── */}
               {open && (
-                <div className="ml-[13px] border-l border-[#dcd5c8] pl-1.5">
+                <div className="ml-[13px] border-l border-tm-line pl-1.5">
                   {!folder.chats.length && (
-                    <div className="px-2 py-1.5 text-[11px] text-[#a09890]">
+                    <div className="px-2 py-1.5 text-[11px] text-tm-faint">
                       Здесь пока пусто
                     </div>
                   )}
@@ -198,8 +198,8 @@ export function ChatList({
                       key={chat.id}
                       className={`group flex items-center gap-0.5 rounded-[8px] pr-1 transition-colors ${
                         chat.id === activeId
-                          ? "bg-[#f1ede6]"
-                          : "hover:bg-[#f4f1ea]"
+                          ? "bg-tm-surface-2"
+                          : "hover:bg-tm-surface-2"
                       }`}
                     >
                       {editingId === chat.id ? (
@@ -225,7 +225,7 @@ export function ChatList({
                             }
                           }}
                           maxLength={200}
-                          className="min-w-0 flex-1 rounded-[6px] border border-[#c9a16c] bg-white px-2 py-1 text-[12.5px] text-[#37322c] outline-none"
+                          className="min-w-0 flex-1 rounded-[6px] border border-tm-accent bg-tm-surface px-2 py-1 text-[12.5px] text-tm-ink outline-none"
                         />
                       ) : (
                         <button
@@ -233,8 +233,8 @@ export function ChatList({
                           onClick={() => onOpen(chat.id)}
                           className={`min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12.5px] transition-colors ${
                             chat.id === activeId
-                              ? "font-medium text-[#37322c]"
-                              : "text-[#4a433b] hover:text-[#37322c]"
+                              ? "font-medium text-tm-ink"
+                              : "text-tm-ink-2 hover:text-tm-ink"
                           }`}
                         >
                           {chat.title || "Новый чат"}
@@ -251,7 +251,7 @@ export function ChatList({
                             }}
                             aria-label="Подтвердить удаление"
                             title="Удалить"
-                            className="grid h-6 w-6 place-items-center rounded-full text-[#b0473e] transition-colors hover:bg-[#f6e4e1]"
+                            className="grid h-6 w-6 place-items-center rounded-full text-tm-danger transition-colors hover:bg-tm-danger-soft"
                           >
                             <Check className="h-3 w-3" />
                           </button>
@@ -259,7 +259,7 @@ export function ChatList({
                             type="button"
                             onClick={() => setConfirmDeleteId(null)}
                             aria-label="Отменить удаление"
-                            className="grid h-6 w-6 place-items-center rounded-full text-[#8f887f] transition-colors hover:bg-[#efece5]"
+                            className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -272,7 +272,7 @@ export function ChatList({
                               onClick={() => startRename(chat)}
                               aria-label="Переименовать чат"
                               title="Переименовать"
-                              className="grid h-6 w-6 place-items-center rounded-full text-[#c2bcb2] transition-colors hover:bg-[#efece5] hover:text-[#8f887f]"
+                              className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2 hover:text-tm-muted"
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -283,7 +283,7 @@ export function ChatList({
                               title="Удалить чат"
                               // Удаление в два шага, как в дереве чатов панели:
                               // разговор восстановить нельзя.
-                              className="grid h-6 w-6 place-items-center rounded-full text-[#c2bcb2] transition-colors hover:bg-[#efece5] hover:text-[#8f887f]"
+                              className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2 hover:text-tm-muted"
                             >
                               <Trash2 className="h-3 w-3" />
                             </button>

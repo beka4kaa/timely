@@ -53,25 +53,25 @@ export function RevisionCard({
       <div className={paperCaption}>Что изменится</div>
 
       {moved.length === 0 && shortened.length === 0 ? (
-        <p className="mt-1 text-[12.5px] text-[#7b7168]">
+        <p className="mt-1 text-[12.5px] text-tm-muted">
           Помощник ничего не переносит.
         </p>
       ) : (
-        <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-[#4a443d]">
+        <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
           {moved.slice(0, 6).map((entry) => (
             <li key={`m-${entry.block_id}`}>
               <span className="font-medium">{entry.title}</span>
               <br />
-              <span className="tabular-nums text-[#7b7168]">
+              <span className="tabular-nums text-tm-muted">
                 {format(entry.from.start_at)} → {format(entry.to.start_at)}
               </span>
             </li>
           ))}
           {moved.length > 6 ? (
-            <li className="text-[#7b7168]">…и ещё {moved.length - 6}</li>
+            <li className="text-tm-muted">…и ещё {moved.length - 6}</li>
           ) : null}
           {shortened.map((entry) => (
-            <li key={`s-${entry.block_id}`} className="text-[#7b7168]">
+            <li key={`s-${entry.block_id}`} className="text-tm-muted">
               {entry.title}: {durationLabel(entry.from.duration_minutes)} →{" "}
               {durationLabel(entry.to.duration_minutes)}
             </li>
@@ -115,11 +115,11 @@ export function CommitmentsCard({
   return (
     <div className={`${paperTile} px-3 py-2.5`}>
       <div className={paperCaption}>Записать как занятое время</div>
-      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-[#4a443d]">
+      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
         {items.map((item, index) => (
           <li key={`${item.title}-${index}`}>
             <span className="font-medium">{item.title}</span>{" "}
-            <span className="text-[#7b7168]">
+            <span className="text-tm-muted">
               {item.weekday_name
                 ? `— ${item.weekday_name}, ${item.start_time}, ${durationLabel(
                     item.duration_minutes ?? 0,
@@ -129,7 +129,7 @@ export function CommitmentsCard({
           </li>
         ))}
       </ul>
-      <p className="mt-1.5 text-[11.5px] leading-snug text-[#7b7168]">
+      <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
         Планировщик перестанет ставить занятия в это время.
       </p>
       <div className="mt-2.5 flex items-center gap-2">
@@ -174,17 +174,17 @@ export function StudyWindowsCard({
       <div className={paperCaption}>
         {proposal.replace ? "Заменить время занятий" : "Добавить время занятий"}
       </div>
-      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-[#4a443d]">
+      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
         {groupWindows(proposal.windows).map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
       {proposal.replace && proposal.current.length > 0 ? (
-        <p className="mt-1.5 text-[11.5px] leading-snug text-[#7b7168]">
+        <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
           Прежнее время уберём: {groupWindows(proposal.current).join("; ")}.
         </p>
       ) : null}
-      <p className="mt-1.5 text-[11.5px] leading-snug text-[#7b7168]">
+      <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
         Занятия смогут вставать только в это время. Уже расставленные придётся
         переразложить.
       </p>

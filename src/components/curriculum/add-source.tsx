@@ -35,9 +35,9 @@ import {
 } from "./paper";
 
 const FIELD =
-  `w-full rounded-[11px] bg-[#f2ede4] px-3 py-2 text-[13px] text-[#312c27] placeholder:text-[#a89f93] ${paperFocus}`;
+  `w-full rounded-[11px] bg-tm-surface-2 px-3 py-2 text-[13px] text-tm-ink placeholder:text-tm-faint ${paperFocus}`;
 const LABEL = `${paperCaption} mb-1 block`;
-const ERROR = "mt-1 text-[11.5px] text-[#a35c48]";
+const ERROR = "mt-1 text-[11.5px] text-tm-danger";
 
 export function AddSource({
   goalId,
@@ -107,7 +107,7 @@ export function AddSource({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[320px] rounded-[16px] border-0 bg-[#fbfaf7] p-4 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-[320px] rounded-[16px] border-0 bg-tm-surface p-4 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
         <div className="flex gap-1">
           {SOURCE_KINDS.map((item) => (
@@ -117,8 +117,8 @@ export function AddSource({
               onClick={() => set("kind", item.kind)}
               className={`flex-1 rounded-[10px] px-2 py-1.5 text-[12px] transition-colors ${paperFocus} ${
                 values.kind === item.kind
-                  ? "bg-[#8a5b24] text-[#fdf8ef]"
-                  : "bg-[#f2ede4] text-[#6f675e] hover:bg-[#ebe4d8]"
+                  ? "bg-tm-accent text-tm-on-strong"
+                  : "bg-tm-surface-2 text-tm-muted hover:bg-tm-surface-3"
               }`}
             >
               {item.label}
@@ -207,7 +207,7 @@ export function AddSource({
         {failure ? <p className={ERROR}>{failure}</p> : null}
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="text-[12px] text-[#8d857b]">{summary}</span>
+          <span className="text-[12px] text-tm-muted">{summary}</span>
           <button
             type="button"
             className={paperPrimaryButton}

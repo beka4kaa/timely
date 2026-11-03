@@ -138,7 +138,7 @@ export function GoalMiniInspector() {
               'relative z-10 flex flex-col w-full max-w-xl max-h-[86vh] will-change-transform',
               'max-sm:max-w-none max-sm:max-h-[90vh] max-sm:rounded-b-none',
               'rounded-3xl overflow-hidden',
-              'bg-white/95 dark:bg-[#0e0e14]/95 backdrop-blur-2xl max-sm:backdrop-blur-none',
+              'bg-tm-surface/95 dark:bg-[#0e0e14]/95 backdrop-blur-2xl max-sm:backdrop-blur-none',
               'border border-black/[0.06] dark:border-white/[0.10]',
               'shadow-[0_24px_80px_-16px_rgba(15,23,42,0.40)] dark:shadow-[0_20px_70px_rgba(0,0,0,0.6)]',
             )}

@@ -177,11 +177,11 @@ export function FoldResizer({
         aria-hidden
         className={`absolute left-0 top-0 h-full transition-[width,background-color] duration-150 ${
           dragging
-            ? "w-[2px] bg-[#b7792d]"
+            ? "w-[2px] bg-tm-accent"
             : active
-              ? "w-[2px] bg-[#c5a474]"
+              ? "w-[2px] bg-tm-accent"
               : "w-px bg-transparent"
-        } group-focus-visible:w-[2px] group-focus-visible:bg-[#c5a474]`}
+        } group-focus-visible:w-[2px] group-focus-visible:bg-tm-accent`}
       />
 
       {/* Засечка — край закладки, а не рукоятка из точек. Видна всегда: за
@@ -190,17 +190,17 @@ export function FoldResizer({
         aria-hidden
         className={`absolute left-[3px] top-1/2 w-[3px] -translate-y-1/2 rounded-full transition-[height,background-color,box-shadow] duration-150 ${
           dragging
-            ? "h-20 bg-[#a9773b] shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
+            ? "h-20 bg-tm-accent shadow-[0_0_0_4px_rgba(185,133,70,0.12)]"
             : hovered
-              ? "h-20 bg-[#aa7a42]"
-              : "h-14 bg-[#d4cec4]"
-        } group-focus-visible:h-20 group-focus-visible:bg-[#aa7a42] group-focus-visible:shadow-[0_0_0_4px_rgba(185,133,70,0.12)]`}
+              ? "h-20 bg-tm-accent"
+              : "h-14 bg-tm-surface-3"
+        } group-focus-visible:h-20 group-focus-visible:bg-tm-accent group-focus-visible:shadow-[0_0_0_4px_rgba(185,133,70,0.12)]`}
       />
 
       {share && (
         <span
           aria-hidden
-          className={`absolute left-4 top-3 rounded-full border border-[#e0dcd4] bg-[#fbfaf7] px-2 py-[2px] text-[10px] tabular-nums text-[#8a827a] shadow-[0_4px_14px_rgba(67,57,45,0.10)] transition-opacity duration-300 ${
+          className={`absolute left-4 top-3 rounded-full border border-tm-line bg-tm-surface px-2 py-[2px] text-[10px] tabular-nums text-tm-muted shadow-[0_4px_14px_rgba(67,57,45,0.10)] transition-opacity duration-300 ${
             dragging ? "opacity-100" : "opacity-0"
           }`}
         >

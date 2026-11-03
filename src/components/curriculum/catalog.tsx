@@ -79,9 +79,9 @@ interface CatalogProps {
 const THICKNESS_FULL_PAGES = 800;
 const THICKNESS_MIN_PERCENT = 6;
 
-const ACTION = `text-[12px] text-[#8a5b24] underline-offset-2 transition-colors hover:underline ${paperFocus} rounded-sm`;
-const QUIET_ACTION = `text-[12px] text-[#9b9186] underline-offset-2 transition-colors hover:text-[#6f675e] hover:underline ${paperFocus} rounded-sm`;
-const LINK = `font-serif text-[15px] text-[#8a5b24] underline-offset-4 hover:underline ${paperFocus} rounded-sm`;
+const ACTION = `text-[12px] text-tm-accent underline-offset-2 transition-colors hover:underline ${paperFocus} rounded-sm`;
+const QUIET_ACTION = `text-[12px] text-tm-faint underline-offset-2 transition-colors hover:text-tm-muted hover:underline ${paperFocus} rounded-sm`;
+const LINK = `font-serif text-[15px] text-tm-accent underline-offset-4 hover:underline ${paperFocus} rounded-sm`;
 
 export function CurriculumCatalog({
   onAddSubject,
@@ -132,7 +132,7 @@ export function CurriculumCatalog({
   if (subjects === null) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 animate-spin text-[#a1978b]" />
+        <Loader2 className="h-5 w-5 animate-spin text-tm-faint" />
       </div>
     );
   }
@@ -156,7 +156,7 @@ export function CurriculumCatalog({
           справа единственное главное действие. Название раздела печатает
           верхняя панель приложения, и повторять его здесь незачем. */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
-        <p className="text-[13px] text-[#8d857b]">
+        <p className="text-[13px] text-tm-muted">
           {namedSubjects > 0 ? (
             <>
               <span className={paperNumber}>{namedSubjects}</span>{" "}
@@ -180,13 +180,13 @@ export function CurriculumCatalog({
       </div>
 
       {error ? (
-        <p className="rounded-[14px] bg-[#fdf3f1] px-4 py-3 text-[13px] text-[#8c4b41]">
+        <p className="rounded-[14px] bg-tm-danger-soft px-4 py-3 text-[13px] text-tm-danger">
           {error}
         </p>
       ) : null}
 
       {subjects.length === 0 ? (
-        <p className="rounded-[16px] bg-[#f2ede4] px-4 py-12 text-center text-[14px] text-[#8d857b]">
+        <p className="rounded-[16px] bg-tm-surface-2 px-4 py-12 text-center text-[14px] text-tm-muted">
           Добавьте предмет — к нему можно приложить учебник, ссылку или набор
           тестов.
         </p>
@@ -228,13 +228,13 @@ function SubjectSection({
   return (
     <section className={`${paperCard} overflow-hidden`}>
       <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3.5">
-        <h2 className="min-w-0 font-serif text-[17px] text-[#2f2a25]">
+        <h2 className="min-w-0 font-serif text-[17px] text-tm-ink">
           {subject.title}
           {subject.direction ? (
-            <span className="text-[#a1978b]"> · </span>
+            <span className="text-tm-faint"> · </span>
           ) : null}
           {subject.direction ? (
-            <span className="text-[15px] text-[#8d857b]">
+            <span className="text-[15px] text-tm-muted">
               {subject.direction}
             </span>
           ) : null}
@@ -275,7 +275,7 @@ function SubjectSection({
       </header>
 
       {subject.sources.length === 0 && subject.orphanPlans.length === 0 ? (
-        <p className={`${paperRule} px-4 py-3 text-[13px] text-[#a1978b]`}>
+        <p className={`${paperRule} px-4 py-3 text-[13px] text-tm-faint`}>
           Источников пока нет
         </p>
       ) : (
@@ -300,7 +300,7 @@ function SubjectSection({
               >
                 {cleanDocumentTitle(plan.title)}
               </Link>
-              <span className="text-[12px] text-[#a1978b]">источник удалён</span>
+              <span className="text-[12px] text-tm-faint">источник удалён</span>
               <OverflowMenu label="Действия программы">
                 <ConfirmingAction
                   label="удалить программу"
@@ -420,8 +420,8 @@ function SourceRow({
         <span
           className={`order-1 min-w-0 flex-1 truncate @[560px]/page:order-none ${
             plans.length > 0 && !mergedPlan
-              ? "text-[13px] text-[#8d857b]"
-              : "text-[14px] text-[#3b352f]"
+              ? "text-[13px] text-tm-muted"
+              : "text-[14px] text-tm-ink"
           }`}
           title={book ? book.title : title}
         >
@@ -458,11 +458,11 @@ function SourceRow({
           />
 
           {failed ? (
-            <span className="text-[12px] text-[#a35c48]">
+            <span className="text-[12px] text-tm-danger">
               не удалось обработать
             </span>
           ) : book && !ready ? (
-            <span className="text-[12px] text-[#8a7a5e]">
+            <span className="text-[12px] text-tm-muted">
               {PHASES[phaseIndexFor(book.ingestion_status)]?.label ||
                 "обработка"}
             </span>
@@ -527,7 +527,7 @@ function SourceRow({
       </div>
 
       {failure ? (
-        <p className="mt-1 text-[12px] text-[#a35c48]">{failure}</p>
+        <p className="mt-1 text-[12px] text-tm-danger">{failure}</p>
       ) : null}
     </li>
   );
@@ -563,15 +563,15 @@ function Volume({ percent, label }: { percent: number | null; label: string }) {
       {percent === null ? null : (
         <span
           aria-hidden
-          className="block h-[3px] w-16 rounded-full bg-[#ece7de]"
+          className="block h-[3px] w-16 rounded-full bg-tm-surface-3"
         >
           <span
-            className="block h-full rounded-full bg-[#c2b7a6]"
+            className="block h-full rounded-full bg-tm-line-strong"
             style={{ width: `${percent}%` }}
           />
         </span>
       )}
-      <span className={`${paperNumber} text-[12px] text-[#8d857b]`}>
+      <span className={`${paperNumber} text-[12px] text-tm-muted`}>
         {label}
       </span>
     </span>
@@ -608,7 +608,7 @@ function OverflowMenu({
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-auto min-w-[180px] rounded-[12px] border-0 bg-[#fbfaf7] p-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-auto min-w-[180px] rounded-[12px] border-0 bg-tm-surface p-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
         <span
           className="flex flex-col items-start gap-y-2"
@@ -652,7 +652,7 @@ function ConfirmingAction({
     return (
       <button
         type="button"
-        className={`${QUIET_ACTION} !text-[#a35c48]`}
+        className={`${QUIET_ACTION} !text-tm-danger`}
         onClick={() => {
           setFailed(false);
           setArmed(true);
@@ -667,7 +667,7 @@ function ConfirmingAction({
     <button
       type="button"
       disabled={busy}
-      className={armed ? `${QUIET_ACTION} !text-[#a35c48]` : QUIET_ACTION}
+      className={armed ? `${QUIET_ACTION} !text-tm-danger` : QUIET_ACTION}
       onClick={async (event) => {
         if (!armed) {
           // Первое нажатие не должно закрывать меню: подтверждать было бы

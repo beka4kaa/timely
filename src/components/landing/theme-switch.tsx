@@ -19,7 +19,7 @@ type ViewTransitionDocument = Document & {
  * и запоминается. Новая тема расходится кругом от кнопки — через View
  * Transitions; где их нет или просят меньше движения, смена мгновенная.
  */
-export function ThemeSwitch() {
+export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -80,14 +80,14 @@ export function ThemeSwitch() {
   return (
     <button
       type="button"
-      className={styles.switch}
+      className={`${styles.switch} ${compact ? styles.compact : ""}`}
       data-dark={dark ? "true" : undefined}
       aria-label={label}
       title={label}
       onClick={toggle}
     >
-      <Sun className={styles.sun} size={18} strokeWidth={1.9} />
-      <Moon className={styles.moon} size={17} strokeWidth={1.9} />
+      <Sun className={styles.sun} size={compact ? 15 : 18} strokeWidth={1.9} />
+      <Moon className={styles.moon} size={compact ? 14 : 17} strokeWidth={1.9} />
     </button>
   );
 }

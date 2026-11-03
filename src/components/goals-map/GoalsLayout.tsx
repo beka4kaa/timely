@@ -156,7 +156,7 @@ export function GoalsLayout() {
   const header = (
     <div className="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-center max-sm:text-center">
       <div className="min-w-0">
-        <h1 className="font-plus-jakarta text-3xl max-sm:text-2xl font-extrabold tracking-tight">Карта целей</h1>
+        <h1 className="font-sans text-3xl max-sm:text-2xl font-extrabold tracking-tight">Карта целей</h1>
         <p className="text-muted-foreground text-sm mt-1 max-sm:hidden">Планируй цели по месяцам и связывай их в граф</p>
       </div>
       {controls}

@@ -158,7 +158,7 @@ export function YearRouletteGate({ onEnter }: { onEnter: () => void }) {
                     opacity: selected ? 1 : d.opacity,
                   }}
                   transition={{ type: 'spring', stiffness: 180, damping: 22, mass: 0.8 }}
-                  className="font-plus-jakarta text-[96px] font-light leading-none tabular-nums tracking-tight text-foreground"
+                  className="font-sans text-[96px] font-light leading-none tabular-nums tracking-tight text-foreground"
                   style={selected ? { textShadow: GLOW } : undefined}
                 >
                   {year}

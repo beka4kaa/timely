@@ -185,13 +185,13 @@ export function PomodoroPage() {
   return (
     <CoffeePageShell
       actions={
-        <div className="flex items-center gap-2.5 rounded-[18px] border border-[#ded7cd] bg-[#fbfaf7] px-4 py-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)]">
-          <Flame className="h-4 w-4 text-[#a76b22]" />
+        <div className="flex items-center gap-2.5 rounded-[18px] border border-tm-line bg-tm-surface px-4 py-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)]">
+          <Flame className="h-4 w-4 text-tm-accent" />
           <div>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-[#9b9186]">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-tm-faint">
               Серия
             </p>
-            <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-[#3a3530]">
+            <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-tm-ink">
               {streakLabel(summary.streak)}
             </p>
           </div>
@@ -199,7 +199,7 @@ export function PomodoroPage() {
       }
     >
       {error && (
-        <div className="mb-5 rounded-[14px] border border-[#e0c4c0] bg-[#fdf3f1] px-4 py-3 text-[12px] text-[#8c4b41]">
+        <div className="mb-5 rounded-[14px] border border-tm-danger-line bg-tm-danger-soft px-4 py-3 text-[12px] text-tm-danger">
           {error}. Таймер продолжает работать, а сессии сохранятся, когда связь
           восстановится.
         </div>
@@ -224,7 +224,7 @@ export function PomodoroPage() {
         <div className="flex flex-col gap-5">
           <TodayCard stats={todayStats} />
           {loading ? (
-            <div className="h-[188px] animate-pulse rounded-[20px] border border-[#ddd7cd] bg-[#f3efe8]" />
+            <div className="h-[188px] animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
           ) : (
             <WeekChart bars={weekBars} />
           )}

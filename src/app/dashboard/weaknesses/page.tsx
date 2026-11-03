@@ -130,9 +130,9 @@ export default function TopicsPage() {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'NOT_STARTED': return 'bg-muted/50 text-muted-foreground'
-            case 'MEDIUM': return 'bg-amber-100 text-amber-800'
-            case 'SUCCESS': return 'bg-emerald-100 text-emerald-800'
-            case 'MASTERED': return 'bg-blue-100 text-blue-800'
+            case 'MEDIUM': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+            case 'SUCCESS': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+            case 'MASTERED': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
             default: return 'bg-muted'
         }
     }
@@ -142,7 +142,7 @@ export default function TopicsPage() {
             <CoffeePageShell>
             <Tabs defaultValue="list">
                 <div className="flex items-center justify-between mb-3">
-                    <TabsList className="h-9 rounded-full border border-[#ded8cf] bg-[#f0ece5] p-1">
+                    <TabsList className="h-9 rounded-full border border-tm-line bg-tm-surface-2 p-1">
                         <TabsTrigger value="list" className="gap-1.5 text-xs h-7 px-2">
                             <List className="h-3 w-3" />
                             Список

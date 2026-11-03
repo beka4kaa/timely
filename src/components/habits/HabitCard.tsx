@@ -161,7 +161,7 @@ export function HabitCard({
         <div
           className={cn(
             'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl transition-colors',
-            done ? 'bg-white/25 backdrop-blur-sm' : 'bg-white/60 dark:bg-white/10 ring-1 ring-black/5 dark:ring-white/10'
+            done ? 'bg-white/25 backdrop-blur-sm' : 'bg-tm-surface/60 dark:bg-white/10 ring-1 ring-black/5 dark:ring-white/10'
           )}
         >
           {done ? <Check className="w-6 h-6" strokeWidth={3} /> : habit.emoji}

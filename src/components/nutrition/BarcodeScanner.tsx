@@ -119,9 +119,9 @@ export function BarcodeScanner({ open, onClose, onAdd }: BarcodeScannerProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="gap-4 border-white/60 bg-white/85 backdrop-blur-2xl dark:border-white/10 dark:bg-[#13131a]/85 sm:max-w-md">
+      <DialogContent className="gap-4 border-white/60 bg-tm-surface/85 backdrop-blur-2xl dark:border-white/10 dark:bg-[#13131a]/85 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-plus-jakarta text-lg">{title}</DialogTitle>
+          <DialogTitle className="font-sans text-lg">{title}</DialogTitle>
         </DialogHeader>
 
         {phase.step === 'portion' ? (
@@ -199,8 +199,8 @@ export function BarcodeScanner({ open, onClose, onAdd }: BarcodeScannerProps) {
                     aria-label="Штрихкод"
                     className={cn(
                       'h-11 w-full rounded-xl pl-9 pr-3 text-sm tabular-nums outline-none',
-                      'bg-white/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
-                      'placeholder:text-muted-foreground/50 focus:bg-white/70 dark:focus:bg-white/[0.07]',
+                      'bg-tm-surface/50 dark:bg-white/[0.04] border border-black/5 dark:border-white/10',
+                      'placeholder:text-muted-foreground/50 focus:bg-tm-surface/70 dark:focus:bg-white/[0.07]',
                     )}
                   />
                 </div>

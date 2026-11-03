@@ -32,7 +32,7 @@ export function PlanTopicRow({
         onFocus={() => onHover(topic.id)}
         onBlur={() => onHover(null)}
         className={`${paperFocus} relative rounded-[10px] px-4 py-3 transition-colors ${
-          hovered ? "bg-[#fdf7ec]" : "bg-transparent"
+          hovered ? "bg-tm-bg" : "bg-transparent"
         }`}
       >
         {/* Тот же тон, каким на пути загорается глава этой темы: связь между
@@ -40,27 +40,27 @@ export function PlanTopicRow({
             был оттенок модуля из легенды корешка — легенды больше нет. */}
         <span
           aria-hidden
-          className={`absolute left-0 top-3 h-[calc(100%-1.5rem)] w-[3px] rounded-full bg-[#b7792d] transition-opacity duration-150 ${
+          className={`absolute left-0 top-3 h-[calc(100%-1.5rem)] w-[3px] rounded-full bg-tm-accent transition-opacity duration-150 ${
             hovered ? "opacity-100" : "opacity-0"
           }`}
         />
 
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[14px] leading-6 text-[#302b26]">{topic.title}</p>
+            <p className="text-[14px] leading-6 text-tm-ink">{topic.title}</p>
             {topic.objective && (
-              <p className="mt-0.5 text-[12px] leading-5 text-[#7f776e]">
+              <p className="mt-0.5 text-[12px] leading-5 text-tm-muted">
                 {topic.objective}
               </p>
             )}
           </div>
-          <span className={`${paperNumber} shrink-0 text-[12px] text-[#8b8278]`}>
+          <span className={`${paperNumber} shrink-0 text-[12px] text-tm-muted`}>
             {formatMinutes(topic.estimated_minutes)}
           </span>
         </div>
 
         {sources.length > 0 && (
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#9a6630]">
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-tm-accent">
             {sources.map((label) => (
               <span key={`${topic.id}-${label}`} className={paperNumber}>
                 {label}
@@ -70,7 +70,7 @@ export function PlanTopicRow({
         )}
 
         {topic.prerequisites.length > 0 && (
-          <p className="mt-1.5 text-[11px] text-[#9b9186]">
+          <p className="mt-1.5 text-[11px] text-tm-faint">
             {/* Названия, а не external_id: «kinematics_basics» ученику ничего
                 не говорит. */}
             Сначала: {topic.prerequisites.map((id) => titles.get(id) ?? id).join(", ")}

@@ -388,10 +388,10 @@ export function ScheduleRail() {
         turn.role === "user" ? (
           <div
             key={`user-${index}`}
-            className="ml-6 whitespace-pre-wrap rounded-[12px] bg-[#f2ece2] px-3 py-2 text-[13px] text-[#3d382f]"
+            className="ml-6 whitespace-pre-wrap rounded-[12px] bg-tm-surface-2 px-3 py-2 text-[13px] text-tm-ink"
           >
             {turn.command ? (
-              <span className="mr-1.5 inline-flex rounded-full border border-[#b8caf5] bg-[#edf3ff] px-1.5 py-px align-baseline font-mono text-[10.5px] font-semibold text-[#2563eb]">
+              <span className="mr-1.5 inline-flex rounded-full border border-[#b8caf5] bg-[#edf3ff] px-1.5 py-px align-baseline font-mono text-[10.5px] font-semibold text-[#2563eb] dark:border-tm-line dark:bg-tm-sky dark:text-[#93b4ff]">
                 {turn.command}
               </span>
             ) : null}
@@ -403,7 +403,7 @@ export function ScheduleRail() {
           // кавычки вокруг имён инструментов.
           <div
             key={`assistant-${index}`}
-            className="mr-2 text-[13px] leading-relaxed text-[#4a443d]"
+            className="mr-2 text-[13px] leading-relaxed text-tm-ink-2"
           >
             <MarkdownMessage content={turn.content} variant="rail" />
           </div>
@@ -415,14 +415,14 @@ export function ScheduleRail() {
           {state.stages.map((tool, index) => (
             <div
               key={`${tool}-${index}`}
-              className="flex items-center gap-2 text-[12px] text-[#7b7168]"
+              className="flex items-center gap-2 text-[12px] text-tm-muted"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-[#c9a16c]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-tm-accent" />
               {stageLabel(tool)}…
             </div>
           ))}
           {state.stages.length === 0 ? (
-            <div className="text-[12px] text-[#7b7168]">Думаю…</div>
+            <div className="text-[12px] text-tm-muted">Думаю…</div>
           ) : null}
         </div>
       ) : null}
@@ -466,14 +466,14 @@ export function ScheduleRail() {
           // добавят, повторить вопрос можно тем же движением.
           <div className={`${paperTile} px-3 py-2.5`}>
             <div className={paperCaption}>Помощник выключен</div>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-[#7b7168]">
+            <p className="mt-1 text-[12.5px] leading-relaxed text-tm-muted">
               Модель для помощника по расписанию не подключена, поэтому менять
               занятия он сейчас не может. Календарь и перетаскивание работают
               как обычно.
             </p>
           </div>
         ) : (
-          <p className="px-1 text-[12.5px] text-[#a2543a]">{state.error}</p>
+          <p className="px-1 text-[12.5px] text-tm-danger">{state.error}</p>
         )
       ) : null}
     </RailShell>
@@ -514,7 +514,7 @@ function ScheduleTargetPicker({
             {selected ? `Расписание · ${selected.title}` : "Расписание"}
           </span>
           {selected ? (
-            <span className="shrink-0 text-[9.5px] text-[#968e84]">
+            <span className="shrink-0 text-[9.5px] text-tm-faint">
               {selected.statusLabel.toLocaleLowerCase("ru-RU")}
             </span>
           ) : null}
@@ -525,9 +525,9 @@ function ScheduleTargetPicker({
         align="start"
         role="menu"
         aria-label="Расписания для помощника"
-        className="w-[min(19rem,calc(100vw-1.5rem))] border-[#dcd7cf] bg-[#fbfaf7] p-1.5 text-[#49423a] shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
+        className="w-[min(19rem,calc(100vw-1.5rem))] border-tm-line bg-tm-surface p-1.5 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
       >
-        <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#9299a8]">
+        <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-tm-faint">
           Расписания
         </div>
         <div className="max-h-72 overflow-y-auto">
@@ -545,29 +545,29 @@ function ScheduleTargetPicker({
                   onSelect(option.id);
                   onOpenChange(false);
                 }}
-                className={`flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left outline-none transition-colors hover:bg-[#f1ede6] focus-visible:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-45 ${
-                  active ? "bg-[#f4efe7]" : ""
+                className={`flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tm-accent/40 disabled:cursor-not-allowed disabled:opacity-45 ${
+                  active ? "bg-tm-surface-2" : ""
                 }`}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12.5px] font-medium text-[#3f3933]">
+                  <span className="block truncate text-[12.5px] font-medium text-tm-ink-2">
                     {option.title}
                   </span>
-                  <span className="block truncate text-[10.5px] text-[#918980]">
+                  <span className="block truncate text-[10.5px] text-tm-faint">
                     {option.detail}
                   </span>
                 </span>
-                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-[#8a5b24]" /> : null}
+                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-tm-accent" /> : null}
               </button>
             );
           })}
           {options.length === 0 ? (
-            <p className="px-2.5 py-2 text-[11.5px] leading-relaxed text-[#918980]">
+            <p className="px-2.5 py-2 text-[11.5px] leading-relaxed text-tm-faint">
               Вариантов пока нет. Создай первый — он появится в этом списке.
             </p>
           ) : null}
         </div>
-        <div className="my-1 border-t border-[#e4e0d8]" />
+        <div className="my-1 border-t border-tm-line" />
         <button
           type="button"
           role="menuitem"
@@ -576,7 +576,7 @@ function ScheduleTargetPicker({
             onOpenChange(false);
             onStart();
           }}
-          className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#2563eb] outline-none transition-colors hover:bg-[#eef4ff] focus-visible:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-medium text-[#2563eb] outline-none transition-colors hover:bg-tm-surface-2 focus-visible:bg-tm-surface-2 dark:text-[#93b4ff] disabled:cursor-not-allowed disabled:opacity-45"
         >
           <Plus className="h-3.5 w-3.5 shrink-0" />
           Создать новое расписание
@@ -600,27 +600,27 @@ function EmptyState({
 }) {
   if (!ready) {
     return (
-      <p className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+      <p className="px-1 text-[13px] leading-[1.55] text-tm-muted">
         Загружаю расписания для помощника…
       </p>
     );
   }
   if (!hasSchedule) {
     return (
-      <div className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+      <div className="px-1 text-[13px] leading-[1.55] text-tm-muted">
         <p>
           Начни с{" "}
           <SlashAction onClick={onStart}>/start</SlashAction>: я задам несколько
           вопросов и соберу первый черновик расписания.
         </p>
-        <p className="mt-2 text-[11.5px] text-[#9a938a]">
+        <p className="mt-2 text-[11.5px] text-tm-faint">
           Введи <CommandWord>/</CommandWord>, чтобы увидеть доступные навыки.
         </p>
       </div>
     );
   }
   return (
-    <div className="px-1 text-[13px] leading-[1.55] text-[#8f887f]">
+    <div className="px-1 text-[13px] leading-[1.55] text-tm-muted">
       <p>
         Без команды я оцениваю расписание и советую, что улучшить. Для переноса
         или разгрузки выбери <SlashAction onClick={onPlan}>/plan</SlashAction>.
@@ -629,7 +629,7 @@ function EmptyState({
         <SlashAction onClick={onStart}>/start</SlashAction> создаст ещё один
         вариант — текущий останется в списке расписаний.
       </p>
-      <p className="mt-2 text-[11.5px] text-[#9a938a]">
+      <p className="mt-2 text-[11.5px] text-tm-faint">
         Изменения всегда появятся предложением и потребуют подтверждения.
       </p>
     </div>
@@ -647,7 +647,7 @@ function SlashAction({
     <button
       type="button"
       onClick={onClick}
-      className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] decoration-dotted underline-offset-4 outline-none hover:underline focus-visible:underline"
+      className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] dark:text-[#93b4ff] dark:decoration-[#93b4ff] decoration-dotted underline-offset-4 outline-none hover:underline focus-visible:underline"
     >
       {children}
     </button>

@@ -53,7 +53,7 @@ export function BlockDetails({
 }: BlockDetailsProps) {
   if (!block) {
     return (
-      <div className={`${paperCard} px-4 py-6 text-[13px] text-[#7b7168]`}>
+      <div className={`${paperCard} px-4 py-6 text-[13px] text-tm-muted`}>
         Выбери занятие в календаре, чтобы увидеть, что именно нужно сделать.
       </div>
     );
@@ -80,7 +80,7 @@ export function BlockDetails({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className={paperCaption}>{look.label}</div>
-          <h2 className="mt-1 text-[16px] font-medium leading-snug text-[#312c27]">
+          <h2 className="mt-1 text-[16px] font-medium leading-snug text-tm-ink">
             {block.title}
           </h2>
         </div>
@@ -89,20 +89,20 @@ export function BlockDetails({
         </button>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#5f584f]">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-tm-ink-2">
         <span className="tabular-nums">
           {dayLabel(dateKey)}, {timeRangeLabel(startMinutes, block.duration_minutes)}
         </span>
         {look.statusLabel ? (
           <>
-            <span className="text-[#c4bbae]">·</span>
+            <span className="text-tm-faint">·</span>
             <span>{look.statusLabel}</span>
           </>
         ) : null}
       </div>
 
       {block.objective ? (
-        <p className="mt-3 text-[13.5px] leading-relaxed text-[#4a443d]">
+        <p className="mt-3 text-[13.5px] leading-relaxed text-tm-ink-2">
           {block.objective}
         </p>
       ) : null}
@@ -140,14 +140,14 @@ export function BlockDetails({
       />
 
       {block.schedule_status === "proposed" || block.schedule_status === "draft" ? (
-        <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
+        <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-tm-muted`}>
           Это предварительное время. Оно станет постоянным после подтверждения
           программы.
         </p>
       ) : null}
 
       {block.detail_level === "outline" ? (
-        <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
+        <p className={`${paperTile} mt-4 px-3 py-2 text-[12px] leading-relaxed text-tm-muted`}>
           Дата и тема уже назначены, а конкретные задания появятся ближе к
           занятию — по тому, что к тому моменту будет освоено.
         </p>
@@ -175,7 +175,7 @@ function CommitmentDetails({
           <div className={paperCaption}>
             {commitmentKindLabel(block.commitment_kind)} · занятое время
           </div>
-          <h2 className="mt-1 text-[16px] font-medium leading-snug text-[#312c27]">
+          <h2 className="mt-1 text-[16px] font-medium leading-snug text-tm-ink">
             {block.title}
           </h2>
         </div>
@@ -184,14 +184,14 @@ function CommitmentDetails({
         </button>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#5f584f]">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-tm-ink-2">
         <span className="tabular-nums">
           {dayLabel(dateKey)}, {timeRangeLabel(startMinutes, block.duration_minutes)}
         </span>
       </div>
 
       {block.objective ? (
-        <p className="mt-3 text-[13.5px] leading-relaxed text-[#4a443d]">
+        <p className="mt-3 text-[13.5px] leading-relaxed text-tm-ink-2">
           {block.objective}
         </p>
       ) : null}
@@ -201,7 +201,7 @@ function CommitmentDetails({
           который выглядит подвижным, но никуда не двигается. */}
       <PinToggle pinned busy={false} />
 
-      <p className={`${paperTile} mt-2 px-3 py-2 text-[12px] leading-relaxed text-[#7b7168]`}>
+      <p className={`${paperTile} mt-2 px-3 py-2 text-[12px] leading-relaxed text-tm-muted`}>
         Планировщик размещает учебные занятия вокруг этого времени.
       </p>
     </div>
@@ -228,7 +228,7 @@ function PinToggle({
 
   if (!onToggle) {
     return (
-      <div className={`${paperTile} mt-4 px-3 py-2 text-[12.5px] text-[#7b7168]`}>
+      <div className={`${paperTile} mt-4 px-3 py-2 text-[12.5px] text-tm-muted`}>
         {label}
       </div>
     );
@@ -244,17 +244,17 @@ function PinToggle({
       className={`${paperTile} mt-4 flex w-full items-center justify-between gap-3 px-3 py-2 text-left disabled:opacity-60`}
     >
       <span className="min-w-0">
-        <span className="block text-[13px] text-[#3d382f]">Закреплено</span>
-        <span className="block text-[11.5px] text-[#8d857b]">{label}</span>
+        <span className="block text-[13px] text-tm-ink">Закреплено</span>
+        <span className="block text-[11.5px] text-tm-muted">{label}</span>
       </span>
       <span
         aria-hidden
         className={`relative h-[18px] w-[32px] shrink-0 rounded-full transition-colors ${
-          pinned ? "bg-[#8a5b24]" : "bg-[#ded8ce]"
+          pinned ? "bg-tm-accent" : "bg-tm-surface-3"
         }`}
       >
         <span
-          className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-[left] ${
+          className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] ${
             pinned ? "left-[16px]" : "left-[2px]"
           }`}
         />
@@ -267,7 +267,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="grid grid-cols-[128px_1fr] gap-2">
       <dt className={`${paperCaption} pt-0.5`}>{label}</dt>
-      <dd className="text-[13px] leading-relaxed text-[#4a443d]">{children}</dd>
+      <dd className="text-[13px] leading-relaxed text-tm-ink-2">{children}</dd>
     </div>
   );
 }

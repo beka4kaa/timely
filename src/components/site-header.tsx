@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
-import { useTheme } from "next-themes";
+import { useMemo } from "react";
 import {
   KeyboardIcon,
   Loader2,
@@ -13,6 +11,8 @@ import {
   Undo2Icon,
 } from "lucide-react";
 
+import { LogoMark } from "@/components/landing/logo-mark";
+import { ThemeSwitch } from "@/components/landing/theme-switch";
 import { MobileDashboardMenu } from "@/components/mobile-dashboard-menu";
 import { PomodoroHeaderPill } from "@/components/pomodoro/pomodoro-header-pill";
 import { useDiaryHeader } from "@/contexts/diary-header-ctx";
@@ -27,7 +27,6 @@ export function SiteHeader() {
   // Канонический путь, а не адресная строка: на app-хосте она чистая
   // (`/chat`), и заголовком любого раздела оставалось «Рабочее пространство».
   const pathname = useDashboardPath();
-  const { setTheme } = useTheme();
   const { actions } = useDiaryHeader();
   const { me } = useMe();
   const meta = getDashboardPageMeta(pathname);
@@ -44,30 +43,20 @@ export function SiteHeader() {
     [me?.is_admin, me?.is_moderator, me?.is_staff],
   );
 
-  useEffect(() => {
-    setTheme("light");
-  }, [setTheme]);
-
   if (isWhiteboard) {
     return null;
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-[90] flex h-12 items-center border-b border-[#dedbd4] bg-[#fbfaf7]/95 px-2.5 text-[#2f2c28] backdrop-blur-xl md:px-3">
+    <header className="fixed inset-x-0 top-0 z-[90] flex h-12 items-center border-b border-tm-line bg-tm-bg/85 px-2.5 text-tm-ink backdrop-blur-xl md:px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <Link
           href="/dashboard/diary"
-          className="flex shrink-0 items-center gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+          className="flex shrink-0 items-center gap-2.5 outline-none focus-visible:ring-2 focus-visible:ring-tm-accent/35"
         >
-          <Image
-            src="/logo.svg"
-            alt="Timely"
-            width={24}
-            height={24}
-            priority
-            className="shrink-0"
-          />
-          <span className="hidden h-6 w-px bg-[#d8d4cc] sm:block" />
+          <LogoMark size={26} />
+          <span className="sr-only">Timely</span>
+          <span className="hidden h-6 w-px bg-tm-line sm:block" />
         </Link>
 
         {/* На узком экране остаётся ОДНО имя — раздела, а не продукта: логотип
@@ -76,10 +65,10 @@ export function SiteHeader() {
             здесь было наоборот, и телефон показывал «Timely» без ответа на
             вопрос, что за экран открыт. */}
         <div className="flex min-w-0 items-baseline gap-2">
-          <span className="hidden font-serif text-[15px] font-semibold tracking-[-0.02em] text-[#8a5b24] sm:inline">
+          <span className="hidden text-[15px] font-semibold tracking-[-0.02em] text-tm-ink sm:inline">
             Timely
           </span>
-          <span className="truncate font-serif text-[14px] text-[#34302b]">
+          <span className="truncate font-serif text-[14.5px] text-tm-muted">
             {meta.title}
           </span>
         </div>
@@ -93,7 +82,7 @@ export function SiteHeader() {
               onClick={actions.onUndo ?? undefined}
               disabled={!actions.canUndo}
               aria-label="Отменить"
-              className="grid h-8 w-8 place-items-center rounded-full text-[#837c73] outline-none transition-colors hover:bg-[#efede8] disabled:pointer-events-none disabled:opacity-30"
+              className="grid h-8 w-8 place-items-center rounded-full text-tm-muted outline-none transition-colors hover:bg-tm-surface-2 disabled:pointer-events-none disabled:opacity-30"
             >
               <Undo2Icon className="h-3.5 w-3.5" />
             </button>
@@ -102,14 +91,14 @@ export function SiteHeader() {
               onClick={actions.onRedo ?? undefined}
               disabled={!actions.canRedo}
               aria-label="Вернуть"
-              className="grid h-8 w-8 place-items-center rounded-full text-[#837c73] outline-none transition-colors hover:bg-[#efede8] disabled:pointer-events-none disabled:opacity-30"
+              className="grid h-8 w-8 place-items-center rounded-full text-tm-muted outline-none transition-colors hover:bg-tm-surface-2 disabled:pointer-events-none disabled:opacity-30"
             >
               <Redo2Icon className="h-3.5 w-3.5" />
             </button>
             <Link
               href="/dashboard/diary/schedule"
               aria-label="Настройки расписания"
-              className="grid h-8 w-8 place-items-center rounded-full text-[#837c73] outline-none transition-colors hover:bg-[#efede8]"
+              className="grid h-8 w-8 place-items-center rounded-full text-tm-muted outline-none transition-colors hover:bg-tm-surface-2"
             >
               <Settings2Icon className="h-3.5 w-3.5" />
             </Link>
@@ -118,7 +107,7 @@ export function SiteHeader() {
               onClick={actions.onTemplate ?? undefined}
               disabled={actions.applyingTemplate}
               aria-label="Применить шаблон"
-              className="grid h-8 w-8 place-items-center rounded-full text-[#837c73] outline-none transition-colors hover:bg-[#efede8] disabled:opacity-40"
+              className="grid h-8 w-8 place-items-center rounded-full text-tm-muted outline-none transition-colors hover:bg-tm-surface-2 disabled:opacity-40"
             >
               {actions.applyingTemplate ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -130,15 +119,17 @@ export function SiteHeader() {
               type="button"
               onClick={actions.onShortcuts ?? undefined}
               aria-label="Горячие клавиши"
-              className="grid h-8 w-8 place-items-center rounded-full text-[#837c73] outline-none transition-colors hover:bg-[#efede8]"
+              className="grid h-8 w-8 place-items-center rounded-full text-tm-muted outline-none transition-colors hover:bg-tm-surface-2"
             >
               <KeyboardIcon className="h-3.5 w-3.5" />
             </button>
-            <span className="mx-1 h-5 w-px bg-[#dedbd4]" />
+            <span className="mx-1 h-5 w-px bg-tm-surface-3" />
           </div>
         )}
 
         <PomodoroHeaderPill />
+
+        <ThemeSwitch compact />
 
         <MobileDashboardMenu navigationGroups={navigationGroups} />
       </div>

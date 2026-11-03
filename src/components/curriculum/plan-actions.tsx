@@ -87,11 +87,11 @@ export function PlanActions({
   return (
     <div className="space-y-3">
       {plan.status === "active" ? (
-        <p className="flex items-center gap-2 text-[13px] text-[#5c7a52]">
+        <p className="flex items-center gap-2 text-[13px] text-[#5c7a52] dark:text-[#9cc28f]">
           <Check className="h-4 w-4" />
           Программа активна
           {plan.created_at && (
-            <span className="text-[#9b9186]">
+            <span className="text-tm-faint">
               · построена {formatPlanDate(plan.created_at)}
             </span>
           )}
@@ -99,7 +99,7 @@ export function PlanActions({
       ) : null}
 
       {archived ? (
-        <p className="text-[13px] text-[#8d857b]">
+        <p className="text-[13px] text-tm-muted">
           Это прежняя версия программы — её вытеснила более новая.
         </p>
       ) : null}
@@ -149,9 +149,9 @@ export function PlanActions({
       </div>
 
       {approveError && (
-        <p className="text-[12px] text-[#8c4b41]">{approveError}</p>
+        <p className="text-[12px] text-tm-danger">{approveError}</p>
       )}
-      {error && <p className="text-[12px] text-[#8c4b41]">{error}</p>}
+      {error && <p className="text-[12px] text-tm-danger">{error}</p>}
     </div>
   );
 }

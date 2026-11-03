@@ -44,7 +44,7 @@ export function AppSidebar() {
   const userEmail = session?.user?.email || "Профиль Timely";
 
   return (
-    <aside className="fixed bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-[#dedbd4] bg-[#fbfaf7] py-2 md:flex">
+    <aside className="fixed bottom-0 left-0 top-12 z-[70] hidden w-[58px] flex-col items-center border-r border-tm-line bg-tm-bg py-2 md:flex">
       <TooltipProvider delayDuration={120}>
         <nav
           aria-label="Разделы Timely"
@@ -68,10 +68,10 @@ export function AppSidebar() {
                         href={item.url}
                         aria-label={item.title}
                         aria-current={active ? "page" : undefined}
-                        className={`grid h-8 w-10 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+                        className={`grid h-8 w-10 shrink-0 place-items-center rounded-[10px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
                           active
-                            ? "border border-[#d9ad70] bg-[#fffaf1] text-[#a76b22] shadow-[0_3px_12px_rgba(116,75,28,0.07)]"
-                            : "text-[#908a81] hover:bg-[#efede8] hover:text-[#34302b]"
+                            ? "bg-tm-strong text-tm-on-strong shadow-[0_8px_18px_-10px_rgba(0,0,0,0.45)]"
+                            : "text-tm-faint hover:bg-tm-surface-2 hover:text-tm-ink"
                         }`}
                       >
                         <Icon className="h-4 w-4" />
@@ -80,7 +80,7 @@ export function AppSidebar() {
                     <TooltipContent
                       side="right"
                       sideOffset={8}
-                      className="border-[#302d2a] bg-[#302d2a] px-2.5 py-1.5 text-[11px] text-white"
+                      className="border-tm-strong bg-tm-strong px-2.5 py-1.5 text-[11px] text-tm-on-strong"
                     >
                       {item.title}
                     </TooltipContent>
@@ -88,7 +88,7 @@ export function AppSidebar() {
                 );
               })}
               {groupIndex < navigationGroups.length - 1 && (
-                <span className="my-1 h-px w-5 bg-[#e0dcd5]" />
+                <span className="my-1 h-px w-5 bg-tm-line" />
               )}
             </div>
           ))}
@@ -102,7 +102,7 @@ export function AppSidebar() {
                   <button
                     type="button"
                     aria-label="Открыть профиль"
-                    className="grid h-10 w-10 place-items-center rounded-[12px] outline-none transition-colors hover:bg-[#efede8] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 data-[state=open]:bg-[#fff7e9]"
+                    className="grid h-10 w-10 place-items-center rounded-[12px] outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35 data-[state=open]:bg-tm-surface-2"
                   >
                     <UserAvatar size={28} />
                   </button>
@@ -111,7 +111,7 @@ export function AppSidebar() {
               <TooltipContent
                 side="right"
                 sideOffset={8}
-                className="border-[#302d2a] bg-[#302d2a] px-2.5 py-1.5 text-[11px] text-white"
+                className="border-tm-strong bg-tm-strong px-2.5 py-1.5 text-[11px] text-tm-on-strong"
               >
                 Профиль
               </TooltipContent>
@@ -121,7 +121,7 @@ export function AppSidebar() {
               side="right"
               align="end"
               sideOffset={8}
-              className="w-60 rounded-[18px] border-[#ddd6ca] bg-[#fbfaf7]/95 p-1.5 text-[#39332d] shadow-[0_20px_55px_rgba(63,47,29,0.16)] backdrop-blur-2xl"
+              className="w-60 rounded-[18px] border-tm-line bg-tm-surface/95 p-1.5 text-tm-ink shadow-[0_20px_55px_-12px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_55px_-12px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
             >
               <DropdownMenuLabel className="flex items-center gap-2.5 px-2 py-2 font-normal">
                 <UserAvatar size={36} />
@@ -129,15 +129,15 @@ export function AppSidebar() {
                   <span className="block truncate text-sm font-medium">
                     {userName}
                   </span>
-                  <span className="block truncate text-xs text-[#8d857c]">
+                  <span className="block truncate text-xs text-tm-muted">
                     {userEmail}
                   </span>
                 </span>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-[#e5dfd6]" />
+              <DropdownMenuSeparator className="bg-tm-line" />
               <DropdownMenuItem
                 asChild
-                className="cursor-pointer rounded-xl px-2.5 py-2 focus:bg-[#f1ece3] focus:text-[#342f2a]"
+                className="cursor-pointer rounded-xl px-2.5 py-2 focus:bg-tm-surface-2 focus:text-tm-ink"
               >
                 <Link href="/dashboard/profile">
                   <UserRound className="h-4 w-4" />
@@ -146,7 +146,7 @@ export function AppSidebar() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-                className="cursor-pointer rounded-xl px-2.5 py-2 text-[#9b4942] focus:bg-[#f8ebe8] focus:text-[#843a34]"
+                className="cursor-pointer rounded-xl px-2.5 py-2 text-tm-danger focus:bg-tm-danger-soft focus:text-tm-danger"
               >
                 <LogOut className="h-4 w-4" />
                 Выйти

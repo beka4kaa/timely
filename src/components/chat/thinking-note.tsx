@@ -93,12 +93,12 @@ export function ThinkingNote({
   // ── Работа идёт: заметка на полях ──
   if (streaming) {
     return (
-      <div className="rounded-[14px] border border-[#e3ddd3] bg-[#f7f3ec] px-3.5 py-2.5">
+      <div className="rounded-[14px] border border-tm-line bg-tm-surface-2 px-3.5 py-2.5">
         <div className="flex gap-2.5">
           {/* Линейка полей. Она и делает блок заметкой, а не индикатором. */}
           <span
             aria-hidden
-            className="mt-1 w-px shrink-0 self-stretch bg-[#dcd5c8]"
+            className="mt-1 w-px shrink-0 self-stretch bg-tm-surface-3"
           />
           <div className="min-w-0 flex-1 space-y-1">
             {stages.map((stage, index) => (
@@ -113,14 +113,14 @@ export function ThinkingNote({
                 <span
                   className={`truncate text-[12px] ${
                     stage.done
-                      ? "text-[#989086]"
-                      : "font-medium text-[#61574c]"
+                      ? "text-tm-faint"
+                      : "font-medium text-tm-ink-2"
                   }`}
                 >
                   {stage.label}
                 </span>
                 {index === 0 && (
-                  <span className="ml-auto shrink-0 tabular-nums text-[11px] text-[#8d857c]">
+                  <span className="ml-auto shrink-0 tabular-nums text-[11px] text-tm-muted">
                     {Math.max(0, Math.round(elapsed / 1000))}с
                   </span>
                 )}
@@ -132,7 +132,7 @@ export function ThinkingNote({
                 <button
                   type="button"
                   onClick={() => setExpanded((value) => !value)}
-                  className="flex items-center gap-1 text-[11px] text-[#a09890] transition-colors hover:text-[#61574c]"
+                  className="flex items-center gap-1 text-[11px] text-tm-faint transition-colors hover:text-tm-ink-2"
                 >
                   <motion.span
                     animate={{ rotate: expanded ? 90 : 0 }}
@@ -145,7 +145,7 @@ export function ThinkingNote({
                 {expanded && (
                   <div
                     ref={scrollRef}
-                    className="mt-1 max-h-[76px] overflow-hidden text-[11.5px] leading-[1.5] text-[#8a8177]"
+                    className="mt-1 max-h-[76px] overflow-hidden text-[11.5px] leading-[1.5] text-tm-muted"
                     style={{
                       // Верхние строки растворяются: бегущий текст не должен
                       // выглядеть обрезанным по прямой.
@@ -173,12 +173,12 @@ export function ThinkingNote({
   ].filter(Boolean);
 
   return (
-    <div className="rounded-[14px] border border-[#e6e1d8] bg-[#faf8f4]">
+    <div className="rounded-[14px] border border-tm-line bg-tm-bg">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
         disabled={!reasoning}
-        className="flex w-full items-center gap-1.5 px-3.5 py-2 text-left text-[11.5px] text-[#8d857c] transition-colors hover:text-[#61574c] disabled:hover:text-[#8d857c]"
+        className="flex w-full items-center gap-1.5 px-3.5 py-2 text-left text-[11.5px] text-tm-muted transition-colors hover:text-tm-ink-2 disabled:hover:text-tm-muted"
       >
         {reasoning ? (
           <motion.span
@@ -188,7 +188,7 @@ export function ThinkingNote({
             <ChevronRight className="h-3.5 w-3.5" />
           </motion.span>
         ) : (
-          <span aria-hidden className="h-1 w-1 rounded-full bg-[#c9c2b6]" />
+          <span aria-hidden className="h-1 w-1 rounded-full bg-tm-line-strong" />
         )}
         <span>{parts.join(" · ")}</span>
       </button>
@@ -202,7 +202,7 @@ export function ThinkingNote({
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="overflow-hidden"
           >
-            <div className="whitespace-pre-wrap px-3.5 pb-3 text-[11.5px] leading-[1.55] text-[#8a8177]">
+            <div className="whitespace-pre-wrap px-3.5 pb-3 text-[11.5px] leading-[1.55] text-tm-muted">
               {reasoning}
             </div>
           </motion.div>
@@ -218,14 +218,14 @@ function StageMark({ active, reduced }: { active: boolean; reduced: boolean }) {
     return (
       <span
         aria-hidden
-        className="h-1 w-1 shrink-0 rounded-full border border-[#c9c2b6]"
+        className="h-1 w-1 shrink-0 rounded-full border border-tm-line-strong"
       />
     );
   }
   return (
     <motion.span
       aria-hidden
-      className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#b7792d]"
+      className="h-1.5 w-1.5 shrink-0 rounded-full bg-tm-accent"
       animate={reduced ? undefined : { opacity: [1, 0.25, 1], scale: [1, 0.8, 1] }}
       transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
     />

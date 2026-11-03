@@ -35,7 +35,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
       <SidebarGroupContent className="flex flex-col gap-0.5">
         {groups.map((group, gi) => (
           <div key={group.label} className="flex flex-col">
-            <div className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a49b91] group-data-[collapsible=icon]:hidden">
+            <div className="px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-tm-faint group-data-[collapsible=icon]:hidden">
               {group.label}
             </div>
             <SidebarMenu className="gap-0.5">
@@ -54,15 +54,15 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                         className={cn(
                           "relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] transition-[color,transform] duration-150 hover:translate-x-0.5",
                           active
-                            ? "font-medium text-[#70491f]"
-                            : "text-[#797269] hover:text-[#332f2a]",
+                            ? "font-medium text-tm-accent"
+                            : "text-tm-muted hover:text-tm-ink",
                         )}
                       >
                         {active && (
                           <motion.span
                             layoutId="sidebarActive"
                             transition={{ type: "tween", duration: 0.18, ease: "easeOut" }}
-                            className="absolute inset-0 rounded-lg border border-[#e0c59f] bg-[#fff8ec] shadow-[0_3px_14px_rgba(112,73,31,0.06)]"
+                            className="absolute inset-0 rounded-lg border border-tm-accent-line bg-tm-bg shadow-[0_3px_14px_rgba(112,73,31,0.06)]"
                           />
                         )}
                         {item.icon && (

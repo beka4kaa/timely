@@ -143,7 +143,7 @@ export function BoardSettingsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[180] grid place-items-center bg-[#302d2a]/32 p-3 backdrop-blur-[7px] max-sm:p-0"
+      className="fixed inset-0 z-[180] grid place-items-center bg-tm-strong/32 p-3 backdrop-blur-[7px] max-sm:p-0"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) onClose();
@@ -153,24 +153,24 @@ export function BoardSettingsDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="board-settings-title"
-        className="flex h-[min(760px,calc(100dvh-24px))] w-full max-w-[1080px] overflow-hidden rounded-[24px] border border-[#d4cec5] bg-[#fbfaf7] text-[#3d3832] shadow-[0_32px_110px_rgba(43,34,25,0.3)] max-sm:h-dvh max-sm:rounded-none max-sm:border-0"
+        className="flex h-[min(760px,calc(100dvh-24px))] w-full max-w-[1080px] overflow-hidden rounded-[24px] border border-tm-line bg-tm-surface text-tm-ink shadow-[0_32px_110px_rgba(43,34,25,0.3)] max-sm:h-dvh max-sm:rounded-none max-sm:border-0"
       >
-        <aside className="hidden w-[238px] shrink-0 flex-col border-r border-[#dcd6cc] bg-[#f1eee8] p-3 sm:flex">
+        <aside className="hidden w-[238px] shrink-0 flex-col border-r border-tm-line bg-tm-surface-2 p-3 sm:flex">
           <div className="px-2 pb-4 pt-2">
-            <p className="font-serif text-[18px] font-semibold tracking-[-0.02em] text-[#7d5428]">
+            <p className="font-serif text-[18px] font-semibold tracking-[-0.02em] text-tm-accent">
               Timely
             </p>
-            <p className="mt-0.5 text-[11px] text-[#8f877e]">Настройки</p>
+            <p className="mt-0.5 text-[11px] text-tm-faint">Настройки</p>
           </div>
 
           <label className="relative mb-4 block">
             <span className="sr-only">Поиск по настройкам</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#928a80]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-tm-faint" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Поиск"
-              className="h-10 w-full rounded-[13px] border border-[#d8d1c8] bg-[#fbfaf7]/75 pl-9 pr-3 text-[12px] text-[#48413a] outline-none transition-colors placeholder:text-[#a39b91] focus:border-[#bd8b52] focus:bg-white"
+              className="h-10 w-full rounded-[13px] border border-tm-line bg-tm-surface/75 pl-9 pr-3 text-[12px] text-tm-ink-2 outline-none transition-colors placeholder:text-tm-faint focus:border-tm-accent focus:bg-tm-surface"
             />
           </label>
 
@@ -183,7 +183,7 @@ export function BoardSettingsDialog({
               if (!items.length) return null;
               return (
                 <div key={group} className="mb-5">
-                  <p className="mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#9b9288]">
+                  <p className="mb-1.5 px-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-tm-faint">
                     {group}
                   </p>
                   <div className="space-y-1">
@@ -206,35 +206,35 @@ export function BoardSettingsDialog({
             })}
 
             {!visibleItems.length && (
-              <p className="px-3 py-5 text-center text-[11px] leading-5 text-[#958d83]">
+              <p className="px-3 py-5 text-center text-[11px] leading-5 text-tm-faint">
                 Ничего не найдено
               </p>
             )}
           </nav>
 
-          <div className="rounded-[15px] border border-[#d9d2c8] bg-[#fbfaf7]/72 px-3 py-2.5">
-            <p className="text-[9px] uppercase tracking-[0.12em] text-[#9a9187]">
+          <div className="rounded-[15px] border border-tm-line bg-tm-surface/72 px-3 py-2.5">
+            <p className="text-[9px] uppercase tracking-[0.12em] text-tm-faint">
               Текущий план
             </p>
             <div className="mt-1 flex items-center justify-between gap-2">
-              <p className="font-serif text-[16px] font-semibold text-[#815925]">
+              <p className="font-serif text-[16px] font-semibold text-tm-accent">
                 {summary?.plan?.label ?? "Free"}
               </p>
-              <Crown className="h-3.5 w-3.5 text-[#ad7634]" />
+              <Crown className="h-3.5 w-3.5 text-tm-accent" />
             </div>
           </div>
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#fbfaf7]">
-          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-[#e0dbd3] px-4 sm:px-7">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-tm-surface">
+          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-tm-line px-4 sm:px-7">
             <div className="min-w-0">
               <h2
                 id="board-settings-title"
-                className="truncate font-serif text-[19px] font-semibold tracking-[-0.02em] text-[#39332d]"
+                className="truncate font-serif text-[19px] font-semibold tracking-[-0.02em] text-tm-ink"
               >
                 {activeItem.label}
               </h2>
-              <p className="mt-0.5 hidden truncate text-[10px] text-[#978f85] sm:block">
+              <p className="mt-0.5 hidden truncate text-[10px] text-tm-faint sm:block">
                 {activeItem.description}
               </p>
             </div>
@@ -242,13 +242,13 @@ export function BoardSettingsDialog({
               type="button"
               onClick={onClose}
               aria-label="Закрыть настройки"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[#8f877d] outline-none transition-colors hover:bg-[#eeeae3] hover:text-[#3d3832] focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/35"
             >
               <X className="h-[18px] w-[18px]" />
             </button>
           </header>
 
-          <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#e3ded6] px-3 py-2 [scrollbar-width:none] sm:hidden">
+          <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-tm-line px-3 py-2 [scrollbar-width:none] sm:hidden">
             {settingsItems.map((item) => (
               <MobileTab
                 key={item.id}
@@ -307,13 +307,13 @@ function SettingsTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-10 w-full items-center gap-2.5 rounded-[12px] px-3 text-left text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+      className={`flex h-10 w-full items-center gap-2.5 rounded-[12px] px-3 text-left text-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
         active
-          ? "bg-[#ded8cf] font-medium text-[#3f3933]"
-          : "text-[#756e65] hover:bg-[#e8e3dc] hover:text-[#403a34]"
+          ? "bg-tm-surface-3 font-medium text-tm-ink-2"
+          : "text-tm-muted hover:bg-tm-surface-3/50 hover:text-tm-ink-2"
       }`}
     >
-      <span className={active ? "text-[#966128]" : "text-[#8b847b]"}>
+      <span className={active ? "text-tm-accent" : "text-tm-muted"}>
         {icon}
       </span>
       {children}
@@ -334,10 +334,10 @@ function MobileTab({
     <button
       type="button"
       onClick={onClick}
-      className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35 ${
+      className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-tm-accent/35 ${
         active
-          ? "bg-[#403a34] text-white"
-          : "border border-[#ddd7ce] bg-white/60 text-[#7d756c]"
+          ? "bg-tm-strong text-tm-on-strong"
+          : "border border-tm-line bg-tm-surface/60 text-tm-muted"
       }`}
     >
       {children}
@@ -357,14 +357,14 @@ function SettingsSection({
   return (
     <section>
       <div className="mb-3">
-        <h3 className="font-serif text-[17px] font-semibold text-[#403a34]">
+        <h3 className="font-serif text-[17px] font-semibold text-tm-ink-2">
           {title}
         </h3>
-        <p className="mt-0.5 text-[10px] leading-4 text-[#968e84]">
+        <p className="mt-0.5 text-[10px] leading-4 text-tm-faint">
           {description}
         </p>
       </div>
-      <div className="overflow-hidden rounded-[18px] border border-[#ded8cf] bg-white/52">
+      <div className="overflow-hidden rounded-[18px] border border-tm-line bg-tm-surface/52">
         {children}
       </div>
     </section>
@@ -387,21 +387,21 @@ function PreferenceRow({
   return (
     <div
       className={`flex min-h-[72px] items-center gap-3 px-4 py-3 ${
-        last ? "" : "border-b border-[#e6e1d9]"
+        last ? "" : "border-b border-tm-line"
       }`}
     >
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#f0e7db] text-[#9b682e]">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-tm-surface-3 text-tm-accent">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[12px] font-medium text-[#474039]">
+        <span className="block text-[12px] font-medium text-tm-ink-2">
           {title}
         </span>
-        <span className="mt-0.5 block text-[10px] leading-4 text-[#9a9288]">
+        <span className="mt-0.5 block text-[10px] leading-4 text-tm-faint">
           {detail}
         </span>
       </span>
-      <span className="shrink-0 rounded-full border border-[#ddd6cc] bg-[#fbfaf7] px-2.5 py-1 text-[10px] text-[#6f675e]">
+      <span className="shrink-0 rounded-full border border-tm-line bg-tm-surface px-2.5 py-1 text-[10px] text-tm-muted">
         {value}
       </span>
     </div>
@@ -418,8 +418,8 @@ function GeneralSettings({ currentPlan }: { currentPlan: string }) {
         <PreferenceRow
           icon={<Palette className="h-4 w-4" />}
           title="Оформление"
-          detail="Единая светлая кофейная тема для всех разделов."
-          value="Timely Light"
+          detail="Доска всегда светлая; тему остальных разделов переключает кнопка в шапке."
+          value="Светлая"
         />
         <PreferenceRow
           icon={<Database className="h-4 w-4" />}
@@ -471,20 +471,20 @@ function AccountSettings({
         description="Данные текущего аккаунта Timely."
       >
         <div className="flex items-center gap-4 px-4 py-4">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-[#efe1cf] font-serif text-[20px] font-semibold text-[#865a29]">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[15px] bg-tm-accent-soft font-serif text-[20px] font-semibold text-tm-accent">
             {initial}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-serif text-[16px] font-semibold text-[#403a34]">
+            <span className="block truncate font-serif text-[16px] font-semibold text-tm-ink-2">
               {displayName}
             </span>
-            <span className="mt-0.5 block truncate text-[10px] text-[#978f85]">
+            <span className="mt-0.5 block truncate text-[10px] text-tm-faint">
               {userEmail || "Аккаунт Timely"}
             </span>
           </span>
           <Link
             href="/dashboard/profile"
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#d8d1c7] bg-[#fbfaf7] px-3 text-[10px] text-[#625b53] outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#c9a16c]/35"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface px-3 text-[10px] text-tm-muted outline-none transition-colors hover:bg-tm-surface-2 focus-visible:ring-2 focus-visible:ring-tm-accent/35"
           >
             Профиль
             <ChevronRight className="h-3.5 w-3.5" />
@@ -543,7 +543,7 @@ function PlanSettings({
   return (
     <div>
       {isAdminGrant && (
-        <div className="mb-4 flex items-center gap-2 rounded-[14px] border border-[#d9bd93] bg-[#fff8ec] px-3.5 py-3 text-[11px] text-[#795425]">
+        <div className="mb-4 flex items-center gap-2 rounded-[14px] border border-tm-accent-line bg-tm-bg px-3.5 py-3 text-[11px] text-tm-accent">
           <ShieldCheck className="h-4 w-4 shrink-0" />
           Max выдан аккаунту администратора. Защитные лимиты остаются активными.
         </div>
@@ -557,29 +557,29 @@ function PlanSettings({
               key={plan.id}
               className={`relative rounded-[20px] border p-4 ${
                 active
-                  ? "border-[#c79556] bg-[#fff9ef] shadow-[0_8px_30px_rgba(129,87,36,0.09)]"
-                  : "border-[#ded8cf] bg-white/55"
+                  ? "border-tm-accent bg-tm-bg shadow-[0_8px_30px_rgba(129,87,36,0.09)]"
+                  : "border-tm-line bg-tm-surface/55"
               }`}
             >
               {active && (
-                <span className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-[#a76c27] text-white">
+                <span className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-tm-accent text-tm-on-strong">
                   <Check className="h-3.5 w-3.5" />
                 </span>
               )}
               <p className="font-serif text-[20px] font-semibold">{plan.name}</p>
-              <p className="mt-1 text-[10px] text-[#948c82]">{plan.note}</p>
-              <p className="mt-5 font-serif text-[24px] font-semibold text-[#815925]">
+              <p className="mt-1 text-[10px] text-tm-faint">{plan.note}</p>
+              <p className="mt-5 font-serif text-[24px] font-semibold text-tm-accent">
                 {plan.price}
                 {plan.id !== "free" && (
-                  <span className="ml-1 text-[10px] font-normal text-[#948c82]">
+                  <span className="ml-1 text-[10px] font-normal text-tm-faint">
                     / мес.
                   </span>
                 )}
               </p>
-              <p className="mt-3 border-t border-[#e4ded5] pt-3 text-[11px] leading-5 text-[#6d655c]">
+              <p className="mt-3 border-t border-tm-line pt-3 text-[11px] leading-5 text-tm-muted">
                 {plan.limits}
               </p>
-              <p className="mt-1 text-[9px] text-[#a09990]">
+              <p className="mt-1 text-[9px] text-tm-faint">
                 Контекст, изображения и reasoning учитываются вместе.
               </p>
             </article>

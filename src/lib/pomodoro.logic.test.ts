@@ -62,8 +62,8 @@ test("heatLevel разбивает время на пять ступеней", (
   assert.equal(heatLevel(60 * 60), 2);
   assert.equal(heatLevel(100 * 60), 3);
   assert.equal(heatLevel(200 * 60), 4);
-  assert.equal(heatColor(0), "#ece6db");
-  assert.equal(heatColor(200 * 60), "#855c22");
+  assert.equal(heatColor(0), "rgb(var(--tm-surface-3))");
+  assert.equal(heatColor(200 * 60), "rgb(var(--tm-accent))");
 });
 
 test("календарь активности — 52 колонки по 7 дней, начиная с понедельника", () => {
@@ -101,11 +101,11 @@ test("календарь раскрашивает дни по данным св�
   const cells = buildHeatWeeks(daily, TODAY).flatMap((week) => week.days);
 
   const today = cells.find((cell) => cell.key === dayKey(TODAY));
-  assert.equal(today?.color, "#855c22");
+  assert.equal(today?.color, "rgb(var(--tm-accent))");
   assert.equal(today?.tooltipTitle, "2 ч 30 м учёбы");
 
   const yesterday = cells.find((cell) => cell.key === dayKey(new Date(2026, 6, 29)));
-  assert.equal(yesterday?.color, "#eed9b6");
+  assert.equal(yesterday?.color, "rgb(var(--tm-accent) / 0.25)");
 
   const empty = cells.find((cell) => cell.key === dayKey(new Date(2026, 6, 28)));
   assert.equal(empty?.tooltipTitle, "Без занятий");

@@ -149,13 +149,13 @@ function PlanPageBody({
           поэтому оно живёт здесь, а не в оболочке. Верхняя панель приложения
           печатает статичное «Программа», одинаковое для всех курсов; какой
           именно курс открыт, отвечает только эта строка. */}
-      <header className="mb-7 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-[#ded8ce] pb-6">
+      <header className="mb-7 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-tm-line pb-6">
         <div className="min-w-0">
-          <h1 className="font-serif text-[26px] leading-tight tracking-[-0.02em] text-[#302b26] sm:text-[30px]">
+          <h1 className="font-serif text-[26px] leading-tight tracking-[-0.02em] text-tm-ink sm:text-[30px]">
             {plan.title}
           </h1>
           {plan.objective ? (
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-[#7f776e]">
+            <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-tm-muted">
               {plan.objective}
             </p>
           ) : null}
@@ -165,7 +165,7 @@ function PlanPageBody({
           <div className="shrink-0 text-right">
             <p className={paperCaption}>Учебник</p>
             <p
-              className="mt-0.5 max-w-[240px] truncate text-[13px] text-[#3a3530]"
+              className="mt-0.5 max-w-[240px] truncate text-[13px] text-tm-ink"
               title={book.title}
             >
               {cleanDocumentTitle(book.title)}
@@ -175,18 +175,18 @@ function PlanPageBody({
       </header>
 
       {plan.status === "rejected" && (
-        <div className="mb-5 rounded-[14px] border border-[#e0cba8] bg-[#fdf6e8] px-4 py-3 text-[12px] leading-5 text-[#8b6a2f]">
+        <div className="mb-5 rounded-[14px] border border-tm-accent-line bg-tm-bg px-4 py-3 text-[12px] leading-5 text-tm-accent">
           Эту программу забраковал рецензент, поэтому начать по ней занятия
           нельзя. Постройте её заново — исходный учебник и цель сохранены.
         </div>
       )}
 
       {blockers.length > 0 && (
-        <div className="mb-5 rounded-[14px] border border-[#e0cba8] bg-[#fdf6e8] px-4 py-3">
-          <p className="text-[12px] font-medium text-[#8b6a2f]">
+        <div className="mb-5 rounded-[14px] border border-tm-accent-line bg-tm-bg px-4 py-3">
+          <p className="text-[12px] font-medium text-tm-accent">
             Рецензент оставил замечания
           </p>
-          <ul className="mt-1.5 space-y-1 text-[12px] leading-5 text-[#8b7a5e]">
+          <ul className="mt-1.5 space-y-1 text-[12px] leading-5 text-tm-muted">
             {blockers.map((finding, index) => (
               <li key={`${finding.kind}-${index}`}>{finding.message}</li>
             ))}
@@ -195,7 +195,7 @@ function PlanPageBody({
       )}
 
       {degraded && !fromMaterial && (
-        <div className="mb-5 rounded-[14px] bg-[#f2ede4] px-4 py-3 text-[12px] leading-5 text-[#7f776e]">
+        <div className="mb-5 rounded-[14px] bg-tm-surface-2 px-4 py-3 text-[12px] leading-5 text-tm-muted">
           Учебник не загрузился, поэтому карта страниц недоступна. Сама
           программа показана полностью.
         </div>
@@ -215,13 +215,13 @@ function PlanPageBody({
       {/* Пути нет — у программы нет ни одной главы с ненулевым временем. Книгу
           это не отменяет: строку покрытия показываем всё равно. */}
       {!path && bookLines.length > 0 && (
-        <p className={`${paperCard} px-4 py-3 text-[11px] leading-5 text-[#9b9186]`}>
+        <p className={`${paperCard} px-4 py-3 text-[11px] leading-5 text-tm-faint`}>
           {bookLines.join(" ")}
         </p>
       )}
 
       {everythingUnsourced && !fromMaterial && (
-        <div className={`${paperCard} mb-1 mt-5 px-4 py-3 text-[12px] leading-5 text-[#7f776e]`}>
+        <div className={`${paperCard} mb-1 mt-5 px-4 py-3 text-[12px] leading-5 text-tm-muted`}>
           Ни одна тема не сослалась на страницы учебника — программа построена
           по смыслу, а не по разделам книги.
         </div>
@@ -235,13 +235,13 @@ function PlanPageBody({
             onHoverTopic={setHoveredTopicId}
           />
         ) : (
-          <div className={`${paperCard} p-6 text-[13px] text-[#7f776e]`}>
+          <div className={`${paperCard} p-6 text-[13px] text-tm-muted`}>
             В программе пока нет ни одного модуля. Постройте её заново.
           </div>
         )}
       </div>
 
-      <div className="mt-8 border-t border-[#ded8ce] pt-6">
+      <div className="mt-8 border-t border-tm-line pt-6">
         <PlanActions
           plan={plan}
           approving={busy}

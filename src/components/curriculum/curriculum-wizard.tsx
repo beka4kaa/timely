@@ -49,7 +49,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   if (readyToRedirect) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 animate-spin text-[#a1978b]" />
+        <Loader2 className="h-5 w-5 animate-spin text-tm-faint" />
       </div>
     );
   }
@@ -70,7 +70,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
             reset();
             onClose();
           }}
-          className={`${paperFocus} -mb-2 inline-flex items-center gap-1.5 rounded-full text-[12px] text-[#9b9186] underline-offset-4 hover:text-[#6f675e] hover:underline`}
+          className={`${paperFocus} -mb-2 inline-flex items-center gap-1.5 rounded-full text-[12px] text-tm-faint underline-offset-4 hover:text-tm-muted hover:underline`}
         >
           <ArrowLeft className="h-3.5 w-3.5" />К предметам
         </button>
@@ -82,30 +82,30 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
             <span
               className={
                 index === activeRail
-                  ? "rounded-full border border-[#dec9ab] bg-[#fffaf1] px-3 py-1 text-[#8a5b24]"
+                  ? "rounded-full border border-tm-accent-line bg-tm-bg px-3 py-1 text-tm-accent"
                   : index < activeRail
-                    ? "rounded-full px-3 py-1 text-[#7f776e]"
-                    : "rounded-full px-3 py-1 text-[#b3a99c]"
+                    ? "rounded-full px-3 py-1 text-tm-muted"
+                    : "rounded-full px-3 py-1 text-tm-faint"
               }
             >
               {item.label}
             </span>
             {index < RAIL.length - 1 && (
-              <span className="h-px w-5 bg-[#ded8ce]" aria-hidden />
+              <span className="h-px w-5 bg-tm-surface-3" aria-hidden />
             )}
           </li>
         ))}
       </ol>
 
       {showBanner && (
-        <div className="flex items-start gap-2.5 rounded-[14px] border border-[#e0c4c0] bg-[#fdf3f1] px-4 py-3 text-[13px] text-[#8c4b41]">
+        <div className="flex items-start gap-2.5 rounded-[14px] border border-tm-danger-line bg-tm-danger-soft px-4 py-3 text-[13px] text-tm-danger">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="flex-1 leading-5">{error.message}</span>
           <button
             type="button"
             onClick={clearError}
             aria-label="Скрыть ошибку"
-            className={`${paperFocus} rounded-full p-0.5 text-[#b08b84] hover:text-[#8c4b41]`}
+            className={`${paperFocus} rounded-full p-0.5 text-[#b08b84] hover:text-tm-danger`}
           >
             <X className="h-4 w-4" />
           </button>
@@ -119,11 +119,11 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
       {step === "planning" && <PlanGenerationStep />}
 
       {step !== "goal" && (
-        <div className="border-t border-[#ded8ce] pt-5">
+        <div className="border-t border-tm-line pt-5">
           <button
             type="button"
             onClick={reset}
-            className={`${paperFocus} rounded-full text-[12px] text-[#9b9186] underline-offset-4 hover:text-[#6f675e] hover:underline`}
+            className={`${paperFocus} rounded-full text-[12px] text-tm-faint underline-offset-4 hover:text-tm-muted hover:underline`}
           >
             Начать заново
           </button>

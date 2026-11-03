@@ -111,10 +111,10 @@ export default function ReviewPage() {
             <CoffeePageShell
                 contentClassName="max-w-3xl"
             >
-                <Card className="border-[#d8cbb8] bg-[#fbfaf7]">
+                <Card className="border-tm-line-strong bg-tm-surface">
                     <CardHeader className="text-center">
                         <div className="text-4xl mb-4">{reviewingTopic.subjectEmoji || '📚'}</div>
-                        <CardTitle className="font-serif text-2xl text-[#302b26]">{reviewingTopic.name}</CardTitle>
+                        <CardTitle className="font-serif text-2xl text-tm-ink">{reviewingTopic.name}</CardTitle>
                         <p className="text-muted-foreground">{reviewingTopic.subjectName || 'Без предмета'}</p>
                     </CardHeader>
                     <CardContent className="p-8">
@@ -125,7 +125,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                className="h-20 flex-col gap-2 text-red-700 hover:bg-red-50 hover:text-red-800 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                                 onClick={() => handleReview(reviewingTopic.id, 'AGAIN')}
                             >
                                 <span className="text-lg">😵</span>
@@ -134,7 +134,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                                className="h-20 flex-col gap-2 text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40 dark:hover:text-amber-300"
                                 onClick={() => handleReview(reviewingTopic.id, 'HARD')}
                             >
                                 <span className="text-lg">😓</span>
@@ -143,7 +143,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                                className="h-20 flex-col gap-2 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300"
                                 onClick={() => handleReview(reviewingTopic.id, 'GOOD')}
                             >
                                 <span className="text-lg">😊</span>
@@ -152,7 +152,7 @@ export default function ReviewPage() {
                             <Button
                                 size="lg"
                                 variant="outline"
-                                className="h-20 flex-col gap-2 text-[#8a5b2b] hover:bg-[#fff5e4] hover:text-[#70451c]"
+                                className="h-20 flex-col gap-2 text-tm-accent hover:bg-tm-surface-2 hover:text-tm-accent"
                                 onClick={() => handleReview(reviewingTopic.id, 'EASY')}
                             >
                                 <span className="text-lg">🤩</span>
@@ -182,7 +182,7 @@ export default function ReviewPage() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <AlertTriangle className="h-5 w-5 text-red-500" />
-                            <h2 className="text-lg font-semibold text-red-700">Просрочено</h2>
+                            <h2 className="text-lg font-semibold text-red-700 dark:text-red-400">Просрочено</h2>
                             <Badge variant="destructive">{overdue.length}</Badge>
                         </div>
                         <div className="space-y-2">
@@ -196,8 +196,8 @@ export default function ReviewPage() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Zap className="h-5 w-5 text-amber-500" />
-                            <h2 className="text-lg font-semibold text-amber-700">На сегодня</h2>
-                            <Badge className="bg-amber-100 text-amber-800">{dueToday.length}</Badge>
+                            <h2 className="text-lg font-semibold text-amber-700 dark:text-amber-400">На сегодня</h2>
+                            <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">{dueToday.length}</Badge>
                         </div>
                         <div className="space-y-2">
                             {dueToday.map(renderTopicCard)}
@@ -210,8 +210,8 @@ export default function ReviewPage() {
                     <div>
                         <div className="flex items-center gap-2 mb-3">
                             <Calendar className="h-5 w-5 text-blue-500" />
-                            <h2 className="text-lg font-semibold text-blue-700">На этой неделе</h2>
-                            <Badge className="bg-blue-100 text-blue-800">{upcoming.length}</Badge>
+                            <h2 className="text-lg font-semibold text-blue-700 dark:text-blue-400">На этой неделе</h2>
+                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">{upcoming.length}</Badge>
                         </div>
                         <div className="space-y-2">
                             {upcoming.map(renderTopicCard)}

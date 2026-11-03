@@ -30,9 +30,9 @@ import {
 import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell"
 
 const DIFF_STYLES: Record<Difficulty, string> = {
-  easy: "text-emerald-800 border-emerald-200 bg-emerald-50",
-  medium: "text-amber-800 border-amber-200 bg-amber-50",
-  hard: "text-rose-800 border-rose-200 bg-rose-50",
+  easy: "text-emerald-800 border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
+  medium: "text-amber-800 border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
+  hard: "text-rose-800 border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300",
 }
 const DIFF_LABEL: Record<Difficulty, string> = { easy: "Easy", medium: "Medium", hard: "Hard" }
 const SUBMISSION_STATUS_LABEL: Record<Submission["status"], string> = {
@@ -41,9 +41,9 @@ const SUBMISSION_STATUS_LABEL: Record<Submission["status"], string> = {
   rejected: "Отклонено",
 }
 const SUBMISSION_STATUS_CLASS: Record<Submission["status"], string> = {
-  pending: "text-amber-800 border-amber-200 bg-amber-50",
-  approved: "text-emerald-800 border-emerald-200 bg-emerald-50",
-  rejected: "text-rose-800 border-rose-200 bg-rose-50",
+  pending: "text-amber-800 border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
+  approved: "text-emerald-800 border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
+  rejected: "text-rose-800 border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300",
 }
 
 function DifficultyBadge({ d }: { d: Difficulty }) {
@@ -558,7 +558,7 @@ export default function AdminPage() {
       contentClassName="max-w-6xl"
     >
       <Tabs defaultValue="users">
-        <TabsList className="h-auto flex-wrap justify-start rounded-[14px] border border-[#ded8cf] bg-[#f0ece5] p-1">
+        <TabsList className="h-auto flex-wrap justify-start rounded-[14px] border border-tm-line bg-tm-surface-2 p-1">
           <TabsTrigger value="users">Участники</TabsTrigger>
           <TabsTrigger value="submissions">Решения</TabsTrigger>
           <TabsTrigger value="review">Проверка</TabsTrigger>

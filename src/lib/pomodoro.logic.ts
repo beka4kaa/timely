@@ -15,11 +15,11 @@ import {
 
 /** Пять ступеней насыщенности календаря активности. */
 export const HEAT_COLORS = [
-  "#ece6db", // без занятий
-  "#eed9b6", // < 30 мин
-  "#d9ad70", // < 75 мин
-  "#b8823a", // < 135 мин
-  "#855c22", // больше
+  "rgb(var(--tm-surface-3))", // без занятий
+  "rgb(var(--tm-accent) / 0.25)", // < 30 мин
+  "rgb(var(--tm-accent) / 0.5)", // < 75 мин
+  "rgb(var(--tm-accent) / 0.75)", // < 135 мин
+  "rgb(var(--tm-accent))", // больше
 ] as const;
 
 export function heatLevel(seconds: number): number {
