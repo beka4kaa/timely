@@ -489,8 +489,9 @@ export async function pinBlocks(
   return unwrap<{ changed: string[]; pinned: boolean }>(response);
 }
 
-export async function listRevisions(scheduleId: string): Promise<ScheduleRevision[]> {
-  const response = await authFetch(`${BASE}/study-schedules/${scheduleId}/revisions/`);
+/** Предложения, которые ждут ответа, — без истории расписания. */
+export async function listOpenRevisions(scheduleId: string): Promise<ScheduleRevision[]> {
+  const response = await authFetch(`${BASE}/study-schedules/${scheduleId}/revisions/?open=1`);
   return unwrap<ScheduleRevision[]>(response);
 }
 

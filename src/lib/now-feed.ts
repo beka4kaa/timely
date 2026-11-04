@@ -726,6 +726,25 @@ function momentLabel(iso: string, todayKey: string, timeZone: string): string {
   return `${relativeDayLabel(key, todayKey)} ${formatMinutes(zonedMinutes(iso, timeZone))}`;
 }
 
+/**
+ * Списки из запросов, которые падают независимо друг от друга. Упала часть —
+ * отдаём то, что пришло. Упали все — бросаем первую ошибку, чтобы сбой не
+ * выглядел как честно пустой результат.
+ */
+export async function mergeListRequests<T>(requests: Promise<T[]>[]): Promise<T[]> {
+  const failures: unknown[] = [];
+  const lists = await Promise.all(
+    requests.map((request) =>
+      request.catch((error: unknown) => {
+        failures.push(error);
+        return [] as T[];
+      }),
+    ),
+  );
+  if (failures.length && failures.length === requests.length) throw failures[0];
+  return lists.flat();
+}
+
 /** Предложения помощника, которые ждут ответа ученика, — свежие сверху. */
 export function pendingRevisions(revisions: ScheduleRevision[]): ScheduleRevision[] {
   return revisions

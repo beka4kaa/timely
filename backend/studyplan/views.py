@@ -354,11 +354,17 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
         schedule = self.get_object()
 
         if request.method == "GET":
-            return Response(
-                ScheduleRevisionSerializer(
-                    schedule.revisions.all(), many=True
-                ).data
-            )
+            revisions = schedule.revisions.all()
+            # `?open=1` — только ждущие ответа и построенные от текущей версии:
+            # главная спрашивает их раз в две минуты, а история растёт без
+            # предела. Одного статуса мало: устаревшая ревизия остаётся
+            # «предложенной», пока её не попробуют подтвердить.
+            if request.query_params.get("open") == "1":
+                revisions = revisions.filter(
+                    status=ScheduleRevision.Status.PROPOSED,
+                    base_version=schedule.version,
+                )
+            return Response(ScheduleRevisionSerializer(revisions, many=True).data)
 
         payload = ProposeMovesSerializer(data=request.data)
         payload.is_valid(raise_exception=True)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+from curriculum.models import CoursePlan
 from studyplan.models import (
     FixedCommitment,
     LearningBlock,
@@ -318,6 +319,111 @@ class RevisionApiTests(ApiFixture):
             ]
         )
         self.assertEqual(response.status_code, 400)
+
+    def _proposal_id(self, **overrides):
+        response = self._propose(**overrides)
+        self.assertEqual(response.status_code, 201, response.content)
+        return response.json()["id"]
+
+    def _answer(self, revision_id, verb):
+        response = self.client.post(
+            f"/api/schedule-revisions/{revision_id}/{verb}/", **headers()
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.schedule.refresh_from_db()
+
+    def _listed(self, query=""):
+        response = self.client.get(
+            f"/api/study-schedules/{self.schedule_id}/revisions/{query}", **headers()
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return [item["id"] for item in response.json()]
+
+    def test_open_filter_keeps_only_waiting_proposals_on_the_current_version(self):
+        outdated = self._proposal_id()
+        applied = self._proposal_id()
+        self._answer(applied, "confirm")
+
+        # Другой блок и другая неделя: первый перенос уже занял прежнее место.
+        moves = [
+            {
+                "block_id": str(self.blocks[1].id),
+                "start_at": (self._free_start() + timedelta(days=7)).isoformat(),
+            }
+        ]
+        # Отклонена при той же версии расписания: отсеять её может только статус.
+        declined = self._proposal_id(moves=moves)
+        self._answer(declined, "reject")
+        waiting = self._proposal_id(moves=moves)
+
+        # Устаревшая всё ещё «предложена»: отсеять её может только версия.
+        self.assertEqual(
+            ScheduleRevision.objects.get(pk=outdated).status,
+            ScheduleRevision.Status.PROPOSED,
+        )
+        self.assertEqual(self._listed("?open=1"), [waiting])
+
+    def test_open_filter_sends_every_proposal_still_waiting(self):
+        first = self._proposal_id()
+        second = self._proposal_id()
+        self.assertCountEqual(self._listed("?open=1"), [first, second])
+
+    def _proposal_in_another_schedule(self, email):
+        plan = CoursePlan.objects.create(
+            user_email=email,
+            goal=self.goal,
+            title="Другой курс",
+            status=CoursePlan.Status.ACTIVE,
+        )
+        schedule = StudySchedule.objects.create(
+            user_email=email,
+            course_plan=plan,
+            template=self.template,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=41),
+        )
+        return ScheduleRevision.objects.create(
+            user_email=email,
+            schedule=schedule,
+            base_version=schedule.version,
+            proposed_version=schedule.version + 1,
+        )
+
+    def test_open_filter_stays_inside_the_requested_schedule(self):
+        # Тот же статус и та же версия: отличается только расписание.
+        self._proposal_in_another_schedule(OWNER)
+        self._proposal_in_another_schedule(STRANGER)
+        own = self._proposal_id()
+
+        self.assertEqual(self._listed("?open=1"), [own])
+
+    def test_undo_does_not_reopen_older_proposals(self):
+        # Календарь снова как был, но версия выросла: «Принять» на старом
+        # предложении упадёт, поэтому показывать его нельзя.
+        older = self._proposal_id()
+        applied = self._proposal_id()
+        self._answer(applied, "confirm")
+        self.assertEqual(self._listed("?open=1"), [])
+
+        self._answer(applied, "undo")
+        self.assertEqual(self._listed("?open=1"), [])
+        self.assertIn(older, self._listed())
+
+    def test_revisions_without_the_open_filter_return_the_whole_history(self):
+        declined = self._proposal_id()
+        self._answer(declined, "reject")
+        waiting = self._proposal_id()
+
+        self.assertCountEqual(self._listed(), [declined, waiting])
+        self.assertCountEqual(self._listed("?open=0"), [declined, waiting])
+
+    def test_stranger_cannot_read_open_proposals(self):
+        self._proposal_id()
+        response = self.client.get(
+            f"/api/study-schedules/{self.schedule_id}/revisions/?open=1",
+            **headers(STRANGER),
+        )
+        self.assertEqual(response.status_code, 404)
 
 
 class BlockPatchTests(RevisionApiTests):

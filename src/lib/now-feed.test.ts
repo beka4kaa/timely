@@ -11,6 +11,7 @@ import {
   homeworkTitle,
   lessonGrade,
   longDateLabel,
+  mergeListRequests,
   missedBlocks,
   nextSchoolDay,
   partLabel,
@@ -362,6 +363,31 @@ test("даты и метки времени по-русски", () => {
   assert.equal(relativeStamp("2026-11-03T15:58:00Z", NOW, TZ), "сегодня, 15:58");
   assert.equal(relativeStamp("2026-11-02T21:14:00Z", NOW, TZ), "вчера, 21:14");
   assert.equal(relativeStamp("2026-10-30T10:00:00Z", NOW, TZ), "пт, 10:00");
+});
+
+test("упавший запрос не прячет ответы остальных", async () => {
+  const merged = await mergeListRequests([
+    Promise.resolve(["физика"]),
+    Promise.reject(new Error("500")),
+    Promise.resolve(["алгебра", "русский"]),
+  ]);
+  assert.deepEqual(merged, ["физика", "алгебра", "русский"]);
+});
+
+test("упали все запросы — это ошибка, а не пустой список", async () => {
+  const first = new Error("нет сети");
+  await assert.rejects(
+    mergeListRequests([Promise.reject(first), Promise.reject(new Error("нет сети"))]),
+    (error) => error === first,
+  );
+});
+
+test("пустой ответ — не сбой", async () => {
+  assert.deepEqual(
+    await mergeListRequests([Promise.resolve([]), Promise.reject(new Error("500"))]),
+    [],
+  );
+  assert.deepEqual(await mergeListRequests([]), []);
 });
 
 test("оценка строки зависит от вида блока", () => {

@@ -14,10 +14,11 @@ import {
   listMaterials,
   listPlans,
 } from "@/lib/curriculum-api";
+import { mergeListRequests } from "@/lib/now-feed";
 import {
   listCalendarBlocks,
   listCommitments,
-  listRevisions,
+  listOpenRevisions,
   listSchedules,
   type ScheduleRevision,
 } from "@/lib/studyplan-api";
@@ -63,12 +64,16 @@ export const fetchCommitments = () => listCommitments();
 export const revisionsKey = (scheduleIds: string[]) =>
   `now:revisions:${scheduleIds.join(",")}`;
 
-/** Предложения изменить план по всем видимым расписаниям. */
-export async function fetchRevisions(scheduleIds: string[]): Promise<ScheduleRevision[]> {
-  const lists = await Promise.all(
-    scheduleIds.map((id) => listRevisions(id).catch(() => [] as ScheduleRevision[])),
-  );
-  return lists.flat();
+/**
+ * Открытые предложения изменить план по всем видимым расписаниям.
+ *
+ * Не ответило одно расписание — показываем остальные, а его предложения вернутся
+ * со следующим опросом. Не ответило ни одно, например ноутбук проснулся раньше
+ * Wi-Fi, — это ошибка: кэш повторит запрос раньше обычного, а пока набор расписаний
+ * тот же, оставит на экране прежние карточки.
+ */
+export function fetchRevisions(scheduleIds: string[]): Promise<ScheduleRevision[]> {
+  return mergeListRequests(scheduleIds.map((id) => listOpenRevisions(id)));
 }
 
 export { selectVisibleSchedules };
