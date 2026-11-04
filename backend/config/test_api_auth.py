@@ -219,14 +219,14 @@ class CorsTests(TestCase):
         self.assertEqual(self._allowed(response), self.APP_ORIGIN)
         self.assertIn("authorization", response.headers["Access-Control-Allow-Headers"])
 
-    def test_preflight_still_allows_the_old_header_during_the_rollout(self):
+    def test_preflight_no_longer_allows_the_old_header(self):
         response = self.client.options(
             LIST_URL,
             HTTP_ORIGIN=self.APP_ORIGIN,
             HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
             HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-user-email",
         )
-        self.assertIn("x-user-email", response.headers["Access-Control-Allow-Headers"])
+        self.assertNotIn("x-user-email", response.headers["Access-Control-Allow-Headers"])
 
     def test_preflight_from_a_foreign_origin_is_not_allowed(self):
         response = self.client.options(
