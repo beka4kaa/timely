@@ -1,12 +1,17 @@
 from rest_framework import serializers
+from config.ownership import OwnedRelationsMixin
 from .models import Subject, Topic, Subtopic, ReviewSet, SrsState, ReviewLog, SrsReviewLog, MindSession
 
-class SubtopicSerializer(serializers.ModelSerializer):
+class SubtopicSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'topic': 'subject__user_email'}
+
     class Meta:
         model = Subtopic
         fields = '__all__'
 
-class TopicSerializer(serializers.ModelSerializer):
+class TopicSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'subject': 'user_email', 'subject_id': 'user_email'}
+
     subtopics = SubtopicSerializer(many=True, read_only=True)
     subject_id = serializers.PrimaryKeyRelatedField(
         queryset=Subject.objects.all(),
@@ -41,6 +46,7 @@ class SubjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subject
         fields = '__all__'
+        read_only_fields = ['user_email']
 
 class ReviewSetSerializer(serializers.ModelSerializer):
     class Meta:
@@ -62,7 +68,10 @@ class SrsReviewLogSerializer(serializers.ModelSerializer):
         model = SrsReviewLog
         fields = '__all__'
 
-class MindSessionSerializer(serializers.ModelSerializer):
+class MindSessionSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'topic': 'subject__user_email'}
+
     class Meta:
         model = MindSession
         fields = '__all__'
+        read_only_fields = ['user_email']

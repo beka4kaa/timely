@@ -163,6 +163,7 @@ class TopicReviewEndpointTests(TestCase):
         request = APIRequestFactory().post(
             f"/api/topics/{self.topic.pk}/review/", {"rating": rating}, format="json"
         )
+        request.user_email = self.topic.subject.user_email
         return TopicViewSet.as_view({"post": "review"})(request, pk=self.topic.pk)
 
     def test_review_persists_the_computed_outcome(self) -> None:

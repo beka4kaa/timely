@@ -1,8 +1,11 @@
 from rest_framework import serializers
-from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot, Goal, GoalLink
+from config.ownership import OwnedRelationsMixin, request_email
+from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot, Goal, GoalLink, has_parent_cycle
 
 
-class GoalLinkSerializer(serializers.ModelSerializer):
+class GoalLinkSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'source': 'user_email', 'target': 'user_email'}
+
     class Meta:
         model = GoalLink
         fields = ['id', 'source', 'target', 'type', 'strength']
@@ -35,18 +38,35 @@ class GoalSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['user_email', 'computed_progress', 'children_count', 'createdAt', 'updatedAt']
 
+    def validate_parentId(self, value):
+        email = request_email(self.context.get('request'))
+        if not value:
+            return value
+        if not Goal.objects.filter(id=value, user_email=email).exists():
+            raise serializers.ValidationError('Parent goal not found.')
+        if self.instance is not None:
+            parents = dict(Goal.objects.filter(user_email=email).values_list('id', 'parent_id'))
+            parents[self.instance.pk] = value
+            if has_parent_cycle(parents):
+                raise serializers.ValidationError('A goal cannot be moved under itself.')
+        return value
+
     def get_computed_progress(self, obj):
         return obj.computed_progress()
 
     def get_children_count(self, obj):
         return obj.children.count()
 
-class SubtaskSerializer(serializers.ModelSerializer):
+class SubtaskSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'block': 'day_plan__user_email'}
+
     class Meta:
         model = Subtask
         fields = '__all__'
 
-class SegmentSerializer(serializers.ModelSerializer):
+class SegmentSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'block': 'day_plan__user_email'}
+
     class Meta:
         model = Segment
         fields = '__all__'
@@ -56,7 +76,9 @@ class TimerStateSerializer(serializers.ModelSerializer):
         model = TimerState
         fields = '__all__'
 
-class BlockSerializer(serializers.ModelSerializer):
+class BlockSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'day_plan': 'user_email'}
+
     segments = SegmentSerializer(many=True, read_only=True)
     subtasks = SubtaskSerializer(many=True, read_only=True)
     timer_state = TimerStateSerializer(read_only=True)
@@ -71,6 +93,13 @@ class DayPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = DayPlan
         fields = '__all__'
+        read_only_fields = ['user_email']
+
+    def validate_date(self, value):
+        plan = self.instance
+        if plan and DayPlan.objects.filter(user_email=plan.user_email, date=value).exclude(pk=plan.pk).exists():
+            raise serializers.ValidationError('A plan for this date already exists.')
+        return value
 
 class ScheduleSlotSerializer(serializers.ModelSerializer):
     # Map snake_case to camelCase for frontend

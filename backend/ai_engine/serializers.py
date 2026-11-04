@@ -1,6 +1,7 @@
 import json
 
 from rest_framework import serializers
+from config.ownership import OwnedRelationsMixin
 from .help_policy import HELP_PROFILES
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, UserContext, AiMemory, AiCache, ChatSession
 from .tutor_modes import get_mode
@@ -50,7 +51,9 @@ if STUDY_SESSION_AVAILABLE and StudySession is not None:
                 'title', 'topics_covered', 'completed_at', 'notes'
         ]
 
-class TopicPlanSerializer(serializers.ModelSerializer):
+class TopicPlanSerializer(OwnedRelationsMixin, serializers.ModelSerializer):
+    owned_relations = {'program': 'user_email'}
+
     # Include full topic object with nested subject
     topic = TopicNestedSerializer(read_only=True)
     # Keep flat fields for backward compatibility
@@ -95,6 +98,7 @@ class LearningProgramSerializer(serializers.ModelSerializer):
     class Meta:
         model = LearningProgram
         fields = '__all__'
+        read_only_fields = ['user_email']
 
 class UserContextSerializer(serializers.ModelSerializer):
     class Meta:

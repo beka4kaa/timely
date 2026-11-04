@@ -189,7 +189,6 @@ export interface UserSearchResult {
   id: number
   name: string
   username: string
-  email: string
   overall_elo: number
 }
 

@@ -11,7 +11,7 @@ from ai_engine.views import (
     DailyTasksView, ScheduleView, ChatSessionViewSet
 )
 from accounts.views import (
-    RegisterView, LoginView, LeaderboardViewSet, MeView, UserSearchView,
+    LeaderboardViewSet, MeView, UserSearchView,
     TaskViewSet, TaskSubmissionViewSet, ContestViewSet, PrivateLeaderboardViewSet,
     AdminUserViewSet,
 )
@@ -151,11 +151,6 @@ urlpatterns = [
     path('health/', health_check, name='health-check'),
     path('api/', include(router.urls)),
     
-    # Authentication endpoints (support both with and without trailing slash)
-    path('api/auth/register/', RegisterView.as_view(), name='register'),
-    path('api/auth/register', RegisterView.as_view(), name='register-no-slash'),
-    path('api/auth/login/', LoginView.as_view(), name='login'),
-    path('api/auth/login', LoginView.as_view(), name='login-no-slash'),
     path('api/me/', MeView.as_view(), name='me'),
     path('api/me', MeView.as_view(), name='me-no-slash'),
     path('api/users/search/', UserSearchView.as_view(), name='user-search'),

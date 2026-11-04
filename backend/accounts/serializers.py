@@ -1,64 +1,5 @@
 from rest_framework import serializers
-from django.contrib.auth.password_validation import validate_password
 from .models import CustomUser, UserRating, Task, TaskSubmission, Contest, PrivateLeaderboard
-
-class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(
-        write_only=True, required=True, validators=[validate_password]
-    )
-    password2 = serializers.CharField(write_only=True, required=True)
-    name = serializers.CharField(required=False, allow_blank=True)
-
-    class Meta:
-        model = CustomUser
-        fields = ('email', 'password', 'password2', 'name')
-
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError(
-                {"password": "Password fields didn't match."}
-            )
-        return attrs
-
-    def validate_email(self, value):
-        if CustomUser.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-        return value
-
-    def create(self, validated_data):
-        validated_data.pop('password2')
-        name = validated_data.pop('name', '')
-        
-        # Extract first and last name from full name
-        name_parts = name.split(' ', 1) if name else ['', '']
-        first_name = name_parts[0]
-        last_name = name_parts[1] if len(name_parts) > 1 else ''
-        
-        user = CustomUser.objects.create_user(
-            username=validated_data['email'],  # Use email as username
-            email=validated_data['email'],
-            password=validated_data['password'],
-            first_name=first_name,
-            last_name=last_name
-        )
-        return user
-
-
-class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(required=True, write_only=True)
-
-
-class UserSerializer(serializers.ModelSerializer):
-    name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = CustomUser
-        fields = ('id', 'email', 'name')
-
-    def get_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
-
 
 class UserRatingSerializer(serializers.ModelSerializer):
     discipline_name = serializers.CharField(source='discipline.name', read_only=True)
@@ -68,17 +9,31 @@ class UserRatingSerializer(serializers.ModelSerializer):
         fields = ('discipline_name', 'elo_score', 'tier_level')
 
 
+def public_username(user):
+    """Older accounts have their address as `username`: show others no part of it."""
+    return f"Ученик {user.pk}" if "@" in user.username else user.username
+
+
 class LeaderboardSerializer(serializers.ModelSerializer):
     ratings = UserRatingSerializer(many=True, read_only=True)
+    username = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
         fields = ('id', 'username', 'country_code', 'city', 'overall_elo', 'ratings')
 
-def _display_name(user):
+    def get_username(self, obj):
+        return public_username(obj)
+
+def display_name(user):
     if not user:
         return ''
-    return f"{user.first_name} {user.last_name}".strip() or user.username
+    return f"{user.first_name} {user.last_name}".strip() or public_username(user)
+
+
+def own_name(user):
+    """For the account itself and for admins, who can see the address anyway."""
+    return f"{user.first_name} {user.last_name}".strip() or user.username.split('@')[0]
 
 
 class TaskSerializer(serializers.ModelSerializer):
@@ -90,7 +45,7 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ('author', 'status')
 
     def get_author_name(self, obj):
-        return _display_name(obj.author) if obj.author_id else ''
+        return display_name(obj.author) if obj.author_id else ''
 
 
 class TaskSubmissionSerializer(serializers.ModelSerializer):
@@ -105,7 +60,7 @@ class TaskSubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = ('student', 'status', 'reviewed_by', 'reviewed_at', 'created_at')
 
     def get_student_name(self, obj):
-        return _display_name(obj.student)
+        return display_name(obj.student)
 
 
 class ContestSerializer(serializers.ModelSerializer):
@@ -129,7 +84,7 @@ class PrivateLeaderboardSerializer(serializers.ModelSerializer):
         read_only_fields = ('owner', 'created_at')
 
     def get_owner_name(self, obj):
-        return _display_name(obj.owner)
+        return display_name(obj.owner)
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -145,7 +100,7 @@ class MeSerializer(serializers.ModelSerializer):
         )
 
     def get_name(self, obj):
-        return _display_name(obj)
+        return own_name(obj)
 
     def get_is_admin(self, obj):
         # Single flag the frontend can gate on (admin OR moderator).
@@ -174,7 +129,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
         )
 
     def get_name(self, obj):
-        return _display_name(obj)
+        return own_name(obj)
 
     def get_is_admin(self, obj):
         return bool(obj.is_staff or obj.is_superuser or obj.is_moderator)

@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Goal, GoalLink
+from .models import Goal, GoalLink, has_parent_cycle
 from .serializers import GoalSerializer, GoalLinkSerializer
 
 
@@ -55,6 +55,7 @@ class GoalViewSet(viewsets.ModelViewSet):
             deps = Goal.objects.filter(
                 incoming_links__source=current,
                 incoming_links__type='depends_on',
+                user_email=goal.user_email,
             )
             for dep in deps:
                 if dep.id not in visited:
@@ -67,17 +68,19 @@ class GoalViewSet(viewsets.ModelViewSet):
     def blockers(self, request, pk=None):
         """Active goals that currently block this goal."""
         goal = self.get_object()
-        return Response(GoalSerializer(goal.get_blockers(), many=True).data)
+        blockers = goal.get_blockers().filter(user_email=goal.user_email)
+        return Response(GoalSerializer(blockers, many=True).data)
 
     @action(detail=True, methods=['get'])
     def subtree(self, request, pk=None):
         """This goal + all descendants."""
         goal = self.get_object()
-        ids, queue = [], [goal]
+        ids, queue = set(), [goal]
         while queue:
             current = queue.pop()
-            ids.append(current.id)
-            queue.extend(current.children.all())
+            if current.id not in ids:
+                ids.add(current.id)
+                queue.extend(current.children.filter(user_email=goal.user_email))
         result = Goal.objects.filter(id__in=ids)
         return Response(GoalSerializer(result, many=True).data)
 
@@ -113,6 +116,17 @@ class GoalViewSet(viewsets.ModelViewSet):
 
         goals_data = request.data.get('goals', [])
         links_data = request.data.get('links', [])
+
+        # `update_or_create` below would otherwise hand this account any goal
+        # whose id it names, and a parent id would hang its goal under a stranger's.
+        named_ids = {g.get('id') for g in goals_data} | {g.get('parentId') for g in goals_data}
+        if Goal.objects.filter(id__in=named_ids - {None}).exclude(user_email=user_email).exists():
+            return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
+        parents = dict(Goal.objects.filter(user_email=user_email).values_list('id', 'parent_id'))
+        parents.update({g.get('id'): g.get('parentId') for g in goals_data})
+        if has_parent_cycle(parents):
+            return Response({'error': 'A goal cannot be moved under itself.'}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             incoming_ids = set()

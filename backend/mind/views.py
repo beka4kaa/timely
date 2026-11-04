@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from config.ownership import OwnedViewSetMixin, request_email
 from .models import Subject, Topic, ReviewSet, Subtopic, MindSession
 from .serializers import SubjectSerializer, TopicSerializer, SubtopicSerializer, MindSessionSerializer
 from .srs import next_review
@@ -9,22 +10,15 @@ from datetime import timedelta
 from django.db.models import Q
 from django.core.cache import cache
 
-class SubjectViewSet(viewsets.ModelViewSet):
+class SubjectViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     
     def get_queryset(self):
-        user_email = getattr(self.request, 'user_email', None)
-        queryset = Subject.objects.all().prefetch_related('topics')
-        
-        # Filter by user - each user only sees their own data
-        if user_email:
-            queryset = queryset.filter(user_email=user_email)
-        
-        return queryset.order_by('order_index', 'created_at')
+        return super().get_queryset().prefetch_related('topics').order_by('order_index', 'created_at')
     
     def perform_create(self, serializer):
-        user_email = getattr(self.request, 'user_email', None)
+        user_email = request_email(self.request)
         # Get max order_index for new subject
         max_order = Subject.objects.filter(user_email=user_email).order_by('-order_index').values_list('order_index', flat=True).first() or -1
         serializer.save(user_email=user_email, order_index=max_order + 1)
@@ -34,25 +28,16 @@ class SubjectViewSet(viewsets.ModelViewSet):
         """Reorder subjects by updating their order_index"""
         ids = request.data.get('ids') or request.data.get('subjectIds') or []
         for index, s_id in enumerate(ids):
-            Subject.objects.filter(id=s_id).update(order_index=index)
+            self.get_queryset().filter(id=s_id).update(order_index=index)
         return Response({'status': 'reordered', 'count': len(ids)})
 
-class TopicViewSet(viewsets.ModelViewSet):
+class TopicViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Topic.objects.all()
     serializer_class = TopicSerializer
+    owner_field = 'subject__user_email'
     
     def get_queryset(self):
-        user_email = getattr(self.request, 'user_email', None)
-        queryset = Topic.objects.all().select_related('subject').prefetch_related('subtopics')
-        
-        # Filter by user (through subject) OR orphaned topics (no subject or subject without user_email)
-        if user_email:
-            queryset = queryset.filter(
-                Q(subject__user_email=user_email) |  # User's topics
-                Q(subject__user_email__isnull=True) |  # Orphaned topics (subject has no user)
-                Q(subject__user_email='') |  # Orphaned topics (subject has empty user)
-                Q(subject__isnull=True)  # Topics without subject
-            )
+        queryset = super().get_queryset().select_related('subject').prefetch_related('subtopics')
         
         # Filter by subject
         subject_id = self.request.query_params.get('subjectId') or self.request.query_params.get('subject_id')
@@ -92,7 +77,7 @@ class TopicViewSet(viewsets.ModelViewSet):
         subject_id = request.data.get('subjectId') or request.data.get('subject_id')
         
         for index, t_id in enumerate(ids):
-            Topic.objects.filter(id=t_id).update(order_index=index)
+            self.get_queryset().filter(id=t_id).update(order_index=index)
         return Response({'status': 'reordered', 'count': len(ids)})
 
     @action(detail=True, methods=['post'])
@@ -121,12 +106,13 @@ class TopicViewSet(viewsets.ModelViewSet):
         topic.save()
         return Response(TopicSerializer(topic).data)
 
-class SubtopicViewSet(viewsets.ModelViewSet):
+class SubtopicViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subtopic.objects.all()
     serializer_class = SubtopicSerializer
+    owner_field = 'topic__subject__user_email'
     
     def get_queryset(self):
-        queryset = Subtopic.objects.all().select_related('topic')
+        queryset = super().get_queryset().select_related('topic')
         
         # Filter by topic
         topic_id = self.request.query_params.get('topicId') or self.request.query_params.get('topic_id')
@@ -143,17 +129,12 @@ class SubtopicViewSet(viewsets.ModelViewSet):
         subtopic.save()
         return Response(SubtopicSerializer(subtopic).data)
 
-class MindSessionViewSet(viewsets.ModelViewSet):
+class MindSessionViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = MindSession.objects.all()
     serializer_class = MindSessionSerializer
     
     def get_queryset(self):
-        user_email = getattr(self.request, 'user_email', None)
-        queryset = MindSession.objects.all()
-        
-        # Filter by user - each user only sees their own data
-        if user_email:
-            queryset = queryset.filter(user_email=user_email)
+        queryset = super().get_queryset()
         
         # Filter by days (last N days)
         days = self.request.query_params.get('days')
@@ -168,5 +149,4 @@ class MindSessionViewSet(viewsets.ModelViewSet):
         return queryset.order_by('-started_at')
     
     def perform_create(self, serializer):
-        user_email = getattr(self.request, 'user_email', None)
-        serializer.save(user_email=user_email)
+        serializer.save(user_email=request_email(self.request))

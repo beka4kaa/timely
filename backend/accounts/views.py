@@ -1,17 +1,18 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.contrib.auth import authenticate
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboard
 from .serializers import (
-    RegisterSerializer, LoginSerializer, UserSerializer, LeaderboardSerializer,
+    LeaderboardSerializer,
     TaskSerializer, TaskSubmissionSerializer, ContestSerializer,
     PrivateLeaderboardSerializer, MeSerializer, AdminUserSerializer,
+    display_name, public_username,
 )
 
 
@@ -30,55 +31,6 @@ def is_admin_or_mod(user):
 
 def has_full_access(user):
     return bool(user and (user.has_full_access or is_admin_or_mod(user)))
-
-
-class RegisterView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            user_data = UserSerializer(user).data
-            return Response({
-                'message': 'User registered successfully',
-                'user': user_data
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class LoginView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        email = serializer.validated_data['email']
-        password = serializer.validated_data['password']
-
-        # Find user by email
-        try:
-            user = CustomUser.objects.get(email=email)
-        except CustomUser.DoesNotExist:
-            return Response({
-                'error': 'Invalid email or password'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Authenticate with username (since Django uses username for auth)
-        user = authenticate(username=user.username, password=password)
-        
-        if user is not None:
-            user_data = UserSerializer(user).data
-            return Response({
-                'message': 'Login successful',
-                'user': user_data
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({
-                'error': 'Invalid email or password'
-            }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
@@ -126,7 +78,11 @@ class MeView(APIView):
 
 
 class UserSearchView(APIView):
-    """GET /api/users/search/?q= — find players by name, username, email, or numeric id."""
+    """GET /api/users/search/?q= — find players by name, username, or numeric id.
+
+    Never by address: a student's address is never returned, and matching it
+    would confirm a guess. Usernames that hold an address don't match either.
+    """
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -134,7 +90,7 @@ class UserSearchView(APIView):
         if not q:
             return Response([])
         qs = CustomUser.objects.filter(
-            Q(username__icontains=q) | Q(email__icontains=q)
+            (Q(username__icontains=q) & ~Q(username__contains='@'))
             | Q(first_name__icontains=q) | Q(last_name__icontains=q)
         )
         if q.isdigit():
@@ -142,9 +98,8 @@ class UserSearchView(APIView):
         qs = qs.distinct().order_by('-overall_elo')[:20]
         data = [{
             'id': u.id,
-            'name': f"{u.first_name} {u.last_name}".strip() or u.username,
-            'username': u.username,
-            'email': u.email,
+            'name': display_name(u),
+            'username': public_username(u),
             'overall_elo': u.overall_elo,
         } for u in qs]
         return Response(data)
@@ -256,6 +211,19 @@ class TaskViewSet(viewsets.ModelViewSet):
         # Admin/mod-authored tasks go straight to active; peer-authored stay pending.
         new_status = 'active' if is_admin_or_mod(user) else 'pending'
         serializer.save(author=user, status=new_status)
+
+    def _require_author_or_admin(self, task):
+        user = current_user(self.request)
+        if not (is_admin_or_mod(user) or (user and task.author_id == user.id)):
+            raise PermissionDenied('Only the author or an admin can change this task.')
+
+    def perform_update(self, serializer):
+        self._require_author_or_admin(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_author_or_admin(instance)
+        instance.delete()
 
 
 class ContestViewSet(viewsets.ModelViewSet):
@@ -372,6 +340,19 @@ class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
         board = serializer.save(owner=user)
         board.members.add(user)  # owner is always a member
 
+    def _require_owner(self, board):
+        user = current_user(self.request)
+        if not user or board.owner_id != user.id:
+            raise PermissionDenied('Only the owner can change this board.')
+
+    def perform_update(self, serializer):
+        self._require_owner(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._require_owner(instance)
+        instance.delete()
+
     @action(detail=True, methods=['post'], url_path='add-member')
     def add_member(self, request, pk=None):
         """POST /api/private-leaderboards/{id}/add-member/ {identifier: email|username}"""
@@ -385,7 +366,9 @@ class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
         if uid:
             target = CustomUser.objects.filter(pk=uid).first()
         if not target and identifier:
-            target = CustomUser.objects.filter(Q(email__iexact=identifier) | Q(username__iexact=identifier)).first()
+            # Not by address, here or through a username holding one: the answer
+            # would confirm a guess about who has an account.
+            target = CustomUser.objects.filter(username__iexact=identifier).exclude(username__contains='@').first()
             if not target and identifier.isdigit():
                 target = CustomUser.objects.filter(pk=int(identifier)).first()
         if not target:

@@ -3,24 +3,30 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils.dateparse import parse_date
 from django.utils import timezone
+from config.ownership import OwnedViewSetMixin, request_email
 from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot
 from .serializers import DayPlanSerializer, BlockSerializer, SegmentSerializer, SubtaskSerializer, TimerStateSerializer, ScheduleSlotSerializer
 
-class DayPlanViewSet(viewsets.ModelViewSet):
+class DayPlanViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = DayPlan.objects.all()
     serializer_class = DayPlanSerializer
     lookup_field = 'date'
     
     def get_queryset(self):
-        user_email = getattr(self.request, 'user_email', None)
-        queryset = DayPlan.objects.all().prefetch_related('blocks')
-        if user_email:
-            queryset = queryset.filter(user_email=user_email)
-        return queryset.order_by('-date')
+        return super().get_queryset().prefetch_related('blocks').order_by('-date')
     
-    def perform_create(self, serializer):
-        user_email = getattr(self.request, 'user_email', None)
-        serializer.save(user_email=user_email)
+    def create(self, request, *args, **kwargs):
+        # One plan per account and day: asking again returns the same plan.
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plan, created = DayPlan.objects.get_or_create(
+            user_email=request_email(request),
+            date=serializer.validated_data['date'],
+        )
+        return Response(
+            self.get_serializer(plan).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=['post'])
     def copy(self, request, date=None):
@@ -29,15 +35,12 @@ class DayPlanViewSet(viewsets.ModelViewSet):
         if not source_date_str:
             return Response({'error': 'from_date is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            target_plan = self.get_object() # Creating auto handled by get_object_or_404 logic if exists? 
-            # Actually get_object might 404 if date doesn't exist. 
-            # For simplicity, let's assume existence or create logic is handled by caller or generic create.
-        except:
-             # If target day doesn't exist, create it
-            target_plan = DayPlan.objects.create(date=date)
+        # If target day doesn't exist, create it
+        target_plan, _ = DayPlan.objects.get_or_create(
+            user_email=request_email(request), date=date
+        )
 
-        source_plan = DayPlan.objects.filter(date=source_date_str).first()
+        source_plan = self.get_queryset().filter(date=source_date_str).first()
         if not source_plan:
              return Response({'error': 'Source day plan not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -59,16 +62,17 @@ class DayPlanViewSet(viewsets.ModelViewSet):
         
         return Response(DayPlanSerializer(target_plan).data)
 
-class BlockViewSet(viewsets.ModelViewSet):
+class BlockViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Block.objects.all()
     serializer_class = BlockSerializer
+    owner_field = 'day_plan__user_email'
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
         """Reorder blocks"""
         ordered_ids = request.data.get('ids', [])
         for index, block_id in enumerate(ordered_ids):
-            Block.objects.filter(id=block_id).update(order_index=index)
+            self.get_queryset().filter(id=block_id).update(order_index=index)
         return Response({'status': 'reordered'})
 
     @action(detail=True, methods=['post', 'patch'])
@@ -111,22 +115,24 @@ class BlockViewSet(viewsets.ModelViewSet):
         })
 
 
-class SegmentViewSet(viewsets.ModelViewSet):
+class SegmentViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Segment.objects.all()
     serializer_class = SegmentSerializer
+    owner_field = 'block__day_plan__user_email'
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
         """Reorder segments"""
         ordered_ids = request.data.get('ids', [])
         for index, segment_id in enumerate(ordered_ids):
-            Segment.objects.filter(id=segment_id).update(order_index=index)
+            self.get_queryset().filter(id=segment_id).update(order_index=index)
         return Response({'status': 'reordered'})
 
 
-class SubtaskViewSet(viewsets.ModelViewSet):
+class SubtaskViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subtask.objects.all()
     serializer_class = SubtaskSerializer
+    owner_field = 'block__day_plan__user_email'
 
     @action(detail=True, methods=['post'])
     def toggle(self, request, pk=None):
@@ -141,21 +147,16 @@ class SubtaskViewSet(viewsets.ModelViewSet):
         """Reorder subtasks"""
         ordered_ids = request.data.get('ids', [])
         for index, subtask_id in enumerate(ordered_ids):
-            Subtask.objects.filter(id=subtask_id).update(order_index=index)
+            self.get_queryset().filter(id=subtask_id).update(order_index=index)
         return Response({'status': 'reordered'})
 
-class ScheduleSlotViewSet(viewsets.ModelViewSet):
+class ScheduleSlotViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     """Weekly schedule slots CRUD"""
     queryset = ScheduleSlot.objects.all()
     serializer_class = ScheduleSlotSerializer
     
     def get_queryset(self):
-        user_email = getattr(self.request, 'user_email', None)
-        queryset = ScheduleSlot.objects.all()
-        if user_email:
-            queryset = queryset.filter(user_email=user_email)
-        return queryset.order_by('day_of_week', 'start_time')
+        return super().get_queryset().order_by('day_of_week', 'start_time')
     
     def perform_create(self, serializer):
-        user_email = getattr(self.request, 'user_email', None)
-        serializer.save(user_email=user_email)
+        serializer.save(user_email=request_email(self.request))

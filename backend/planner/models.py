@@ -7,6 +7,21 @@ import uuid
 # Goals planning models
 # ──────────────────────────────────────────────────────────────
 
+def has_parent_cycle(parents):
+    """Whether following `parents` (goal id -> parent id) ever comes back round."""
+    acyclic = set()
+    for start in parents:
+        path = set()
+        current = start
+        while current is not None and current not in acyclic:
+            if current in path:
+                return True
+            path.add(current)
+            current = parents.get(current)
+        acyclic |= path
+    return False
+
+
 class Goal(models.Model):
     TYPE_CHOICES = [
         ('global_goal', 'Global Goal'),
@@ -81,12 +96,13 @@ class Goal(models.Model):
     def __str__(self):
         return self.title
 
-    def computed_progress(self):
+    def computed_progress(self, _ancestors=frozenset()):
         """Recursively compute progress from children when they exist."""
-        children = list(self.children.exclude(status='archived'))
+        ancestors = _ancestors | {self.pk}
+        children = [c for c in self.children.exclude(status='archived') if c.pk not in ancestors]
         if not children:
             return self.progress
-        return round(sum(c.computed_progress() for c in children) / len(children))
+        return round(sum(c.computed_progress(ancestors) for c in children) / len(children))
 
     def get_blockers(self):
         """Return goals that block this one (active blocks links pointing here)."""

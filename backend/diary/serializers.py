@@ -31,7 +31,7 @@ class WeeklyTemplateSerializer(serializers.ModelSerializer):
     `lessons` is the normalized list from TemplateLesson rows; guarded with a
     try/except so that if the migration hasn't run yet it falls back gracefully.
     """
-    userId        = serializers.EmailField(source='user_email')
+    userId        = serializers.EmailField(source='user_email', read_only=True)
     isActive      = serializers.BooleanField(source='is_active')
     customPresets = serializers.JSONField(source='custom_presets', default=list)
     createdAt     = serializers.DateTimeField(source='created_at', read_only=True)
@@ -45,6 +45,8 @@ class WeeklyTemplateSerializer(serializers.ModelSerializer):
             'customPresets', 'isActive',
             'createdAt', 'updatedAt',
         ]
+        # A new id here would save a copy of the row instead of changing it.
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         return WeeklyTemplate.objects.create(**validated_data)
@@ -57,7 +59,7 @@ class WeeklyTemplateSerializer(serializers.ModelSerializer):
 
 
 class DiaryWeekSerializer(serializers.ModelSerializer):
-    userId = serializers.EmailField(source='user_email')
+    userId = serializers.EmailField(source='user_email', read_only=True)
     weekStart = serializers.CharField(source='week_start')
     weekEnd = serializers.CharField(source='week_end')
     templateId = serializers.CharField(source='template_id', allow_null=True, required=False)
@@ -66,6 +68,7 @@ class DiaryWeekSerializer(serializers.ModelSerializer):
     class Meta:
         model = DiaryWeek
         fields = ['id', 'userId', 'weekStart', 'weekEnd', 'templateId', 'days', 'createdAt']
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         return DiaryWeek.objects.create(**validated_data)

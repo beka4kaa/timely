@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status, mixins
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from config.ownership import HasUserEmail, OwnedViewSetMixin, request_email
 from .chat_title import generate_chat_title
 from .models import LearningProgram, WeekPlan, TopicPlan, ScheduledTest, SubjectDeadline, ChatSession
 from .serializers import LearningProgramSerializer, ChatSessionSerializer, ChatSessionListSerializer
@@ -539,8 +540,13 @@ def generate_programmatic_schedule(subjects_data, subject_deadlines, hours_per_d
 
 
 class GenerateProgramView(APIView):
+    permission_classes = [HasUserEmail]
+
     def post(self, request):
         data = request.data
+        user_email = request_email(request)
+        owned_subjects = Subject.objects.filter(user_email=user_email)
+        owned_topics = Topic.objects.filter(subject__user_email=user_email)
         
         # Handle both parameter formats for compatibility
         # New format from frontend: totalWeeks, hoursPerWeek, hoursPerDay, intensityLevel, studyDays, name, subjectDeadlines
@@ -584,7 +590,7 @@ class GenerateProgramView(APIView):
         current_level = data.get('currentLevel', data.get('current_level', 'Intermediate'))
         
         # Get subjects with their topics for AI context
-        subjects = Subject.objects.filter(id__in=subject_ids).prefetch_related('topics') if subject_ids else Subject.objects.all().prefetch_related('topics')
+        subjects = owned_subjects.filter(id__in=subject_ids).prefetch_related('topics') if subject_ids else owned_subjects.prefetch_related('topics')
         
         subject_data = []
         for s in subjects:
@@ -712,6 +718,7 @@ class GenerateProgramView(APIView):
 
             # Create Database Objects with CORRECT end_date
             program = LearningProgram.objects.create(
+                user_email=user_email,
                 name=ai_result.get('programTitle', program_name),
                 start_date=start_date,
                 end_date=end_date,  # Use actual end date from scheduler
@@ -745,7 +752,7 @@ class GenerateProgramView(APIView):
                             continue
                         
                         # Find subject object
-                        subject_obj = Subject.objects.get(id=subj_id)
+                        subject_obj = owned_subjects.get(id=subj_id)
                         
                         # Parse deadline
                         deadline_dt = parse_deadline_date(deadline_raw)
@@ -907,7 +914,7 @@ class GenerateProgramView(APIView):
                         # Find or create subject
                         subject = None
                         if subject_name:
-                            subject = Subject.objects.filter(name__icontains=subject_name).first()
+                            subject = owned_subjects.filter(name__icontains=subject_name).first()
                         if not subject and subjects:
                             subject = subjects.first()
                         
@@ -920,7 +927,7 @@ class GenerateProgramView(APIView):
                         if topic_name and session_type != 'TEST':
                             topic = Topic.objects.filter(name__icontains=topic_name, subject=subject).first()
                             if not topic:
-                                topic = Topic.objects.filter(name__icontains=topic_name).first()
+                                topic = owned_topics.filter(name__icontains=topic_name).first()
                             if not topic:
                                 # Create topic if it doesn't exist
                                 topic = Topic.objects.create(subject=subject, name=topic_name)
@@ -1009,9 +1016,9 @@ class GenerateProgramView(APIView):
                 planned_day = tp_data.get('planned_day', 1)
                 
                 # Find or create topic
-                topic = Topic.objects.filter(name__icontains=topic_name).first()
+                topic = owned_topics.filter(name__icontains=topic_name).first()
                 if not topic:
-                    subject = Subject.objects.filter(name__icontains=subject_name).first() if subject_name else subjects.first()
+                    subject = owned_subjects.filter(name__icontains=subject_name).first() if subject_name else subjects.first()
                     if subject:
                         topic = Topic.objects.create(subject=subject, name=topic_name)
                 
@@ -1158,7 +1165,7 @@ class GenerateProgramView(APIView):
                 # Find subject for this test
                 subject = None
                 if subject_name:
-                    subject = Subject.objects.filter(name__icontains=subject_name).first()
+                    subject = owned_subjects.filter(name__icontains=subject_name).first()
                 if not subject and subjects:
                     subject = subjects.first()
                 
@@ -1199,13 +1206,12 @@ class GenerateProgramView(APIView):
                 'type': error_type
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class LearningProgramViewSet(viewsets.ModelViewSet):
+class LearningProgramViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = LearningProgram.objects.all().order_by('-created_at')
     serializer_class = LearningProgramSerializer
 
-    # Optional: logic to get "current" program easily
-    def get_queryset(self):
-        return super().get_queryset()
+    def perform_create(self, serializer):
+        serializer.save(user_email=request_email(self.request))
 
 
 class ChatSessionViewSet(viewsets.ModelViewSet):
@@ -1261,9 +1267,10 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         return Response(ChatSessionSerializer(session).data, status=status.HTTP_201_CREATED)
 
 
-class TopicPlanViewSet(viewsets.ModelViewSet):
+class TopicPlanViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     """ViewSet for managing individual topic plans"""
     queryset = TopicPlan.objects.all()
+    owner_field = 'program__user_email'
     
     def get_serializer_class(self):
         from .serializers import TopicPlanSerializer
@@ -1296,6 +1303,8 @@ class AnalyzeView(APIView):
         return Response(analyze_progress(request.data))
 
 class FastTopicsView(APIView):
+    permission_classes = [HasUserEmail]
+
     def post(self, request):
         from mind.models import Subtopic
         
@@ -1306,7 +1315,7 @@ class FastTopicsView(APIView):
             return Response({'error': 'subjectId is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            subject = Subject.objects.get(id=subject_id)
+            subject = Subject.objects.get(id=subject_id, user_email=request_email(request))
         except Subject.DoesNotExist:
             return Response({'error': 'Subject not found'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -1376,19 +1385,21 @@ class GenerateSubtopicsView(APIView):
 
 class DailyTasksView(APIView):
     """Generate daily task recommendations based on SRS and progress"""
+    permission_classes = [HasUserEmail]
     
     def get(self, request):
         from mind.models import Topic
         
         now = timezone.now()
+        owned_topics = Topic.objects.filter(subject__user_email=request_email(request))
         
         # Get topics due for review
-        due_topics = Topic.objects.filter(
+        due_topics = owned_topics.filter(
             next_review_at__lte=now
         ).order_by('next_review_at')[:5]
         
         # Get topics not started
-        not_started = Topic.objects.filter(
+        not_started = owned_topics.filter(
             status='NOT_STARTED'
         ).order_by('order_index')[:3]
         
@@ -1442,10 +1453,13 @@ class DailyTasksView(APIView):
 
 class ScheduleView(APIView):
     """Generate AI-powered daily schedule"""
+    permission_classes = [HasUserEmail]
     
     def post(self, request):
         from mind.models import Topic
         from planner.models import Block, DayPlan
+
+        user_email = request_email(request)
         
         topics = request.data.get('topics', [])
         date = request.data.get('date')
@@ -1455,7 +1469,7 @@ class ScheduleView(APIView):
             date = timezone.now().date().isoformat()
         
         # Get or create day plan
-        day_plan, created = DayPlan.objects.get_or_create(date=date)
+        day_plan, created = DayPlan.objects.get_or_create(user_email=user_email, date=date)
         
         # Generate blocks based on topics to study
         blocks = []
@@ -1465,7 +1479,7 @@ class ScheduleView(APIView):
             if isinstance(topic_data, str):
                 # Topic ID provided
                 try:
-                    topic = Topic.objects.get(id=topic_data)
+                    topic = Topic.objects.get(id=topic_data, subject__user_email=user_email)
                     topic_name = topic.name
                     topic_color = topic.subject.color if topic.subject else '#3b82f6'
                 except Topic.DoesNotExist:
