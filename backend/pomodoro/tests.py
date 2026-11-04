@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from .models import FocusSession
 from .views import _compute_streak, _local_day
+from config.testing import auth_headers
 
 
 def _utc(year, month, day, hour=12, minute=0):
@@ -99,7 +100,7 @@ class FocusSessionApiTests(TestCase):
             '/api/pomodoro/sessions/',
             data=payload,
             content_type='application/json',
-            HTTP_X_USER_EMAIL=self.email,
+            **auth_headers(self.email),
         )
 
     def test_create_attaches_current_user(self):
@@ -138,7 +139,7 @@ class FocusSessionApiTests(TestCase):
         )
 
         response = self.client.get(
-            '/api/pomodoro/sessions/', HTTP_X_USER_EMAIL=self.email
+            '/api/pomodoro/sessions/', **auth_headers(self.email)
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()), 1)
@@ -157,7 +158,7 @@ class FocusSessionApiTests(TestCase):
         )
 
         response = self.client.get(
-            '/api/pomodoro/sessions/?days=7', HTTP_X_USER_EMAIL=self.email
+            '/api/pomodoro/sessions/?days=7', **auth_headers(self.email)
         )
         self.assertEqual(len(response.json()), 1)
 
@@ -182,7 +183,7 @@ class FocusSessionApiTests(TestCase):
 
         response = self.client.get(
             '/api/pomodoro/sessions/summary/?tz_offset=0',
-            HTTP_X_USER_EMAIL=self.email,
+            **auth_headers(self.email),
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -196,7 +197,7 @@ class FocusSessionApiTests(TestCase):
     def test_summary_is_empty_for_new_user(self):
         response = self.client.get(
             '/api/pomodoro/sessions/summary/?tz_offset=0',
-            HTTP_X_USER_EMAIL='fresh@timelyplan.me',
+            **auth_headers('fresh@timelyplan.me'),
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -231,7 +232,7 @@ class FocusSessionApiTests(TestCase):
 
         response = self.client.delete(
             f'/api/pomodoro/sessions/clear-day/?tz_offset=0&date={today.isoformat()}',
-            HTTP_X_USER_EMAIL=self.email,
+            **auth_headers(self.email),
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['deleted'], 1)
@@ -247,7 +248,7 @@ class FocusSessionApiTests(TestCase):
 
         response = self.client.delete(
             '/api/pomodoro/sessions/clear-day/?tz_offset=0',
-            HTTP_X_USER_EMAIL=self.email,
+            **auth_headers(self.email),
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['deleted'], 0)

@@ -15,12 +15,13 @@ from studyplan.models import (
 )
 
 from .test_materialize import MONDAY, OWNER, SchedulePlanFixture
+from config.testing import auth_headers
 
 STRANGER = "stranger@example.com"
 
 
 def headers(email: str = OWNER) -> dict:
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 class ApiFixture(SchedulePlanFixture):
@@ -61,7 +62,7 @@ class GenerateTests(ApiFixture):
             data=json.dumps({"course_plan": str(self.plan.id), "start_date": "2026-08-17"}),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 401)
 
     def test_cannot_generate_for_someone_elses_plan(self):
         response = self.generate(email=STRANGER)

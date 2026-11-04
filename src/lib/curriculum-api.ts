@@ -18,10 +18,9 @@
  */
 "use client";
 
-import { getSession } from "next-auth/react";
 
 import { BACKEND_URL } from "@/lib/api-utils";
-import { authFetch } from "@/lib/auth-fetch";
+import { authFetch, backendAuthHeaders } from "@/lib/auth-fetch";
 import type { IngestionStatusCode } from "@/lib/curriculum-progress";
 
 const BASE = `${BACKEND_URL}/api/curriculum`;
@@ -475,8 +474,7 @@ export function uploadDocument(
 ): Promise<UploadResult> {
   return new Promise<UploadResult>((resolve, reject) => {
     void (async () => {
-      const session = await getSession();
-      const email = session?.user?.email;
+      const identity = await backendAuthHeaders();
 
       const form = new FormData();
       form.append("file", file);
@@ -486,7 +484,7 @@ export function uploadDocument(
 
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${BASE}/documents/upload/`);
-      if (email) xhr.setRequestHeader("X-User-Email", email);
+      Object.entries(identity).forEach(([name, value]) => xhr.setRequestHeader(name, value));
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && options.onProgress) {

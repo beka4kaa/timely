@@ -1,41 +1,41 @@
-import { NextRequest } from 'next/server'
 import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { backendIdentityHeaders } from '@/lib/backend-token'
 
 /**
- * Creates headers for backend API requests with user email from session
+ * Creates headers for backend API requests from the caller's session.
+ *
+ * Identity comes from the session and nothing else. An x-user-email header on
+ * the incoming request is something any caller can type.
  */
-export async function createBackendHeaders(request?: NextRequest): Promise<HeadersInit> {
-    // Try to get user email from incoming request header first
-    let userEmail = request?.headers.get('x-user-email')
-
-    // If not in header, get from session
-    if (!userEmail) {
-        const session = await getServerSession(authOptions)
-        userEmail = session?.user?.email || null
+export async function createBackendHeaders(): Promise<Record<string, string>> {
+    const session = await getServerSession(authOptions)
+    const email = session?.user?.email
+    return {
+        'Content-Type': 'application/json',
+        ...(email && (await backendIdentityHeaders(email))),
     }
+}
 
-    const headers: HeadersInit = { 'Content-Type': 'application/json' }
-    if (userEmail) {
-        headers['X-User-Email'] = userEmail
-    }
-    return headers
+/** Whether createBackendHeaders found a signed-in session. */
+export function hasBackendIdentity(headers: Record<string, string>): boolean {
+    return Boolean(headers['Authorization'] || headers['X-User-Email'])
 }
 
 /**
  * Makes a GET request to the backend with user auth headers
  */
-export async function backendGet(endpoint: string, request?: NextRequest) {
-    const headers = await createBackendHeaders(request)
+export async function backendGet(endpoint: string) {
+    const headers = await createBackendHeaders()
     return fetch(`${BACKEND_URL}${endpoint}`, { headers })
 }
 
 /**
  * Makes a POST request to the backend with user auth headers
  */
-export async function backendPost(endpoint: string, body: unknown, request?: NextRequest) {
-    const headers = await createBackendHeaders(request)
+export async function backendPost(endpoint: string, body: unknown) {
+    const headers = await createBackendHeaders()
     return fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers,
@@ -46,8 +46,8 @@ export async function backendPost(endpoint: string, body: unknown, request?: Nex
 /**
  * Makes a PUT request to the backend with user auth headers
  */
-export async function backendPut(endpoint: string, body: unknown, request?: NextRequest) {
-    const headers = await createBackendHeaders(request)
+export async function backendPut(endpoint: string, body: unknown) {
+    const headers = await createBackendHeaders()
     return fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'PUT',
         headers,
@@ -58,8 +58,8 @@ export async function backendPut(endpoint: string, body: unknown, request?: Next
 /**
  * Makes a PATCH request to the backend with user auth headers
  */
-export async function backendPatch(endpoint: string, body: unknown, request?: NextRequest) {
-    const headers = await createBackendHeaders(request)
+export async function backendPatch(endpoint: string, body: unknown) {
+    const headers = await createBackendHeaders()
     return fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'PATCH',
         headers,
@@ -70,8 +70,8 @@ export async function backendPatch(endpoint: string, body: unknown, request?: Ne
 /**
  * Makes a DELETE request to the backend with user auth headers
  */
-export async function backendDelete(endpoint: string, request?: NextRequest) {
-    const headers = await createBackendHeaders(request)
+export async function backendDelete(endpoint: string) {
+    const headers = await createBackendHeaders()
     return fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'DELETE',
         headers,

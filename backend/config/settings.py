@@ -85,7 +85,17 @@ MIDDLEWARE = [
 ]
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
+# Only the app itself calls this API from a browser.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://app.timely-plan.study,https://app.timelyplan.me",
+    ).split(",")
+    if origin.strip()
+]
+if DEBUG:
+    CORS_ALLOWED_ORIGINS += ["http://localhost:3000", "http://127.0.0.1:3000"]
 CORS_ALLOW_HEADERS = [
     'content-type',
     'x-user-email',
@@ -93,6 +103,30 @@ CORS_ALLOW_HEADERS = [
     'accept',
     'origin',
 ]
+
+# Who is calling (config.middleware). The Next.js app signs tokens with this
+# secret. It is deliberately not NEXTAUTH_SECRET, so that this service cannot
+# forge sessions.
+API_JWT_SECRET = os.getenv("TIMELY_API_JWT_SECRET", "")
+# Off only while Vercel and Railway roll out separately: see config.middleware.
+API_AUTH_ENFORCE = os.getenv("API_AUTH_ENFORCE", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+if "test" in sys.argv:
+    API_JWT_SECRET = "test-only-secret-long-enough-for-hs256"
+    API_AUTH_ENFORCE = True
+
+REST_FRAMEWORK = {
+    # Identity comes from config.middleware alone, not from Basic auth or a
+    # Django admin session cookie.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    # JSON only. DRF's HTML renderer draws a form for each writable foreign key,
+    # and its dropdown lists every row in the table, whoever owns it.
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
 
 ROOT_URLCONF = "config.urls"
 
@@ -816,6 +850,11 @@ LOGGING = {
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "loggers": {
+        "config.auth": {
+            "handlers": ["console"],
+            "level": "WARNING" if "test" in sys.argv else "INFO",
+            "propagate": False,
+        },
         "ai_engine": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "nutrition": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "curriculum.ingestion.events": {

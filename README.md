@@ -233,9 +233,11 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-The examples below are for local development. `X-User-Email` is currently a
-trusted header supplied by the application gateway; do not expose this contract
-directly to untrusted clients. Keep the trailing `/` in every URL because the
+The examples below are for local development, where `API_AUTH_ENFORCE` is off
+and the `X-User-Email` header is still accepted. Production refuses it: every
+request needs `Authorization: Bearer <token>`, a short-lived token the Next.js
+app signs from the session (`src/lib/backend-token.ts`,
+`backend/config/middleware.py`). Keep the trailing `/` in every URL because the
 backend does not append it automatically.
 
 ```bash

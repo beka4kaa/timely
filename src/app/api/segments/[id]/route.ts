@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -7,9 +8,10 @@ export async function GET(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     // Get segment from backend - segments are nested under blocks
     // We need to fetch the segment directly
-    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/`)
+    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/`, { headers })
     const blocks = await response.json()
     
     // Find segment in blocks
@@ -33,12 +35,13 @@ export async function PUT(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     // Note: Django REST Framework would need a separate Segment ViewSet endpoint
     // For now, we'll create a direct endpoint
     const response = await fetch(`${BACKEND_URL}/api/planner/segments/${id}/`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
     
@@ -61,10 +64,11 @@ export async function PATCH(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/planner/segments/${id}/`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
     

@@ -74,8 +74,8 @@ export function PomodoroPage() {
       if (!email) return;
       try {
         const [nextSummary, nextSessions] = await Promise.all([
-          fetchSummary(email, SUMMARY_DAYS, signal),
-          fetchSessions(email, HISTORY_DAYS, signal),
+          fetchSummary(SUMMARY_DAYS, signal),
+          fetchSessions(HISTORY_DAYS, signal),
         ]);
         if (signal?.aborted) return;
         setSummary(nextSummary);
@@ -171,7 +171,7 @@ export function PomodoroPage() {
     if (!email) return;
     setClearing(true);
     try {
-      await clearDay(email, todayKey);
+      await clearDay(todayKey);
       await load();
     } catch (cause) {
       setError(

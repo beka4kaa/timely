@@ -217,7 +217,7 @@ export interface FoodLibraryItem {
 /** Поиск по локальной библиотеке продуктов. Пустой/ошибочный ответ → []. */
 export async function searchFoods(q: string, signal?: AbortSignal): Promise<FoodLibraryItem[]> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${BACKEND_URL}/api/nutrition/foods/?q=${encodeURIComponent(q)}&limit=40`,
       { signal, cache: 'no-store' },
     )
@@ -240,7 +240,7 @@ export type OffSearchResult =
  */
 export async function searchOpenFoodFacts(q: string, signal?: AbortSignal): Promise<OffSearchResult> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${BACKEND_URL}/api/nutrition/search-off/?q=${encodeURIComponent(q)}`,
       { signal, cache: 'no-store' },
     )
@@ -261,7 +261,7 @@ export type BarcodeResult =
 /** Поиск продукта по штрихкоду (кэш бэкенда → Open Food Facts). */
 export async function lookupBarcode(code: string): Promise<BarcodeResult> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${BACKEND_URL}/api/nutrition/barcode/${encodeURIComponent(code)}/`,
       { cache: 'no-store' },
     )

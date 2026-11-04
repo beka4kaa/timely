@@ -20,6 +20,8 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from config.testing import auth_headers
+
 from ai_engine import image_enrichment
 from ai_engine.image_models import (
     UnsupportedImageModel,
@@ -72,6 +74,7 @@ class ImageModelsEndpointTests(TestCase):
 
     def setUp(self) -> None:
         self.client = APIClient()
+        self.client.credentials(**auth_headers("student@example.com"))
 
     def test_returns_both_models(self):
         response = self.client.get(MODELS_URL)
@@ -237,6 +240,7 @@ class IllustrationEndpointModelTests(TestCase):
 
     def setUp(self) -> None:
         self.client = APIClient()
+        self.client.credentials(**auth_headers("student@example.com"))
 
     def _body(self, **extra) -> dict:
         return {

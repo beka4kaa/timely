@@ -41,7 +41,7 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
     """
     История помодоро-сессий текущего пользователя.
 
-    Пользователь определяется заголовком `X-User-Email` (config.middleware),
+    Пользователь определяется подписанным токеном (config.middleware),
     как и в остальных приложениях проекта.
     """
 

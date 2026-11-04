@@ -25,14 +25,12 @@ function fmt(sec: number): string {
 
 export function HabitDetailModal({
   habit,
-  email,
   onClose,
   onChanged,
   onEdit,
   onDelete,
 }: {
   habit: Habit
-  email: string
   onClose: () => void
   onChanged: (h: Habit) => void
   onEdit: (h: Habit) => void
@@ -53,13 +51,13 @@ export function HabitDetailModal({
   }, [running])
 
   const post = useCallback(async (body: Record<string, unknown>) => {
-    const res = await api(`/${habit.id}/log/`, email, { method: 'POST', body: JSON.stringify(body) })
+    const res = await api(`/${habit.id}/log/`, { method: 'POST', body: JSON.stringify(body) })
     if (res.ok) onChanged(mapHabit(await res.json()))
     return res.ok
-  }, [habit.id, email, onChanged])
+  }, [habit.id, onChanged])
 
   const toggleDone = async () => {
-    const res = await api(`/${habit.id}/toggle/`, email, { method: 'POST' })
+    const res = await api(`/${habit.id}/toggle/`, { method: 'POST' })
     if (res.ok) onChanged(mapHabit(await res.json()))
   }
 

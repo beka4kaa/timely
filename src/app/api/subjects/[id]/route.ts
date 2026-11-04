@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, { headers })
     const data = await response.json()
     return NextResponse.json(toCamelCase(data), { status: response.status })
@@ -24,7 +24,7 @@ export async function PUT(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
       method: 'PUT',
@@ -45,7 +45,7 @@ export async function PATCH(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
       method: 'PATCH',
@@ -66,7 +66,7 @@ export async function DELETE(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/mind/subjects/${id}/`, {
       method: 'DELETE',
       headers,

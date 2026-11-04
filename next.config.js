@@ -63,15 +63,10 @@ const nextConfig = {
       //   source: '/api/topics/:path*',
       //   destination: `${apiUrl}/api/mind/topics/:path*`,
       // },
-      // Planner App
-      {
-        source: '/api/dayplans/:path*',
-        destination: `${apiUrl}/api/planner/dayplans/:path*`,
-      },
-      {
-        source: '/api/blocks/:path*',
-        destination: `${apiUrl}/api/planner/blocks/:path*`,
-      },
+      // A rewrite goes straight to Django and can't add the caller's identity,
+      // and it wins over a Next route with a dynamic segment. Planner and
+      // mind-session calls therefore go through their handlers in src/app/api;
+      // src/lib/next-rewrites.test.ts keeps it that way.
       // AI Routes
       {
         source: '/api/ai/generate-program',
@@ -100,10 +95,6 @@ const nextConfig = {
       //   source: '/api/subtopics/:path*',
       //   destination: `${apiUrl}/api/mind/subtopics/:path*`,
       // },
-      {
-        source: '/api/mind-sessions/:path*',
-        destination: `${apiUrl}/api/mind/sessions/:path*`,
-      },
       {
         source: '/api/ai/:path*',
         destination: `${apiUrl}/api/ai/:path*`,

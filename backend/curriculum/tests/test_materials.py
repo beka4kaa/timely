@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from curriculum.models import CoursePlan, CourseTopic, LearningGoal, StudyMaterial
 from curriculum.services import materials as materials_service
+from config.testing import auth_headers
 
 OWNER = "owner@example.com"
 INTRUDER = "intruder@example.com"
@@ -11,7 +12,7 @@ INTRUDER = "intruder@example.com"
 
 def _auth(email: str) -> dict:
     """Заголовок, который проставляет `config.middleware`."""
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 def _goal(email: str = OWNER, text: str = "Подготовиться к SAT") -> LearningGoal:

@@ -5,7 +5,7 @@ import { createBackendHeaders } from '@/lib/backend-helpers'
 // AI Schedule endpoint - creates a smart daily schedule
 export async function POST(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     
     // This endpoint will use AI to generate a daily schedule

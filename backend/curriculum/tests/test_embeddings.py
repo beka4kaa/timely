@@ -42,6 +42,7 @@ from curriculum.services.embedding_index import (
     estimate_document_index,
     index_document_chunks,
 )
+from config.testing import auth_headers
 
 
 class FakeEmbeddingProvider:
@@ -662,7 +663,7 @@ class SearchEndpointTests(TestCase):
             "/api/curriculum/search/",
             {"query": "   "},
             content_type="application/json",
-            HTTP_X_USER_EMAIL="a@b.c",
+            **auth_headers("a@b.c"),
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "query_required")
@@ -676,7 +677,7 @@ class SearchEndpointTests(TestCase):
             "/api/curriculum/search/",
             {"query": "движение"},
             content_type="application/json",
-            HTTP_X_USER_EMAIL="a@b.c",
+            **auth_headers("a@b.c"),
         )
 
         self.assertEqual(response.status_code, 200)
@@ -694,7 +695,7 @@ class SearchEndpointTests(TestCase):
             "/api/curriculum/search/",
             {"query": "движение"},
             content_type="application/json",
-            HTTP_X_USER_EMAIL="a@b.c",
+            **auth_headers("a@b.c"),
         )
 
         self.assertEqual(response.status_code, 200)
@@ -714,7 +715,7 @@ class SearchEndpointTests(TestCase):
             "/api/curriculum/search/",
             {"query": "движение"},
             content_type="application/json",
-            HTTP_X_USER_EMAIL="a@b.c",
+            **auth_headers("a@b.c"),
         )
 
         self.assertEqual(response.json()["results"], [])

@@ -1,7 +1,8 @@
-// Клиент помодоро-API. Ходим напрямую в Django с заголовком `X-User-Email`,
+// Клиент помодоро-API. Ходим напрямую в Django через `authFetch`,
 // как это делает трекер привычек (`src/components/habits/lib.ts`).
 
 import { BACKEND_URL } from "@/lib/api-utils";
+import { authFetch } from "@/lib/auth-fetch";
 import {
   EMPTY_SUMMARY,
   type FocusSessionPayload,
@@ -12,20 +13,12 @@ import {
 
 const BASE = `${BACKEND_URL}/api/pomodoro/sessions`;
 
-function headers(email: string): HeadersInit {
-  return { "Content-Type": "application/json", "X-User-Email": email };
-}
-
 /** Сессии за последние `days` дней (для истории за сегодня хватает days=2). */
 export async function fetchSessions(
-  email: string,
   days: number,
   signal?: AbortSignal,
 ): Promise<FocusSessionRow[]> {
-  const response = await fetch(`${BASE}/?days=${days}`, {
-    headers: headers(email),
-    signal,
-  });
+  const response = await authFetch(`${BASE}/?days=${days}`, { signal });
   if (!response.ok) throw new Error(`Не удалось загрузить сессии (${response.status})`);
   const data = await response.json();
   return Array.isArray(data) ? data : [];
@@ -33,7 +26,6 @@ export async function fetchSessions(
 
 /** Агрегаты по дням для календаря активности и метрик. */
 export async function fetchSummary(
-  email: string,
   days: number,
   signal?: AbortSignal,
 ): Promise<PomodoroSummary> {
@@ -41,35 +33,25 @@ export async function fetchSummary(
     days: String(days),
     tz_offset: String(timezoneOffsetMinutes()),
   });
-  const response = await fetch(`${BASE}/summary/?${params}`, {
-    headers: headers(email),
-    signal,
-  });
+  const response = await authFetch(`${BASE}/summary/?${params}`, { signal });
   if (!response.ok) throw new Error(`Не удалось загрузить сводку (${response.status})`);
   return { ...EMPTY_SUMMARY, ...(await response.json()) };
 }
 
-export async function createSession(
-  email: string,
-  payload: FocusSessionPayload,
-): Promise<void> {
-  const response = await fetch(`${BASE}/`, {
+export async function createSession(payload: FocusSessionPayload): Promise<void> {
+  const response = await authFetch(`${BASE}/`, {
     method: "POST",
-    headers: headers(email),
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error(`Не удалось сохранить сессию (${response.status})`);
 }
 
 /** «Очистить день» — удаляет сессии за один локальный день. */
-export async function clearDay(email: string, date: string): Promise<void> {
+export async function clearDay(date: string): Promise<void> {
   const params = new URLSearchParams({
     date,
     tz_offset: String(timezoneOffsetMinutes()),
   });
-  const response = await fetch(`${BASE}/clear-day/?${params}`, {
-    method: "DELETE",
-    headers: headers(email),
-  });
+  const response = await authFetch(`${BASE}/clear-day/?${params}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Не удалось очистить день (${response.status})`);
 }

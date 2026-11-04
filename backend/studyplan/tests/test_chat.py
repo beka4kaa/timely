@@ -10,13 +10,14 @@ from studyplan.models import ScheduleRevision, StudySchedule
 from studyplan.services import generate_schedule
 
 from .test_materialize import MONDAY, OWNER, SchedulePlanFixture
+from config.testing import auth_headers
 
 STRANGER = "stranger@example.com"
 URL = "/api/studyplan/chat/stream/"
 
 
 def headers(email: str = OWNER) -> dict:
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 class _Function:
@@ -119,7 +120,7 @@ class GuardTests(ChatFixture):
             data=json.dumps({"message": "привет"}),
             content_type="application/json",
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 401)
 
     def test_someone_elses_schedule_is_not_found(self):
         response = self.ask(email=STRANGER)

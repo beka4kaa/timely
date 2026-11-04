@@ -23,6 +23,8 @@ import httpx
 from django.test import TestCase
 from openai import APIConnectionError, APITimeoutError, NotFoundError, RateLimitError
 
+from config.testing import auth_headers
+
 from .llm_errors import llm_error_response
 from .skills.router import _assemble_tool_calls, route_and_run_streaming
 
@@ -189,6 +191,9 @@ class LLMErrorResponseTests(TestCase):
 
 class ChatStreamViewTests(TestCase):
     URL = "/api/ai/chat/stream/"
+
+    def setUp(self) -> None:
+        self.client.defaults.update(auth_headers("student@example.com"))
 
     def test_empty_message_is_rejected_before_streaming(self) -> None:
         res = self.client.post(self.URL, {"message": "  "}, content_type="application/json")

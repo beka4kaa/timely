@@ -18,6 +18,7 @@ import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { applyTemplateToWeek } from '@/lib/diary-store'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { backendIdentityHeaders } from '@/lib/backend-token'
 
 interface SubjectRecord {
   id: string
@@ -35,7 +36,7 @@ async function buildSubjectResolver(
     const res = await fetch(`${BACKEND_URL}/api/mind/subjects/`, {
       headers: {
         'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
+        ...(await backendIdentityHeaders(userEmail)),
       },
       cache: 'no-store',
     })

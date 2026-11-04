@@ -5,6 +5,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import ChatSession
+from config.testing import auth_headers
 
 USER_A = "alice@example.com"
 USER_B = "bob@example.com"
@@ -16,7 +17,7 @@ class ChatSessionViewSetTests(TestCase):
         self.client = APIClient()
 
     def _as(self, email: str) -> dict:
-        return {"HTTP_X_USER_EMAIL": email}
+        return auth_headers(email)
 
     def test_create_requires_authentication(self) -> None:
         res = self.client.post(BASE_URL, {"id": "s1", "messages": []}, format="json")
@@ -128,10 +129,10 @@ class ChatSessionViewSetTests(TestCase):
         ids = [row["id"] for row in res.json()]
         self.assertEqual(ids, ["a1"])
 
-    def test_list_without_user_email_is_empty(self) -> None:
+    def test_list_without_credential_is_refused(self) -> None:
         ChatSession.objects.create(id="a1", user_email=USER_A, title="A's chat", messages=[])
         res = self.client.get(BASE_URL)
-        self.assertEqual(res.json(), [])
+        self.assertEqual(res.status_code, 401)
 
     def test_cannot_retrieve_or_modify_another_users_session(self) -> None:
         ChatSession.objects.create(id="a1", user_email=USER_A, title="A's chat", messages=[])

@@ -13,6 +13,7 @@ from django.test import TestCase
 
 from curriculum.ask import OUTSIDE_MARKER
 from curriculum.models import Document, KnowledgeChunk, LearningGoal
+from config.testing import auth_headers
 
 OWNER = "owner@example.com"
 INTRUDER = "intruder@example.com"
@@ -20,7 +21,7 @@ URL = "/api/curriculum/ask/stream"
 
 
 def _auth(email: str) -> dict:
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 def _events(response) -> list[tuple[str, dict]]:

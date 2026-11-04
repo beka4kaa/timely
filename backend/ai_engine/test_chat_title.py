@@ -15,6 +15,7 @@ from ai_engine.chat_title import (
     generate_chat_title,
 )
 from ai_engine.models import ChatSession
+from config.testing import auth_headers
 
 EMAIL = "student@example.com"
 
@@ -131,7 +132,7 @@ class TitleOnCreateTests(TestCase):
             "/api/ai_engine/chat-sessions/",
             payload,
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
 
     def test_backend_names_the_session_when_client_sends_none(self) -> None:
@@ -177,7 +178,7 @@ class TitleOnCreateTests(TestCase):
             "/api/ai_engine/chat-sessions/66666666-6666-6666-6666-666666666666/",
             {"messages": [user_msg("закон ома"), user_msg("а ещё?")]},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
 
         session = ChatSession.objects.get(id="66666666-6666-6666-6666-666666666666")

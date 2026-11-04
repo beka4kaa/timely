@@ -40,7 +40,7 @@ export function PomodoroSync() {
       try {
         for (const item of pending) {
           const { localId, ...payload } = item;
-          await createSession(email, payload);
+          await createSession(payload);
           sent.push(localId);
         }
       } catch {

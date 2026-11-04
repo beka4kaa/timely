@@ -2,7 +2,7 @@
  * contest-api.ts — typed client for the contest / task / leaderboard system.
  *
  * Follows the app's established pattern: direct calls to BACKEND_URL via
- * authFetch (which injects the X-User-Email header from the next-auth session).
+ * authFetch (which attaches a token signed from the next-auth session).
  * Reused by the admin dashboard, contests pages, and leaderboards.
  */
 "use client"

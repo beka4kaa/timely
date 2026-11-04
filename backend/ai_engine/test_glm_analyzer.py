@@ -10,6 +10,8 @@ import numpy as np
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from config.testing import auth_headers
+
 from ai_engine.canvas_analyzer import (
     AnalyzerValidationError,
     analyze_canvas_with_glm,
@@ -293,6 +295,7 @@ class GlmAnalyzerValidatorTests(TestCase):
 class CanvasAnalyzerEndpointTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
+        self.client.credentials(**auth_headers("student@example.com"))
 
     @patch("ai_engine.canvas_analyzer_views.analyze_canvas_with_glm")
     def test_endpoint_returns_frontend_ready_shape(self, mock_analyze) -> None:

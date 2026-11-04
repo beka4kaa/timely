@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // Timer state management for blocks
 export async function GET(
@@ -8,7 +9,8 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`)
+    const headers = await createBackendHeaders()
+    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, { headers })
     const data = await response.json()
     return NextResponse.json(data.timer_state || null)
   } catch (error) {
@@ -23,6 +25,7 @@ export async function POST(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     // Update block with timer state - this will need a custom endpoint in Django
     // For now, we'll update the block status based on timer action
@@ -35,7 +38,7 @@ export async function POST(
     
     const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ status, ...body }),
     })
     const data = await response.json()

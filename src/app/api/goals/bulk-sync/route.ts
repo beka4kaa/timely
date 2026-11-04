@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
-import { createBackendHeaders } from '@/lib/backend-helpers'
-
-function getUserEmail(headers: HeadersInit): string | null {
-  return (headers as Record<string, string>)['X-User-Email'] ?? null
-}
+import { createBackendHeaders, hasBackendIdentity } from '@/lib/backend-helpers'
 
 async function readJson(response: Response) {
   try {
@@ -16,8 +12,8 @@ async function readJson(response: Response) {
 
 export async function POST(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
-    if (!getUserEmail(headers)) {
+    const headers = await createBackendHeaders()
+    if (!hasBackendIdentity(headers)) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 

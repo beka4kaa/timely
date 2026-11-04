@@ -84,9 +84,11 @@ export const authOptions: NextAuthOptions = {
       return `${baseUrl}/dashboard`;
     },
 
-    async signIn({ user, account }) {
-      // Google OAuth users are auto-accepted
-      return true;
+    async signIn({ account, profile }) {
+      // The address is the identity everywhere downstream, so Google must have
+      // verified it. Otherwise Google OAuth users are auto-accepted.
+      const emailVerified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
+      return !(account?.provider === 'google' && emailVerified === false);
     }
   },
 

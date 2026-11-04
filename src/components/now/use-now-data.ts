@@ -211,7 +211,7 @@ export function useNowData(): NowData {
   const chats = useResource(CHATS_KEY, fetchChats, { ttl: TTL.day });
   const sessions = useResource(
     email && today ? `now:focus:${email}:${today}` : null,
-    () => fetchSessions(email ?? "", 2),
+    () => fetchSessions(2),
     { ttl: TTL.day },
   );
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // Transform camelCase to snake_case for backend
 function toSnakeCase(obj: any): any {
@@ -33,7 +34,8 @@ function toCamelCase(obj: any): any {
 
 export async function GET() {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/`)
+    const headers = await createBackendHeaders()
+    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/`, { headers })
     const data = await response.json()
     return NextResponse.json(toCamelCase(data))
   } catch (error) {
@@ -44,6 +46,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     
     // Transform frontend data to backend format
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
     // Create the block first
     const blockResponse = await fetch(`${BACKEND_URL}/api/planner/blocks/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(backendData),
     })
     
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
         if (segment.title?.trim()) {
           await fetch(`${BACKEND_URL}/api/planner/segments/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
               block: block.id,
               title: segment.title,
@@ -90,7 +93,7 @@ export async function POST(request: NextRequest) {
         if (subtask.title?.trim()) {
           await fetch(`${BACKEND_URL}/api/planner/subtasks/`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
               block: block.id,
               title: subtask.title,
@@ -103,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Fetch the complete block with segments and subtasks
-    const completeBlockResponse = await fetch(`${BACKEND_URL}/api/planner/blocks/${block.id}/`)
+    const completeBlockResponse = await fetch(`${BACKEND_URL}/api/planner/blocks/${block.id}/`, { headers })
     const completeBlock = await completeBlockResponse.json()
     
     return NextResponse.json(toCamelCase(completeBlock), { status: 201 })

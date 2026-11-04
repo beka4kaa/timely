@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function POST(
   request: NextRequest,
@@ -7,10 +8,11 @@ export async function POST(
 ) {
   const { date } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/planner/dayplans/${date}/copy/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
     const data = await response.json()

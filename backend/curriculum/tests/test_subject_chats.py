@@ -13,6 +13,7 @@ from django.test import TestCase
 
 from curriculum.chat_title import fallback_title, first_question, generate_chat_title
 from curriculum.models import LearningGoal, SubjectChat
+from config.testing import auth_headers
 
 OWNER = "owner@example.com"
 INTRUDER = "intruder@example.com"
@@ -20,7 +21,7 @@ URL = "/api/curriculum/chats/"
 
 
 def _auth(email: str) -> dict:
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 def _rows(response) -> list:
@@ -73,8 +74,8 @@ class IsolationTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_без_пользователя_список_пуст(self):
-        self.assertEqual(_rows(self.client.get(URL)), [])
+    def test_без_пользователя_отказ(self):
+        self.assertEqual(self.client.get(URL).status_code, 401)
 
 
 class ListShapeTests(TestCase):

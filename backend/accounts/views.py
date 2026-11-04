@@ -15,9 +15,9 @@ from .serializers import (
 )
 
 
-# ── Auth helpers (X-User-Email middleware sets request.user_email) ──────────
+# ── Auth helpers (config.middleware sets request.user_email) ────────────────
 def current_user(request):
-    """Resolve the CustomUser from the X-User-Email header (or ?user_email=)."""
+    """Resolve the CustomUser for the verified request.user_email."""
     email = getattr(request, 'user_email', None)
     if not email:
         return None

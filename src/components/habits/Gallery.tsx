@@ -11,12 +11,12 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
 }
 
-export function Gallery({ email }: { email: string }) {
+export function Gallery() {
   const [items, setItems] = useState<GalleryItem[] | null>(null)
 
   useEffect(() => {
     let active = true
-    api('/gallery/', email)
+    api('/gallery/')
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
         if (!active) return
@@ -27,7 +27,7 @@ export function Gallery({ email }: { email: string }) {
         })))
       })
     return () => { active = false }
-  }, [email])
+  }, [])
 
   if (items === null) {
     return (

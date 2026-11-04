@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // Transform camelCase to snake_case for backend
 function toSnakeCase(obj: any): any {
@@ -37,7 +38,8 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`)
+    const headers = await createBackendHeaders()
+    const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, { headers })
     const data = await response.json()
     return NextResponse.json(toCamelCase(data))
   } catch (error) {
@@ -52,10 +54,11 @@ export async function PUT(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(toSnakeCase(body)),
     })
     const data = await response.json()
@@ -72,10 +75,11 @@ export async function PATCH(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(toSnakeCase(body)),
     })
     const data = await response.json()
@@ -92,8 +96,10 @@ export async function DELETE(
 ) {
   const { id } = await params
   try {
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/planner/blocks/${id}/`, {
       method: 'DELETE',
+      headers,
     })
     if (response.status === 204) {
       return new NextResponse(null, { status: 204 })

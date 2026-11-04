@@ -1,4 +1,5 @@
 import { BACKEND_URL } from '@/lib/api-utils'
+import { authFetch } from '@/lib/auth-fetch'
 
 export interface CalDay {
   date: string
@@ -60,15 +61,8 @@ export function mapHabit(raw: any): Habit {
   }
 }
 
-export function api(path: string, email: string, options: RequestInit = {}) {
-  return fetch(`${BACKEND_URL}/api/habits${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-user-email': email,
-      ...options.headers,
-    },
-  })
+export function api(path: string, options: RequestInit = {}) {
+  return authFetch(`${BACKEND_URL}/api/habits${path}`, options)
 }
 
 export const COLORS = [

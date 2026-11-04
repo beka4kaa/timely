@@ -5,7 +5,7 @@ import { createBackendHeaders } from '@/lib/backend-helpers'
 // AI Daily Tasks endpoint - generates recommended daily tasks
 export async function GET(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     // Try to call backend endpoint
     try {
       const response = await fetch(`${BACKEND_URL}/api/ai/daily-tasks/`, {
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     
     // Try backend first

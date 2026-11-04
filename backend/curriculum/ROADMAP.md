@@ -880,8 +880,8 @@ Pinecone/Qdrant и hosted vector stores. OCR сканированных стра
   `docker build`, плюс тихий фолбэк на `HeuristicTokenizer`.
 - **`visibleNavigationRoutes`** в `src/config/dashboard-navigation.ts:218` — это
   allowlist из 7 роутов. Новая страница без записи в нём не появится в меню.
-- **`X-User-Email` не верифицируется нигде в приложении.** Не регрессия, но curriculum
-  поднимает ставки: чужие учебники + извлечённые решения задач.
+- **Кто вызывает API, определяет подписанный токен (`config/middleware.py`).**
+  `X-User-Email` работает, только пока выключен `API_AUTH_ENFORCE`.
 - **Пароль Redis / любые креды — только в `.env`** (в `.gitignore`, строка 29) и в
   переменные Northflank. В этот файл, в `.env.example` и в коммиты — никогда.
 

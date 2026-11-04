@@ -8,7 +8,7 @@ export async function POST(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/topics/${id}/review/`, {
       method: 'POST',

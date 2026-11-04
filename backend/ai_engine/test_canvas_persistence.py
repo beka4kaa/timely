@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from ai_engine.models import ChatSession
 from ai_engine.serializers import MAX_CANVAS_BYTES
+from config.testing import auth_headers
 
 EMAIL = "student@example.com"
 
@@ -43,7 +44,7 @@ class CanvasPersistenceTests(TestCase):
         payload = {"id": session_id, "messages": [], "canvas": CANVAS}
         payload.update(extra)
         return self.client.post(
-            "/api/ai_engine/chat-sessions/", payload, format="json", HTTP_X_USER_EMAIL=EMAIL
+            "/api/ai_engine/chat-sessions/", payload, format="json", **auth_headers(EMAIL)
         )
 
     def test_canvas_is_stored_and_returned(self) -> None:
@@ -52,7 +53,7 @@ class CanvasPersistenceTests(TestCase):
 
         detail = self.client.get(
             "/api/ai_engine/chat-sessions/11111111-1111-1111-1111-111111111111/",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(detail.data["canvas"], CANVAS)
 
@@ -76,7 +77,7 @@ class CanvasPersistenceTests(TestCase):
             "/api/ai_engine/chat-sessions/44444444-4444-4444-4444-444444444444/",
             {"canvas": {"elements": [], "camera": {"x": 0, "y": 0, "zoom": 1}}},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         session = ChatSession.objects.get(id="44444444-4444-4444-4444-444444444444")
 
@@ -89,7 +90,7 @@ class CanvasPersistenceTests(TestCase):
             "/api/ai_engine/chat-sessions/",
             {"id": "55555555-5555-5555-5555-555555555555", "messages": []},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["canvas"], {})
@@ -98,7 +99,7 @@ class CanvasPersistenceTests(TestCase):
         # Список истории обязан оставаться лёгким: холст с картинками весит
         # мегабайты, и тащить его на каждое открытие поповера нельзя.
         self.create("66666666-6666-6666-6666-666666666666")
-        listing = self.client.get("/api/ai_engine/chat-sessions/", HTTP_X_USER_EMAIL=EMAIL)
+        listing = self.client.get("/api/ai_engine/chat-sessions/", **auth_headers(EMAIL))
 
         self.assertNotIn("canvas", listing.data[0])
 
@@ -109,7 +110,7 @@ class CanvasPersistenceTests(TestCase):
             "/api/ai_engine/chat-sessions/",
             {"id": "77777777-7777-7777-7777-777777777777", "messages": [], "canvas": huge},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("canvas", str(response.data).lower())
@@ -133,7 +134,7 @@ class CanvasPersistenceTests(TestCase):
                 "canvas": {"elements": [], "strokes": {"nope": True}},
             },
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("strokes", str(response.data).lower())
@@ -156,7 +157,7 @@ class CanvasPersistenceTests(TestCase):
             "/api/ai_engine/chat-sessions/",
             {"id": "dddddddd-dddd-dddd-dddd-dddddddddddd", "messages": [], "canvas": big},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(response.status_code, 201)
 
@@ -165,7 +166,7 @@ class CanvasPersistenceTests(TestCase):
             "/api/ai_engine/chat-sessions/",
             {"id": "88888888-8888-8888-8888-888888888888", "messages": [], "canvas": [1, 2]},
             format="json",
-            HTTP_X_USER_EMAIL=EMAIL,
+            **auth_headers(EMAIL),
         )
         self.assertEqual(response.status_code, 400)
 
@@ -173,6 +174,6 @@ class CanvasPersistenceTests(TestCase):
         self.create("99999999-9999-9999-9999-999999999999")
         response = self.client.get(
             "/api/ai_engine/chat-sessions/99999999-9999-9999-9999-999999999999/",
-            HTTP_X_USER_EMAIL="someone-else@example.com",
+            **auth_headers("someone-else@example.com"),
         )
         self.assertEqual(response.status_code, 404)

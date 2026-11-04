@@ -1,7 +1,7 @@
 """HTTP-слой curriculum.
 
-Идентификация пользователя — заголовок `X-User-Email`, который проставляет
-`config.middleware` в `request.user_email`, как во всех остальных приложениях
+Идентификация пользователя — подписанный токен, который `config.middleware`
+проверяет и превращает в `request.user_email`, как во всех остальных приложениях
 проекта (см. `pomodoro/views.py`). Без него queryset пустой: доступ по умолчанию
 запрещён, а не открыт.
 
@@ -775,7 +775,7 @@ class KnowledgeSearchView(APIView):
 def _no_user():
     return Response(
         {
-            "error": "Не передан заголовок X-User-Email.",
+            "error": "Требуется вход.",
             "code": "user_required",
         },
         status=status.HTTP_401_UNAUTHORIZED,

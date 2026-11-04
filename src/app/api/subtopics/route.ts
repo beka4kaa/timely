@@ -4,7 +4,7 @@ import { createBackendHeaders } from '@/lib/backend-helpers'
 
 export async function GET(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const { searchParams } = new URL(request.url)
     const topicId = searchParams.get('topicId')
     
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/`, {
       method: 'POST',

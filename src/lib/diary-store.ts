@@ -7,6 +7,7 @@
  */
 
 import { BACKEND_URL } from '@/lib/api-utils'
+import { backendIdentityHeaders } from '@/lib/backend-token'
 import type {
   WeeklyTemplate,
   TemplateLessonSlot,
@@ -22,13 +23,13 @@ import { DAYS_ORDER, BLOCK_TYPE_META } from '@/types/diary'
 
 // ── Django API helper ────────────────────────────────────────
 
-function diaryFetch(userEmail: string, path: string, opts: RequestInit = {}): Promise<Response> {
+async function diaryFetch(userEmail: string, path: string, opts: RequestInit = {}): Promise<Response> {
   const url = `${BACKEND_URL}/api/diary${path}`
   return fetch(url, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'x-user-email': userEmail,
+      ...(await backendIdentityHeaders(userEmail)),
       ...(opts.headers ?? {}),
     },
     cache: 'no-store',

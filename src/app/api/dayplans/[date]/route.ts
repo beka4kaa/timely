@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { createBackendHeaders } from '@/lib/backend-helpers'
 
 // Transform snake_case to camelCase for frontend
 function toCamelCase(obj: any): any {
@@ -22,13 +23,14 @@ export async function GET(
 ) {
   const { date } = await params
   try {
-    const response = await fetch(`${BACKEND_URL}/api/planner/dayplans/${date}/`)
+    const headers = await createBackendHeaders()
+    const response = await fetch(`${BACKEND_URL}/api/planner/dayplans/${date}/`, { headers })
     
     if (response.status === 404) {
       // Create a new dayplan if it doesn't exist
       const createResponse = await fetch(`${BACKEND_URL}/api/planner/dayplans/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ date }),
       })
       const newData = await createResponse.json()
@@ -49,10 +51,11 @@ export async function PUT(
 ) {
   const { date } = await params
   try {
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/planner/dayplans/${date}/`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     })
     const data = await response.json()
@@ -69,8 +72,10 @@ export async function DELETE(
 ) {
   const { date } = await params
   try {
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/planner/dayplans/${date}/`, {
       method: 'DELETE',
+      headers,
     })
     if (response.status === 204) {
       return new NextResponse(null, { status: 204 })

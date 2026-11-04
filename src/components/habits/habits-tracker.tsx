@@ -192,7 +192,6 @@ function TabBar({ view, setView }: { view: View; setView: (v: View) => void }) {
 
 export function HabitsTracker() {
   const { data: session } = useSession()
-  const email = session?.user?.email ?? 'dev@timelyplan.me'
   const firstName = (session?.user?.name ?? '').split(' ')[0]
 
   const [habits, setHabits] = useState<Habit[]>([])
@@ -203,10 +202,10 @@ export function HabitsTracker() {
   const [detail, setDetail] = useState<Habit | null>(null)
 
   const fetchHabits = useCallback(async () => {
-    const res = await api('/', email)
+    const res = await api('/')
     if (res.ok) setHabits((await res.json()).map(mapHabit))
     setLoading(false)
-  }, [email])
+  }, [])
 
   useEffect(() => { fetchHabits() }, [fetchHabits])
 
@@ -214,10 +213,10 @@ export function HabitsTracker() {
 
   const handleSave = async (data: { name: string; emoji: string; color: string; goal_text: string; freeze_budget: number }) => {
     if (editing) {
-      const res = await api(`/${editing.id}/`, email, { method: 'PATCH', body: JSON.stringify(data) })
+      const res = await api(`/${editing.id}/`, { method: 'PATCH', body: JSON.stringify(data) })
       if (res.ok) { toast.success('Привычка обновлена'); fetchHabits() }
     } else {
-      const res = await api('/', email, { method: 'POST', body: JSON.stringify(data) })
+      const res = await api('/', { method: 'POST', body: JSON.stringify(data) })
       if (res.ok) { toast.success('Привычка добавлена'); fetchHabits() }
     }
     setDialogOpen(false); setEditing(null)
@@ -240,7 +239,7 @@ export function HabitsTracker() {
         calendar: h.calendar.map((c) => (c.date === todayIso ? { ...c, done: nowDone } : c)),
       }
     }))
-    const res = await api(`/${id}/toggle/`, email, { method: 'POST' })
+    const res = await api(`/${id}/toggle/`, { method: 'POST' })
     if (res.ok) {
       const updated = mapHabit(await res.json())
       replaceHabit(updated)
@@ -253,7 +252,7 @@ export function HabitsTracker() {
 
   const handleDelete = async (id: number) => {
     setHabits((prev) => prev.filter((h) => h.id !== id))
-    await api(`/${id}/`, email, { method: 'DELETE' })
+    await api(`/${id}/`, { method: 'DELETE' })
     toast.success('Привычка удалена')
   }
 
@@ -336,7 +335,7 @@ export function HabitsTracker() {
               ? <p className="text-muted-foreground text-sm text-center py-20">Добавь привычки, чтобы увидеть аналитику</p>
               : <Analytics habits={habits} />
           ) : (
-            <Gallery email={email} />
+            <Gallery />
           )}
         </motion.div>
       </AnimatePresence>
@@ -362,7 +361,6 @@ export function HabitsTracker() {
       {detail && (
         <HabitDetailModal
           habit={habits.find((h) => h.id === detail.id) ?? detail}
-          email={email}
           onClose={() => setDetail(null)}
           onChanged={replaceHabit}
           onEdit={(h) => { setDetail(null); setEditing(h); setDialogOpen(true) }}

@@ -8,7 +8,7 @@ export async function GET(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, { headers })
     const data = await response.json()
     return NextResponse.json(toCamelCase(data))
@@ -24,7 +24,7 @@ export async function PUT(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
       method: 'PUT',
@@ -45,7 +45,7 @@ export async function PATCH(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const body = await request.json()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
       method: 'PATCH',
@@ -66,7 +66,7 @@ export async function DELETE(
 ) {
   const { id } = await params
   try {
-    const headers = await createBackendHeaders(request)
+    const headers = await createBackendHeaders()
     const response = await fetch(`${BACKEND_URL}/api/mind/subtopics/${id}/`, {
       method: 'DELETE',
       headers,

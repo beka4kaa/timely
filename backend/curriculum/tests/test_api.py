@@ -31,6 +31,7 @@ from curriculum.services import goals as goals_service
 from curriculum.services.ingestion import ingest_document
 from curriculum.tests.pdf_fixtures import textbook_pdf
 from curriculum.tests.test_upload import minimal_pdf
+from config.testing import auth_headers
 
 OWNER = "owner@example.com"
 INTRUDER = "intruder@example.com"
@@ -42,7 +43,7 @@ SOLUTION_MARKERS = ("s = v0 t", "F = m a")
 
 def _auth(email: str) -> dict:
     """Заголовок, который проставляет `config.middleware`."""
-    return {"HTTP_X_USER_EMAIL": email}
+    return auth_headers(email)
 
 
 class _ApiBase(TestCase):
@@ -84,26 +85,25 @@ class _ApiBase(TestCase):
 
 
 class AuthenticationTests(_ApiBase):
-    def test_goal_list_without_header_is_empty(self):
+    def test_goal_list_without_credential_is_refused(self):
         self._make_goal()
         response = self.client.get("/api/curriculum/goals/")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.status_code, 401)
 
-    def test_goal_create_without_header_rejected(self):
+    def test_goal_create_without_credential_rejected(self):
         response = self.client.post(
             "/api/curriculum/goals/", {"original_text": "физика"}
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_document_list_without_header_is_empty(self):
+    def test_document_list_without_credential_is_refused(self):
         self._make_document(ingest=False)
         response = self.client.get("/api/curriculum/documents/")
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.status_code, 401)
 
-    def test_plan_list_without_header_is_empty(self):
+    def test_plan_list_without_credential_is_refused(self):
         response = self.client.get("/api/curriculum/plans/")
-        self.assertEqual(response.json(), [])
+        self.assertEqual(response.status_code, 401)
 
 
 class UserIsolationTests(_ApiBase):

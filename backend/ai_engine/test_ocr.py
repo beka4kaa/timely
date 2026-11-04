@@ -24,6 +24,7 @@ from rest_framework.test import APIClient
 from ai_engine import glm_client, ocr_views
 from ai_engine.glm_client import get_glm_client
 from ai_engine.ocr_views import OCR_SYSTEM_PROMPT, preprocess_and_encode
+from config.testing import auth_headers
 
 OCR_URL = "/api/ai/ocr/"
 
@@ -133,6 +134,7 @@ class PreprocessTests(TestCase):
 class OCREndpointTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
+        self.client.credentials(**auth_headers("student@example.com"))
         # CI has no provider key, and the view now short-circuits on an empty one.
         key_patch = patch("ai_engine.ocr_views.VISION_API_KEY", "test-key")
         key_patch.start()

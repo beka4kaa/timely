@@ -3,6 +3,7 @@ import { getServerSession } from '@/lib/auth-session'
 import { authOptions } from '@/lib/auth'
 import { getOrCreateWeek, forceRecreateWeek, getMondayOf, restoreWeek } from '@/lib/diary-store'
 import { BACKEND_URL } from '@/lib/api-utils'
+import { backendIdentityHeaders } from '@/lib/backend-token'
 
 /** GET /api/diary/week?weekStart=2026-02-23 */
 export async function GET(req: NextRequest) {
@@ -20,12 +21,10 @@ export async function GET(req: NextRequest) {
   // Try to fetch subjects from backend to denormalize names/colors
   let subjectsMap: Record<string, { name: string; emoji: string; color: string }> = {}
   try {
-    const token = (session as any).accessToken
-    const headers: Record<string, string> = { 
+    const headers = {
       'Content-Type': 'application/json',
-      'x-user-email': userId 
+      ...(await backendIdentityHeaders(userId)),
     }
-    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const res = await fetch(`${BACKEND_URL}/api/mind/subjects/`, { headers, cache: 'no-store' })
     if (res.ok) {
@@ -59,12 +58,10 @@ export async function POST(req: NextRequest) {
 
   let subjectsMap: Record<string, { name: string; emoji: string; color: string }> = {}
   try {
-    const token = (session as any).accessToken
-    const headers: Record<string, string> = { 
+    const headers = {
       'Content-Type': 'application/json',
-      'x-user-email': userId
+      ...(await backendIdentityHeaders(userId)),
     }
-    if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${BACKEND_URL}/api/mind/subjects/`, { headers, cache: 'no-store' })
     if (res.ok) {
       const data = await res.json()
