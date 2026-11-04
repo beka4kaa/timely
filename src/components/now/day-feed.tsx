@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { useAskRail } from "@/contexts/ask-rail";
-import { invalidateResources } from "@/lib/resource-cache";
 import {
   dayMonthLabel,
   dayPhrase,
@@ -50,6 +49,7 @@ import {
 import { formatMinutes, zonedDateKey } from "@/lib/studyplan-calendar";
 import { activityLabel, durationLabel } from "@/lib/studyplan-visuals";
 
+import { invalidatePlan } from "./now-resources";
 import styles from "./now.module.css";
 import { SubjectTile } from "./subject-tile";
 
@@ -96,9 +96,12 @@ function Ev({
 }
 
 /** Ошибку сервера — словами ученика, а не «Failed to fetch» или «Not found.». */
-function humanError(error: unknown): string {
+function humanError(
+  error: unknown,
+  staleText = "Расписание уже изменилось — это предложение устарело.",
+): string {
   if (error instanceof StudyplanApiError) {
-    if (error.isStale) return "Расписание уже изменилось — это предложение устарело.";
+    if (error.isStale) return staleText;
     if (/[а-яё]/i.test(error.message)) return error.message;
   }
   if (error instanceof TypeError) return "Нет связи с сервером — попробуй ещё раз.";
@@ -396,90 +399,104 @@ function capitalize(text: string): string {
 
 // ─────────────────────────── Изменения плана ─────────────────────────────────
 
-type RevisionState = "idle" | "busy" | "applied";
+type RevisionPhase = "idle" | "busy" | "outdated";
 
 function RevisionCard({
   revision,
-  applied,
+  open,
   today,
   timeZone,
-  onApplied,
+  onKeep,
   onDone,
   announce,
 }: {
   revision: ScheduleRevision;
-  /** Принято в этом заходе: карточка остаётся ради «Вернуть как было». */
-  applied: boolean;
+  /** Предложение ещё в списке открытых. */
+  open: boolean;
   today: string;
   timeZone: string;
-  onApplied: (revision: ScheduleRevision) => void;
-  /** Карточку можно убрать: отклонено или возвращено как было. */
+  /** Карточка нужна, даже если предложение уйдёт из списка. */
+  onKeep: (revision: ScheduleRevision) => void;
+  /** Карточку можно убрать: отклонено, возвращено как было или отказ прочитан. */
   onDone: (revision: ScheduleRevision) => void;
   announce: (message: string) => void;
 }) {
-  const [state, setState] = useState<RevisionState>(applied ? "applied" : "idle");
+  const [phase, setPhase] = useState<RevisionPhase>("idle");
+  const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const undoRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
   const rows = revisionRows(revision, today, timeZone);
   const request = revision.request_text?.trim();
   const titleId = `rev-${revision.id}`;
 
-  // Принятое — фокус на «Вернуть как было»: кнопка «Принять», на которой он
-  // стоял, исчезла, и иначе он упал бы в начало страницы.
-  useEffect(() => {
-    if (state === "applied") undoRef.current?.focus();
-  }, [state]);
+  // Ответ не прошёл, а в перечитанном списке предложения уже нет — например, на
+  // него ответили в другой вкладке. Отвечать больше не на что.
+  const gone = phase === "idle" && !applied && !open;
+  const outdated = phase === "outdated" || gone;
 
-  const refresh = () => {
-    invalidateResources("now:blocks:");
-    invalidateResources("now:revisions:");
-    invalidateResources("now:schedules");
+  // Фокус — на кнопку, которая пришла на смену: «Принять», на которой он стоял,
+  // исчезла, и иначе он упал бы в начало страницы.
+  useEffect(() => {
+    if (phase !== "busy" && (applied || outdated)) nextRef.current?.focus();
+  }, [phase, applied, outdated]);
+
+  const begin = () => {
+    setPhase("busy");
+    setError(null);
+    onKeep(revision);
+  };
+
+  // Расписание ушло вперёд, и ни одно известное предложение к нему уже не
+  // применить. Иначе на миг открылось бы следующее по свежести, с живыми кнопками.
+  const scheduleMoved = () => invalidatePlan((item) => item.schedule === revision.schedule);
+
+  /** Сервер мог ответить отказом, потому что на экране уже не то, что у него. */
+  const fail = (failure: unknown, staleText?: string) => {
+    const stale = failure instanceof StudyplanApiError && failure.isStale;
+    setError(humanError(failure, staleText));
+    setPhase(stale ? "outdated" : "idle");
+    if (stale) scheduleMoved();
+    else invalidatePlan();
   };
 
   const accept = async () => {
-    setState("busy");
-    setError(null);
+    begin();
     try {
       await confirmRevision(revision.id);
-      setState("applied");
-      onApplied(revision);
+      setApplied(true);
+      setPhase("idle");
       announce("Изменение принято. Его можно вернуть.");
-      refresh();
+      scheduleMoved();
     } catch (failure) {
-      setError(humanError(failure));
-      setState("idle");
+      fail(failure);
     }
   };
 
   const reject = async () => {
-    setState("busy");
-    setError(null);
+    begin();
     try {
       await rejectRevision(revision.id);
       announce("Предложение отклонено.");
       onDone(revision);
-      refresh();
+      invalidatePlan((item) => item.id === revision.id);
     } catch (failure) {
-      setError(humanError(failure));
-      setState("idle");
+      fail(failure);
     }
   };
 
   const undo = async () => {
-    setState("busy");
-    setError(null);
+    begin();
     try {
       await undoRevision(revision.id);
       announce("Вернули как было.");
       onDone(revision);
-      refresh();
+      scheduleMoved();
     } catch (failure) {
-      setError(humanError(failure));
-      setState("applied");
+      fail(failure, "После этого план уже менялся — вернуть как было нельзя.");
     }
   };
 
-  const showUndo = state === "applied" || (state === "busy" && applied);
+  const notice = gone ? "Это предложение больше не действует." : error;
 
   return (
     <Ev node="bare" nodeContent={<span className={styles.nodeIcon}><Pencil /></span>}>
@@ -493,7 +510,7 @@ function RevisionCard({
               {request ? `«${request}»` : "Предлагаю поменять план"}
             </p>
             <p className={styles.revSub}>
-              {showUndo
+              {applied
                 ? "Готово, план обновлён."
                 : revision.reason?.trim() || "Тогда предлагаю так:"}
             </p>
@@ -529,13 +546,27 @@ function RevisionCard({
             ))}
           </ul>
         ) : null}
+        {notice ? (
+          <p className={styles.revError} role="alert">
+            {notice}
+          </p>
+        ) : null}
         <div className={styles.revFoot}>
-          {showUndo ? (
+          {outdated ? (
             <button
-              ref={undoRef}
+              ref={nextRef}
               type="button"
               className={`${styles.btn} ${styles.btnLight} ${styles.btnSm}`}
-              disabled={state === "busy"}
+              onClick={() => onDone(revision)}
+            >
+              Понятно
+            </button>
+          ) : applied ? (
+            <button
+              ref={nextRef}
+              type="button"
+              className={`${styles.btn} ${styles.btnLight} ${styles.btnSm}`}
+              disabled={phase === "busy"}
               onClick={() => void undo()}
             >
               <Undo2 aria-hidden="true" />
@@ -546,7 +577,7 @@ function RevisionCard({
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnSoft} ${styles.btnSm}`}
-                disabled={state === "busy"}
+                disabled={phase === "busy"}
                 onClick={() => void accept()}
               >
                 <Check aria-hidden="true" />
@@ -555,7 +586,7 @@ function RevisionCard({
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnText} ${styles.btnSm}`}
-                disabled={state === "busy"}
+                disabled={phase === "busy"}
                 onClick={() => void reject()}
               >
                 Отклонить
@@ -564,11 +595,6 @@ function RevisionCard({
             </>
           )}
         </div>
-        {error ? (
-          <p className={styles.revError} role="alert">
-            {error}
-          </p>
-        ) : null}
       </div>
     </Ev>
   );
@@ -735,9 +761,10 @@ export function DayFeed({
   const nowLabel = formatMinutes(day?.nowMinutes ?? now.getHours() * 60 + now.getMinutes());
   const before = day ? [...day.current, ...day.beforeHero] : [];
 
-  // Принятые в этом заходе остаются на экране с «Вернуть как было», хотя
-  // сервер уже перестал считать их предложениями.
-  const [applied, setApplied] = useState<Map<string, ScheduleRevision>>(() => new Map());
+  // Карточка, на которую начали отвечать, остаётся на экране, даже когда сервер
+  // уже перестал считать её предложением: принятая — ради «Вернуть как было»,
+  // получившая отказ — чтобы было видно, что случилось.
+  const [kept, setKept] = useState<Map<string, ScheduleRevision>>(() => new Map());
   const [closed, setClosed] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState("");
   const [hidden, setHidden] = useState<string[]>([]);
@@ -745,7 +772,7 @@ export function DayFeed({
 
   const shown = [
     ...revisions.filter((revision) => !closed.has(revision.id)),
-    ...Array.from(applied.values()).filter(
+    ...Array.from(kept.values()).filter(
       (revision) => !closed.has(revision.id) && !revisions.some((item) => item.id === revision.id),
     ),
   ];
@@ -814,11 +841,11 @@ export function DayFeed({
           <RevisionCard
             key={revision.id}
             revision={revision}
-            applied={applied.has(revision.id)}
+            open={revisions.some((item) => item.id === revision.id)}
             today={today}
             timeZone={timeZone}
             announce={setMessage}
-            onApplied={(item) => setApplied((current) => new Map(current).set(item.id, item))}
+            onKeep={(item) => setKept((current) => new Map(current).set(item.id, item))}
             onDone={(item) => {
               setClosed((current) => new Set(current).add(item.id));
               // Карточка исчезла вместе с кнопкой, на которой был фокус, —

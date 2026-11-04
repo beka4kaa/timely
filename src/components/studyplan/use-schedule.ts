@@ -4,7 +4,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { COMMITMENTS_KEY, invalidatePlan } from "@/components/now/now-resources";
 import { listPlans, type CoursePlanSummary } from "@/lib/curriculum-api";
+import { invalidateResources } from "@/lib/resource-cache";
 import {
   type CommitmentCalendarEntry,
   type LearningCalendarEntryFields,
@@ -233,6 +235,20 @@ export function useSchedule() {
     void load();
   }, [load]);
 
+  /**
+   * Перечитать календарь после изменения. Главная и отметки рейла читают план
+   * через свой кэш, и без этого показывали бы старый ещё несколько минут.
+   * `calendarOnly` значит, что занятость не менялась.
+   */
+  const loadChanged = useCallback(
+    (options?: { calendarOnly?: boolean }) => {
+      invalidatePlan();
+      if (!options?.calendarOnly) invalidateResources(COMMITMENTS_KEY);
+      return load(options);
+    },
+    [load],
+  );
+
   const timeZone = data.state === "ready" ? data.timeZone : fallbackTimeZone;
 
   const goToWeek = useCallback(
@@ -257,11 +273,11 @@ export function useSchedule() {
           baseVersion: block.schedule_version,
         });
         setLastRevision(result.revision);
-        await load({ calendarOnly: true });
+        await loadChanged({ calendarOnly: true });
       } catch (error) {
         if (error instanceof StudyplanApiError && error.isStale) {
           setNotice("Календарь обновился — здесь была другая версия.");
-          await load({ calendarOnly: true });
+          await loadChanged({ calendarOnly: true });
         } else {
           setNotice(
             error instanceof Error ? error.message : "Перенести не получилось.",
@@ -271,7 +287,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   const undoLast = useCallback(async () => {
@@ -281,13 +297,17 @@ export function useSchedule() {
       await undoRevision(lastRevision.id);
       setLastRevision(null);
       setNotice(null);
-      await load({ calendarOnly: true });
+      await loadChanged({ calendarOnly: true });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Отменить уже нельзя.");
+      if (error instanceof StudyplanApiError && error.isStale) {
+        setLastRevision(null);
+        await loadChanged({ calendarOnly: true });
+      }
     } finally {
       setBusy(false);
     }
-  }, [lastRevision, load]);
+  }, [lastRevision, loadChanged]);
 
   const confirm = useCallback(
     async (scheduleId: string) => {
@@ -295,7 +315,7 @@ export function useSchedule() {
       setNotice(null);
       try {
         await confirmSchedule(scheduleId);
-        await load({ calendarOnly: true });
+        await loadChanged({ calendarOnly: true });
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Подтвердить не получилось.",
@@ -304,7 +324,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   const build = useCallback(
@@ -317,7 +337,7 @@ export function useSchedule() {
           startDate: zonedDateKey(new Date(), timeZone),
           timezone: timeZone,
         });
-        await load();
+        await loadChanged();
       } catch (error) {
         setNotice(
           error instanceof Error
@@ -328,7 +348,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load, timeZone],
+    [loadChanged, timeZone],
   );
 
   /**
@@ -344,7 +364,7 @@ export function useSchedule() {
       setNotice(null);
       try {
         const result = await cancelBlocks(blockIds);
-        await load({ calendarOnly: true });
+        await loadChanged({ calendarOnly: true });
         return result.changed;
       } catch (error) {
         setNotice(
@@ -355,7 +375,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   const restore = useCallback(
@@ -364,7 +384,7 @@ export function useSchedule() {
       setBusy(true);
       try {
         await cancelBlocks(blockIds, { restore: true });
-        await load({ calendarOnly: true });
+        await loadChanged({ calendarOnly: true });
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Вернуть не получилось.",
@@ -373,7 +393,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   /** Закрепить занятие или отпустить его. */
@@ -384,7 +404,7 @@ export function useSchedule() {
       setNotice(null);
       try {
         await pinBlocks(blockIds, pinned);
-        await load({ calendarOnly: true });
+        await loadChanged({ calendarOnly: true });
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Не получилось изменить.",
@@ -393,7 +413,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   /** Удалить занятое время целиком. Вернуть можно, создав его заново. */
@@ -403,7 +423,7 @@ export function useSchedule() {
       setNotice(null);
       try {
         await deleteCommitment(commitmentId);
-        await load();
+        await loadChanged();
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Удалить не получилось.",
@@ -412,7 +432,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   /**
@@ -441,7 +461,7 @@ export function useSchedule() {
           item.source,
           item.source_text,
         );
-        await load();
+        await loadChanged();
         return { ...item, id: created.id };
       } catch (error) {
         setNotice(
@@ -452,7 +472,7 @@ export function useSchedule() {
         setBusy(false);
       }
     },
-    [load],
+    [loadChanged],
   );
 
   return {
@@ -473,7 +493,7 @@ export function useSchedule() {
     removeCommitment,
     recreateCommitment,
     setPinned,
-    reload: load,
+    reload: loadChanged,
     dismissNotice: () => setNotice(null),
   };
 }

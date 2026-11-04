@@ -17,12 +17,14 @@ export interface ResourceState<T> {
   error: string | null;
   /** Идёт первая загрузка: данных ещё нет. Фоновое обновление сюда не входит. */
   loading: boolean;
-  /** Когда данные получены, epoch ms. 0 — ещё ни разу. */
+  /** Когда данные получены, epoch ms. 0 — ещё ни разу или они объявлены устаревшими. */
   loadedAt: number;
   /** Когда упала последняя попытка. 0 — после последней удачи падений не было. */
   failedAt: number;
   /** Сколько попыток подряд упало — от этого растёт пауза перед повтором. */
   failures: number;
+  /** Сколько раз ресурс объявляли устаревшим (`invalidateResources`). */
+  generation: number;
 }
 
 interface Entry {
@@ -37,6 +39,7 @@ const EMPTY: ResourceState<never> = {
   loadedAt: 0,
   failedAt: 0,
   failures: 0,
+  generation: 0,
 };
 
 /** Первый повтор через 15 с, дальше вдвое дольше, но не реже срока свежести. */
@@ -67,6 +70,11 @@ function errorText(error: unknown): string {
   return "Не удалось загрузить";
 }
 
+/** Что сейчас известно о ресурсе. */
+export function readResource<T>(key: string): ResourceState<T> {
+  return (entries.get(key)?.state ?? EMPTY) as ResourceState<T>;
+}
+
 /** Загрузить, если данных нет или они старше `ttl`. Параллельные вызовы делят один запрос. */
 export function loadResource<T>(
   key: string,
@@ -79,12 +87,18 @@ export function loadResource<T>(
   const fresh = entry && entry.state.loadedAt && Date.now() - entry.state.loadedAt < ttl;
   if (fresh && !force) return Promise.resolve();
 
+  // Пока запрос шёл, ресурс могли объявить устаревшим. Тогда его ответ ничего
+  // не решает — ни данными, ни ошибкой: всё уже решает запрос поновее.
+  const generation = entry?.state.generation ?? 0;
+  const outdated = () => readResource(key).generation !== generation;
+
   const promise = (async () => {
     // «Загружается» — только пока данных нет вовсе. Фоновое обновление
     // показывает старые данные, а не заглушку.
     if (entry?.state.data === undefined) setState(key, { loading: true });
     try {
       const data = await fetcher();
+      if (outdated()) return;
       setState(key, {
         data,
         error: null,
@@ -94,6 +108,7 @@ export function loadResource<T>(
         failures: 0,
       });
     } catch (error) {
+      if (outdated()) return;
       const failures = (entries.get(key)?.state.failures ?? 0) + 1;
       setState(key, {
         error: errorText(error),
@@ -103,7 +118,7 @@ export function loadResource<T>(
       });
     } finally {
       const current = entries.get(key);
-      if (current) entries.set(key, { ...current, promise: null });
+      if (current && !outdated()) entries.set(key, { ...current, promise: null });
     }
   })();
   const current = entries.get(key) ?? { state: EMPTY, promise: null };
@@ -111,12 +126,32 @@ export function loadResource<T>(
   return promise;
 }
 
-/** Пометить устаревшими все ресурсы с этим префиксом и перезагрузить те, что на экране. */
-export function invalidateResources(prefix: string) {
+/**
+ * Пометить устаревшими все ресурсы с этим префиксом и перезагрузить те, что на экране.
+ *
+ * Запрос, который сейчас идёт, мог уйти раньше изменения, и его ответ выдал бы
+ * старые данные за свежие. Поэтому о нём забываем: следующая загрузка начнёт
+ * новый запрос, а не присоединится к этому. Паузы между повторами тоже считаются
+ * заново: ученик только что что-то сделал и ждёт результат, а не следующей попытки
+ * через две минуты.
+ *
+ * `patch` правит уже полученные данные сразу. Для того, что известно наверняка:
+ * перезагрузка может и упасть, а такое знание не должно пропасть вместе с ней.
+ */
+export function invalidateResources<T>(prefix: string, patch?: (data: T) => T) {
   entries.forEach((entry, key) => {
-    if (key.startsWith(prefix)) {
-      entries.set(key, { ...entry, state: { ...entry.state, loadedAt: 0 } });
-    }
+    if (!key.startsWith(prefix)) return;
+    const { state } = entry;
+    entries.set(key, {
+      promise: null,
+      state: {
+        ...state,
+        data: patch && state.data !== undefined ? patch(state.data as T) : state.data,
+        loadedAt: 0,
+        failures: 0,
+        generation: state.generation + 1,
+      },
+    });
   });
   emit();
 }
@@ -135,13 +170,15 @@ export function useResource<T>(
 
   const state = useSyncExternalStore(
     subscribe,
-    () => (key ? entries.get(key)?.state ?? EMPTY : EMPTY),
+    () => (key ? readResource<T>(key) : EMPTY),
     () => EMPTY,
   ) as ResourceState<T>;
 
-  // `loadedAt` в зависимостях: `invalidateResources` обнуляет его, и ресурс,
-  // который сейчас на экране, тут же перезагружается.
-  const stale = state.loadedAt === 0;
+  // `generation` в зависимостях: `invalidateResources` меняет её, и ресурс,
+  // который сейчас на экране, тут же перезагружается. Именно она, а не
+  // `loadedAt`: у ресурса, который ещё грузится или упал, тот и так равен нулю,
+  // и второе изменение подряд осталось бы незамеченным.
+  const { generation } = state;
   useEffect(() => {
     if (!key) return;
     const run = () => void loadResource(key, () => fetcherRef.current(), ttl);
@@ -151,7 +188,7 @@ export function useResource<T>(
     }
     const timer = window.setTimeout(run, delay);
     return () => window.clearTimeout(timer);
-  }, [key, ttl, delay, stale]);
+  }, [key, ttl, delay, generation]);
 
   // Пока ресурс на экране, он обновляется по сроку свежести. Без этого рейл,
   // который живёт в layout и не размонтируется, держал бы отметки с первого

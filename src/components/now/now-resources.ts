@@ -15,6 +15,7 @@ import {
   listPlans,
 } from "@/lib/curriculum-api";
 import { mergeListRequests } from "@/lib/now-feed";
+import { invalidateResources } from "@/lib/resource-cache";
 import {
   listCalendarBlocks,
   listCommitments,
@@ -77,6 +78,24 @@ export function fetchRevisions(scheduleIds: string[]): Promise<ScheduleRevision[
 }
 
 export { selectVisibleSchedules };
+
+/**
+ * План поменялся — неважно, на какой странице. Всё, что главная и рейл о нём
+ * знают, устарело: то, что на экране, перечитается сразу, остальное — при
+ * следующем заходе.
+ *
+ * `closed` отмечает предложения, на которые больше нельзя ответить. Из уже
+ * полученных списков они уходят сразу: даже если перечитать их не выйдет,
+ * карточка с живыми кнопками не вернётся.
+ */
+export function invalidatePlan(closed?: (revision: ScheduleRevision) => boolean) {
+  invalidateResources("now:blocks:");
+  invalidateResources(SCHEDULES_KEY);
+  invalidateResources<ScheduleRevision[]>(
+    "now:revisions:",
+    closed ? (list) => list.filter((revision) => !closed(revision)) : undefined,
+  );
+}
 
 // ── Дневник ───────────────────────────────────────────────────────────────────
 

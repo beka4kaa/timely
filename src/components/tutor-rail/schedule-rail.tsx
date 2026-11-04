@@ -16,6 +16,7 @@ import { Check, ChevronDown, Plus } from "lucide-react";
 
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { paperCaption, paperTile } from "@/components/curriculum/paper";
+import { invalidatePlan } from "@/components/now/now-resources";
 import {
   CommitmentsCard,
   RevisionCard,
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/popover";
 import { useActiveSchedule } from "@/contexts/active-schedule";
 import {
+  StudyplanApiError,
   confirmRevision,
   rejectRevision,
   type ScheduleRevision,
@@ -177,6 +179,8 @@ export function ScheduleRail() {
         }
         // Новая программа появляется предложением отдельного расписания.
         if (final.stages.includes("add_course_to_schedule")) notifyApplied();
+        // На главной новое предложение должно ждать сразу, а не через две минуты.
+        if (final.revision) invalidatePlan();
       } catch (error) {
         if (abortRef.current !== controller) return;
         setState((current) => failAssistantRequest(current, error));
@@ -295,14 +299,27 @@ export function ScheduleRail() {
         if (accept) await confirmRevision(revision.id);
         else await rejectRevision(revision.id);
         setState((current) => ({ ...current, revision: null }));
+        // Принятое двигает всё расписание вперёд, и его прежние предложения уже
+        // не применить. Отказ не меняет ничего, кроме самого предложения.
+        invalidatePlan((item) =>
+          accept ? item.schedule === revision.schedule : item.id === revision.id,
+        );
         if (accept) notifyApplied();
       } catch (error) {
+        // Устаревшее уже не применить: живые кнопки ни к чему, а календарь и
+        // главная показывают не то, что на сервере.
+        const stale = error instanceof StudyplanApiError && error.isStale;
         setState((current) => ({
           ...current,
+          revision: stale ? null : current.revision,
           status: "error",
           error:
             error instanceof Error ? error.message : "Применить не получилось.",
         }));
+        invalidatePlan(
+          stale ? (item) => item.schedule === revision.schedule : undefined,
+        );
+        if (stale) notifyApplied();
       } finally {
         setApplying(false);
       }
