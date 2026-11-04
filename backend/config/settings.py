@@ -41,7 +41,8 @@ load_dotenv(BASE_DIR / '.env.local', override=True)
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-zj7m&6fm&$(h$_#848i-y$c70_@uer&k#kj(v=+@48679w6q!t")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "True") == "True"
+# Local development turns it on explicitly: see `.env.local.example`.
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
