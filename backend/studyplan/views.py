@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, time
 
+from django.db import transaction
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -487,12 +488,16 @@ class LearningBlockViewSet(viewsets.ReadOnlyModelViewSet):
             duration_minutes=data.get("duration_minutes"),
         )
         try:
-            revision = revisions_service.propose_moves(
-                schedule,
-                moves=[move],
-                reason="Ручной перенос в календаре",
-            )
-            revisions_service.confirm_revision(revision)
+            # Одним целым: жест не ждёт согласия, и предложения от него остаться
+            # не должно. Ученику скажут, что перенос не удался, а живая ревизия
+            # показалась бы на главной и применила бы его позже.
+            with transaction.atomic():
+                revision = revisions_service.propose_moves(
+                    schedule,
+                    moves=[move],
+                    reason="Ручной перенос в календаре",
+                )
+                revisions_service.confirm_revision(revision)
         except revisions_service.RevisionRejected as exc:
             return _error(str(exc), code="revision_rejected")
 

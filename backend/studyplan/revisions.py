@@ -33,7 +33,6 @@ _IMMOVABLE_STATUSES = frozenset(
         LearningBlock.Status.COMPLETED,
         LearningBlock.Status.PARTIALLY_COMPLETED,
         LearningBlock.Status.IN_PROGRESS,
-        LearningBlock.Status.CANCELLED,
     }
 )
 
@@ -123,6 +122,10 @@ def _validate_moves(
             raise RevisionRejected("Блок не принадлежит этому расписанию.")
         if block.fixed:
             raise RevisionRejected(f"Блок «{block.title}» закреплён и не переносится.")
+        if block.status == LearningBlock.Status.CANCELLED:
+            raise RevisionRejected(
+                f"Блок «{block.title}» отменён — перенос ничего не изменит."
+            )
         if block.status in _IMMOVABLE_STATUSES:
             raise RevisionRejected(
                 f"Блок «{block.title}» уже в работе или завершён — перенос ничего не изменит."
@@ -460,38 +463,43 @@ def _apply(schedule: StudySchedule, diff: dict) -> int:
     return len(updated)
 
 
-class _VersionMismatch(Exception):
-    """Внутренний сигнал: версия разошлась, транзакцию надо откатить.
+def _lock_for_answer(revision: ScheduleRevision) -> None:
+    """Взять блокировки и перечитать ревизию. Только внутри транзакции.
 
-    Нужен отдельным типом, потому что пометку «устарела» нельзя ставить ВНУТРИ
-    транзакции: откат унёс бы её вместе с остальным, ревизия навсегда осталась
-    бы «предложенной», и интерфейс предлагал бы подтвердить её снова и снова.
+    Версии отдельных курсов не защищают от одновременных переносов в двух
+    разных расписаниях. Общий lock пользователя делает проверки после него
+    атомарными относительно другого ответа.
+
+    Статус годится для решения только после этого вызова. Вызывающий приходит с
+    копией, прочитанной вне транзакции: две вкладки получают её одновременно, и
+    по такой копии второй ответ затирает первый. Порядок один для всех ответов:
+    сначала расписания, потом ревизия.
     """
+    list(
+        StudySchedule.objects.select_for_update()
+        .filter(
+            user_email=revision.user_email,
+            status__in=StudySchedule.CALENDAR_STATUSES,
+        )
+        .order_by("id")
+        .values_list("id", flat=True)
+    )
+    revision.refresh_from_db(from_queryset=ScheduleRevision.objects.select_for_update())
 
 
 def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
     """Применить изменение. Устаревшая ревизия отклоняется, а не применяется."""
-    if revision.status != ScheduleRevision.Status.PROPOSED:
-        raise RevisionRejected("Подтвердить можно только предложенную ревизию.")
+    with transaction.atomic():
+        _lock_for_answer(revision)
+        if revision.status != ScheduleRevision.Status.PROPOSED:
+            raise RevisionRejected("Подтвердить можно только предложенную ревизию.")
 
-    try:
-        with transaction.atomic():
-            # Версии отдельных курсов не защищают от одновременных переносов
-            # в двух разных расписаниях. Общий lock пользователя делает
-            # повторную проверку ниже атомарной относительно другого confirm.
-            list(
-                StudySchedule.objects.select_for_update()
-                .filter(
-                    user_email=revision.user_email,
-                    status__in=StudySchedule.CALENDAR_STATUSES,
-                )
-                .order_by("id")
-                .values_list("id", flat=True)
-            )
-            schedule = StudySchedule.objects.get(pk=revision.schedule_id)
-            if schedule.version != revision.base_version:
-                raise _VersionMismatch()
-
+        schedule = StudySchedule.objects.get(pk=revision.schedule_id)
+        stale = schedule.version != revision.base_version
+        if stale:
+            revision.status = ScheduleRevision.Status.EXPIRED
+            revision.save(update_fields=["status", "updated_at"])
+        else:
             targets = _entries(revision.diff)
             _validate_moves(
                 schedule,
@@ -512,18 +520,21 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
             revision.status = ScheduleRevision.Status.CONFIRMED
             revision.confirmed_at = django_timezone.now()
             revision.save(update_fields=["status", "confirmed_at", "updated_at"])
-    except _VersionMismatch:
-        revision.status = ScheduleRevision.Status.EXPIRED
-        revision.save(update_fields=["status", "updated_at"])
+
+    # Исключение — только после транзакции: брошенное внутри, оно откатило бы и
+    # пометку «устарела», ревизия навсегда осталась бы «предложенной», и интерфейс
+    # предлагал бы подтвердить её снова и снова.
+    if stale:
         raise StaleRevision(
             "Расписание изменилось с момента предложения — построй изменение заново."
-        ) from None
+        )
 
     return revision
 
 
 @transaction.atomic
 def reject_revision(revision: ScheduleRevision) -> ScheduleRevision:
+    _lock_for_answer(revision)
     if revision.status != ScheduleRevision.Status.PROPOSED:
         raise RevisionRejected("Отклонить можно только предложенную ревизию.")
     revision.status = ScheduleRevision.Status.REJECTED
@@ -539,18 +550,10 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
     diff применялся бы поверх более поздних правок и вернул бы блоки туда, где
     их уже никто не ждёт.
     """
+    _lock_for_answer(revision)
     if revision.status != ScheduleRevision.Status.CONFIRMED:
         raise RevisionRejected("Отменить можно только подтверждённое изменение.")
 
-    list(
-        StudySchedule.objects.select_for_update()
-        .filter(
-            user_email=revision.user_email,
-            status__in=StudySchedule.CALENDAR_STATUSES,
-        )
-        .order_by("id")
-        .values_list("id", flat=True)
-    )
     schedule = StudySchedule.objects.get(pk=revision.schedule_id)
     if schedule.version != revision.proposed_version:
         raise StaleRevision(

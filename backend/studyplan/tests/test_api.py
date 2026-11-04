@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from unittest import mock
 
 from curriculum.models import CoursePlan
+from studyplan import revisions as revisions_service
 from studyplan.models import (
     FixedCommitment,
     LearningBlock,
@@ -464,6 +466,71 @@ class BlockPatchTests(RevisionApiTests):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "revision_rejected")
+
+    def _drag_interrupted_by(self, interference):
+        """Настоящий PATCH; между предложением и подтверждением — `interference`."""
+        real_propose = revisions_service.propose_moves
+
+        def propose_then_interfere(*args, **kwargs):
+            revision = real_propose(*args, **kwargs)
+            interference()
+            return revision
+
+        with mock.patch.object(
+            revisions_service, "propose_moves", propose_then_interfere
+        ):
+            return self.client.patch(
+                f"/api/learning-blocks/{self.blocks[0].id}/",
+                data=json.dumps({"start_at": self._free_start().isoformat()}),
+                content_type="application/json",
+                **headers(),
+            )
+
+    def _assert_drag_left_nothing(self, response):
+        # Ученику сказали, что перенос не удался. Живое предложение с тем же
+        # переносом показалось бы на главной и применило бы его позже.
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(response.json()["code"], "revision_rejected")
+        self.assertEqual(self._listed(), [])
+        original = self.blocks[0].start_at
+        self.blocks[0].refresh_from_db()
+        self.assertEqual(self.blocks[0].start_at, original)
+
+    def test_drag_blocked_by_a_new_commitment_leaves_no_proposal(self):
+        target = self._free_start()
+
+        def commitment_takes_the_slot():
+            FixedCommitment.objects.create(
+                user_email=OWNER,
+                kind=FixedCommitment.Kind.FAMILY,
+                title="Репетитор",
+                start_at=target,
+                end_at=target + timedelta(hours=1),
+            )
+
+        self._assert_drag_left_nothing(
+            self._drag_interrupted_by(commitment_takes_the_slot)
+        )
+
+    def test_drag_of_a_block_cancelled_meanwhile_leaves_no_proposal(self):
+        def cancel_key_lands():
+            LearningBlock.objects.filter(pk=self.blocks[0].pk).update(
+                status=LearningBlock.Status.CANCELLED
+            )
+
+        self._assert_drag_left_nothing(self._drag_interrupted_by(cancel_key_lands))
+
+    def test_drag_overtaken_by_another_change_leaves_no_proposal(self):
+        # Отказ через версию идёт другой веткой, и пометка «устарела» внутри
+        # подтверждения не должна пережить откат всего переноса.
+        def another_tab_moves_something():
+            StudySchedule.objects.filter(pk=self.schedule.pk).update(
+                version=self.schedule.version + 1
+            )
+
+        self._assert_drag_left_nothing(
+            self._drag_interrupted_by(another_tab_moves_something)
+        )
 
     def test_put_is_not_a_way_to_move_a_block(self):
         response = self.client.put(

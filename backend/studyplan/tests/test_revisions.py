@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest import mock
+
+from django.db import connection
 
 from curriculum.models import CourseDependency
-from studyplan.models import FixedCommitment, LearningBlock, ScheduleRevision
+from studyplan.models import (
+    FixedCommitment,
+    LearningBlock,
+    ScheduleRevision,
+    StudySchedule,
+)
 from studyplan.revisions import (
     BlockMove,
     RevisionRejected,
@@ -137,6 +145,20 @@ class GuardTests(RevisionFixture):
                     BlockMove(block_id=str(block.id), start_at=self.free_slot_start())
                 ],
             )
+
+    def test_cancelled_block_is_refused_with_the_real_reason(self):
+        block = self.blocks[0]
+        block.status = LearningBlock.Status.CANCELLED
+        block.save(update_fields=["status"])
+        with self.assertRaises(RevisionRejected) as caught:
+            propose_moves(
+                self.schedule,
+                moves=[
+                    BlockMove(block_id=str(block.id), start_at=self.free_slot_start())
+                ],
+            )
+        self.assertIn("отменён", str(caught.exception))
+        self.assertNotIn("в работе", str(caught.exception))
 
     def test_overlap_with_another_block_is_rejected(self):
         first, second = self.blocks[0], self.blocks[1]
@@ -318,3 +340,202 @@ class ConfirmAndUndoTests(RevisionFixture):
         self.assertEqual(revision.status, ScheduleRevision.Status.REJECTED)
         with self.assertRaises(RevisionRejected):
             confirm_revision(revision)
+
+
+class OverlappingAnswersTests(RevisionFixture):
+    """Два ответа на одно предложение: две вкладки или два устройства.
+
+    Представление читает ревизию до транзакции, поэтому второй запрос приходит в
+    сервис с копией, где она ещё «предложена». Ответы здесь идут один за другим:
+    это единственный порядок, который оставляет блокировка, и воспроизводится он
+    без потоков, в том числе на SQLite, где `select_for_update` ничего не делает.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.block = self.blocks[0]
+        self.original = self.block.start_at
+        self.target = self.free_slot_start()
+        revision = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+        self.first, self.late = self._copies(revision)
+
+    def _copies(self, revision):
+        """То, что два запроса получили из `get_object()` до любого ответа."""
+        return (
+            ScheduleRevision.objects.get(pk=revision.pk),
+            ScheduleRevision.objects.get(pk=revision.pk),
+        )
+
+    def _assert_state(self, status, *, start_at, version):
+        self.assertEqual(
+            ScheduleRevision.objects.get(pk=self.first.pk).status, status
+        )
+        self.block.refresh_from_db()
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.block.start_at, start_at)
+        self.assertEqual(self.schedule.version, version)
+
+    def _assert_refused_for_status(self, answer, revision):
+        """Отказ из-за статуса, а не «расписание изменилось»: оно не изменилось."""
+        with self.assertRaises(RevisionRejected) as caught:
+            answer(revision)
+        self.assertNotIsInstance(caught.exception, StaleRevision)
+
+    def test_late_confirm_leaves_the_applied_move_undoable(self):
+        confirm_revision(self.first)
+
+        self._assert_refused_for_status(confirm_revision, self.late)
+
+        self._assert_state(
+            ScheduleRevision.Status.CONFIRMED, start_at=self.target, version=2
+        )
+        undo_revision(self.late)
+        self._assert_state(
+            ScheduleRevision.Status.REVERTED, start_at=self.original, version=3
+        )
+
+    def test_late_confirm_does_not_apply_a_declined_move(self):
+        reject_revision(self.first)
+
+        self._assert_refused_for_status(confirm_revision, self.late)
+
+        self._assert_state(
+            ScheduleRevision.Status.REJECTED, start_at=self.original, version=1
+        )
+
+    def test_late_reject_leaves_the_applied_move_undoable(self):
+        confirm_revision(self.first)
+
+        self._assert_refused_for_status(reject_revision, self.late)
+
+        self._assert_state(
+            ScheduleRevision.Status.CONFIRMED, start_at=self.target, version=2
+        )
+        undo_revision(self.late)
+        self._assert_state(
+            ScheduleRevision.Status.REVERTED, start_at=self.original, version=3
+        )
+
+    def test_late_confirm_on_a_changed_schedule_keeps_the_rejection(self):
+        # Версия разошлась, но «устарела» можно писать только поверх
+        # «предложена»: ученик уже ответил, и этот ответ не должен потеряться.
+        reject_revision(self.first)
+        other = propose_moves(
+            self.schedule,
+            moves=[
+                BlockMove(
+                    block_id=str(self.blocks[1].id),
+                    start_at=self.target + timedelta(days=7),
+                )
+            ],
+        )
+        confirm_revision(other)
+
+        self._assert_refused_for_status(confirm_revision, self.late)
+
+        self._assert_state(
+            ScheduleRevision.Status.REJECTED, start_at=self.original, version=2
+        )
+
+    def test_late_undo_names_the_real_reason(self):
+        confirm_revision(self.first)
+        first_undo, late_undo = self._copies(self.first)
+        undo_revision(first_undo)
+
+        self._assert_refused_for_status(undo_revision, late_undo)
+
+        self._assert_state(
+            ScheduleRevision.Status.REVERTED, start_at=self.original, version=3
+        )
+
+    def test_refused_answer_refreshes_the_callers_copy(self):
+        confirm_revision(self.first)
+
+        self._assert_refused_for_status(reject_revision, self.late)
+
+        self.assertEqual(self.late.status, ScheduleRevision.Status.CONFIRMED)
+
+    def test_outdated_proposal_still_expires(self):
+        # Обратная сторона: если ответа ещё не было, пометка «устарела» обязана
+        # дожить до конца, иначе кнопка предлагала бы подтвердить снова и снова.
+        other = propose_moves(
+            self.schedule,
+            moves=[
+                BlockMove(
+                    block_id=str(self.blocks[1].id),
+                    start_at=self.target + timedelta(days=7),
+                )
+            ],
+        )
+        confirm_revision(other)
+
+        with self.assertRaises(StaleRevision):
+            confirm_revision(self.late)
+
+        self.assertEqual(self.late.status, ScheduleRevision.Status.EXPIRED)
+        self._assert_state(
+            ScheduleRevision.Status.EXPIRED, start_at=self.original, version=2
+        )
+
+
+class AnswerLockTests(RevisionFixture):
+    """Какие блокировки просит ответ.
+
+    SQLite игнорирует `select_for_update`, так что на нём никто не заметит, что
+    блокировку убрали, а на PostgreSQL ответы снова начнут затирать друг друга.
+    Поэтому компилятору говорят, что база их умеет, а из готового запроса
+    блокировку записывают и вырезают: сам SQLite такого синтаксиса не поймёт.
+    """
+
+    FOR_UPDATE = " FOR UPDATE"
+    CALENDAR_THEN_REVISION = [
+        StudySchedule._meta.db_table,
+        ScheduleRevision._meta.db_table,
+    ]
+
+    def _locks_requested_by(self, answer, revision):
+        locked = []
+
+        def record_and_strip(execute, sql, params, many, context):
+            if sql.endswith(self.FOR_UPDATE):
+                locked.append(sql.split('FROM "', 1)[1].split('"', 1)[0])
+                sql = sql.removesuffix(self.FOR_UPDATE)
+            return execute(sql, params, many, context)
+
+        with mock.patch.object(connection.features, "has_select_for_update", True):
+            with connection.execute_wrapper(record_and_strip):
+                answer(revision)
+        return locked
+
+    def _proposal(self):
+        return propose_moves(
+            self.schedule,
+            moves=[
+                BlockMove(
+                    block_id=str(self.blocks[0].id), start_at=self.free_slot_start()
+                )
+            ],
+        )
+
+    def test_confirm_locks_the_calendar_then_the_revision(self):
+        self.assertEqual(
+            self._locks_requested_by(confirm_revision, self._proposal()),
+            self.CALENDAR_THEN_REVISION,
+        )
+
+    def test_reject_locks_the_calendar_then_the_revision(self):
+        self.assertEqual(
+            self._locks_requested_by(reject_revision, self._proposal()),
+            self.CALENDAR_THEN_REVISION,
+        )
+
+    def test_undo_locks_the_calendar_then_the_revision(self):
+        revision = self._proposal()
+        confirm_revision(revision)
+        self.assertEqual(
+            self._locks_requested_by(undo_revision, revision),
+            self.CALENDAR_THEN_REVISION,
+        )
