@@ -503,6 +503,17 @@ def _lock_for_answer(revision: ScheduleRevision) -> None:
     revision.refresh_from_db(from_queryset=ScheduleRevision.objects.select_for_update())
 
 
+def _left_the_calendar(schedule: StudySchedule) -> bool:
+    """Расписание заменили или завершили, а его версия при этом не изменилась.
+
+    Отвечать на такую ревизию значит писать мимо календаря: блок переехал бы в
+    копии, которой ученик уже не видит, а сказали бы ему «Готово». И `_lock_for_answer`
+    это расписание не брал, а `setup.py` берёт все расписания ученика: запись сюда
+    поймала бы с ним deadlock.
+    """
+    return schedule.status not in StudySchedule.CALENDAR_STATUSES
+
+
 def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
     """Применить изменение. Устаревшая ревизия отклоняется, а не применяется."""
     with transaction.atomic():
@@ -511,7 +522,9 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
             raise ClosedRevision("Это предложение уже закрыто.")
 
         schedule = StudySchedule.objects.get(pk=revision.schedule_id)
-        stale = schedule.version != revision.base_version
+        stale = (
+            schedule.version != revision.base_version or _left_the_calendar(schedule)
+        )
         if stale:
             revision.status = ScheduleRevision.Status.EXPIRED
             revision.save(update_fields=["status", "updated_at"])
@@ -572,7 +585,7 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
         raise ClosedRevision("Отменить можно только подтверждённое изменение.")
 
     schedule = StudySchedule.objects.get(pk=revision.schedule_id)
-    if schedule.version != revision.proposed_version:
+    if schedule.version != revision.proposed_version or _left_the_calendar(schedule):
         raise StaleRevision(
             "После этого изменения расписание менялось — отменить его уже нельзя."
         )

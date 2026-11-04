@@ -28,7 +28,7 @@ from studyplan.revisions import (
     reject_revision,
     undo_revision,
 )
-from studyplan.services import generate_schedule
+from studyplan.services import confirm_schedule, generate_schedule
 
 from .test_materialize import MONDAY, SchedulePlanFixture
 
@@ -576,6 +576,84 @@ class DecliningClosesOlderProposalsTests(RevisionFixture):
         self.assertEqual(self._status(elsewhere), ScheduleRevision.Status.PROPOSED)
 
 
+class ReplacedScheduleTests(RevisionFixture):
+    """Подтверждение нового варианта архивирует прежний, не меняя его версию.
+
+    Поэтому проверки версии здесь мало: без отдельной проверки блок переехал бы в
+    архивной копии, в живом календаре ничего бы не изменилось, а ученику сказали бы
+    «Готово». Другая вкладка могла заменить расписание в любой момент.
+    """
+
+    def setUp(self):
+        super().setUp()
+        confirm_schedule(self.schedule)
+        self.block = self.blocks[0]
+        self.original = self.block.start_at
+        self.target = self.free_slot_start()
+        self.revision = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+
+    def _replace_the_schedule(self):
+        replacement = generate_schedule(
+            plan=self.plan,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=41),
+            template=self.schedule.template,
+        ).schedule
+        confirm_schedule(replacement)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.status, StudySchedule.Status.ARCHIVED)
+
+    def test_accepting_expires_the_proposal_and_moves_nothing(self):
+        self._replace_the_schedule()
+        version = self.schedule.version
+
+        with self.assertRaises(StaleRevision):
+            confirm_revision(self.revision)
+
+        self.revision.refresh_from_db()
+        self.block.refresh_from_db()
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.revision.status, ScheduleRevision.Status.EXPIRED)
+        self.assertEqual(self.block.start_at, self.original)
+        self.assertEqual(self.schedule.version, version)
+
+    def test_undoing_is_refused_and_moves_nothing(self):
+        confirm_revision(self.revision)
+        self._replace_the_schedule()
+        version = self.schedule.version
+
+        with self.assertRaises(StaleRevision):
+            undo_revision(self.revision)
+
+        self.revision.refresh_from_db()
+        self.block.refresh_from_db()
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.revision.status, ScheduleRevision.Status.CONFIRMED)
+        self.assertEqual(self.block.start_at, self.target)
+        self.assertEqual(self.schedule.version, version)
+
+    def test_declining_still_works(self):
+        self._replace_the_schedule()
+
+        reject_revision(self.revision)
+
+        self.revision.refresh_from_db()
+        self.assertEqual(self.revision.status, ScheduleRevision.Status.REJECTED)
+
+    def test_a_finished_schedule_is_treated_the_same(self):
+        self.schedule.status = StudySchedule.Status.COMPLETED
+        self.schedule.save(update_fields=["status"])
+
+        with self.assertRaises(StaleRevision):
+            confirm_revision(self.revision)
+
+        self.block.refresh_from_db()
+        self.assertEqual(self.block.start_at, self.original)
+
+
 @skipUnlessDBFeature("has_select_for_update")
 class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
     """Те же два ответа, но настоящие: каждый в своём потоке и соединении.
@@ -727,6 +805,73 @@ class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
         self.assertIn("другого курса", str(late))
         other_block.refresh_from_db()
         self.assertEqual(other_block.start_at, other_start)
+
+    def test_answer_on_a_replaced_schedule_cannot_deadlock_with_setup(self):
+        # `setup.py` блокирует все расписания ученика, и архивные тоже. Ответ берёт
+        # только календарные. Если он потом пишет в архивное, которого не брал,
+        # два запроса ждут друг друга, и PostgreSQL обрывает один из них.
+        revision = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+        self.schedule.status = StudySchedule.Status.ARCHIVED
+        self.schedule.save(update_fields=["status"])
+        replacement = StudySchedule.objects.create(
+            user_email=self.plan.user_email,
+            course_plan=self.plan,
+            template=self.schedule.template,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=41),
+            status=StudySchedule.Status.ACTIVE,
+        )
+        setup_holds_the_old_one = threading.Event()
+        errors: queue.Queue = queue.Queue()
+
+        def setup_locks_both():
+            try:
+                with transaction.atomic():
+                    list(
+                        StudySchedule.objects.select_for_update().filter(
+                            pk=self.schedule.pk
+                        )
+                    )
+                    setup_holds_the_old_one.set()
+                    # Ответу хватит, чтобы взять новое расписание и дойти до записи.
+                    time.sleep(0.3)
+                    list(
+                        StudySchedule.objects.select_for_update().filter(
+                            pk=replacement.pk
+                        )
+                    )
+            except Exception as exc:  # noqa: BLE001 — проверяется ниже
+                errors.put(exc)
+            finally:
+                setup_holds_the_old_one.set()
+                connections.close_all()
+
+        def answer():
+            setup_holds_the_old_one.wait(timeout=10)
+            try:
+                confirm_revision(revision)
+            except StaleRevision:
+                pass
+            except Exception as exc:  # noqa: BLE001 — проверяется ниже
+                errors.put(exc)
+            finally:
+                connections.close_all()
+
+        workers = [
+            threading.Thread(target=setup_locks_both),
+            threading.Thread(target=answer),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+
+        self.assertTrue(errors.empty(), errors.queue)
+        revision.refresh_from_db()
+        self.assertEqual(revision.status, ScheduleRevision.Status.EXPIRED)
 
 
 class AnswerLockTests(RevisionFixture):

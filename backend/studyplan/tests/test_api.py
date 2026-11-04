@@ -379,6 +379,28 @@ class RevisionApiTests(ApiFixture):
 
         self.assertEqual(self._listed("?open=1"), [])
 
+    def test_replaced_schedule_has_no_open_proposals(self):
+        revision_id = self._proposal_id()
+        StudySchedule.objects.filter(pk=self.schedule.pk).update(
+            status=StudySchedule.Status.ARCHIVED
+        )
+
+        self.assertEqual(self._listed("?open=1"), [])
+        self.assertIn(revision_id, self._listed())
+
+    def test_answer_on_a_replaced_schedule_says_it_is_stale(self):
+        revision_id = self._proposal_id()
+        StudySchedule.objects.filter(pk=self.schedule.pk).update(
+            status=StudySchedule.Status.ARCHIVED
+        )
+
+        response = self.client.post(
+            f"/api/schedule-revisions/{revision_id}/confirm/", **headers()
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "stale_revision")
+
     def test_answering_a_closed_proposal_says_it_is_closed(self):
         # Отдельный код: повторять такой ответ бессмысленно, и карточка не должна
         # предлагать его снова, в отличие от отказа из-за занятого времени.
@@ -640,11 +662,11 @@ class BlockPatchTests(RevisionApiTests):
                 **headers(),
             )
 
-    def _assert_drag_left_nothing(self, response):
+    def _assert_drag_left_nothing(self, response, code="revision_rejected"):
         # Ученику сказали, что перенос не удался. Живое предложение с тем же
         # переносом показалось бы на главной и применило бы его позже.
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(response.json()["code"], "revision_rejected")
+        self.assertEqual(response.json()["code"], code)
         self.assertEqual(self._listed(), [])
         original = self.blocks[0].start_at
         self.blocks[0].refresh_from_db()
@@ -676,15 +698,37 @@ class BlockPatchTests(RevisionApiTests):
 
     def test_drag_overtaken_by_another_change_leaves_no_proposal(self):
         # Отказ через версию идёт другой веткой, и пометка «устарела» внутри
-        # подтверждения не должна пережить откат всего переноса.
+        # подтверждения не должна пережить откат всего переноса. Код тот же, что
+        # у проверки `base_version`: по нему календарь перечитывается.
         def another_tab_moves_something():
             StudySchedule.objects.filter(pk=self.schedule.pk).update(
                 version=self.schedule.version + 1
             )
 
         self._assert_drag_left_nothing(
-            self._drag_interrupted_by(another_tab_moves_something)
+            self._drag_interrupted_by(another_tab_moves_something),
+            code="stale_revision",
         )
+
+    def test_drag_in_a_replaced_schedule_leaves_no_proposal(self):
+        # Вкладка открыта на старом варианте: версия та же, а он уже в архиве.
+        StudySchedule.objects.filter(pk=self.schedule.pk).update(
+            status=StudySchedule.Status.ARCHIVED
+        )
+
+        response = self.client.patch(
+            f"/api/learning-blocks/{self.blocks[0].id}/",
+            data=json.dumps(
+                {
+                    "start_at": self._free_start().isoformat(),
+                    "base_version": self.schedule.version,
+                }
+            ),
+            content_type="application/json",
+            **headers(),
+        )
+
+        self._assert_drag_left_nothing(response, code="stale_revision")
 
     def test_put_is_not_a_way_to_move_a_block(self):
         response = self.client.put(

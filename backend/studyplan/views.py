@@ -361,11 +361,13 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
             # `?open=1` — только ждущие ответа и построенные от текущей версии:
             # главная спрашивает их раз в две минуты, а история растёт без
             # предела. Одного статуса мало: устаревшая ревизия остаётся
-            # «предложенной», пока её не попробуют подтвердить.
+            # «предложенной», пока её не попробуют подтвердить. У заменённого
+            # расписания версия та же, но принять предложение уже нельзя.
             if request.query_params.get("open") == "1":
                 revisions = revisions.filter(
                     status=ScheduleRevision.Status.PROPOSED,
                     base_version=schedule.version,
+                    schedule__status__in=StudySchedule.CALENDAR_STATUSES,
                 )
                 serializer_class = OpenScheduleRevisionSerializer
             return Response(serializer_class(revisions, many=True).data)
@@ -501,6 +503,10 @@ class LearningBlockViewSet(viewsets.ReadOnlyModelViewSet):
                     reason="Ручной перенос в календаре",
                 )
                 revisions_service.confirm_revision(revision)
+        except revisions_service.StaleRevision as exc:
+            # Обогнали уже после проверки `base_version` выше. Код тот же по смыслу:
+            # календарь на экране устарел, и клиент должен его перечитать.
+            return _error(str(exc), code="stale_revision")
         except revisions_service.RevisionRejected as exc:
             return _error(str(exc), code="revision_rejected")
 
