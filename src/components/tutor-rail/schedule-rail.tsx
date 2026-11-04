@@ -309,9 +309,10 @@ export function ScheduleRail() {
         );
         if (accept) notifyApplied();
       } catch (error) {
-        // Устаревшее уже не применить: живые кнопки ни к чему, а календарь и
-        // главная показывают не то, что на сервере.
-        const stale = error instanceof StudyplanApiError && error.isStale;
+        // Устаревшее уже не применить, а на закрытое уже ответили: живые кнопки ни
+        // к чему, а календарь и главная показывают не то, что на сервере.
+        const stale =
+          error instanceof StudyplanApiError && (error.isStale || error.isClosed);
         setState((current) => ({
           ...current,
           revision: stale ? null : current.revision,

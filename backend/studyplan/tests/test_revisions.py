@@ -11,7 +11,7 @@ from unittest import mock
 from django.db import connection, connections, transaction
 from django.test import TransactionTestCase, skipUnlessDBFeature
 
-from curriculum.models import CourseDependency
+from curriculum.models import CourseDependency, CoursePlan
 from studyplan.models import (
     FixedCommitment,
     LearningBlock,
@@ -20,6 +20,7 @@ from studyplan.models import (
 )
 from studyplan.revisions import (
     BlockMove,
+    ClosedRevision,
     RevisionRejected,
     StaleRevision,
     confirm_revision,
@@ -384,9 +385,8 @@ class OverlappingAnswersTests(RevisionFixture):
 
     def _assert_refused_for_status(self, answer, revision):
         """Отказ из-за статуса, а не «расписание изменилось»: оно не изменилось."""
-        with self.assertRaises(RevisionRejected) as caught:
+        with self.assertRaises(ClosedRevision):
             answer(revision)
-        self.assertNotIsInstance(caught.exception, StaleRevision)
 
     def test_late_confirm_leaves_the_applied_move_undoable(self):
         confirm_revision(self.first)
@@ -541,6 +541,25 @@ class DecliningClosesOlderProposalsTests(RevisionFixture):
         confirm_revision(newest)
         self.assertEqual(self._status(newest), ScheduleRevision.Status.CONFIRMED)
 
+    def test_declining_closes_older_ones_about_other_blocks_too(self):
+        # Принять из них всё равно можно только одно: подтверждение двигает версию,
+        # и остальные устаревают, о каких бы занятиях они ни были.
+        about_another_block = propose_moves(
+            self.schedule,
+            moves=[
+                BlockMove(
+                    block_id=str(self.blocks[1].id),
+                    start_at=self.free_slot_start() + timedelta(days=7),
+                )
+            ],
+        )
+
+        reject_revision(self._proposal())
+
+        self.assertEqual(
+            self._status(about_another_block), ScheduleRevision.Status.EXPIRED
+        )
+
     def test_declining_leaves_other_schedules_alone(self):
         other = generate_schedule(
             plan=self.plan, start_date=MONDAY, template=self.schedule.template
@@ -581,19 +600,13 @@ class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
 
     def _overlap(self, first, late):
         """Что ответил второй: исключение или `None`, если он прошёл."""
-        revision = propose_moves(
-            self.schedule,
-            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
-        )
-        first_copy = ScheduleRevision.objects.get(pk=revision.pk)
-        late_copy = ScheduleRevision.objects.get(pk=revision.pk)
         first_holds_the_lock = threading.Event()
         answers: queue.Queue = queue.Queue()
 
         def answer_first():
             try:
                 with transaction.atomic():
-                    first(first_copy)
+                    first()
                     first_holds_the_lock.set()
                     # Второму хватит, чтобы дойти до блокировки. Не дойдёт — просто
                     # прочитает уже записанное, и ложного падения это не даст.
@@ -605,7 +618,7 @@ class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
         def answer_late():
             first_holds_the_lock.wait(timeout=10)
             try:
-                late(late_copy)
+                late()
                 answers.put(None)
             except RevisionRejected as exc:
                 answers.put(exc)
@@ -620,20 +633,29 @@ class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
             worker.start()
         for worker in workers:
             worker.join(timeout=30)
+        return answers.get_nowait()
+
+    def _overlap_on_one_proposal(self, first, late):
+        revision = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+        first_copy = ScheduleRevision.objects.get(pk=revision.pk)
+        late_copy = ScheduleRevision.objects.get(pk=revision.pk)
+
+        answer = self._overlap(lambda: first(first_copy), lambda: late(late_copy))
 
         revision.refresh_from_db()
         self.block.refresh_from_db()
         self.schedule.refresh_from_db()
-        return revision, answers.get_nowait()
-
-    def _assert_refused_for_status(self, answer):
-        self.assertIsInstance(answer, RevisionRejected)
-        self.assertNotIsInstance(answer, StaleRevision)
+        return revision, answer
 
     def test_confirm_and_confirm(self):
-        revision, late = self._overlap(confirm_revision, confirm_revision)
+        revision, late = self._overlap_on_one_proposal(
+            confirm_revision, confirm_revision
+        )
 
-        self._assert_refused_for_status(late)
+        self.assertIsInstance(late, ClosedRevision)
         self.assertEqual(revision.status, ScheduleRevision.Status.CONFIRMED)
         self.assertEqual(self.block.start_at, self.target)
         self.assertEqual(self.schedule.version, 2)
@@ -642,20 +664,69 @@ class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
         self.assertEqual(self.block.start_at, self.original)
 
     def test_reject_and_confirm(self):
-        revision, late = self._overlap(reject_revision, confirm_revision)
+        revision, late = self._overlap_on_one_proposal(
+            reject_revision, confirm_revision
+        )
 
-        self._assert_refused_for_status(late)
+        self.assertIsInstance(late, ClosedRevision)
         self.assertEqual(revision.status, ScheduleRevision.Status.REJECTED)
         self.assertEqual(self.block.start_at, self.original)
         self.assertEqual(self.schedule.version, 1)
 
     def test_confirm_and_reject(self):
-        revision, late = self._overlap(confirm_revision, reject_revision)
+        revision, late = self._overlap_on_one_proposal(
+            confirm_revision, reject_revision
+        )
 
-        self._assert_refused_for_status(late)
+        self.assertIsInstance(late, ClosedRevision)
         self.assertEqual(revision.status, ScheduleRevision.Status.CONFIRMED)
         self.assertEqual(self.block.start_at, self.target)
         self.assertEqual(self.schedule.version, 2)
+
+    def test_two_courses_into_one_slot(self):
+        # Ради этого lock общий на все курсы: у ревизий разные строки и разные
+        # версии, и без него второй не увидит ещё не записанный перенос первого.
+        physics = CoursePlan.objects.create(
+            user_email=self.plan.user_email,
+            goal=self.goal,
+            title="Физика",
+            status=CoursePlan.Status.ACTIVE,
+        )
+        other_schedule = StudySchedule.objects.create(
+            user_email=self.plan.user_email,
+            course_plan=physics,
+            template=self.schedule.template,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=90),
+            status=StudySchedule.Status.ACTIVE,
+        )
+        other_start = self.target + timedelta(days=1)
+        other_block = LearningBlock.objects.create(
+            user_email=self.plan.user_email,
+            schedule=other_schedule,
+            course_plan=physics,
+            title="Физика",
+            start_at=other_start,
+            end_at=other_start + timedelta(minutes=45),
+            duration_minutes=45,
+        )
+        mine = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+        theirs = propose_moves(
+            other_schedule,
+            moves=[BlockMove(block_id=str(other_block.id), start_at=self.target)],
+        )
+
+        late = self._overlap(
+            lambda: confirm_revision(mine), lambda: confirm_revision(theirs)
+        )
+
+        self.assertIsInstance(late, RevisionRejected)
+        self.assertIn("другого курса", str(late))
+        other_block.refresh_from_db()
+        self.assertEqual(other_block.start_at, other_start)
 
 
 class AnswerLockTests(RevisionFixture):
@@ -673,19 +744,25 @@ class AnswerLockTests(RevisionFixture):
         ScheduleRevision._meta.db_table,
     ]
 
-    def _locks_requested_by(self, answer, revision):
-        locked = []
+    def _locking_statements(self, answer, revision):
+        locking = []
 
         def record_and_strip(execute, sql, params, many, context):
             if sql.endswith(self.FOR_UPDATE):
-                locked.append(sql.split('FROM "', 1)[1].split('"', 1)[0])
+                locking.append(sql)
                 sql = sql.removesuffix(self.FOR_UPDATE)
             return execute(sql, params, many, context)
 
         with mock.patch.object(connection.features, "has_select_for_update", True):
             with connection.execute_wrapper(record_and_strip):
                 answer(revision)
-        return locked
+        return locking
+
+    def _locks_requested_by(self, answer, revision):
+        return [
+            sql.split('FROM "', 1)[1].split('"', 1)[0]
+            for sql in self._locking_statements(answer, revision)
+        ]
 
     def _proposal(self):
         return propose_moves(
@@ -716,3 +793,13 @@ class AnswerLockTests(RevisionFixture):
             self._locks_requested_by(undo_revision, revision),
             self.CALENDAR_THEN_REVISION,
         )
+
+    def test_calendar_lock_takes_every_course_in_one_order(self):
+        # Только своё расписание — и переносы двух курсов в один слот разминутся
+        # (`test_two_courses_into_one_slot`). Без порядка — две вкладки поймают
+        # deadlock, а `confirm_schedule` берёт эти строки в том же порядке.
+        calendar_lock = self._locking_statements(reject_revision, self._proposal())[0]
+
+        self.assertIn('"user_email" =', calendar_lock)
+        # `values_list("id")` Django сортирует по номеру колонки: `ORDER BY 1`.
+        self.assertRegex(calendar_lock, r'ORDER BY (1|"[a-z_]+"\."id") ASC')

@@ -273,6 +273,11 @@ export class StudyplanApiError extends Error {
   get isStale(): boolean {
     return this.code === "stale_version" || this.code === "stale_revision";
   }
+
+  /** На предложение уже ответили, например в другой вкладке: повторять незачем. */
+  get isClosed(): boolean {
+    return this.code === "revision_closed";
+  }
 }
 
 async function unwrap<T>(response: Response): Promise<T> {

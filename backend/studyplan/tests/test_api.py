@@ -379,6 +379,20 @@ class RevisionApiTests(ApiFixture):
 
         self.assertEqual(self._listed("?open=1"), [])
 
+    def test_answering_a_closed_proposal_says_it_is_closed(self):
+        # Отдельный код: повторять такой ответ бессмысленно, и карточка не должна
+        # предлагать его снова, в отличие от отказа из-за занятого времени.
+        revision_id = self._proposal_id()
+        self._answer(revision_id, "reject")
+
+        for verb in ("confirm", "reject", "undo"):
+            with self.subTest(verb=verb):
+                response = self.client.post(
+                    f"/api/schedule-revisions/{revision_id}/{verb}/", **headers()
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["code"], "revision_closed")
+
     def _open_cards(self):
         response = self.client.get(
             f"/api/study-schedules/{self.schedule_id}/revisions/?open=1", **headers()

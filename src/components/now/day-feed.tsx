@@ -467,8 +467,9 @@ function RevisionCard({
   /** Сервер мог ответить отказом, потому что на экране уже не то, что у него. */
   const fail = (failure: unknown, staleText?: string) => {
     const stale = failure instanceof StudyplanApiError && failure.isStale;
+    const closed = failure instanceof StudyplanApiError && failure.isClosed;
     setError(humanError(failure, staleText));
-    setPhase(stale ? "outdated" : "idle");
+    setPhase(stale || closed ? "outdated" : "idle");
     if (stale) scheduleMoved();
     else invalidatePlan();
   };
@@ -596,12 +597,16 @@ function RevisionCard({
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnSoft} ${styles.btnSm}`}
-                // Не `disabled`: кнопка гаснет прямо под фокусом, пока идёт ответ и
+                // Не `disabled`: кнопки гаснут прямо под фокусом, пока идёт ответ и
                 // когда после отказа пришла причина, и фокус упал бы в начало страницы.
                 aria-disabled={phase === "busy" || blocked ? true : undefined}
                 aria-describedby={blocked ? blockedId : undefined}
                 onClick={() => {
-                  if (phase !== "busy" && !blocked) void accept();
+                  if (phase === "busy") return;
+                  // Помеху могли убрать в другой вкладке, а опрос придёт только
+                  // через пару минут. Отказ здесь знает сервер, а не эта копия.
+                  if (blocked) invalidatePlan();
+                  else void accept();
                 }}
               >
                 <Check aria-hidden="true" />
@@ -610,8 +615,10 @@ function RevisionCard({
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnText} ${styles.btnSm}`}
-                disabled={phase === "busy"}
-                onClick={() => void reject()}
+                aria-disabled={phase === "busy" ? true : undefined}
+                onClick={() => {
+                  if (phase !== "busy") void reject();
+                }}
               >
                 Отклонить
               </button>

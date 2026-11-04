@@ -57,6 +57,10 @@ class StaleRevision(RevisionRejected):
     """Ревизия построена от устаревшей версии расписания."""
 
 
+class ClosedRevision(RevisionRejected):
+    """Статус ревизии уже не тот: повторять этот ответ бессмысленно."""
+
+
 @dataclass(frozen=True)
 class BlockMove:
     """Куда переносится блок. `duration_minutes` не задан — длительность та же."""
@@ -504,7 +508,7 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
     with transaction.atomic():
         _lock_for_answer(revision)
         if revision.status != ScheduleRevision.Status.PROPOSED:
-            raise RevisionRejected("Это предложение уже закрыто.")
+            raise ClosedRevision("Это предложение уже закрыто.")
 
         schedule = StudySchedule.objects.get(pk=revision.schedule_id)
         stale = schedule.version != revision.base_version
@@ -537,12 +541,13 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
 def reject_revision(revision: ScheduleRevision) -> ScheduleRevision:
     _lock_for_answer(revision)
     if revision.status != ScheduleRevision.Status.PROPOSED:
-        raise RevisionRejected("Это предложение уже закрыто.")
+        raise ClosedRevision("Это предложение уже закрыто.")
     revision.status = ScheduleRevision.Status.REJECTED
     revision.save(update_fields=["status", "updated_at"])
 
-    # Главная показывает одно предложение на расписание — самое свежее. Более
-    # старые помощник уже переиграл, и отказ не должен вернуть их на экран.
+    # Главная показывает одно предложение на расписание — самое свежее, потому что
+    # принять из них можно только одно: подтверждение двигает версию, и остальные
+    # устаревают. Отказ не должен вернуть на экран то, что новое уже заменило.
     # Предложения от других версий и так не применить, а новее этого — отказ не
     # отменяет.
     ScheduleRevision.objects.filter(
@@ -564,7 +569,7 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
     """
     _lock_for_answer(revision)
     if revision.status != ScheduleRevision.Status.CONFIRMED:
-        raise RevisionRejected("Отменить можно только подтверждённое изменение.")
+        raise ClosedRevision("Отменить можно только подтверждённое изменение.")
 
     schedule = StudySchedule.objects.get(pk=revision.schedule_id)
     if schedule.version != revision.proposed_version:

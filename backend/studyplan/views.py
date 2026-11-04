@@ -616,6 +616,8 @@ class ScheduleRevisionViewSet(viewsets.ReadOnlyModelViewSet):
             action_fn(revision)
         except revisions_service.StaleRevision as exc:
             return _error(str(exc), code="stale_revision")
+        except revisions_service.ClosedRevision as exc:
+            return _error(str(exc), code="revision_closed")
         except revisions_service.RevisionRejected as exc:
             return _error(str(exc), code="revision_rejected")
         revision.refresh_from_db()
