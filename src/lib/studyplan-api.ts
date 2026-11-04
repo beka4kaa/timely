@@ -148,6 +148,11 @@ export interface ScheduleRevision {
   created_at: string;
   confirmed_at: string | null;
   reverted_at: string | null;
+  /**
+   * Почему предложение сейчас нельзя принять; `null` — можно. Приходит только в
+   * `listOpenRevisions`: сервер проверяет открытые при каждом чтении.
+   */
+  blocked_reason?: string | null;
 }
 
 export interface GenerationResult {

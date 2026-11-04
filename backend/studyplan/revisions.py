@@ -433,6 +433,18 @@ def _entries(diff: dict) -> dict[str, dict]:
     return result
 
 
+def _moves_of(diff: dict) -> list[BlockMove]:
+    """Изменение как список переносов: чтобы проверить его заново перед применением."""
+    return [
+        BlockMove(
+            block_id=block_id,
+            start_at=datetime.fromisoformat(target["start_at"]),
+            duration_minutes=target["duration_minutes"],
+        )
+        for block_id, target in _entries(diff).items()
+    ]
+
+
 def _apply(schedule: StudySchedule, diff: dict) -> int:
     targets = _entries(diff)
     if not targets:
@@ -492,7 +504,7 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
     with transaction.atomic():
         _lock_for_answer(revision)
         if revision.status != ScheduleRevision.Status.PROPOSED:
-            raise RevisionRejected("Подтвердить можно только предложенную ревизию.")
+            raise RevisionRejected("Это предложение уже закрыто.")
 
         schedule = StudySchedule.objects.get(pk=revision.schedule_id)
         stale = schedule.version != revision.base_version
@@ -500,18 +512,7 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
             revision.status = ScheduleRevision.Status.EXPIRED
             revision.save(update_fields=["status", "updated_at"])
         else:
-            targets = _entries(revision.diff)
-            _validate_moves(
-                schedule,
-                [
-                    BlockMove(
-                        block_id=block_id,
-                        start_at=datetime.fromisoformat(target["start_at"]),
-                        duration_minutes=target["duration_minutes"],
-                    )
-                    for block_id, target in targets.items()
-                ],
-            )
+            _validate_moves(schedule, _moves_of(revision.diff))
             _apply(schedule, revision.diff)
 
             schedule.version = revision.proposed_version
@@ -536,9 +537,20 @@ def confirm_revision(revision: ScheduleRevision) -> ScheduleRevision:
 def reject_revision(revision: ScheduleRevision) -> ScheduleRevision:
     _lock_for_answer(revision)
     if revision.status != ScheduleRevision.Status.PROPOSED:
-        raise RevisionRejected("Отклонить можно только предложенную ревизию.")
+        raise RevisionRejected("Это предложение уже закрыто.")
     revision.status = ScheduleRevision.Status.REJECTED
     revision.save(update_fields=["status", "updated_at"])
+
+    # Главная показывает одно предложение на расписание — самое свежее. Более
+    # старые помощник уже переиграл, и отказ не должен вернуть их на экран.
+    # Предложения от других версий и так не применить, а новее этого — отказ не
+    # отменяет.
+    ScheduleRevision.objects.filter(
+        schedule_id=revision.schedule_id,
+        base_version=revision.base_version,
+        status=ScheduleRevision.Status.PROPOSED,
+        created_at__lt=revision.created_at,
+    ).update(status=ScheduleRevision.Status.EXPIRED, updated_at=django_timezone.now())
     return revision
 
 
@@ -560,18 +572,7 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
             "После этого изменения расписание менялось — отменить его уже нельзя."
         )
 
-    targets = _entries(revision.inverse_diff)
-    _validate_moves(
-        schedule,
-        [
-            BlockMove(
-                block_id=block_id,
-                start_at=datetime.fromisoformat(target["start_at"]),
-                duration_minutes=target["duration_minutes"],
-            )
-            for block_id, target in targets.items()
-        ],
-    )
+    _validate_moves(schedule, _moves_of(revision.inverse_diff))
     _apply(schedule, revision.inverse_diff)
 
     schedule.version += 1
@@ -581,3 +582,18 @@ def undo_revision(revision: ScheduleRevision) -> ScheduleRevision:
     revision.reverted_at = django_timezone.now()
     revision.save(update_fields=["status", "reverted_at", "updated_at"])
     return revision
+
+
+def blocked_reason(revision: ScheduleRevision) -> str | None:
+    """Почему предложение сейчас нельзя принять. `None` — можно.
+
+    Проверки те же, что при подтверждении, но без записи и без блокировок: это
+    подсказка для карточки, а решает всё равно `confirm_revision`. В ревизии ответ
+    не хранится намеренно: закрепление сняли или занятость убрали — и то же
+    предложение снова можно принять.
+    """
+    try:
+        _validate_moves(revision.schedule, _moves_of(revision.diff))
+    except RevisionRejected as exc:
+        return str(exc)
+    return None

@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   buildDay,
+  closedByRejecting,
   criterionText,
   dayPhrase,
   dayShortLabel,
@@ -363,6 +364,29 @@ test("даты и метки времени по-русски", () => {
   assert.equal(relativeStamp("2026-11-03T15:58:00Z", NOW, TZ), "сегодня, 15:58");
   assert.equal(relativeStamp("2026-11-02T21:14:00Z", NOW, TZ), "вчера, 21:14");
   assert.equal(relativeStamp("2026-10-30T10:00:00Z", NOW, TZ), "пт, 10:00");
+});
+
+function proposal(id: string, schedule: string, baseVersion: number, createdAt: string) {
+  return {
+    id,
+    schedule,
+    base_version: baseVersion,
+    created_at: createdAt,
+  } as unknown as ScheduleRevision;
+}
+
+test("отказ закрывает само предложение и более старые той же версии", () => {
+  const declined = proposal("b", "физика", 3, "2026-11-03T10:00:00Z");
+  const closed = closedByRejecting(declined);
+  assert.equal(closed(declined), true);
+  assert.equal(closed(proposal("a", "физика", 3, "2026-11-03T09:00:00Z")), true);
+});
+
+test("отказ не трогает более свежие, другие версии и другие расписания", () => {
+  const closed = closedByRejecting(proposal("b", "физика", 3, "2026-11-03T10:00:00Z"));
+  assert.equal(closed(proposal("c", "физика", 3, "2026-11-03T11:00:00Z")), false);
+  assert.equal(closed(proposal("a", "физика", 2, "2026-11-03T09:00:00Z")), false);
+  assert.equal(closed(proposal("z", "алгебра", 3, "2026-11-03T09:00:00Z")), false);
 });
 
 test("упавший запрос не прячет ответы остальных", async () => {

@@ -19,6 +19,7 @@ import {
 
 import { useAskRail } from "@/contexts/ask-rail";
 import {
+  closedByRejecting,
   dayMonthLabel,
   dayPhrase,
   dayShortLabel,
@@ -434,11 +435,24 @@ function RevisionCard({
   const gone = phase === "idle" && !applied && !open;
   const outdated = phase === "outdated" || gone;
 
+  // Пока помеха на месте, «Принять» всё равно упало бы, поэтому причина видна до
+  // нажатия. Сервер проверяет открытые предложения при каждом чтении: уйдёт
+  // помеха — карточка снова станет обычной.
+  const reason = revision.blocked_reason ?? null;
+  const blocked = applied || outdated ? null : reason;
+  const blockedId = `${titleId}-blocked`;
+
   // Фокус — на кнопку, которая пришла на смену: «Принять», на которой он стоял,
   // исчезла, и иначе он упал бы в начало страницы.
   useEffect(() => {
     if (phase !== "busy" && (applied || outdated)) nextRef.current?.focus();
   }, [phase, applied, outdated]);
+
+  // Та же причина могла прийти отказом на нажатие. Дальше за неё отвечает сервер,
+  // иначе текст остался бы на экране и после того, как помеху убрали. Смотрим на
+  // сам ответ сервера, а не на `blocked`: тот гаснет и у устаревшей карточки, чьё
+  // объяснение стирать нельзя.
+  useEffect(() => setError(null), [reason]);
 
   const begin = () => {
     setPhase("busy");
@@ -478,7 +492,7 @@ function RevisionCard({
       await rejectRevision(revision.id);
       announce("Предложение отклонено.");
       onDone(revision);
-      invalidatePlan((item) => item.id === revision.id);
+      invalidatePlan(closedByRejecting(revision));
     } catch (failure) {
       fail(failure);
     }
@@ -551,6 +565,11 @@ function RevisionCard({
             {notice}
           </p>
         ) : null}
+        {blocked ? (
+          <p className={styles.revBlocked} id={blockedId}>
+            {blocked}
+          </p>
+        ) : null}
         <div className={styles.revFoot}>
           {outdated ? (
             <button
@@ -577,8 +596,13 @@ function RevisionCard({
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnSoft} ${styles.btnSm}`}
-                disabled={phase === "busy"}
-                onClick={() => void accept()}
+                // Не `disabled`: кнопка гаснет прямо под фокусом, пока идёт ответ и
+                // когда после отказа пришла причина, и фокус упал бы в начало страницы.
+                aria-disabled={phase === "busy" || blocked ? true : undefined}
+                aria-describedby={blocked ? blockedId : undefined}
+                onClick={() => {
+                  if (phase !== "busy" && !blocked) void accept();
+                }}
               >
                 <Check aria-hidden="true" />
                 Принять
@@ -591,7 +615,7 @@ function RevisionCard({
               >
                 Отклонить
               </button>
-              <small>Можно будет вернуть</small>
+              {blocked ? null : <small>Можно будет вернуть</small>}
             </>
           )}
         </div>

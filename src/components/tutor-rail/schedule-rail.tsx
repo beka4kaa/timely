@@ -34,6 +34,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useActiveSchedule } from "@/contexts/active-schedule";
+import { closedByRejecting } from "@/lib/now-feed";
 import {
   StudyplanApiError,
   confirmRevision,
@@ -300,9 +301,11 @@ export function ScheduleRail() {
         else await rejectRevision(revision.id);
         setState((current) => ({ ...current, revision: null }));
         // Принятое двигает всё расписание вперёд, и его прежние предложения уже
-        // не применить. Отказ не меняет ничего, кроме самого предложения.
-        invalidatePlan((item) =>
-          accept ? item.schedule === revision.schedule : item.id === revision.id,
+        // не применить. Отказ закрывает само предложение и более старые.
+        invalidatePlan(
+          accept
+            ? (item) => item.schedule === revision.schedule
+            : closedByRejecting(revision),
         );
         if (accept) notifyApplied();
       } catch (error) {

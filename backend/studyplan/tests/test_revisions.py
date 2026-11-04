@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import queue
+import threading
+import time
 from datetime import timedelta
 from unittest import mock
 
-from django.db import connection
+from django.db import connection, connections, transaction
+from django.test import TransactionTestCase, skipUnlessDBFeature
 
 from curriculum.models import CourseDependency
 from studyplan.models import (
@@ -479,6 +483,179 @@ class OverlappingAnswersTests(RevisionFixture):
         self._assert_state(
             ScheduleRevision.Status.EXPIRED, start_at=self.original, version=2
         )
+
+
+class DecliningClosesOlderProposalsTests(RevisionFixture):
+    """Главная показывает одно предложение на расписание — самое свежее.
+
+    Отказ от него не должен вернуть на экран то, что помощник уже переиграл.
+    """
+
+    def _proposal(self):
+        return propose_moves(
+            self.schedule,
+            moves=[
+                BlockMove(
+                    block_id=str(self.blocks[0].id), start_at=self.free_slot_start()
+                )
+            ],
+        )
+
+    def _status(self, revision):
+        return ScheduleRevision.objects.get(pk=revision.pk).status
+
+    def test_declining_the_newest_closes_older_ones(self):
+        older = self._proposal()
+        middle = self._proposal()
+        newest = self._proposal()
+
+        reject_revision(newest)
+
+        self.assertEqual(self._status(newest), ScheduleRevision.Status.REJECTED)
+        # На них ученик не отвечал: «устарела», а не «отклонена».
+        self.assertEqual(self._status(middle), ScheduleRevision.Status.EXPIRED)
+        self.assertEqual(self._status(older), ScheduleRevision.Status.EXPIRED)
+
+    def test_closed_proposal_cannot_be_accepted_from_an_old_card(self):
+        # Карточка в чате другой вкладки живёт своей копией и кнопки не гасит.
+        original = self.blocks[0].start_at
+        older = self._proposal()
+        reject_revision(self._proposal())
+
+        with self.assertRaises(RevisionRejected) as caught:
+            confirm_revision(older)
+
+        # Текст видит ученик, а не разработчик.
+        self.assertNotIn("ревизи", str(caught.exception))
+        self.blocks[0].refresh_from_db()
+        self.assertEqual(self.blocks[0].start_at, original)
+        self.assertEqual(self._status(older), ScheduleRevision.Status.EXPIRED)
+
+    def test_declining_an_older_one_leaves_the_newest_answerable(self):
+        older = self._proposal()
+        newest = self._proposal()
+
+        reject_revision(older)
+
+        self.assertEqual(self._status(newest), ScheduleRevision.Status.PROPOSED)
+        confirm_revision(newest)
+        self.assertEqual(self._status(newest), ScheduleRevision.Status.CONFIRMED)
+
+    def test_declining_leaves_other_schedules_alone(self):
+        other = generate_schedule(
+            plan=self.plan, start_date=MONDAY, template=self.schedule.template
+        ).schedule
+        elsewhere = ScheduleRevision.objects.create(
+            user_email=other.user_email,
+            schedule=other,
+            base_version=self.schedule.version,
+            proposed_version=self.schedule.version + 1,
+        )
+
+        reject_revision(self._proposal())
+
+        self.assertEqual(self._status(elsewhere), ScheduleRevision.Status.PROPOSED)
+
+
+@skipUnlessDBFeature("has_select_for_update")
+class OverlappingAnswersOnRowLocksTests(TransactionTestCase):
+    """Те же два ответа, но настоящие: каждый в своём потоке и соединении.
+
+    Только на PostgreSQL: в SQLite нет построчной блокировки. Второй ответ приходит,
+    пока первый ещё держит транзакцию, и обязан дождаться её конца, а не прочитать
+    ревизию «предложенной».
+    """
+
+    def setUp(self):
+        SchedulePlanFixture.setUp(self)
+        self.schedule = generate_schedule(
+            plan=self.plan,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=41),
+            template=SchedulePlanFixture.make_template(self),
+        ).schedule
+        self.blocks = list(self.schedule.blocks.order_by("start_at"))
+        self.block = self.blocks[0]
+        self.original = self.block.start_at
+        self.target = RevisionFixture.free_slot_start(self)
+
+    def _overlap(self, first, late):
+        """Что ответил второй: исключение или `None`, если он прошёл."""
+        revision = propose_moves(
+            self.schedule,
+            moves=[BlockMove(block_id=str(self.block.id), start_at=self.target)],
+        )
+        first_copy = ScheduleRevision.objects.get(pk=revision.pk)
+        late_copy = ScheduleRevision.objects.get(pk=revision.pk)
+        first_holds_the_lock = threading.Event()
+        answers: queue.Queue = queue.Queue()
+
+        def answer_first():
+            try:
+                with transaction.atomic():
+                    first(first_copy)
+                    first_holds_the_lock.set()
+                    # Второму хватит, чтобы дойти до блокировки. Не дойдёт — просто
+                    # прочитает уже записанное, и ложного падения это не даст.
+                    time.sleep(0.3)
+            finally:
+                first_holds_the_lock.set()
+                connections.close_all()
+
+        def answer_late():
+            first_holds_the_lock.wait(timeout=10)
+            try:
+                late(late_copy)
+                answers.put(None)
+            except RevisionRejected as exc:
+                answers.put(exc)
+            finally:
+                connections.close_all()
+
+        workers = [
+            threading.Thread(target=answer_first),
+            threading.Thread(target=answer_late),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+
+        revision.refresh_from_db()
+        self.block.refresh_from_db()
+        self.schedule.refresh_from_db()
+        return revision, answers.get_nowait()
+
+    def _assert_refused_for_status(self, answer):
+        self.assertIsInstance(answer, RevisionRejected)
+        self.assertNotIsInstance(answer, StaleRevision)
+
+    def test_confirm_and_confirm(self):
+        revision, late = self._overlap(confirm_revision, confirm_revision)
+
+        self._assert_refused_for_status(late)
+        self.assertEqual(revision.status, ScheduleRevision.Status.CONFIRMED)
+        self.assertEqual(self.block.start_at, self.target)
+        self.assertEqual(self.schedule.version, 2)
+        undo_revision(revision)
+        self.block.refresh_from_db()
+        self.assertEqual(self.block.start_at, self.original)
+
+    def test_reject_and_confirm(self):
+        revision, late = self._overlap(reject_revision, confirm_revision)
+
+        self._assert_refused_for_status(late)
+        self.assertEqual(revision.status, ScheduleRevision.Status.REJECTED)
+        self.assertEqual(self.block.start_at, self.original)
+        self.assertEqual(self.schedule.version, 1)
+
+    def test_confirm_and_reject(self):
+        revision, late = self._overlap(confirm_revision, reject_revision)
+
+        self._assert_refused_for_status(late)
+        self.assertEqual(revision.status, ScheduleRevision.Status.CONFIRMED)
+        self.assertEqual(self.block.start_at, self.target)
+        self.assertEqual(self.schedule.version, 2)
 
 
 class AnswerLockTests(RevisionFixture):

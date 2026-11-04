@@ -17,6 +17,7 @@ from .models import (
     TemplateSlot,
     WeeklyScheduleTemplate,
 )
+from .revisions import blocked_reason
 from .scheduling.contracts import MIN_PART_MINUTES
 
 
@@ -234,6 +235,19 @@ class ScheduleRevisionSerializer(serializers.ModelSerializer):
             "reverted_at",
         ]
         read_only_fields = fields
+
+
+class OpenScheduleRevisionSerializer(ScheduleRevisionSerializer):
+    """Предложение, которое ждёт ответа: карточке нужно знать, можно ли его принять."""
+
+    blocked_reason = serializers.SerializerMethodField()
+
+    class Meta(ScheduleRevisionSerializer.Meta):
+        fields = [*ScheduleRevisionSerializer.Meta.fields, "blocked_reason"]
+        read_only_fields = fields
+
+    def get_blocked_reason(self, revision: ScheduleRevision) -> str | None:
+        return blocked_reason(revision)
 
 
 class StudyScheduleSerializer(serializers.ModelSerializer):

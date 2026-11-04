@@ -35,6 +35,7 @@ from .serializers import (
     FixedCommitmentSerializer,
     GenerateScheduleSerializer,
     LearningBlockSerializer,
+    OpenScheduleRevisionSerializer,
     ProposeMovesSerializer,
     ScheduleRevisionSerializer,
     StudyScheduleListSerializer,
@@ -356,6 +357,7 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
 
         if request.method == "GET":
             revisions = schedule.revisions.all()
+            serializer_class = ScheduleRevisionSerializer
             # `?open=1` — только ждущие ответа и построенные от текущей версии:
             # главная спрашивает их раз в две минуты, а история растёт без
             # предела. Одного статуса мало: устаревшая ревизия остаётся
@@ -365,7 +367,8 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
                     status=ScheduleRevision.Status.PROPOSED,
                     base_version=schedule.version,
                 )
-            return Response(ScheduleRevisionSerializer(revisions, many=True).data)
+                serializer_class = OpenScheduleRevisionSerializer
+            return Response(serializer_class(revisions, many=True).data)
 
         payload = ProposeMovesSerializer(data=request.data)
         payload.is_valid(raise_exception=True)

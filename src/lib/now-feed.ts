@@ -752,6 +752,21 @@ export function pendingRevisions(revisions: ScheduleRevision[]): ScheduleRevisio
     .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
 }
 
+/**
+ * Что закрывает отказ: само предложение и более старые от той же версии
+ * расписания, как `reject_revision` на сервере. Иначе, пока список перечитывается,
+ * на месте отклонённого открылось бы прежнее, с живыми кнопками.
+ */
+export function closedByRejecting(
+  rejected: ScheduleRevision,
+): (revision: ScheduleRevision) => boolean {
+  return (revision) =>
+    revision.id === rejected.id ||
+    (revision.schedule === rejected.schedule &&
+      revision.base_version === rejected.base_version &&
+      Date.parse(revision.created_at) < Date.parse(rejected.created_at));
+}
+
 /** Строки «что изменится» для карточки предложения. */
 export function revisionRows(
   revision: ScheduleRevision,

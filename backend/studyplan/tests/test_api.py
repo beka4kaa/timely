@@ -371,6 +371,146 @@ class RevisionApiTests(ApiFixture):
         second = self._proposal_id()
         self.assertCountEqual(self._listed("?open=1"), [first, second])
 
+    def test_declining_the_newest_brings_no_older_proposal_back(self):
+        self._proposal_id()
+        newest = self._proposal_id()
+
+        self._answer(newest, "reject")
+
+        self.assertEqual(self._listed("?open=1"), [])
+
+    def _open_cards(self):
+        response = self.client.get(
+            f"/api/study-schedules/{self.schedule_id}/revisions/?open=1", **headers()
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def _post_json(self, url, payload):
+        response = self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+            **headers(),
+        )
+        self.assertIn(response.status_code, (200, 201), response.content)
+        return response
+
+    def _pin_first_block(self, pinned):
+        self._post_json(
+            "/api/learning-blocks/pin/",
+            {"block_ids": [str(self.blocks[0].id)], "pinned": pinned},
+        )
+
+    def test_open_proposal_that_can_be_accepted_has_no_reason(self):
+        self._proposal_id()
+        self.assertIsNone(self._open_cards()[0]["blocked_reason"])
+
+    def test_blocked_reason_is_what_accepting_would_answer(self):
+        revision_id = self._proposal_id()
+        self._pin_first_block(True)
+
+        reason = self._open_cards()[0]["blocked_reason"]
+
+        self.assertIn("закреплён", reason)
+        refused = self.client.post(
+            f"/api/schedule-revisions/{revision_id}/confirm/", **headers()
+        )
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.json()["error"], reason)
+
+    def test_reason_goes_away_with_the_pin_and_the_proposal_works_again(self):
+        revision_id = self._proposal_id()
+        self._pin_first_block(True)
+        self.assertIsNotNone(self._open_cards()[0]["blocked_reason"])
+
+        self._pin_first_block(False)
+
+        self.assertIsNone(self._open_cards()[0]["blocked_reason"])
+        self._answer(revision_id, "confirm")
+
+    def test_reason_for_a_cancelled_block(self):
+        revision_id = self._proposal_id()
+        cancel = {"block_ids": [str(self.blocks[0].id)]}
+        self._post_json("/api/learning-blocks/cancel/", cancel)
+
+        self.assertIn("отменён", self._open_cards()[0]["blocked_reason"])
+
+        self._post_json("/api/learning-blocks/cancel/", {**cancel, "restore": True})
+        self.assertIsNone(self._open_cards()[0]["blocked_reason"])
+        self._answer(revision_id, "confirm")
+
+    def test_reason_for_a_commitment_over_the_target(self):
+        revision_id = self._proposal_id()
+        target = self._free_start()
+        commitment = FixedCommitment.objects.create(
+            user_email=OWNER,
+            kind=FixedCommitment.Kind.FAMILY,
+            title="Семейный обед",
+            start_at=target - timedelta(minutes=10),
+            end_at=target + timedelta(hours=2),
+        )
+
+        self.assertIn("занято", self._open_cards()[0]["blocked_reason"])
+
+        commitment.delete()
+        self.assertIsNone(self._open_cards()[0]["blocked_reason"])
+        self._answer(revision_id, "confirm")
+
+    def test_reason_for_another_courses_block_on_the_target(self):
+        revision_id = self._proposal_id()
+        target = self._free_start()
+        physics = CoursePlan.objects.create(
+            user_email=OWNER,
+            goal=self.goal,
+            title="Физика",
+            status=CoursePlan.Status.ACTIVE,
+        )
+        other_schedule = StudySchedule.objects.create(
+            user_email=OWNER,
+            course_plan=physics,
+            template=self.template,
+            start_date=MONDAY,
+            end_date=MONDAY + timedelta(days=90),
+            status=StudySchedule.Status.ACTIVE,
+        )
+        other_block = LearningBlock.objects.create(
+            user_email=OWNER,
+            schedule=other_schedule,
+            course_plan=physics,
+            title="Физика",
+            start_at=target,
+            end_at=target + timedelta(minutes=45),
+            duration_minutes=45,
+        )
+
+        self.assertIn("другого курса", self._open_cards()[0]["blocked_reason"])
+
+        other_block.delete()
+        self.assertIsNone(self._open_cards()[0]["blocked_reason"])
+        self._answer(revision_id, "confirm")
+
+    def test_checking_a_proposal_changes_nothing(self):
+        revision_id = self._proposal_id()
+        self._pin_first_block(True)
+        version = StudySchedule.objects.get(pk=self.schedule_id).version
+        before = ScheduleRevision.objects.get(pk=revision_id).updated_at
+
+        self._open_cards()
+
+        revision = ScheduleRevision.objects.get(pk=revision_id)
+        self.assertEqual(revision.status, ScheduleRevision.Status.PROPOSED)
+        self.assertEqual(revision.updated_at, before)
+        self.assertEqual(StudySchedule.objects.get(pk=self.schedule_id).version, version)
+
+    def test_history_is_not_checked(self):
+        # История растёт без предела: проверять её на каждое чтение незачем.
+        self._proposal_id()
+        response = self.client.get(
+            f"/api/study-schedules/{self.schedule_id}/revisions/", **headers()
+        )
+        self.assertNotIn("blocked_reason", response.json()[0])
+
     def _proposal_in_another_schedule(self, email):
         plan = CoursePlan.objects.create(
             user_email=email,

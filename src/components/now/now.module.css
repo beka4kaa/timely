@@ -180,7 +180,8 @@
   outline-offset: 2px;
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   cursor: default;
   opacity: 0.55;
   transform: none;
@@ -1584,6 +1585,12 @@ a.cite:hover {
 .revError {
   margin: 8px 0 0;
   color: rgb(var(--tm-danger));
+  font-size: 13px;
+}
+
+.revBlocked {
+  margin: 8px 0 0;
+  color: rgb(var(--tm-ink-2));
   font-size: 13px;
 }
 
