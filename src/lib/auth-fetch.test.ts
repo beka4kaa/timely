@@ -9,7 +9,7 @@ const API_URL = "https://api.example.com/api/things/";
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
 const issued = (token: string, expiresIn = 600) =>
-  json({ token, email: "student@example.com", expiresIn });
+  json({ token, expiresIn });
 
 let calls: { url: string; init: RequestInit }[];
 let assigned: string[];
@@ -57,16 +57,6 @@ test("sends the token and asks the server for one only once", async () => {
   assert.equal(tokenCalls().length, 1);
   assert.equal(apiCalls().length, 2);
   assert.equal(sent(apiCalls()[1]).Authorization, "Bearer t1");
-});
-
-test("still sends the address until the backend enforces tokens", async () => {
-  const { authFetch } = load((url) =>
-    url === TOKEN_ROUTE ? issued("t1") : json([]),
-  );
-
-  await authFetch(API_URL);
-
-  assert.equal(sent(apiCalls()[0])["X-User-Email"], "student@example.com");
 });
 
 test("calls that start together share one token request", async () => {
@@ -135,7 +125,6 @@ test("a signed-out caller is sent to sign in and comes back afterwards", async (
 
   assert.equal(response.status, 401);
   assert.equal(sent(apiCalls()[0]).Authorization, undefined);
-  assert.equal(sent(apiCalls()[0])["X-User-Email"], undefined);
   assert.equal(apiCalls().length, 1);
   assert.deepEqual(assigned, [
     `/auth/signin?callbackUrl=${encodeURIComponent("/dashboard/plan?x=1")}`,
@@ -167,19 +156,16 @@ test("signing in later is noticed: a signed-out answer is not kept", async () =>
   assert.equal(sent(apiCalls()[1]).Authorization, "Bearer t1");
 });
 
-test("without a configured secret the old header still identifies the caller", async () => {
+test("an unconfigured token route sends no identity, and no one to sign in", async () => {
   const { authFetch } = load((url) =>
-    url === TOKEN_ROUTE
-      ? json({ token: null, email: "student@example.com", expiresIn: 600 })
-      : json([]),
+    url === TOKEN_ROUTE ? json({ error: "Not configured" }, 503) : json({}, 401),
   );
 
-  await authFetch(API_URL);
-  await authFetch(API_URL);
+  const response = await authFetch(API_URL);
 
+  assert.equal(response.status, 401);
   assert.equal(sent(apiCalls()[0]).Authorization, undefined);
-  assert.equal(sent(apiCalls()[0])["X-User-Email"], "student@example.com");
-  assert.equal(tokenCalls().length, 1, "remembered, so no extra round trip per call");
+  assert.deepEqual(assigned, []);
 });
 
 test("a failing token route doesn't break the call and is retried next time", async () => {
@@ -251,6 +237,5 @@ test("backendAuthHeaders gives an XHR the same identity", async () => {
 
   assert.deepEqual(await backendAuthHeaders(), {
     Authorization: "Bearer t1",
-    "X-User-Email": "student@example.com",
   });
 });

@@ -14,8 +14,8 @@ export async function GET() {
   }
 
   const token = await mintBackendToken(email)
-  return NextResponse.json(
-    { token, email, expiresIn: BACKEND_TOKEN_TTL_SECONDS },
-    { headers: NO_STORE },
-  )
+  if (!token) {
+    return NextResponse.json({ error: 'Not configured' }, { status: 503, headers: NO_STORE })
+  }
+  return NextResponse.json({ token, expiresIn: BACKEND_TOKEN_TTL_SECONDS }, { headers: NO_STORE })
 }

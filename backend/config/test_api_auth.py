@@ -1,10 +1,5 @@
 """Only a credential the server can verify says who is calling the API."""
 
-import base64
-import hashlib
-import hmac
-import json
-
 import jwt
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -105,6 +100,12 @@ class RefusedWithoutValidCredentialTests(_Base):
                 response = self.client.get(LIST_URL, HTTP_AUTHORIZATION=f"Bearer {token}")
                 self.assertEqual(response.status_code, 401)
 
+    def test_bad_token_is_logged_without_the_address(self):
+        with self.assertLogs("config.auth", level="INFO") as logs:
+            self.client.get(LIST_URL, **auth_headers(OWNER, ttl=-120))
+        self.assertIn("auth.invalid_token reason=ExpiredSignatureError", logs.output[0])
+        self.assertNotIn(OWNER, logs.output[0])
+
     def test_garbage_and_other_schemes(self):
         for value in ("Bearer not-a-token", "Bearer ", "Basic b3duZXI6cGFzcw==", api_token(OWNER)):
             with self.subTest(value=value):
@@ -170,11 +171,6 @@ class NoHtmlFormsTests(TestCase):
         self.assertNotIn("text/html", response.headers.get("Content-Type", ""))
         self.assert_no_leak(response)
 
-    @override_settings(API_AUTH_ENFORCE=False)
-    def test_rollout_mode_with_no_credential_gets_no_form(self):
-        response = self.client.get("/api/curriculum/chats/?format=api")
-        self.assert_no_leak(response)
-
     def test_a_browser_opening_the_url_gets_json(self):
         response = self.client.get(
             "/api/curriculum/chats/",
@@ -185,94 +181,16 @@ class NoHtmlFormsTests(TestCase):
         self.assertEqual(response.json(), [])
 
 
-@override_settings(API_AUTH_ENFORCE=False)
-class RolloutModeTests(_Base):
-    """Before the switch: tokens work, and the old header still does too."""
-
-    def setUp(self):
-        super().setUp()
-        # The client builds the middleware on its first request, and that logs
-        # the mode. Get it out of the way of what these tests look at.
-        self.client.get("/health/")
-
-    def test_token_is_used_when_present(self):
-        with self.assertNoLogs("config.auth", level="INFO"):
-            response = self.client.get(LIST_URL, **auth_headers(OWNER))
-        self.assert_lists_only_own(response)
-
-    def test_token_wins_over_the_header(self):
-        response = self.client.get(LIST_URL, HTTP_X_USER_EMAIL=VICTIM, **auth_headers(OWNER))
-        self.assert_lists_only_own(response)
-
-    def test_old_header_still_works_and_is_logged_without_the_address(self):
-        with self.assertLogs("config.auth", level="INFO") as logs:
-            response = self.client.get(LIST_URL, HTTP_X_USER_EMAIL=OWNER)
-        self.assert_lists_only_own(response)
-        self.assertIn("auth.legacy_header", logs.output[0])
-        self.assertNotIn(OWNER, logs.output[0])
-
-    def test_invalid_token_falls_back_to_the_header_and_is_logged(self):
-        with self.assertLogs("config.auth", level="INFO") as logs:
-            response = self.client.get(
-                LIST_URL, HTTP_X_USER_EMAIL=OWNER, HTTP_AUTHORIZATION="Bearer not-a-token"
-            )
-        self.assert_lists_only_own(response)
-        self.assertIn("auth.invalid_token", logs.output[0])
-
-    def test_query_parameter_is_gone(self):
-        with self.assertLogs("config.auth", level="INFO") as logs:
-            response = self.client.get(f"{LIST_URL}?user_email={VICTIM}")
-        self.assertEqual(response.json(), [])
-        self.assertIn("auth.no_credential", logs.output[0])
-
-    @override_settings(API_JWT_SECRET="")
-    def test_empty_secret_never_verifies_a_token(self):
-        # Built by hand: PyJWT itself refuses to sign with an empty key.
-        def encode(part):
-            return base64.urlsafe_b64encode(part).rstrip(b"=")
-
-        signing_input = b".".join(
-            [
-                encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode()),
-                encode(
-                    json.dumps(
-                        {
-                            "iss": "timely-web",
-                            "aud": "timely-api",
-                            "sub": VICTIM,
-                            "iat": 1,
-                            "exp": 9999999999,
-                        }
-                    ).encode()
-                ),
-            ]
-        )
-        signature = encode(hmac.new(b"", signing_input, hashlib.sha256).digest())
-        token = b".".join([signing_input, signature]).decode()
-        response = self.client.get(LIST_URL, HTTP_AUTHORIZATION=f"Bearer {token}")
-        self.assertEqual(response.json(), [])
-
-
 class StartupCheckTests(TestCase):
-    @override_settings(API_AUTH_ENFORCE=False)
-    def test_the_mode_is_visible_in_the_logs_at_startup(self):
-        with self.assertLogs("config.auth", level="INFO") as logs:
-            UserEmailMiddleware(lambda request: None)
-        self.assertIn("auth.mode enforce=False", logs.output[0])
-
-    @override_settings(API_AUTH_ENFORCE=True, API_JWT_SECRET="")
-    def test_enforcing_without_a_secret_refuses_to_start(self):
+    @override_settings(API_JWT_SECRET="")
+    def test_no_secret_refuses_to_start(self):
         with self.assertRaises(ImproperlyConfigured):
             UserEmailMiddleware(lambda request: None)
 
-    @override_settings(API_AUTH_ENFORCE=True, API_JWT_SECRET="too-short")
-    def test_enforcing_with_a_short_secret_refuses_to_start(self):
+    @override_settings(API_JWT_SECRET="too-short")
+    def test_short_secret_refuses_to_start(self):
         with self.assertRaises(ImproperlyConfigured):
             UserEmailMiddleware(lambda request: None)
-
-    @override_settings(API_AUTH_ENFORCE=False, API_JWT_SECRET="")
-    def test_rollout_mode_starts_without_a_secret(self):
-        UserEmailMiddleware(lambda request: None)
 
 
 class CorsTests(TestCase):

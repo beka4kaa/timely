@@ -109,16 +109,8 @@ CORS_ALLOW_HEADERS = [
 # secret. It is deliberately not NEXTAUTH_SECRET, so that this service cannot
 # forge sessions.
 API_JWT_SECRET = os.getenv("TIMELY_API_JWT_SECRET", "")
-# Off only while Vercel and Railway roll out separately: see config.middleware.
-API_AUTH_ENFORCE = os.getenv("API_AUTH_ENFORCE", "false").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
 if "test" in sys.argv:
     API_JWT_SECRET = "test-only-secret-long-enough-for-hs256"
-    API_AUTH_ENFORCE = True
 
 REST_FRAMEWORK = {
     # Identity comes from config.middleware alone, not from Basic auth or a

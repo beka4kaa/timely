@@ -233,19 +233,18 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-The examples below are for local development, where `API_AUTH_ENFORCE` is off
-and the `X-User-Email` header is still accepted. Production refuses it: every
-request needs `Authorization: Bearer <token>`, a short-lived token the Next.js
-app signs from the session (`src/lib/backend-token.ts`,
-`backend/config/middleware.py`). Keep the trailing `/` in every URL because the
-backend does not append it automatically.
+Every API request needs `Authorization: Bearer <token>`, a short-lived token the
+Next.js app signs from the session (`src/lib/backend-token.ts`,
+`backend/config/middleware.py`). For local `curl`, mint one with the same
+`TIMELY_API_JWT_SECRET`; it lasts 10 minutes. Keep the trailing `/` in every URL
+because the backend does not append it automatically.
 
 ```bash
 export API_URL=http://localhost:8000
-export USER_EMAIL=student@example.com
+export API_TOKEN=$(cd backend && python manage.py shell -c "from config.testing import api_token; print(api_token('student@example.com'))")
 
 curl -fsS -X POST "$API_URL/api/curriculum/documents/upload/" \
-  -H "X-User-Email: $USER_EMAIL" \
+  -H "Authorization: Bearer $API_TOKEN" \
   -F "file=@/absolute/path/book.pdf;type=application/pdf" \
   -F "language=ru" \
   -F "document_type=textbook"
@@ -261,18 +260,18 @@ export DOCUMENT_ID=<DOCUMENT_ID_FROM_UPLOAD>
 
 curl -fsS -X POST \
   "$API_URL/api/curriculum/documents/$DOCUMENT_ID/ingest/" \
-  -H "X-User-Email: $USER_EMAIL"
+  -H "Authorization: Bearer $API_TOKEN"
 
 curl -fsS \
   "$API_URL/api/curriculum/documents/$DOCUMENT_ID/status/" \
-  -H "X-User-Email: $USER_EMAIL"
+  -H "Authorization: Bearer $API_TOKEN"
 ```
 
 Once the document is ready, search its source chunks:
 
 ```bash
 curl -fsS -X POST "$API_URL/api/curriculum/search/" \
-  -H "X-User-Email: $USER_EMAIL" \
+  -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   --data "{\"query\":\"второй закон Ньютона\",\"document_ids\":[\"$DOCUMENT_ID\"],\"limit\":5}"
 ```

@@ -44,20 +44,22 @@ canary-документа. Dense/hybrid benchmark выполнен на этой
 входа помогает подстановка заголовка в рантайме (в консоли вкладки), исходники
 трогать не нужно:
 
+Токен на 10 минут: `python manage.py shell -c "from config.testing import api_token; print(api_token('<ваш email>'))"`.
+
 ```js
 const orig = window.fetch;
 window.fetch = (input, init = {}) => {
   const url = typeof input === "string" ? input : input?.url ?? "";
   if (url.includes("localhost:8000")) {
     const h = new Headers(init.headers || {});
-    h.set("X-User-Email", "<ваш email>");
+    h.set("Authorization", "Bearer <токен>");
     init = { ...init, headers: h };
   }
   return orig(input, init);
 };
 const send = XMLHttpRequest.prototype.send;   // загрузка файла идёт через XHR
 XMLHttpRequest.prototype.send = function (b) {
-  try { this.setRequestHeader("X-User-Email", "<ваш email>"); } catch (e) {}
+  try { this.setRequestHeader("Authorization", "Bearer <токен>"); } catch (e) {}
   return send.call(this, b);
 };
 ```
@@ -881,7 +883,6 @@ Pinecone/Qdrant и hosted vector stores. OCR сканированных стра
 - **`visibleNavigationRoutes`** в `src/config/dashboard-navigation.ts:218` — это
   allowlist из 7 роутов. Новая страница без записи в нём не появится в меню.
 - **Кто вызывает API, определяет подписанный токен (`config/middleware.py`).**
-  `X-User-Email` работает, только пока выключен `API_AUTH_ENFORCE`.
 - **Пароль Redis / любые креды — только в `.env`** (в `.gitignore`, строка 29) и в
   переменные Northflank. В этот файл, в `.env.example` и в коммиты — никогда.
 

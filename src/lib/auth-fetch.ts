@@ -9,13 +9,9 @@ const TOKEN_ROUTE = '/api/auth/backend-token'
 
 // Renew early, so that a token cannot expire on its way to the backend.
 const RENEW_MARGIN_MS = 60_000
-// How long to remember that the server has no token to give, so a deployment
-// without the secret doesn't add a round trip to every call.
-const NO_TOKEN_RETRY_MS = 30_000
 
 type BackendIdentity = {
     token: string | null
-    email: string | null
     validUntil: number
     signedOut?: boolean
 }
@@ -27,21 +23,18 @@ async function requestIdentity(): Promise<BackendIdentity> {
     try {
         const response = await fetch(TOKEN_ROUTE, { cache: 'no-store' })
         if (response.status === 401) {
-            return { token: null, email: null, validUntil: 0, signedOut: true }
+            return { token: null, validUntil: 0, signedOut: true }
         }
         if (response.ok) {
-            const { token, email, expiresIn } = await response.json()
+            const { token, expiresIn } = await response.json()
             // Counted from now, not from the token's own `exp`: a student's
             // clock can be wrong, and the backend only compares server clocks.
-            const validUntil = token
-                ? Date.now() + expiresIn * 1000 - RENEW_MARGIN_MS
-                : Date.now() + NO_TOKEN_RETRY_MS
-            return { token, email, validUntil }
+            return { token, validUntil: Date.now() + expiresIn * 1000 - RENEW_MARGIN_MS }
         }
     } catch {
         // Offline or a failed deployment: try again on the next call.
     }
-    return { token: null, email: null, validUntil: 0 }
+    return { token: null, validUntil: 0 }
 }
 
 function loadIdentity({ renew = false } = {}): Promise<BackendIdentity> {
@@ -63,12 +56,7 @@ function loadIdentity({ renew = false } = {}): Promise<BackendIdentity> {
 }
 
 function identityHeaders(identity: BackendIdentity): Record<string, string> {
-    return {
-        ...(identity.token && { Authorization: `Bearer ${identity.token}` }),
-        // Until the backend enforces tokens (API_AUTH_ENFORCE), so that this code
-        // keeps working against a backend that has not deployed yet.
-        ...(identity.email && { 'X-User-Email': identity.email }),
-    }
+    return identity.token ? { Authorization: `Bearer ${identity.token}` } : {}
 }
 
 function redirectToSignIn() {

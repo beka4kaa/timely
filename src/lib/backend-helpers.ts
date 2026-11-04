@@ -20,7 +20,7 @@ export async function createBackendHeaders(): Promise<Record<string, string>> {
 
 /** Whether createBackendHeaders found a signed-in session. */
 export function hasBackendIdentity(headers: Record<string, string>): boolean {
-    return Boolean(headers['Authorization'] || headers['X-User-Email'])
+    return Boolean(headers['Authorization'])
 }
 
 /**

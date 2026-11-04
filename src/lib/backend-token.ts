@@ -13,7 +13,7 @@ export const BACKEND_TOKEN_TTL_SECONDS = 600
 const TOKEN_ISSUER = 'timely-web'
 const TOKEN_AUDIENCE = 'timely-api'
 
-/** Null when the secret is not configured, which is allowed during rollout. */
+/** Null when the secret is not configured; the backend then answers 401. */
 export async function mintBackendToken(email: string): Promise<string | null> {
   const secret = process.env.TIMELY_API_JWT_SECRET
   if (!secret) return null
@@ -32,14 +32,8 @@ export async function mintBackendToken(email: string): Promise<string | null> {
 /**
  * Headers that identify `email` to the backend. Pass only an address read from
  * the session, never one taken from the incoming request.
- *
- * X-User-Email stays until the backend enforces tokens (API_AUTH_ENFORCE), so
- * that this code keeps working against a backend that has not deployed yet.
  */
 export async function backendIdentityHeaders(email: string): Promise<Record<string, string>> {
   const token = await mintBackendToken(email)
-  return {
-    ...(token && { Authorization: `Bearer ${token}` }),
-    'X-User-Email': email,
-  }
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }

@@ -42,20 +42,18 @@ test("the address is signed exactly as the session has it", async () => {
   assert.equal(payload.sub, "Mixed.Case@Example.com");
 });
 
-test("without a secret there is no token, and the rollout header still goes out", async () => {
+test("without a secret there is no token and no identity", async () => {
   delete process.env.TIMELY_API_JWT_SECRET;
 
   assert.equal(await mintBackendToken("student@example.com"), null);
-  assert.deepEqual(await backendIdentityHeaders("student@example.com"), {
-    "X-User-Email": "student@example.com",
-  });
+  assert.deepEqual(await backendIdentityHeaders("student@example.com"), {});
 });
 
-test("with a secret both go out during the rollout", async () => {
+test("with a secret the identity is the token alone", async () => {
   process.env.TIMELY_API_JWT_SECRET = SECRET;
 
   const headers = await backendIdentityHeaders("student@example.com");
 
+  assert.deepEqual(Object.keys(headers), ["Authorization"]);
   assert.match(headers.Authorization, /^Bearer /);
-  assert.equal(headers["X-User-Email"], "student@example.com");
 });
