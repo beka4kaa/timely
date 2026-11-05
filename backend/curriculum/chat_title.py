@@ -79,7 +79,8 @@ def generate_chat_title(messages: list) -> str:
             system_prompt=SYSTEM_PROMPT,
             payload={"question": question[:600], "answer_start": answer},
             timeout=30,
-            max_tokens=60,
+            # Само имя короткое, но рассуждение у GLM обязательное и идёт из этого же лимита.
+            max_tokens=1500,
             feature="chat_title",
         )
         data = json.loads(response.text)

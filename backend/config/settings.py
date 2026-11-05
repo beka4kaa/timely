@@ -368,7 +368,7 @@ BOARD_ENABLED = "test" in sys.argv or os.getenv("BOARD_ENABLED", "false").lower(
 
 # Разбор «что человек написал»: быстрый и дешёвый вызов, ученик ждёт его перед ответом.
 UNDERSTAND_MODEL = os.getenv("UNDERSTAND_MODEL", "z-ai/glm-5.3-flash")
-UNDERSTAND_TIMEOUT = int(os.getenv("UNDERSTAND_TIMEOUT", "4"))
+UNDERSTAND_TIMEOUT = int(os.getenv("UNDERSTAND_TIMEOUT", "8"))
 
 
 # Тот же рубильник для ролей планировщика курса — четвёртый по счёту и по той же
@@ -527,7 +527,8 @@ PLANNING_REASONING_ENABLED = os.getenv(
 # and burns tokens for a single adaptive follow-up question.
 PLANNING_REASONING_EFFORT = os.getenv("PLANNING_REASONING_EFFORT", "low")
 PLANNING_TIMEOUT = int(os.getenv("PLANNING_TIMEOUT", "20"))
-PLANNING_MAX_TOKENS = int(os.getenv("PLANNING_MAX_TOKENS", "700"))
+# С запасом: у GLM рассуждение обязательное и его токены идут из этого же лимита.
+PLANNING_MAX_TOKENS = int(os.getenv("PLANNING_MAX_TOKENS", "2500"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -54,6 +54,36 @@ _JSON_MODEL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 _WALL_CLOCK_GRACE_SECONDS = 5
 
 
+# Модели с обязательным рассуждением. На `enabled: false` OpenRouter отвечает 400
+# («Reasoning is mandatory for this endpoint»), а без уровня берёт самый дорогой, `max`.
+# Поэтому для них уровень указывается всегда. `medium` у них нет: только эти три.
+_MANDATORY_REASONING_PREFIXES = ("z-ai/glm-5", "~z-ai/glm")
+_MANDATORY_REASONING_EFFORTS = ("low", "high", "max")
+
+
+def has_mandatory_reasoning(model: str) -> bool:
+    return (model or "").startswith(_MANDATORY_REASONING_PREFIXES)
+
+
+def reasoning_options(model: str, *, enabled: bool = True, effort: str | None = None) -> dict[str, Any]:
+    """Блок `reasoning` в той форме, которую эта модель примет.
+
+    Просьба не думать или неизвестный уровень у модели с обязательным рассуждением
+    означают самый дешёвый уровень: это ближайшее к просьбе, что она умеет.
+    """
+    if has_mandatory_reasoning(model):
+        return {"effort": effort if enabled and effort in _MANDATORY_REASONING_EFFORTS else "low"}
+    options: dict[str, Any] = {"enabled": bool(enabled)}
+    if enabled and effort:
+        options["effort"] = effort
+    return options
+
+
+def default_reasoning_body(model: str) -> dict[str, Any]:
+    """`extra_body` для вызова, который уровень сам не выбирает. У обычных моделей ничего не меняет."""
+    return {"reasoning": reasoning_options(model)} if has_mandatory_reasoning(model) else {}
+
+
 class TextLLMNotConfigured(RuntimeError):
     """Ключ провайдера не задан — вызывать модель нечем."""
 
@@ -89,6 +119,7 @@ class TextModel:
             max_tokens=TEXT_LLM_MAX_TOKENS,
             temperature=self.temperature,
             timeout=TEXT_LLM_TIMEOUT,
+            **({"extra_body": extra_body} if (extra_body := default_reasoning_body(self.model)) else {}),
         )
         record_model_usage(
             response,
@@ -116,9 +147,9 @@ class TextModel:
         та же модель, что у остальных текстовых вызовов. `BOARD_LLM_*` это
         доска, и её настройки сюда не относятся.
 
-        Рассуждение по умолчанию выключено. GLM думает, пока его не попросят об обратном,
-        а эти токены списываются из `max_tokens`: при лимите в 1200 модель могла потратить
-        его целиком и ответить пустотой, а ученик тем временем ждал бы молча.
+        Рассуждение по умолчанию на минимуме. Его токены списываются из `max_tokens`, поэтому
+        лимит на вызове должен оставлять место и ответу. Текст рассуждения приходит в
+        `delta.reasoning`, и наружу он не идёт (CLAUDE.md §5.8).
         """
         if not TEXT_LLM_API_KEY:
             raise TextLLMNotConfigured(
@@ -130,9 +161,7 @@ class TextModel:
             api_key=TEXT_LLM_API_KEY, base_url=TEXT_LLM_BASE_URL, max_retries=0
         )
         logger.info("[text_llm] поток от %s (%s)", self.model, feature)
-        reasoning: dict[str, Any] = (
-            {"enabled": True, "effort": reasoning_effort} if reasoning_effort else {"enabled": False}
-        )
+        reasoning = reasoning_options(self.model, enabled=bool(reasoning_effort), effort=reasoning_effort)
         stream = client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -230,9 +259,7 @@ class TextModel:
                 "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             },
         ]
-        reasoning: dict[str, Any] = {"enabled": bool(reasoning_enabled)}
-        if reasoning_enabled and reasoning_effort:
-            reasoning["effort"] = reasoning_effort
+        reasoning = reasoning_options(self.model, enabled=reasoning_enabled, effort=reasoning_effort)
 
         if json_schema is not None:
             response_format: dict[str, Any] = {

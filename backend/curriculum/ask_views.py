@@ -32,7 +32,8 @@ from .models import LearningGoal
 logger = logging.getLogger(__name__)
 
 # Ответ в боковой панели — это несколько абзацев, а не конспект урока.
-ASK_MAX_TOKENS = 1200
+# Рассуждение у GLM обязательное, и его токены списываются из этого лимита: ответу должно хватить.
+ASK_MAX_TOKENS = 4000
 ASK_TIMEOUT_SECONDS = 90
 # Цитата на бумажке короче самого фрагмента, а хранится она вместе с разговором.
 ASK_EXCERPT_CHARS = 500

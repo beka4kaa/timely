@@ -47,7 +47,8 @@ from .tools import (
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 4
-CHAT_MAX_TOKENS = 1200
+# С запасом: у GLM рассуждение обязательное и его токены идут из этого же лимита.
+CHAT_MAX_TOKENS = 4000
 CHAT_TIMEOUT_SECONDS = 90
 # Сколько прошлых реплик уходит в контекст. Панель решает короткие задачи, и
 # длинная история здесь только удорожает вызов.
@@ -253,7 +254,7 @@ class ScheduleChatStreamView(APIView):
         def event_stream():
             from openai import OpenAI
 
-            from ai_engine.text_llm import TEXT_LLM_API_KEY, TEXT_LLM_BASE_URL
+            from ai_engine.text_llm import TEXT_LLM_API_KEY, TEXT_LLM_BASE_URL, default_reasoning_body
             from ai_engine.usage import provider_from_base_url, record_model_usage
 
             client = OpenAI(
@@ -285,6 +286,11 @@ class ScheduleChatStreamView(APIView):
                                 max_tokens=CHAT_MAX_TOKENS,
                                 temperature=0.2,
                                 timeout=CHAT_TIMEOUT_SECONDS,
+                                **(
+                                    {"extra_body": extra_body}
+                                    if (extra_body := default_reasoning_body(binding.model))
+                                    else {}
+                                ),
                             )
                         record_model_usage(
                             response,

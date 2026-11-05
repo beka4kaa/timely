@@ -182,3 +182,63 @@ class WallClockBackstopTests(SimpleTestCase):
         self.assertEqual(seen["email"], "pupil@example.com")
         # Учёт действительно случился в рабочем треде, а не в вызывающем.
         self.assertTrue(seen["thread"].startswith("text-llm-json"))
+
+
+class MandatoryReasoningTests(SimpleTestCase):
+    """У GLM 5 рассуждение обязательное: `enabled: false` даёт 400, и чат молчит."""
+
+    def test_glm_never_gets_disabled_reasoning(self):
+        for model in ("z-ai/glm-5.3", "z-ai/glm-5.3-flash", "~z-ai/glm-latest"):
+            self.assertEqual(text_llm.reasoning_options(model, enabled=False), {"effort": "low"})
+            self.assertEqual(text_llm.reasoning_options(model), {"effort": "low"})
+
+    def test_glm_keeps_a_level_it_supports_and_replaces_one_it_does_not(self):
+        self.assertEqual(text_llm.reasoning_options("z-ai/glm-5.3", effort="high"), {"effort": "high"})
+        self.assertEqual(text_llm.reasoning_options("z-ai/glm-5.3", effort="max"), {"effort": "max"})
+        self.assertEqual(text_llm.reasoning_options("z-ai/glm-5.3", effort="medium"), {"effort": "low"})
+
+    def test_other_models_behave_as_before(self):
+        self.assertEqual(text_llm.reasoning_options("vendor/model", enabled=False), {"enabled": False})
+        self.assertEqual(
+            text_llm.reasoning_options("vendor/model", effort="medium"),
+            {"enabled": True, "effort": "medium"},
+        )
+        self.assertEqual(text_llm.default_reasoning_body("vendor/model"), {})
+
+    def _stream_body(self, **kwargs):
+        calls = []
+
+        class Client:
+            chat = None
+            completions = None
+
+            def create(self, **request):
+                calls.append(request)
+                return iter(())
+
+        client = Client()
+        client.chat = client
+        client.completions = client
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "key"):
+            list(TextModel("z-ai/glm-5.3").stream_content([{"role": "user", "content": "привет"}], **kwargs))
+        return calls[0]["extra_body"]["reasoning"]
+
+    def test_chat_stream_asks_for_the_lowest_level_by_default(self):
+        self.assertEqual(self._stream_body(), {"effort": "low"})
+
+    def test_chat_stream_passes_the_chosen_level(self):
+        self.assertEqual(self._stream_body(reasoning_effort="high"), {"effort": "high"})
+
+    def test_json_call_with_reasoning_off_is_still_valid_for_glm(self):
+        client = _RecordingClient()
+        with _ClientFixture(client):
+            TextModel("z-ai/glm-5.3-flash").generate_json_content(
+                system_prompt="s", payload={}, timeout=1, max_tokens=10, reasoning_enabled=False,
+            )
+        self.assertEqual(client.calls[0]["extra_body"]["reasoning"], {"effort": "low"})
+
+    def test_plain_call_does_not_fall_to_the_most_expensive_level(self):
+        client = _RecordingClient()
+        with _ClientFixture(client):
+            TextModel("z-ai/glm-5.3").generate_content("привет")
+        self.assertEqual(client.calls[0]["extra_body"]["reasoning"], {"effort": "low"})
