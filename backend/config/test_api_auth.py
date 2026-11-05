@@ -23,7 +23,6 @@ GUARDED_REQUESTS = [
     ("post", "/api/schedule-revisions/some-id/confirm/"),
     ("get", "/api/me/"),
     ("get", "/api/admin/users/"),
-    ("get", "/api/users/search/?q=a"),
     ("get", "/api/leaderboard/"),
     ("get", "/api/nutrition/foods/?q=a"),
     ("post", "/api/ai/ocr/"),

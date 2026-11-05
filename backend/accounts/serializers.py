@@ -1,5 +1,41 @@
+from django.db.models import Exists, OuterRef, Q
+from django.utils import timezone
 from rest_framework import serializers
 from .models import CustomUser, UserRating, Task, TaskSubmission, Contest, PrivateLeaderboard
+
+
+def is_admin_or_mod(user):
+    return bool(user and (user.is_staff or user.is_superuser or user.is_moderator))
+
+
+def with_openness(tasks):
+    """Marks whether a student may read each task's statement and author's solution.
+
+    All of a task's contests decide, not the one it is viewed through: a task from a
+    past contest can be set again in a future one. A task in no contest stays closed,
+    because an admin creates the tasks first and the contest later.
+    """
+    now = timezone.now()
+    contests = Contest.objects.filter(tasks=OuterRef('pk'))
+    past = Exists(contests.filter(end_time__lte=now))
+    running = Exists(contests.filter(start_time__lte=now, end_time__gt=now))
+    upcoming = Exists(contests.filter(start_time__gt=now))
+    return tasks.annotate(
+        statement_open=running | (past & ~upcoming),
+        solution_open=past & ~running & ~upcoming,
+    )
+
+
+def visible_tasks(viewer):
+    """The tasks this person can open: staff all, a student what has come out, and their own."""
+    tasks = with_openness(Task.objects.select_related('author'))
+    if is_admin_or_mod(viewer):
+        return tasks
+    open_to_viewer = Q(statement_open=True)
+    if viewer:
+        open_to_viewer |= Q(author=viewer, status='active')
+    return tasks.filter(open_to_viewer)
+
 
 class UserRatingSerializer(serializers.ModelSerializer):
     discipline_name = serializers.CharField(source='discipline.name', read_only=True)
@@ -15,12 +51,13 @@ def public_username(user):
 
 
 class LeaderboardSerializer(serializers.ModelSerializer):
+    # No city: students are minors, and the model holds no consent to a local rating.
     ratings = UserRatingSerializer(many=True, read_only=True)
     username = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'country_code', 'city', 'overall_elo', 'ratings')
+        fields = ('id', 'username', 'country_code', 'overall_elo', 'ratings')
 
     def get_username(self, obj):
         return public_username(obj)
@@ -45,7 +82,21 @@ class TaskSerializer(serializers.ModelSerializer):
         read_only_fields = ('author', 'status')
 
     def get_author_name(self, obj):
-        return display_name(obj.author) if obj.author_id else ''
+        return public_username(obj.author) if obj.author_id else ''
+
+    def to_representation(self, task):
+        data = super().to_representation(task)
+        viewer = self.context.get('viewer')
+        # The author wrote it, so hiding it from them protects nothing. Without the
+        # marks from `with_openness` it stays closed.
+        may_read = (
+            is_admin_or_mod(viewer)
+            or (viewer and task.author_id == viewer.pk)
+            or getattr(task, 'solution_open', False)
+        )
+        if not may_read:
+            data.pop('author_solution_image')
+        return data
 
 
 class TaskSubmissionSerializer(serializers.ModelSerializer):
@@ -59,19 +110,36 @@ class TaskSubmissionSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('student', 'status', 'reviewed_by', 'reviewed_at', 'created_at')
 
+    def get_fields(self):
+        fields = super().get_fields()
+        # The answer names the task and its points, so only a task already open can be
+        # chosen. A closed one gets the same refusal as a number that doesn't exist.
+        fields['task'].queryset = visible_tasks(self.context.get('viewer'))
+        return fields
+
     def get_student_name(self, obj):
         return display_name(obj.student)
 
 
 class ContestSerializer(serializers.ModelSerializer):
-    # Write task membership by id; read full task details.
+    # Write task membership by id; read full task details. The ids of a future contest
+    # stay visible: the page counts them, and a closed task can't be opened by its id.
     tasks        = serializers.PrimaryKeyRelatedField(many=True, queryset=Task.objects.all(), required=False)
-    task_details = TaskSerializer(source='tasks', many=True, read_only=True)
+    task_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Contest
         fields = ('id', 'title', 'description', 'start_time', 'end_time', 'tasks', 'task_details', 'created_at')
         read_only_fields = ('created_at',)
+
+    def get_task_details(self, contest):
+        tasks = contest.tasks.all()
+        if not is_admin_or_mod(self.context.get('viewer')):
+            if contest.start_time > timezone.now():
+                tasks = []
+            else:
+                tasks = [task for task in tasks if getattr(task, 'statement_open', False)]
+        return TaskSerializer(tasks, many=True, context=self.context).data
 
 
 class PrivateLeaderboardSerializer(serializers.ModelSerializer):
@@ -80,11 +148,19 @@ class PrivateLeaderboardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PrivateLeaderboard
-        fields = ('id', 'name', 'owner', 'owner_name', 'members', 'created_at')
-        read_only_fields = ('owner', 'created_at')
+        fields = ('id', 'name', 'owner', 'owner_name', 'members', 'invite_code', 'created_at')
+        read_only_fields = ('owner', 'invite_code', 'created_at')
 
     def get_owner_name(self, obj):
-        return display_name(obj.owner)
+        return public_username(obj.owner)
+
+    def to_representation(self, board):
+        data = super().to_representation(board)
+        viewer = self.context.get('viewer')
+        # The owner decides who gets the code, so a member can't pass it on from here.
+        if not viewer or board.owner_id != viewer.pk:
+            data.pop('invite_code')
+        return data
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -98,7 +174,7 @@ class MeSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'email', 'username', 'name', 'overall_elo',
             'is_staff', 'is_moderator', 'is_admin', 'has_full_access', 'ai_plan',
-            'bio', 'show_in_leaderboard', 'public_username',
+            'bio', 'show_in_leaderboard', 'public_username', 'city',
         )
 
     def get_name(self, obj):

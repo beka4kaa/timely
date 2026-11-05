@@ -95,6 +95,8 @@ export interface PrivateBoard {
   owner: number
   owner_name: string
   members: LeaderboardUser[]
+  /** Код для вступления. Сервер отдаёт его только создателю. */
+  invite_code?: string
   created_at: string
 }
 
@@ -132,6 +134,7 @@ async function unwrap<T>(res: Response): Promise<T> {
     }
     throw new Error(detail)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -198,26 +201,27 @@ export const listPrivateBoards = async (): Promise<PrivateBoard[]> =>
 export const createPrivateBoard = async (name: string): Promise<PrivateBoard> =>
   unwrap(await authFetch(url("/api/private-leaderboards/"), { method: "POST", body: JSON.stringify({ name }) }))
 
-export const addBoardMember = async (
-  id: number,
-  member: { userId?: number; identifier?: string },
-): Promise<PrivateBoard> =>
+/** В группу вступают только сами, по коду от создателя: добавить другого человека нельзя. */
+export const joinPrivateBoard = async (code: string): Promise<PrivateBoard> =>
+  unwrap(await authFetch(url("/api/private-leaderboards/join/"), { method: "POST", body: JSON.stringify({ code }) }))
+
+export const leavePrivateBoard = async (id: number): Promise<void> =>
+  unwrap(await authFetch(url(`/api/private-leaderboards/${id}/leave/`), { method: "POST" }))
+
+export const deletePrivateBoard = async (id: number): Promise<void> =>
+  unwrap(await authFetch(url(`/api/private-leaderboards/${id}/`), { method: "DELETE" }))
+
+/** Старый код перестаёт работать. */
+export const resetBoardCode = async (id: number): Promise<PrivateBoard> =>
+  unwrap(await authFetch(url(`/api/private-leaderboards/${id}/reset-code/`), { method: "POST" }))
+
+export const removeBoardMember = async (id: number, userId: number): Promise<PrivateBoard> =>
   unwrap(
-    await authFetch(url(`/api/private-leaderboards/${id}/add-member/`), {
+    await authFetch(url(`/api/private-leaderboards/${id}/remove-member/`), {
       method: "POST",
-      body: JSON.stringify({ user_id: member.userId, identifier: member.identifier }),
+      body: JSON.stringify({ user_id: userId }),
     }),
   )
-
-export interface UserSearchResult {
-  id: number
-  name: string
-  username: string
-  overall_elo: number
-}
-
-export const searchUsers = async (q: string): Promise<UserSearchResult[]> =>
-  unwrap(await authFetch(url(`/api/users/search/?q=${encodeURIComponent(q)}`)))
 
 // ── admin users / access ────────────────────────────────────────────
 export const listAdminUsers = async (q = ""): Promise<AdminUser[]> =>

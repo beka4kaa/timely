@@ -4,13 +4,14 @@ Every request here carries a genuine token for STUDENT, and the rows belong to
 OTHER. The same requests against STUDENT's own rows must keep working.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import CustomUser, PrivateLeaderboard, Task
+from accounts.models import Contest, CustomUser, PrivateLeaderboard, Task
 from ai_engine.models import LearningProgram, TopicPlan
 from config.ownership import OwnedRelationsMixin, request_email
 from config.testing import auth_headers
@@ -635,6 +636,10 @@ class AccountsTests(_Base):
         )
         self.task = Task.objects.create(author=self.other, title="their task", status="active")
         self.own_task = Task.objects.create(author=self.student, title="own task", status="active")
+        # A student only reaches someone else's task once it has come out in a contest.
+        now = timezone.now()
+        past = Contest.objects.create(title="past", start_time=now - timedelta(days=2), end_time=now - timedelta(days=1))
+        past.tasks.add(self.task)
 
     def test_cannot_change_a_task_without_being_its_author_or_an_admin(self):
         response = self.client.patch(f"/api/tasks/{self.task.id}/", {"title": "defaced"}, format="json")
@@ -651,46 +656,16 @@ class AccountsTests(_Base):
         response = self.client.patch(f"/api/tasks/{self.task.id}/", {"title": "fixed"}, format="json")
         self.assertEqual(response.status_code, 200, response.content)
 
-    def test_search_never_returns_an_address(self):
-        CustomUser.objects.create_user(
-            username="findme", email="findme@example.com", password="x", show_in_leaderboard=True
-        )
-        response = self.client.get("/api/users/search/?q=findme")
-        self.assertEqual([row["username"] for row in response.json()], ["findme"])
-        self.assertNotIn("example.com", response.content.decode())
-
-    def test_search_finds_nobody_by_part_of_an_address(self):
-        response = self.client.get("/api/users/search/?q=example.com")
-        self.assertEqual(response.json(), [])
-        response = self.client.get(f"/api/users/search/?q={OTHER[:5]}")
-        self.assertEqual(response.json(), [])
-
-    def test_search_cannot_confirm_a_guessed_address(self):
-        response = self.client.get(f"/api/users/search/?q={OTHER}")
-        self.assertEqual(response.json(), [])
-
-    def test_inviting_to_a_board_cannot_confirm_a_guessed_address(self):
-        board = PrivateLeaderboard.objects.create(name="own board", owner=self.student)
-        for identifier in (OTHER, self.admin.email):
-            with self.subTest(identifier=identifier):
-                response = self.client.post(
-                    f"/api/private-leaderboards/{board.id}/add-member/",
-                    {"identifier": identifier},
-                    format="json",
-                )
-                self.assertEqual(response.status_code, 404)
-        response = self.client.post(
-            f"/api/private-leaderboards/{board.id}/add-member/", {"identifier": "admin"}, format="json"
-        )
-        self.assertEqual(response.status_code, 200, response.content)
-
     def test_no_part_of_an_address_used_as_username_is_shown(self):
-        rows = {row["id"]: row for row in self.client.get("/api/leaderboard/").json()}
+        rows = {row["id"]: row for row in self.client.get("/api/leaderboard/").json()["results"]}
         self.assertEqual(rows[self.other.id]["username"], f"Ученик {self.other.id}")
         self.assertEqual(rows[self.student.id]["username"], "student")
 
-        response = self.client.get(f"/api/users/search/?q={self.other.id}")
-        self.assertEqual(response.json()[0]["name"], f"Ученик {self.other.id}")
+        board = PrivateLeaderboard.objects.create(name="their board", owner=self.other)
+        board.members.add(self.student)
+        response = self.client.get(f"/api/private-leaderboards/{board.id}/")
+        self.assertEqual(response.json()["owner_name"], f"Ученик {self.other.id}")
+        self.assertNotIn("example.com", response.content.decode())
 
     def test_ones_own_name_is_not_masked(self):
         self.client.credentials(**auth_headers(OTHER))

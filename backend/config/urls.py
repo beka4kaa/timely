@@ -11,7 +11,7 @@ from ai_engine.views import (
     DailyTasksView, ScheduleView, ChatSessionViewSet
 )
 from accounts.views import (
-    LeaderboardViewSet, MeView, UserSearchView,
+    LeaderboardViewSet, MeView,
     TaskViewSet, TaskSubmissionViewSet, ContestViewSet, PrivateLeaderboardViewSet,
     AdminUserViewSet,
 )
@@ -158,8 +158,6 @@ urlpatterns = [
     
     path('api/me/', MeView.as_view(), name='me'),
     path('api/me', MeView.as_view(), name='me-no-slash'),
-    path('api/users/search/', UserSearchView.as_view(), name='user-search'),
-    path('api/users/search', UserSearchView.as_view(), name='user-search-no-slash'),
     
     # AI Actions with trailing slashes (Django standard)
     path('api/ai/generate-program/', GenerateProgramView.as_view(), name='generate-program'),

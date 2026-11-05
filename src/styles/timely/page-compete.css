@@ -45,13 +45,16 @@
 .rb-faces .av { box-shadow: 0 0 0 2px var(--t-bg); }
 .rb-faces .av + .av { margin-left: -7px; }
 .rb-group-head { margin-top: 4px; }
-.pg-found { display: grid; gap: 1px; max-height: 208px; min-height: 48px; overflow-y: auto; padding: 4px; border-radius: 12px; background: var(--t-hover); }
-.pg-found > .small-note { padding: 10px; text-align: center; }
-.pg-pick { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 9px; text-align: left; }
-.pg-pick:hover, .pg-pick[aria-pressed="true"] { background: var(--t-hover); }
-.pg-pick-who b, .pg-pick-who small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.pg-pick-who b { font-size: 13.5px; font-weight: 500; }
-.pg-pick-who small { color: var(--t-muted); font-size: 12px; }
+.rb-groups-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-code { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 6px 0 14px; padding: 14px 16px; }
+.rb-code-v { font-size: 17px; font-weight: 600; letter-spacing: 0.08em; overflow-wrap: anywhere; user-select: all; }
+.rb-code-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+/* Действие в два нажатия: его кнопка без своего класса */
+.rb-do button { height: 32px; padding: 0 9px; border-radius: 10px; color: var(--t-muted); font-size: 13px; transition: background 140ms ease; }
+.rb-do button:hover { background: var(--t-hover); color: var(--t-ink); }
+.rb-do button.is-danger { color: var(--t-warn); font-weight: 500; }
+.rb-member { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
+.rb-group-foot { margin-top: 12px; }
 .rb-invite .btn { width: 100%; margin: 10px 0 4px; }
 @container main (max-width: 980px) {
   .lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 56px; }

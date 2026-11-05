@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils.crypto import get_random_string
 
 class CustomUser(AbstractUser):
     AI_PLAN_CHOICES = [
@@ -143,11 +144,23 @@ class Contest(models.Model):
         return self.title
 
 
+# Код набирают и на русской раскладке, поэтому здесь нет букв с кириллическими двойниками
+# (A и А не отличить на глаз), а заодно 0, O, 1 и I.
+INVITE_CODE_ALPHABET = 'DFGJLNQRSUVWZ23456789'
+INVITE_CODE_LENGTH = 10
+
+
+def new_invite_code():
+    return get_random_string(INVITE_CODE_LENGTH, INVITE_CODE_ALPHABET)
+
+
 class PrivateLeaderboard(models.Model):
-    """A user-owned leaderboard scoped to an invited set of members."""
+    """A user-owned leaderboard. Everyone in it joined on their own, with the code."""
     name       = models.CharField(max_length=255)
     owner      = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='owned_leaderboards')
     members    = models.ManyToManyField(CustomUser, related_name='private_leaderboards', blank=True)
+    # Добавить другого человека нельзя: он вступает сам, по коду. Код видит только создатель.
+    invite_code = models.CharField(max_length=INVITE_CODE_LENGTH, unique=True, default=new_invite_code, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

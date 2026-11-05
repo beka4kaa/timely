@@ -1,24 +1,28 @@
 "use client"
 
-// Мои группы: таблицы для друзей и класса. Видят их только участники.
+// Мои группы: таблицы для друзей и класса. Видят их только участники, и каждый вступил сам,
+// по коду от создателя. Добавить другого человека нельзя, поэтому поиска учеников здесь нет.
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
+import { ConfirmingAction } from "@/components/curriculum/catalog-menu"
 import { Icon } from "@/components/shell/icons"
 import { initialsOf } from "@/components/shell/sidebar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import {
-  addBoardMember,
   createPrivateBoard,
+  deletePrivateBoard,
+  joinPrivateBoard,
+  leavePrivateBoard,
   listPrivateBoards,
-  searchUsers,
+  removeBoardMember,
+  resetBoardCode,
   type LeaderboardUser,
   type PrivateBoard,
-  type UserSearchResult,
 } from "@/lib/contest-api"
 import { ru } from "@/lib/contest-view"
 import { countryName, grouped } from "@/lib/rating-view"
@@ -31,73 +35,46 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : "попробуй ещё раз"
 }
 
-/* ─────────────── Новая группа ─────────────── */
-function CreateBoardDialog({
+/* ─────────────── Новая группа и вступление: одно поле и кнопка ─────────────── */
+function OneFieldDialog({
   open,
   onOpenChange,
-  onCreated,
+  title,
+  label,
+  placeholder,
+  note,
+  submitLabel,
+  emptyError,
+  onSubmit,
+  onDone,
 }: {
   open: boolean
   onOpenChange: (value: boolean) => void
-  onCreated: (board: PrivateBoard) => void
+  title: string
+  label: string
+  placeholder: string
+  note: string
+  submitLabel: string
+  emptyError: string
+  onSubmit: (value: string) => Promise<PrivateBoard>
+  onDone: (board: PrivateBoard) => void
 }) {
-  const [name, setName] = useState("")
-  const [query, setQuery] = useState("")
-  const [results, setResults] = useState<UserSearchResult[]>([])
-  const [searching, setSearching] = useState(false)
-  const [selected, setSelected] = useState<Map<number, UserSearchResult>>(new Map())
+  const [value, setValue] = useState("")
   const [saving, setSaving] = useState(false)
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!open) {
-      setName("")
-      setQuery("")
-      setResults([])
-      setSelected(new Map())
-    }
+    if (!open) setValue("")
   }, [open])
 
-  useEffect(() => {
-    if (debounce.current) clearTimeout(debounce.current)
-    if (!query.trim()) {
-      setResults([])
-      setSearching(false)
-      return
-    }
-    setSearching(true)
-    debounce.current = setTimeout(() => {
-      searchUsers(query.trim())
-        .then(setResults)
-        .catch((error) => toast.error(`Поиск не удался: ${errorText(error)}`))
-        .finally(() => setSearching(false))
-    }, 280)
-    return () => {
-      if (debounce.current) clearTimeout(debounce.current)
-    }
-  }, [query])
-
-  const toggle = (user: UserSearchResult) =>
-    setSelected((current) => {
-      const next = new Map(current)
-      if (next.has(user.id)) next.delete(user.id)
-      else next.set(user.id, user)
-      return next
-    })
-
-  const create = async () => {
-    if (!name.trim()) {
-      toast.error("Назови группу")
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!value.trim()) {
+      toast.error(emptyError)
       return
     }
     setSaving(true)
     try {
-      let board = await createPrivateBoard(name.trim())
-      for (const user of Array.from(selected.values())) {
-        board = await addBoardMember(board.id, { userId: user.id })
-      }
-      toast.success(`Группа «${board.name}» создана`)
-      onCreated(board)
+      onDone(await onSubmit(value.trim()))
       onOpenChange(false)
     } catch (error) {
       toast.error(`Не получилось: ${errorText(error)}`)
@@ -109,80 +86,62 @@ function CreateBoardDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Новая группа</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3 py-1">
-          <Input
-            aria-label="Название группы"
-            placeholder="Например, 9 «Б»"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-
-          {selected.size > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {Array.from(selected.values()).map((user) => (
-                <span key={user.id} className="q-chip">
-                  <span>{user.username}</span>
-                  <button type="button" aria-label={`Убрать ${user.username}`} onClick={() => toggle(user)}>
-                    <Icon name="x" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          <Input
-            aria-label="Найти ученика"
-            placeholder="Имя пользователя или номер"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-
-          <div className="pg-found">
-            {searching ? (
-              <p className="small-note">Ищу…</p>
-            ) : results.length === 0 ? (
-              <p className="small-note">{query.trim() ? "Никого не нашлось" : "Начни вводить имя или номер"}</p>
-            ) : (
-              results.map((user) => {
-                const on = selected.has(user.id)
-                return (
-                  <button
-                    key={user.id}
-                    type="button"
-                    className="pg-pick"
-                    aria-pressed={on}
-                    onClick={() => toggle(user)}
-                  >
-                    <span className="av" aria-hidden="true">
-                      {initialsOf(user.username)}
-                    </span>
-                    <span className="pg-pick-who">
-                      <b>{user.username}</b>
-                      <small>
-                        № {user.id}, {grouped(user.overall_elo)} {ru(user.overall_elo, "балл", "балла", "баллов")}
-                      </small>
-                    </span>
-                    {on ? <Icon name="check" /> : null}
-                  </button>
-                )
-              })
-            )}
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-3">
+            <Input
+              aria-label={label}
+              placeholder={placeholder}
+              value={value}
+              autoComplete="off"
+              onChange={(event) => setValue(event.target.value)}
+            />
+            <p className="small-note">{note}</p>
           </div>
-          <p className="small-note">Тебя добавим в группу сами. Найти можно тех, кто показывает себя в рейтинге.</p>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button onClick={create} disabled={saving}>
-            {saving ? "Создаю…" : "Создать"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Отмена
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Секунду…" : submitLabel}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/* ─────────────── Код группы: его видит только создатель ─────────────── */
+function InviteCode({ board, onChanged }: { board: PrivateBoard; onChanged: (board: PrivateBoard) => void }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(board.invite_code ?? "")
+      toast.success("Код скопирован")
+    } catch {
+      toast.error("Не скопировалось. Выдели код и скопируй сам.")
+    }
+  }
+
+  return (
+    <section className="rb-code card" aria-label="Код группы">
+      <div>
+        <p className="rb-code-v">{board.invite_code}</p>
+        <p className="small-note">Отправь код тем, кого зовёшь. Вступают только сами.</p>
+      </div>
+      <div className="rb-code-tools rb-do">
+        <button className="btn btn-line" type="button" onClick={copy}>
+          Скопировать
+        </button>
+        <ConfirmingAction
+          label="Новый код"
+          confirm="Старый перестанет работать"
+          onRun={async () => onChanged(await resetBoardCode(board.id))}
+        />
+      </div>
+    </section>
   )
 }
 
@@ -191,15 +150,20 @@ function BoardDetail({
   board,
   meId,
   onBack,
+  onChanged,
+  onGone,
 }: {
   board: PrivateBoard
   meId: number | null
   onBack: () => void
+  onChanged: (board: PrivateBoard) => void
+  onGone: (id: number) => void
 }) {
   const ranked = useMemo(
     () => [...board.members].sort((a, b) => b.overall_elo - a.overall_elo || a.id - b.id),
     [board.members],
   )
+  const isOwner = board.owner === meId
 
   return (
     <div className="lb-main">
@@ -210,30 +174,66 @@ function BoardDetail({
         <h2>{board.name}</h2>
         <span>{members(ranked.length)}</span>
       </div>
+      {isOwner && board.invite_code ? <InviteCode board={board} onChanged={onChanged} /> : null}
       <ol>
         {ranked.map((user: LeaderboardUser, index) => {
           const mine = user.id === meId
+          const cells = (
+            <>
+              <span className="n">{index + 1}</span>
+              <span className="av" aria-hidden="true">
+                {initialsOf(user.username)}
+              </span>
+              <span className="who">
+                <b>{mine ? "Ты" : user.username}</b>
+                {countryName(user.country_code) ? <small>{countryName(user.country_code)}</small> : null}
+              </span>
+              <span className="m tr">{user.id === board.owner ? "создатель" : ""}</span>
+              <span className="p">{grouped(user.overall_elo)}</span>
+            </>
+          )
           return (
-            <li key={user.id}>
-              <Link
-                className={mine ? "lr rb-row is-me glass" : "lr rb-row"}
-                href={mine ? "/dashboard/profile" : `/dashboard/profile/${user.id}`}
-              >
-                <span className="n">{index + 1}</span>
-                <span className="av" aria-hidden="true">
-                  {initialsOf(user.username)}
-                </span>
-                <span className="who">
-                  <b>{mine ? "Ты" : user.username}</b>
-                  {countryName(user.country_code) ? <small>{countryName(user.country_code)}</small> : null}
-                </span>
-                <span className="m tr">{user.id === board.owner ? "создатель" : ""}</span>
-                <span className="p">{grouped(user.overall_elo)}</span>
-              </Link>
+            <li key={user.id} className={isOwner && !mine ? "rb-member rb-do" : undefined}>
+              {mine ? (
+                <Link className="lr rb-row is-me glass" href="/dashboard/profile">
+                  {cells}
+                </Link>
+              ) : (
+                // Ссылки на профиль нет: участник мог не показывать себя в общем рейтинге.
+                <div className="lr rb-row">{cells}</div>
+              )}
+              {isOwner && !mine ? (
+                <ConfirmingAction
+                  label="Убрать"
+                  confirm="Точно?"
+                  onRun={async () => onChanged(await removeBoardMember(board.id, user.id))}
+                />
+              ) : null}
             </li>
           )
         })}
       </ol>
+      <div className="rb-group-foot rb-do">
+        {isOwner ? (
+          <ConfirmingAction
+            label="Удалить группу"
+            confirm="Точно удалить для всех?"
+            onRun={async () => {
+              await deletePrivateBoard(board.id)
+              onGone(board.id)
+            }}
+          />
+        ) : (
+          <ConfirmingAction
+            label="Выйти из группы"
+            confirm="Точно выйти?"
+            onRun={async () => {
+              await leavePrivateBoard(board.id)
+              onGone(board.id)
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -244,6 +244,7 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [joinOpen, setJoinOpen] = useState(false)
   const [activeId, setActiveId] = useState<number | null>(null)
 
   const load = useCallback(() => {
@@ -258,17 +259,46 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
     load()
   }, [load])
 
+  const put = (board: PrivateBoard) =>
+    setBoards((rows) =>
+      rows.some((row) => row.id === board.id)
+        ? rows.map((row) => (row.id === board.id ? board : row))
+        : [board, ...rows],
+    )
+  const open = (board: PrivateBoard) => {
+    put(board)
+    setActiveId(board.id)
+  }
+
   const active = boards.find((board) => board.id === activeId) ?? null
-  if (active) return <BoardDetail board={active} meId={meId} onBack={() => setActiveId(null)} />
+  if (active) {
+    return (
+      <BoardDetail
+        board={active}
+        meId={meId}
+        onBack={() => setActiveId(null)}
+        onChanged={put}
+        onGone={(id) => {
+          setActiveId(null)
+          setBoards((rows) => rows.filter((row) => row.id !== id))
+        }}
+      />
+    )
+  }
 
   return (
     <section aria-label="Мои группы">
       <div className="rb-groups-head">
         <h2 className="sec">Мои группы</h2>
-        <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
-          <Icon name="plus" />
-          Новая группа
-        </button>
+        <div className="rb-groups-tools">
+          <button className="btn btn-text" type="button" onClick={() => setJoinOpen(true)}>
+            Вступить по коду
+          </button>
+          <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
+            <Icon name="plus" />
+            Новая группа
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -286,7 +316,7 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
       ) : boards.length === 0 ? (
         <section className="ct-note card">
           <h2>Групп пока нет</h2>
-          <p>Создай группу с друзьями или классом и соревнуйтесь только между собой.</p>
+          <p>Создай группу с друзьями или классом и соревнуйтесь только между собой. Если друг уже создал, попроси у него код.</p>
         </section>
       ) : (
         <ul className="rb-groups">
@@ -308,13 +338,29 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
         </ul>
       )}
 
-      <CreateBoardDialog
+      <OneFieldDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(board) => {
-          load()
-          setActiveId(board.id)
-        }}
+        title="Новая группа"
+        label="Название группы"
+        placeholder="Например, 9 «Б»"
+        note="Участников позовёшь кодом: он появится в группе."
+        submitLabel="Создать"
+        emptyError="Назови группу"
+        onSubmit={createPrivateBoard}
+        onDone={open}
+      />
+      <OneFieldDialog
+        open={joinOpen}
+        onOpenChange={setJoinOpen}
+        title="Вступить в группу"
+        label="Код группы"
+        placeholder="Код от создателя группы"
+        note="Участники увидят твоё имя пользователя, страну и баллы. Выйти можно в любой момент."
+        submitLabel="Вступить"
+        emptyError="Введи код"
+        onSubmit={joinPrivateBoard}
+        onDone={open}
       />
     </section>
   )

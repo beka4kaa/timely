@@ -1,21 +1,22 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from demo.identity import visitors_q
-from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboard
+from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboard, new_invite_code
 from .serializers import (
     LeaderboardSerializer,
     TaskSerializer, TaskSubmissionSerializer, ContestSerializer,
     PrivateLeaderboardSerializer, MeSerializer, MeUpdateSerializer, AdminUserSerializer,
-    display_name, public_username,
+    is_admin_or_mod, visible_tasks, with_openness,
 )
 
 
@@ -64,26 +65,34 @@ def on_public_board(viewer):
     return agreed | Q(pk=viewer.pk) if viewer else agreed
 
 
-def is_admin_or_mod(user):
-    return bool(user and (user.is_staff or user.is_superuser or user.is_moderator))
-
-
 def has_full_access(user):
     return bool(user and (user.has_full_access or is_admin_or_mod(user)))
 
 
+class ViewerContextMixin:
+    """The serializers decide what this person may see, so they need to know who it is."""
+
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), 'viewer': current_user(self.request)}
+
+
+class LeaderboardPagination(PageNumberPagination):
+    """No single answer holds every student. The size is fixed, so nobody can ask for more."""
+    page_size = 100
+
+
 class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    GET /api/leaderboard/          — глобальный лидерборд (по overall_elo)
+    GET /api/leaderboard/?page=2   — глобальный лидерборд (по overall_elo), страницами
     GET /api/leaderboard/?country_code=KZ  — фильтр по стране
-    GET /api/leaderboard/?city=Almaty       — фильтр по городу
     GET /api/leaderboard/?discipline_name=Math — топ по конкретной дисциплине
 
     Только те, кто согласился показываться, и сам ученик: своё место он видит всегда.
     """
     serializer_class = LeaderboardSerializer
+    pagination_class = LeaderboardPagination
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['country_code', 'city']
+    filterset_fields = ['country_code']
 
     def get_queryset(self):
         queryset = CustomUser.objects.filter(
@@ -100,12 +109,13 @@ class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = (
                 queryset
                 .filter(ratings__discipline__name__iexact=discipline_name)
-                .order_by('-ratings__elo_score')
+                .order_by('-ratings__elo_score', 'pk')
                 .distinct()
             )
         else:
-            # Глобальный лидерборд — сортировка по общему ELO
-            queryset = queryset.order_by('-overall_elo')
+            # Глобальный лидерборд — сортировка по общему ELO. Второй ключ обязателен:
+            # старт у всех одинаковый, и без него равные скакали бы между страницами.
+            queryset = queryset.order_by('-overall_elo', 'pk')
 
         return queryset
 
@@ -135,35 +145,6 @@ class MeView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
-
-
-class UserSearchView(APIView):
-    """GET /api/users/search/?q= — find players by name, username, or numeric id.
-
-    Never by address: a student's address is never returned, and matching it
-    would confirm a guess. Usernames that hold an address don't match either.
-    Those who haven't agreed to be on the leaderboard aren't found by anyone else.
-    """
-    permission_classes = [AllowAny]
-
-    def get(self, request):
-        q = (request.query_params.get('q') or '').strip()
-        if not q:
-            return Response([])
-        qs = CustomUser.objects.filter(
-            (Q(username__icontains=q) & ~Q(username__contains='@'))
-            | Q(first_name__icontains=q) | Q(last_name__icontains=q)
-        )
-        if q.isdigit():
-            qs = qs | CustomUser.objects.filter(pk=int(q))
-        qs = qs.filter(on_public_board(current_user(request))).distinct().order_by('-overall_elo')[:20]
-        data = [{
-            'id': u.id,
-            'name': display_name(u),
-            'username': public_username(u),
-            'overall_elo': u.overall_elo,
-        } for u in qs]
-        return Response(data)
 
 
 def _request_bool(value):
@@ -256,16 +237,13 @@ class AdminUserViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(AdminUserSerializer(refreshed).data, status=status.HTTP_200_OK)
 
 
-class TaskViewSet(viewsets.ModelViewSet):
-    """Tasks/problems. Admins & moderators see all; everyone else sees active ones."""
+class TaskViewSet(ViewerContextMixin, viewsets.ModelViewSet):
+    """Tasks/problems. Admins & moderators see all; a student sees what has come out in a contest, and their own."""
     serializer_class = TaskSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        user = current_user(self.request)
-        if is_admin_or_mod(user):
-            return Task.objects.all().order_by('-created_at', '-id')
-        return Task.objects.filter(status='active').order_by('-created_at', '-id')
+        return visible_tasks(current_user(self.request)).order_by('-created_at', '-id')
 
     def perform_create(self, serializer):
         user = current_user(self.request)
@@ -287,10 +265,13 @@ class TaskViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class ContestViewSet(viewsets.ModelViewSet):
-    """Contests bundle tasks. Anyone can read; only admins/mods can write."""
+class ContestViewSet(ViewerContextMixin, viewsets.ModelViewSet):
+    """Contests bundle tasks. Anyone can read the contest, its tasks only once they have opened; only admins/mods can write."""
     serializer_class = ContestSerializer
-    queryset = Contest.objects.all().prefetch_related('tasks')
+
+    def get_queryset(self):
+        tasks = with_openness(Task.objects.select_related('author'))
+        return Contest.objects.prefetch_related(Prefetch('tasks', queryset=tasks))
 
     def _require_admin(self):
         user = current_user(self.request)
@@ -318,7 +299,7 @@ class ContestViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=current_user(self.request))
 
 
-class TaskSubmissionViewSet(viewsets.ModelViewSet):
+class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
     """Submissions. Users manage their own; admins/mods see all + can approve/reject."""
     serializer_class = TaskSubmissionSerializer
     permission_classes = [AllowAny]
@@ -379,8 +360,8 @@ class TaskSubmissionViewSet(viewsets.ModelViewSet):
         return Response(TaskSubmissionSerializer(sub).data)
 
 
-class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
-    """Private leaderboards owned by a user, scoped to invited members."""
+class PrivateLeaderboardViewSet(ViewerContextMixin, viewsets.ModelViewSet):
+    """Private leaderboards. Nobody is put in by someone else: each member joined with the owner's code."""
     serializer_class = PrivateLeaderboardSerializer
     permission_classes = [AllowAny]
 
@@ -414,31 +395,42 @@ class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
         self._require_owner(instance)
         instance.delete()
 
-    @action(detail=True, methods=['post'], url_path='add-member')
-    def add_member(self, request, pk=None):
-        """POST /api/private-leaderboards/{id}/add-member/ {identifier: email|username}"""
+    @action(detail=False, methods=['post'])
+    def join(self, request):
+        """POST /api/private-leaderboards/join/ {code} — only the student themself can do this."""
+        user = current_user(request)
+        if not user:
+            return Response(
+                {'error': 'Для этого адреса профиль создать нельзя.', 'code': 'no_profile'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        code = str(request.data.get('code') or '').strip().upper()
+        board = PrivateLeaderboard.objects.filter(invite_code=code).first()
+        if not board:
+            return Response({'error': 'Группы с таким кодом нет.'}, status=status.HTTP_404_NOT_FOUND)
+        board.members.add(user)
+        return Response(self.get_serializer(board).data)
+
+    @action(detail=True, methods=['post'])
+    def leave(self, request, pk=None):
         board = self.get_object()
         user = current_user(request)
-        if not user or board.owner_id != user.id:
-            return Response({'error': 'Only the owner can add members.'}, status=status.HTTP_403_FORBIDDEN)
-        uid = request.data.get('user_id')
-        identifier = (request.data.get('identifier') or '').strip()
-        # The answer lists the members, so a student who hasn't agreed to be seen
-        # can't be reached here either, whatever number someone guesses.
-        candidates = CustomUser.objects.filter(on_public_board(user))
-        target = None
-        if uid:
-            target = candidates.filter(pk=uid).first()
-        if not target and identifier:
-            # Not by address, here or through a username holding one: the answer
-            # would confirm a guess about who has an account.
-            target = candidates.filter(username__iexact=identifier).exclude(username__contains='@').first()
-            if not target and identifier.isdigit():
-                target = candidates.filter(pk=int(identifier)).first()
-        if not target:
-            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
-        board.members.add(target)
-        return Response(PrivateLeaderboardSerializer(board).data)
+        if board.owner_id == user.id:
+            return Response(
+                {'error': 'Создатель не может выйти из своей группы, её можно только удалить.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        board.members.remove(user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='reset-code')
+    def reset_code(self, request, pk=None):
+        """The old code stops working, so someone removed can't simply join again."""
+        board = self.get_object()
+        self._require_owner(board)
+        board.invite_code = new_invite_code()
+        board.save(update_fields=['invite_code'])
+        return Response(self.get_serializer(board).data)
 
     @action(detail=True, methods=['post'], url_path='remove-member')
     def remove_member(self, request, pk=None):
@@ -449,4 +441,4 @@ class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
         target = CustomUser.objects.filter(pk=request.data.get('user_id')).first()
         if target and target.id != board.owner_id:
             board.members.remove(target)
-        return Response(PrivateLeaderboardSerializer(board).data)
+        return Response(self.get_serializer(board).data)
