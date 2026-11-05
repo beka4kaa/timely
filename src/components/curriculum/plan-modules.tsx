@@ -1,8 +1,10 @@
-// Список модулей программы.
+// Список глав программы.
 
 "use client";
 
 import type { CoursePlan } from "@/lib/curriculum-api";
+import type { CourseStates } from "@/lib/curriculum-course-progress";
+
 import { PlanModuleStrip } from "./plan-module-strip";
 
 /** external_id → название темы: prerequisites приезжают идентификаторами. */
@@ -16,38 +18,38 @@ export function titleByExternalId(plan: CoursePlan): Map<string, string> {
 
 export function PlanModules({
   plan,
-  hoveredTopicId,
+  states,
+  sourceTitle,
   onHoverTopic,
+  onAsk,
 }: {
   plan: CoursePlan;
-  hoveredTopicId: string | null;
+  states: CourseStates;
+  sourceTitle: string;
   onHoverTopic: (topicId: string | null) => void;
+  onAsk: (text: string) => void;
 }) {
   const titles = titleByExternalId(plan);
 
   return (
-    <div className="space-y-4">
+    <div className="course-mods">
       {plan.modules.map((courseModule, index) => {
-        // Заголовок части печатается там же, где в книге: перед первой её
-        // главой. Модули идут в порядке книги, поэтому достаточно сравнить с
-        // предыдущим — отдельная группировка ничего бы не добавила.
+        // Заголовок части печатается там же, где в книге: перед первой её главой. Модули идут
+        // в порядке книги, поэтому достаточно сравнить с предыдущим.
         const partStarts =
           Boolean(courseModule.part_title) &&
           courseModule.part_title !== plan.modules[index - 1]?.part_title;
 
         return (
-          <div key={courseModule.id} className={partStarts && index > 0 ? "pt-4" : ""}>
-            {partStarts && (
-              <h3 className="mb-3 font-serif text-[13px] uppercase tracking-[0.14em] text-tm-faint">
-                {courseModule.part_title}
-              </h3>
-            )}
+          <div key={courseModule.id}>
+            {partStarts ? <h2 className="sec course-part">{courseModule.part_title}</h2> : null}
             <PlanModuleStrip
               courseModule={courseModule}
-              index={index}
+              states={states}
               titles={titles}
-              hoveredTopicId={hoveredTopicId}
+              sourceTitle={sourceTitle}
               onHoverTopic={onHoverTopic}
+              onAsk={onAsk}
             />
           </div>
         );

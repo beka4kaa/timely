@@ -135,20 +135,20 @@ const WEEKDAYS_ON = [
   "в воскресенье",
 ];
 
-const WEEKDAYS_ACCUSATIVE = [
-  "понедельник",
-  "вторник",
-  "среду",
-  "четверг",
-  "пятницу",
-  "субботу",
-  "воскресенье",
+const WEEKDAYS_TO = [
+  "К понедельнику",
+  "Ко вторнику",
+  "К среде",
+  "К четвергу",
+  "К пятнице",
+  "К субботе",
+  "К воскресенью",
 ];
 
-/** «Д/З на завтра», «Д/З на понедельник», «Д/З на среду». */
+/** «К завтра», «К понедельнику», «Ко вторнику»: к какому дню задано. */
 export function homeworkTitle(dateKey: string, todayKey: string): string {
-  if (daysBetween(todayKey, dateKey) === 1) return "Д/З на завтра";
-  return `Д/З на ${WEEKDAYS_ACCUSATIVE[weekdayOf(dateKey)]}`;
+  if (daysBetween(todayKey, dateKey) === 1) return "К завтра";
+  return WEEKDAYS_TO[weekdayOf(dateKey)];
 }
 
 /**
@@ -163,6 +163,11 @@ export function dayPhrase(dateKey: string, todayKey: string): string {
   if (distance === 1) return "завтра";
   if (distance > 1 && distance < 7) return WEEKDAYS_ON[weekdayOf(dateKey)];
   return dayMonthLabel(dateKey);
+}
+
+/** День заголовком карточки: «Завтра», «В пятницу». */
+export function dayHeading(dateKey: string, todayKey: string): string {
+  return capitalize(dayPhrase(dateKey, todayKey));
 }
 
 /**
@@ -261,6 +266,44 @@ export function splitBlockTitle(title: string): { topic: string; detail: string 
 export function partLabel(detail: string): string {
   const match = detail.match(/(\d+)\/(\d+)$/);
   return match ? `часть ${match[1]} из ${match[2]}` : "";
+}
+
+/** Подпись шага для мини-окна: «Равноускоренное движение, вт 16:05». */
+export function attachLabel(topic: string, dateKey: string, minutes: number): string {
+  return `${topic}, ${weekdayShortLabel(dateKey)} ${formatMinutes(minutes)}`;
+}
+
+export interface Workspace {
+  label: string;
+  href: string;
+}
+
+/**
+ * Куда ведёт главная кнопка шага: в ту среду, где занятие и проходит.
+ *
+ * Доска в сборке может быть выключена (`BOARD_ENABLED`), а блоки с ней в плане
+ * остаются. Тогда та же тема открывается в чате: кнопка в никуда хуже другого
+ * способа заниматься.
+ */
+export function workspaceOf(
+  block: Pick<CalendarLearningBlock, "course_plan" | "workspace_type">,
+  topic: string,
+  boardEnabled: boolean,
+): Workspace {
+  const program = `/dashboard/curriculum/plan/${block.course_plan}`;
+  const chat = `/dashboard/chat?q=${encodeURIComponent(`Давай разберём «${topic}».`)}`;
+  switch (block.workspace_type) {
+    case "smart_board":
+      return boardEnabled
+        ? { label: "Открыть доску", href: "/dashboard/whiteboard" }
+        : { label: "Открыть чат", href: chat };
+    case "tutor_chat":
+      return { label: "Начать с тьютором", href: chat };
+    case "book_reader":
+      return { label: "Открыть книгу", href: program };
+    default:
+      return { label: "Открыть программу", href: program };
+  }
 }
 
 /** Блоки, которых в дне больше нет: их перенесли или отменили. */
@@ -613,7 +656,7 @@ export interface HomeworkItem {
  */
 export function homeworkOf(lessons: DiaryLesson[]): HomeworkItem[] {
   return lessons
-    .filter((lesson) => (lesson.homework ?? "").trim())
+    .filter((lesson) => (lesson.homework ?? "").trim() && !lesson.homeworkDone)
     .sort((left, right) => (parseClock(left.startTime) ?? 0) - (parseClock(right.startTime) ?? 0))
     .map((lesson) => ({
       id: lesson.id,
@@ -660,6 +703,50 @@ export function upcomingTests(
     }
   }
   return tests.sort((left, right) => left.inDays - right.inDays);
+}
+
+export interface NextContest {
+  id: number;
+  title: string;
+  /** Уже идёт. */
+  running: boolean;
+  /** День и минуты начала в зоне ученика. */
+  dateKey: string;
+  minutes: number;
+}
+
+/**
+ * Контест, о котором стоит сказать на главной: идущий, иначе ближайший в
+ * пределах недели. Прошедшие и дальние там только отвлекали бы.
+ */
+export function nextContest(
+  contests: Array<{ id: number; title: string; start_time: string; end_time: string }>,
+  now: Date,
+  timeZone: string,
+  horizonDays = 7,
+): NextContest | null {
+  const moment = now.getTime();
+  const horizon = moment + horizonDays * 86_400_000;
+  const byStart = [...contests].sort(
+    (left, right) => Date.parse(left.start_time) - Date.parse(right.start_time),
+  );
+  const running = byStart.find(
+    (contest) => Date.parse(contest.start_time) <= moment && moment < Date.parse(contest.end_time),
+  );
+  const picked =
+    running ??
+    byStart.find((contest) => {
+      const start = Date.parse(contest.start_time);
+      return start > moment && start <= horizon;
+    });
+  if (!picked) return null;
+  return {
+    id: picked.id,
+    title: picked.title,
+    running: Boolean(running),
+    dateKey: zonedDateKey(picked.start_time, timeZone),
+    minutes: zonedMinutes(picked.start_time, timeZone),
+  };
 }
 
 // ────────────────────────────── Неделя ───────────────────────────────────────

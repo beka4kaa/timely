@@ -2,38 +2,25 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
-import { ArrowLeftIcon, GraduationCapIcon, TrendingUpIcon, ChevronLeftIcon, ChevronRightIcon, PlayCircleIcon, ClockIcon, CalendarIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Icon } from "@/components/shell/icons"
+import { SubNav } from "@/components/shell/tab-bar"
 import { useDiaryYearStats } from "@/hooks/use-diary-year-stats"
 import { calcMonthStats } from "@/lib/diary-grades"
 import { MONTH_SHORT } from "@/lib/diary-grades"
-import { cn } from "@/lib/utils"
+import { plural } from "@/lib/now-feed"
+import "@/styles/timely/page-diary.css"
 
-// Учебный год: сенавг
+// Учебный год: сентябрь–август
 const SCHOOL_MONTHS: number[] = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7]
 
-function gradeClass(grade: number | null): string {
-  if (grade === null) return "text-muted-foreground/30"
-  if (grade >= 4.5) return "text-green-400 font-semibold"
-  if (grade >= 3.5) return "text-blue-400 font-medium"
-  if (grade >= 2.5) return "text-yellow-400"
-  return "text-red-400"
-}
-
-function gradeBg(grade: number | null): string {
-  if (grade === null) return ""
-  if (grade >= 4.5) return "bg-green-500/10"
-  if (grade >= 3.5) return "bg-blue-500/10"
-  if (grade >= 2.5) return "bg-yellow-500/10"
-  return "bg-red-500/10"
-}
-
-function yearlyBg(grade: number | null): string {
-  if (grade === null) return "bg-muted/30 border-border"
-  if (grade >= 4.5) return "bg-green-500/20 border-green-500/30"
-  if (grade >= 3.5) return "bg-blue-500/20 border-blue-500/30"
-  if (grade >= 2.5) return "bg-yellow-500/20 border-yellow-500/30"
-  return "bg-red-500/20 border-red-500/30"
+/** Оценка от руки. Цвет только у тройки и ниже: остальное здесь не повод для тревоги. */
+function GradeMark({ value, digits }: { value: number | null; digits?: number }) {
+  if (value === null) return null
+  const text = digits === undefined && Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(digits ?? 1).replace(".", ",")
+  const rounded = Math.min(5, Math.max(1, Math.round(value)))
+  return <span className={`g g${rounded}`}>{text}</span>
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -42,6 +29,12 @@ function daysInMonth(year: number, month: number): number {
 
 type View = "month" | "year" | "videos"
 
+const VIEWS: Array<{ value: View; title: string }> = [
+  { value: "month", title: "По месяцу" },
+  { value: "year", title: "За год" },
+  { value: "videos", title: "Видео" },
+]
+
 function getYoutubeId(url: string): string | null {
   try {
     const u = new URL(url)
@@ -49,6 +42,21 @@ function getYoutubeId(url: string): string | null {
     if (u.hostname.includes("youtube.com")) return u.searchParams.get("v")
   } catch {}
   return null
+}
+
+/** Адрес, который можно открыть: `javascript:` в href выполнился бы по клику. */
+function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url)
+    return protocol === "https:" || protocol === "http:"
+  } catch {
+    return false
+  }
+}
+
+function clockLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+  return `${hours > 0 ? `${hours}:` : ""}${String(minutes % 60).padStart(2, "0")}`
 }
 
 export default function GradesPage() {
@@ -64,9 +72,10 @@ export default function GradesPage() {
   const [viewMonth, setViewMonth] = useState(initMonth)
 
   // Данные учебного года Y1 (sep-dec) и Y2 (jan-aug)
-  const { stats: statsY1, weeks: weeksY1, loading: l1 } = useDiaryYearStats(schoolYearStart)
-  const { stats: statsY2, weeks: weeksY2, loading: l2 } = useDiaryYearStats(schoolYearStart + 1)
+  const { stats: statsY1, weeks: weeksY1, loading: l1, error: e1, refetch: r1 } = useDiaryYearStats(schoolYearStart)
+  const { stats: statsY2, weeks: weeksY2, loading: l2, error: e2, refetch: r2 } = useDiaryYearStats(schoolYearStart + 1)
   const loading = l1 || l2
+  const failed = Boolean(e1 || e2)
   const allWeeks = useMemo(() => [...weeksY1, ...weeksY2], [weeksY1, weeksY2])
 
   // Годовые строки
@@ -111,326 +120,249 @@ export default function GradesPage() {
 
   const monthLabel = `${MONTH_SHORT[viewMonth]} ${viewYear}`
 
-  return (
-    <div className="flex flex-col gap-4 p-4 md:p-6 max-w-6xl mx-auto w-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/dashboard/diary"><ArrowLeftIcon className="h-4 w-4" /></Link>
-        </Button>
-        <GraduationCapIcon className="h-6 w-6 text-primary shrink-0" />
-        <div className="flex-1">
-          <h1 className="text-xl font-bold tracking-tight leading-none">Итоговые оценки</h1>
-          <p className="text-muted-foreground text-xs mt-0.5">Таблица успеваемости</p>
+  function renderMonth() {
+    if (monthStats.length === 0) {
+      return (
+        <div className="card dy-empty">
+          <h2>{monthLabel}: оценок нет</h2>
+          <p>Ставь оценки в дневнике, и они появятся здесь.</p>
+          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
         </div>
-
-        {/* View switcher */}
-        <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-          <Button
-            variant={view === "month" ? "secondary" : "ghost"}
-            size="sm"
-            className="h-7 px-3 text-xs"
-            onClick={() => setView("month")}
-          >
-            По месяцу
-          </Button>
-          <Button
-            variant={view === "year" ? "secondary" : "ghost"}
-            size="sm"
-            className="h-7 px-3 text-xs"
-            onClick={() => setView("year")}
-          >
-            За год
-          </Button>
-          <Button
-            variant={view === "videos" ? "secondary" : "ghost"}
-            size="sm"
-            className="h-7 px-3 text-xs"
-            onClick={() => setView("videos")}
-          >
-            Видео
-          </Button>
+      )
+    }
+    return (
+      <div className="card dy-tbl-card">
+        <div className="dy-tbl-wrap" tabIndex={0} aria-label={`Оценки за ${monthLabel}`}>
+          <table className="dy-tbl is-month">
+            <colgroup>
+              <col style={{ width: "138px" }} />
+              {dayNumbers.map(d => <col key={d} />)}
+              <col style={{ width: "54px" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col" className="dy-pin dy-pin-l">Предмет</th>
+                {dayNumbers.map(d => <th key={d} scope="col">{d}</th>)}
+                <th scope="col" className="dy-pin dy-pin-r">Итог</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthStats.map(row => (
+                <tr key={row.subjectId}>
+                  <th scope="row" className="dy-pin dy-pin-l" title={row.subjectName}>{row.subjectName}</th>
+                  {dayNumbers.map(d => (
+                    <td key={d}><GradeMark value={row.byDay[isoDay(d)] ?? null} /></td>
+                  ))}
+                  <td className="dy-pin dy-pin-r">
+                    {row.monthGrade === null ? "" : <GradeMark value={row.monthGrade} digits={1} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+    )
+  }
 
-      {/* Navigation bar */}
-      {view === "month" || view === "videos" ? (
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={prevMonth}>
-            <ChevronLeftIcon className="h-4 w-4" />
-          </Button>
-          {/* Month tabs (учебный год) */}
-          <div className="flex gap-1 overflow-x-auto flex-1">
+  function renderYear() {
+    if (yearRows.length === 0) {
+      return (
+        <div className="card dy-empty">
+          <h2>Нет оценок за {schoolYearStart}–{schoolYearStart + 1}</h2>
+          <p>Ставь оценки в дневнике, и здесь появится итог по предметам.</p>
+          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
+        </div>
+      )
+    }
+    const yearAverages = yearRows.map(r => r.yearlyGrade).filter((v): v is number => v !== null)
+    const yearAverage = yearAverages.length === 0
+      ? null
+      : Math.round(yearAverages.reduce((a, b) => a + b, 0) / yearAverages.length * 10) / 10
+    return (
+      <div className="card dy-tbl-card">
+        <div className="dy-tbl-wrap" tabIndex={0} aria-label={`Оценки за ${schoolYearStart}–${schoolYearStart + 1}`}>
+          <table className="dy-tbl is-year">
+            <thead>
+              <tr>
+                <th scope="col" className="dy-pin dy-pin-l">Предмет</th>
+                {SCHOOL_MONTHS.map(m => <th key={m} scope="col">{MONTH_SHORT[m]}</th>)}
+                <th scope="col" className="dy-pin dy-pin-r">Год</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yearRows.map(row => (
+                <tr key={row.subjectId}>
+                  <th scope="row" className="dy-pin dy-pin-l">{row.subjectName}</th>
+                  {row.monthlyGrades.map((grade, mi) => (
+                    <td key={mi}><GradeMark value={grade} digits={1} /></td>
+                  ))}
+                  <td className="dy-pin dy-pin-r"><GradeMark value={row.yearlyGrade} digits={1} /></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row" className="dy-pin dy-pin-l">Среднее</th>
+                {SCHOOL_MONTHS.map((_, mi) => {
+                  const vals = yearRows.map(r => r.monthlyGrades[mi]).filter((v): v is number => v !== null)
+                  const avg = vals.length === 0 ? null : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10
+                  return <td key={mi}><GradeMark value={avg} digits={1} /></td>
+                })}
+                <td className="dy-pin dy-pin-r"><GradeMark value={yearAverage} digits={1} /></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  function renderVideos() {
+    const isoPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-`
+    const videos: { url: string; label?: string; durationMin?: number; date: string; dayName: string }[] = []
+    for (const week of allWeeks) {
+      for (const day of week.days) {
+        if (!day.date.startsWith(isoPrefix)) continue
+        const d = new Date(day.date)
+        const dayName = d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric" })
+        for (const link of (day.youtubeLinks ?? [])) {
+          videos.push({ url: link.url, label: link.label, durationMin: link.durationMin, date: day.date, dayName })
+        }
+      }
+    }
+    if (videos.length === 0) {
+      return (
+        <div className="card dy-empty">
+          <h2>{monthLabel}: видео нет</h2>
+          <p>Добавляй ссылки на записи уроков в дневнике, и они появятся здесь.</p>
+          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
+        </div>
+      )
+    }
+    const totalMin = videos.reduce((s, v) => s + (v.durationMin ?? 0), 0)
+    return (
+      <>
+        <p className="dg-sum">
+          <span>{videos.length} видео</span>
+          {totalMin > 0 && (
+            <span>
+              {Math.floor(totalMin / 60) > 0 ? `${Math.floor(totalMin / 60)} ч ` : ""}
+              {totalMin % 60} {plural(totalMin % 60, ["минута", "минуты", "минут"])}
+            </span>
+          )}
+        </p>
+        <div className="dg-videos">
+          {videos.map((v, i) => {
+            const vid = getYoutubeId(v.url)
+            return (
+              <a
+                key={i}
+                href={isWebUrl(v.url) ? v.url : undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="card dg-video"
+              >
+                <span className="dg-video-art">
+                  {vid ? (
+                    <img src={`https://img.youtube.com/vi/${vid}/mqdefault.jpg`} alt="" loading="lazy" />
+                  ) : null}
+                  {v.durationMin != null && v.durationMin > 0 && (
+                    <span className="dg-video-time">{clockLabel(v.durationMin)}</span>
+                  )}
+                </span>
+                <span className="dg-video-b">
+                  <b>{v.label ?? "YouTube"}</b>
+                  <small>{v.dayName}</small>
+                </span>
+              </a>
+            )
+          })}
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <div className="content view">
+      <SubNav group="study" />
+      <header className="head">
+        <h1 className="title">Итоговые оценки</h1>
+        <div className="head-tools">
+          <Link className="btn btn-text" href="/dashboard/diary">
+            <Icon name="chev-l" />
+            Дневник
+          </Link>
+          <div className="tabs" role="group" aria-label="Что показать">
+            {VIEWS.map(item => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={view === item.value}
+                onClick={() => setView(item.value)}
+              >
+                {item.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {view === "year" ? (
+        <div className="dg-bar">
+          <div className="pager dg-year">
+            <button type="button" className="icon-btn" aria-label="Прошлый учебный год" onClick={() => setSchoolYearStart(y => y - 1)}>
+              <Icon name="chev-l" />
+            </button>
+            <span aria-live="polite">{schoolYearStart}–{schoolYearStart + 1}</span>
+            <button type="button" className="icon-btn" aria-label="Следующий учебный год" onClick={() => setSchoolYearStart(y => y + 1)}>
+              <Icon name="chev-r" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="dg-bar">
+          <div className="pager">
+            <button type="button" className="icon-btn" aria-label="Прошлый месяц" onClick={prevMonth}>
+              <Icon name="chev-l" />
+            </button>
+            <span aria-live="polite">{monthLabel}</span>
+            <button type="button" className="icon-btn" aria-label="Следующий месяц" onClick={nextMonth}>
+              <Icon name="chev-r" />
+            </button>
+          </div>
+          <div className="tabs scroll dg-months" role="group" aria-label="Месяц учебного года">
             {SCHOOL_MONTHS.map(m => {
               const y = m >= 8 ? schoolYearStart : schoolYearStart + 1
-              const active = m === viewMonth && y === viewYear
               return (
                 <button
                   key={m}
+                  type="button"
+                  aria-pressed={m === viewMonth && y === viewYear}
                   onClick={() => { setViewMonth(m); setViewYear(y) }}
-                  className={cn(
-                    "px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors",
-                    active
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
                 >
                   {MONTH_SHORT[m]}
                 </button>
               )
             })}
           </div>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={nextMonth}>
-            <ChevronRightIcon className="h-4 w-4" />
-          </Button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSchoolYearStart(y => y - 1)}>
-            <ChevronLeftIcon className="h-4 w-4 mr-1" />{schoolYearStart - 1}/{schoolYearStart}
-          </Button>
-          <span className="font-semibold">{schoolYearStart}  {schoolYearStart + 1}</span>
-          <Button variant="outline" size="sm" onClick={() => setSchoolYearStart(y => y + 1)}>
-            {schoolYearStart + 1}/{schoolYearStart + 2}<ChevronRightIcon className="h-4 w-4 ml-1" />
-          </Button>
         </div>
       )}
 
-      {/* Legend (grades only) */}
-      {view !== "videos" && <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        {[
-          { label: "Отлично ( 4.5)", bg: "bg-green-500/20 border-green-500/30" },
-          { label: "Хорошо (3.54.4)", bg: "bg-blue-500/20 border-blue-500/30" },
-          { label: "Удовл. (2.53.4)", bg: "bg-yellow-500/20 border-yellow-500/30" },
-          { label: "Плохо (< 2.5)", bg: "bg-red-500/20 border-red-500/30" },
-        ].map(({ label, bg }) => (
-          <span key={label} className="flex items-center gap-1.5">
-            <span className={cn("w-3 h-3 rounded-sm border inline-block", bg)} />
-            {label}
-          </span>
-        ))}
-      </div>}
-
-      {loading ? (
-        <div className="flex items-center justify-center min-h-[280px] text-muted-foreground text-sm">
-          Загрузка данных
+      {failed ? (
+        <div className="card dy-empty" role="alert">
+          <h2>Оценки не загрузились</h2>
+          <p>В дневнике всё на месте, это ошибка связи.</p>
+          <button type="button" className="btn btn-line" onClick={() => { r1(); r2() }}>Повторить</button>
         </div>
+      ) : loading ? (
+        <p className="dy-note" role="status">Загружаю оценки…</p>
       ) : view === "month" ? (
-        /*  МЕСЯЧНЫЙ ВИД  */
-        monthStats.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 min-h-[260px] gap-3 text-center px-8">
-            <TrendingUpIcon className="h-10 w-10 text-muted-foreground/30" />
-            <p className="font-semibold text-muted-foreground">{monthLabel}  нет оценок</p>
-            <p className="text-sm text-muted-foreground/60">Заполняйте оценки в дневнике, и они появятся здесь.</p>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border overflow-x-auto">
-            <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: "140px" }} />
-                {dayNumbers.map(d => <col key={d} style={{ width: "26px" }} />)}
-                <col style={{ width: "48px" }} />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left pl-3 pr-1 py-2 font-semibold text-xs">Предмет</th>
-                  {dayNumbers.map(d => (
-                    <th key={d} className="py-2 text-center text-[10px] font-normal text-muted-foreground/70 leading-none">
-                      {d}
-                    </th>
-                  ))}
-                  <th className="py-2 text-center text-xs font-semibold border-l border-border sticky right-0 z-20 bg-muted/80 backdrop-blur-sm">Итог</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthStats.map((row, i) => (
-                  <tr key={row.subjectId} className={cn("border-b border-border/50", i % 2 !== 0 && "bg-muted/10")}>
-                    <td className="pl-3 pr-1 py-2 text-xs font-medium truncate" title={row.subjectName}>
-                      <span className="mr-1 leading-none">{row.subjectEmoji}</span>
-                      {row.subjectName}
-                    </td>
-                    {dayNumbers.map(d => {
-                      const g = row.byDay[isoDay(d)] ?? null
-                      return (
-                        <td key={d} className={cn("py-2 text-center tabular-nums", gradeBg(g))}>
-                          <span className={cn("text-[10px] leading-none font-medium", gradeClass(g))}>
-                            {g !== null ? g.toFixed(1) : ""}
-                          </span>
-                        </td>
-                      )
-                    })}
-                    <td className="py-2 text-center border-l border-border sticky right-0 z-10" style={{ backgroundColor: "hsl(var(--background))" }}>
-                      <span className={cn("text-xs font-bold tabular-nums", gradeClass(row.monthGrade))}>
-                        {row.monthGrade === null ? "—" : row.monthGrade.toFixed(1)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
+        renderMonth()
       ) : view === "videos" ? (
-        /*  ВИДЕОЗАПИСИ  */
-        (() => {
-          const isoPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-`
-          const videos: { url: string; label?: string; durationMin?: number; date: string; dayName: string }[] = []
-          for (const week of allWeeks) {
-            for (const day of week.days) {
-              if (!day.date.startsWith(isoPrefix)) continue
-              const d = new Date(day.date)
-              const dayName = d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric" })
-              for (const link of (day.youtubeLinks ?? [])) {
-                videos.push({ url: link.url, label: link.label, durationMin: link.durationMin, date: day.date, dayName })
-              }
-            }
-          }
-          const totalMin = videos.reduce((s, v) => s + (v.durationMin ?? 0), 0)
-          const monthLabel2 = `${MONTH_SHORT[viewMonth]} ${viewYear}`
-          if (videos.length === 0) {
-            return (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 min-h-[260px] gap-3 text-center px-8">
-                <PlayCircleIcon className="h-10 w-10 text-muted-foreground/30" />
-                <p className="font-semibold text-muted-foreground">{monthLabel2} — нет видео</p>
-                <p className="text-sm text-muted-foreground/60">Добавляйте YouTube-ссылки в уроках дневника, и они появятся здесь.</p>
-              </div>
-            )
-          }
-          return (
-            <div className="flex flex-col gap-4">
-              {/* Summary bar */}
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <PlayCircleIcon className="h-4 w-4" />
-                  {videos.length} {videos.length === 1 ? "видео" : videos.length < 5 ? "видео" : "видео"}
-                </span>
-                {totalMin > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    <ClockIcon className="h-4 w-4" />
-                    {Math.floor(totalMin / 60) > 0 ? `${Math.floor(totalMin / 60)} ч ` : ""}{totalMin % 60} мин
-                  </span>
-                )}
-              </div>
-              {/* Video cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {videos.map((v, i) => {
-                  const vid = getYoutubeId(v.url)
-                  return (
-                    <a
-                      key={i}
-                      href={v.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group rounded-xl border border-border bg-card hover:border-primary/50 transition-all overflow-hidden flex flex-col"
-                    >
-                      {/* Thumbnail */}
-                      <div className="relative w-full aspect-video bg-muted overflow-hidden">
-                        {vid ? (
-                          <img
-                            src={`https://img.youtube.com/vi/${vid}/mqdefault.jpg`}
-                            alt={v.label ?? "YouTube"}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <PlayCircleIcon className="h-10 w-10 text-muted-foreground/40" />
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 rounded-full p-2">
-                            <PlayCircleIcon className="h-6 w-6 text-white" />
-                          </div>
-                        </div>
-                        {v.durationMin != null && v.durationMin > 0 && (
-                          <span className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
-                            {Math.floor(v.durationMin / 60) > 0 ? `${Math.floor(v.durationMin / 60)}:` : ""}{String(v.durationMin % 60).padStart(2, "0")}
-                          </span>
-                        )}
-                      </div>
-                      {/* Info */}
-                      <div className="p-3 flex flex-col gap-1.5 flex-1">
-                        <p className="text-sm font-medium line-clamp-2 leading-snug">
-                          {v.label ?? "YouTube видео"}
-                        </p>
-                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground mt-auto">
-                          <CalendarIcon className="h-3 w-3" />
-                          {v.dayName}
-                        </div>
-                      </div>
-                    </a>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()
+        renderVideos()
       ) : (
-        /*  ГОДОВОЙ ВИД  */
-        yearRows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-muted-foreground/30 bg-muted/20 min-h-[260px] gap-3 text-center px-8">
-            <TrendingUpIcon className="h-10 w-10 text-muted-foreground/30" />
-            <p className="font-semibold text-muted-foreground">Нет данных за {schoolYearStart}{schoolYearStart + 1}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="sticky left-0 z-10 bg-muted/60 backdrop-blur text-left px-4 py-3 font-semibold min-w-[170px]">Предмет</th>
-                  {SCHOOL_MONTHS.map(m => (
-                    <th key={m} className="px-3 py-3 text-center font-medium text-muted-foreground min-w-[56px] text-xs whitespace-nowrap">
-                      {MONTH_SHORT[m]}
-                    </th>
-                  ))}
-                  <th className="px-4 py-3 text-center font-semibold border-l border-border min-w-[72px] sticky right-0 z-20 bg-muted/80 backdrop-blur-sm">Год</th>
-                </tr>
-              </thead>
-              <tbody>
-                {yearRows.map((row, i) => (
-                  <tr key={row.subjectId} className={cn("border-b border-border/50 hover:bg-muted/20 transition-colors", i % 2 !== 0 && "bg-muted/10")}>
-                    <td className="sticky left-0 z-10 bg-background px-4 py-3 font-medium whitespace-nowrap border-r border-border/30" style={{ backgroundColor: "hsl(var(--background))" }}>
-                      <span className="mr-2 text-base leading-none">{row.subjectEmoji}</span>
-                      {row.subjectName}
-                    </td>
-                    {row.monthlyGrades.map((grade, mi) => (
-                      <td key={mi} className={cn("px-3 py-3 text-center tabular-nums", gradeBg(grade))}>
-                        <span className={cn("text-sm", gradeClass(grade))}>
-                          {grade === null ? "" : grade.toFixed(1)}
-                        </span>
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-center border-l border-border sticky right-0 z-10" style={{ backgroundColor: "hsl(var(--background))" }}>
-                      <span className={cn("inline-flex items-center justify-center rounded-md px-2.5 py-1 text-sm font-bold tabular-nums border", yearlyBg(row.yearlyGrade), gradeClass(row.yearlyGrade))}>
-                        {row.yearlyGrade === null ? "" : row.yearlyGrade.toFixed(1)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-border bg-muted/40">
-                  <td className="sticky left-0 z-10 bg-muted/60 backdrop-blur px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Среднее</td>
-                  {SCHOOL_MONTHS.map((_, mi) => {
-                    const vals = yearRows.map(r => r.monthlyGrades[mi]).filter((v): v is number => v !== null)
-                    const avg = vals.length === 0 ? null : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10
-                    return (
-                      <td key={mi} className={cn("px-3 py-3 text-center tabular-nums", gradeBg(avg))}>
-                        <span className={cn("text-xs font-semibold", gradeClass(avg))}>{avg === null ? "" : avg.toFixed(1)}</span>
-                      </td>
-                    )
-                  })}
-                  <td className="px-4 py-3 text-center border-l border-border sticky right-0 z-10 bg-muted/80 backdrop-blur-sm">
-                    {(() => {
-                      const all = yearRows.map(r => r.yearlyGrade).filter((v): v is number => v !== null)
-                      const avg = all.length === 0 ? null : Math.round(all.reduce((a, b) => a + b, 0) / all.length * 10) / 10
-                      return <span className={cn("text-sm font-bold tabular-nums", gradeClass(avg))}>{avg === null ? "" : avg.toFixed(1)}</span>
-                    })()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )
+        renderYear()
       )}
     </div>
   )

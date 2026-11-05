@@ -1,0 +1,103 @@
+/* Контесты, рейтинг, профиль и настройки: то, чего нет в общих файлах прототипа. */
+
+/* ══════════════════ Контесты ══════════════════ */
+.ct-note { --r: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 18px; font-size: 13.5px; }
+.ct-note h2 { font-size: 13.5px; font-weight: 600; }
+.ct-note p { max-width: 56ch; color: var(--t-muted); }
+.ct-note .btn { margin-top: 6px; }
+.ct-gap { margin-bottom: 26px; }
+.ct-solve-note { margin: -4px 0 14px; }
+.ct-left { color: rgba(255, 255, 255, 0.86); font-size: 12.5px; }
+.ct-desc { display: -webkit-box; max-width: 400px; margin-top: 2px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.plq-mini.ct-mini-btn { width: 100%; align-items: stretch; text-align: left; }
+.plq-kind.ct-kind-big { margin-top: 6px; max-width: 72%; font-size: 15px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+.ct-none { color: rgba(255, 255, 255, 0.86); }
+.beads i.ct-wait { background: rgba(255, 255, 255, 0.6); }
+.ct-more { margin: 10px 0 0 -9px; }
+/* Кнопки на плашке нет, поэтому она ниже, чем в прототипе */
+.plq.plq-card { min-height: 148px; }
+@container main (max-width: 620px) {
+  .plq.plq-card { min-height: 128px; }
+}
+
+/* ══════════════════ Рейтинг ══════════════════ */
+/* Тройка стоит на своих местах, даже если в таблице их меньше трёх */
+.pod.r1 { grid-column: 2; grid-row: 1; }
+.pod.r2 { grid-column: 1; grid-row: 1; }
+.pod.r3 { grid-column: 3; grid-row: 1; }
+/* Движения и графиков за неделю на бэкенде нет: их колонок тоже нет */
+.lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 96px 56px; }
+.rb-gap { color: inherit; font: inherit; }
+.rb-gap:hover { color: var(--t-ink); text-decoration: underline; text-underline-offset: 3px; }
+.me-card .tube.rb-tube { height: 8px; }
+.rb-text { color: var(--t-muted); font-size: 13px; line-height: 1.4; }
+.subj-l.rb-subj { width: 100%; grid-template-columns: minmax(0, 1fr) auto; text-align: left; transition: opacity 120ms ease; }
+.subj-l.rb-subj:hover { opacity: 0.7; }
+.subj-l.rb-subj[aria-pressed="true"] span { font-weight: 600; }
+.rb-groups-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
+.rb-groups-head .sec { margin: 0; }
+.rb-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 8px; }
+.rb-group { --r: 16px; display: grid; gap: 8px; width: 100%; padding: 14px 16px; text-align: left; transition: transform 200ms cubic-bezier(0.2, 1.3, 0.4, 1); }
+.rb-group:hover { transform: translateY(-2px); }
+.rb-group b { overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.rb-group small { color: var(--t-muted); font-size: 12.5px; }
+.rb-faces { display: flex; }
+.rb-faces .av { box-shadow: 0 0 0 2px var(--t-bg); }
+.rb-faces .av + .av { margin-left: -7px; }
+.rb-group-head { margin-top: 4px; }
+.pg-found { display: grid; gap: 1px; max-height: 208px; min-height: 48px; overflow-y: auto; padding: 4px; border-radius: 12px; background: var(--t-hover); }
+.pg-found > .small-note { padding: 10px; text-align: center; }
+.pg-pick { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 9px; text-align: left; }
+.pg-pick:hover, .pg-pick[aria-pressed="true"] { background: var(--t-hover); }
+.pg-pick-who b, .pg-pick-who small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pg-pick-who b { font-size: 13.5px; font-weight: 500; }
+.pg-pick-who small { color: var(--t-muted); font-size: 12px; }
+@container main (max-width: 980px) {
+  .lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 56px; }
+}
+@container main (max-width: 620px) {
+  .lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 48px; gap: 0 8px; }
+}
+
+/* ══════════════════ Профиль ══════════════════ */
+.pf-head .title, .pf-bio { overflow-wrap: anywhere; }
+.pf-bio { white-space: pre-line; }
+.pf-bio-empty { color: var(--t-muted); }
+.pf-bio-edit { max-width: 58ch; margin-top: 9px; }
+.pf-bio-host { display: block; border-radius: 4px; font-family: var(--t-serif); font-size: 17.5px; line-height: 1.42; outline: 1px dashed var(--t-line-strong); outline-offset: 5px; }
+.pf-bio-host textarea { display: block; width: 100%; padding: 0; border: 0; outline: none; overflow: hidden; background: transparent; color: var(--t-ink); font: inherit; resize: none; }
+.pf-bio-host.ti textarea { color: transparent; }
+.pf-bio-host textarea::placeholder { color: var(--t-muted); }
+.pf-bio-note { margin-top: 12px; }
+.pf-no-row { margin: -10px 0 22px; }
+/* Счётчиков столько, сколько есть данных: ровный ряд без дыр */
+.pf-stats.pf-stats-auto { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+.pf-stats-auto .pf-stat, .pf-stats-auto .pf-stat:nth-child(n + 4) { grid-column: auto; }
+.pf-stats.pf-stats-plain { margin-bottom: 26px; }
+.pf-stat.pf-ghost { background: var(--t-hover); box-shadow: none; }
+.pf-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: -14px 0 22px; }
+.pf-sec .pf-failed { margin: 0; }
+.pf-list.pf-list-wide li { grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; }
+.pf-more { margin-top: 10px; font-size: 13px; }
+.badge.pf-locked { color: var(--t-muted); }
+.badge.pf-locked .bdg { filter: grayscale(1) opacity(0.26); }
+.badge.pf-locked:hover .bdg { transform: none; }
+.pf-course.pf-rating { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; }
+/* Tailwind тоже знает класс .ring: без этого вокруг кольца появлялась синяя обводка */
+.pf-course .ring { box-shadow: none; }
+.pf-course .nm b { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.pf-score { font-size: 15px; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+@container main (max-width: 620px) {
+  .pf-stats.pf-stats-auto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-stats-auto .pf-stat:last-child { grid-column: auto; }
+  .pf-stats-auto .pf-stat:nth-child(odd):last-child { grid-column: 1 / -1; }
+  .pf-bio-host { font-size: 17px; }
+}
+
+/* ══════════════════ Настройки ══════════════════ */
+.switch:disabled { cursor: default; opacity: 0.5; }
+.set-admin { margin: 14px 0 0 22px; color: var(--t-muted); font-size: 12.5px; }
+.set-admin .link { color: var(--t-muted); }
+@container main (max-width: 620px) {
+  .set-admin { margin-left: 16px; }
+}

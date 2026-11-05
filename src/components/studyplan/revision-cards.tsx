@@ -1,29 +1,41 @@
 "use client";
 
-// Карточки решения помощника: что изменится и что записать как занятое время.
+// Что покажет мини-окно, прежде чем что-то поменять.
 //
-// Ответ помощника почти никогда не является конечным результатом. Результат —
-// это diff, и он показывается отдельно от текста, потому что решение ученик
-// принимает по нему, а не по формулировке.
-//
-// Вынесены из панели «Помощник», которая жила в правой колонке «Плана»: сам
-// разговор переехал в панель справа (`tutor-rail/schedule-rail.tsx`), а вид
-// карточек остался прежним — он уже свёрстан под колонку такой ширины.
+// Ответ помощника почти никогда не является конечным результатом. Результат — это
+// список изменений, и решение ученик принимает по нему, а не по формулировке: поэтому
+// он стоит отдельно от текста, а кнопок всегда две, «Применить» и «Не надо».
 
-import {
-  paperButton,
-  paperCaption,
-  paperPrimaryButton,
-  paperTile,
-} from "@/components/curriculum/paper";
+import { useMemo } from "react";
+
+import { revisionRows } from "@/lib/now-feed";
 import type { ScheduleRevision } from "@/lib/studyplan-api";
+import { zonedDateKey } from "@/lib/studyplan-calendar";
 import type {
   ParsedCommitment,
   ProposedStudyWindows,
 } from "@/lib/studyplan-chat";
+import { durationLabel } from "@/lib/studyplan-visuals";
 
 import { groupWindows } from "./study-windows";
-import { durationLabel } from "@/lib/studyplan-visuals";
+
+/** Сколько строк показать, прежде чем написать «и ещё»: окно должно оставаться коротким. */
+const MAX_ROWS = 6;
+
+/** Перенесённое и укороченное занятие приходит двумя строками, а читается одной. */
+function mergeRows(rows: ReturnType<typeof revisionRows>) {
+  const merged: typeof rows = [];
+  for (const row of rows) {
+    const blockId = row.id.slice(2);
+    const moved = merged.find((item) => item.kind === "moved" && item.id.slice(2) === blockId);
+    if (moved && (row.kind === "shortened" || row.kind === "extended")) {
+      moved.to = `${moved.to}, ${row.to}`;
+    } else {
+      merged.push({ ...row });
+    }
+  }
+  return merged;
+}
 
 export function RevisionCard({
   revision,
@@ -36,68 +48,51 @@ export function RevisionCard({
   busy: boolean;
   onDecide: (revision: ScheduleRevision, accept: boolean) => void;
 }) {
-  const moved = revision.diff?.moved ?? [];
-  const shortened = revision.diff?.shortened ?? [];
-  const format = (iso: string) =>
-    new Intl.DateTimeFormat("ru-RU", {
-      timeZone,
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(iso));
+  const rows = useMemo(
+    () => mergeRows(revisionRows(revision, zonedDateKey(new Date(), timeZone), timeZone)),
+    [revision, timeZone],
+  );
+
+  if (rows.length === 0) {
+    return (
+      <>
+        <p className="q-status">Помощник ничего не переносит.</p>
+        <div className="q-acts">
+          <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
+            Закрыть
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
-    <div className={`${paperTile} px-3 py-2.5`}>
-      <div className={paperCaption}>Что изменится</div>
-
-      {moved.length === 0 && shortened.length === 0 ? (
-        <p className="mt-1 text-[12.5px] text-tm-muted">
-          Помощник ничего не переносит.
-        </p>
-      ) : (
-        <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
-          {moved.slice(0, 6).map((entry) => (
-            <li key={`m-${entry.block_id}`}>
-              <span className="font-medium">{entry.title}</span>
-              <br />
-              <span className="tabular-nums text-tm-muted">
-                {format(entry.from.start_at)} → {format(entry.to.start_at)}
-              </span>
-            </li>
-          ))}
-          {moved.length > 6 ? (
-            <li className="text-tm-muted">…и ещё {moved.length - 6}</li>
-          ) : null}
-          {shortened.map((entry) => (
-            <li key={`s-${entry.block_id}`} className="text-tm-muted">
-              {entry.title}: {durationLabel(entry.from.duration_minutes)} →{" "}
-              {durationLabel(entry.to.duration_minutes)}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-2.5 flex items-center gap-2">
-        <button
-          type="button"
-          className={paperPrimaryButton}
-          disabled={busy}
-          onClick={() => onDecide(revision, true)}
-        >
+    <>
+      <ul className="q-diff" aria-label="Что изменится">
+        {rows.slice(0, MAX_ROWS).map((row) => (
+          <li key={row.id}>
+            <span className="nm">{row.title}</span>
+            <span className="chg">
+              {row.from ? `${row.from} → ` : "новое → "}
+              <b>{row.to || "убрать"}</b>
+            </span>
+          </li>
+        ))}
+        {rows.length > MAX_ROWS ? (
+          <li>
+            <span className="nm">И ещё {rows.length - MAX_ROWS}</span>
+          </li>
+        ) : null}
+      </ul>
+      <div className="q-acts">
+        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onDecide(revision, true)}>
           Применить
         </button>
-        <button
-          type="button"
-          className={paperButton}
-          disabled={busy}
-          onClick={() => onDecide(revision, false)}
-        >
+        <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
           Не надо
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -113,50 +108,41 @@ export function CommitmentsCard({
   onDismiss: () => void;
 }) {
   return (
-    <div className={`${paperTile} px-3 py-2.5`}>
-      <div className={paperCaption}>Записать как занятое время</div>
-      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
+    <>
+      <p className="q-status">Запишу как занятое время, занятия встанут вокруг него:</p>
+      <ul className="q-diff">
         {items.map((item, index) => (
           <li key={`${item.title}-${index}`}>
-            <span className="font-medium">{item.title}</span>{" "}
-            <span className="text-tm-muted">
-              {item.weekday_name
-                ? `— ${item.weekday_name}, ${item.start_time}, ${durationLabel(
-                    item.duration_minutes ?? 0,
-                  )}`
-                : "— разово"}
+            <span className="nm">{item.title}</span>
+            <span className="chg">
+              <b>
+                {item.weekday_name
+                  ? `${item.weekday_name}, ${item.start_time}, ${durationLabel(item.duration_minutes ?? 0)}`
+                  : "разово"}
+              </b>
             </span>
           </li>
         ))}
       </ul>
-      <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
-        Планировщик перестанет ставить занятия в это время.
-      </p>
-      <div className="mt-2.5 flex items-center gap-2">
-        <button
-          type="button"
-          className={paperPrimaryButton}
-          disabled={busy}
-          onClick={() => onAccept(items)}
-        >
+      <div className="q-acts">
+        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(items)}>
           Записать
         </button>
-        <button type="button" className={paperButton} disabled={busy} onClick={onDismiss}>
+        <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
           Не надо
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
 /**
  * Новый ритм: окна, внутри которых вообще могут стоять занятия.
  *
- * Отдельная карточка, а не разновидность переноса. Перенос двигает занятие
- * внутри уже объявленного времени, а здесь меняется само время — и это решение
- * ученика о собственной жизни, а не деталь расписания. Поэтому карточка
- * показывает, что было и что станет: заменить вечера утрами — не то же самое,
- * что добавить утро к вечерам.
+ * Отдельная карточка, а не разновидность переноса. Перенос двигает занятие внутри уже
+ * объявленного времени, а здесь меняется само время, и это решение ученика о собственной
+ * жизни. Поэтому карточка показывает, что было и что станет: заменить вечера утрами не то
+ * же самое, что добавить утро к вечерам.
  */
 export function StudyWindowsCard({
   proposal,
@@ -170,37 +156,29 @@ export function StudyWindowsCard({
   onDismiss: () => void;
 }) {
   return (
-    <div className={`${paperTile} px-3 py-2.5`}>
-      <div className={paperCaption}>
-        {proposal.replace ? "Заменить время занятий" : "Добавить время занятий"}
-      </div>
-      <ul className="mt-1.5 space-y-1 text-[12.5px] leading-snug text-tm-ink-2">
+    <>
+      <p className="q-status">
+        {proposal.replace ? "Заменю время занятий:" : "Добавлю время занятий:"}
+      </p>
+      <ul className="q-diff">
         {groupWindows(proposal.windows).map((line) => (
-          <li key={line}>{line}</li>
+          <li key={line}>
+            <span className="nm">{line}</span>
+          </li>
         ))}
       </ul>
       {proposal.replace && proposal.current.length > 0 ? (
-        <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
-          Прежнее время уберём: {groupWindows(proposal.current).join("; ")}.
-        </p>
+        <p className="q-cite">Прежнее время уберу: {groupWindows(proposal.current).join("; ")}.</p>
       ) : null}
-      <p className="mt-1.5 text-[11.5px] leading-snug text-tm-muted">
-        Занятия смогут вставать только в это время. Уже расставленные придётся
-        переразложить.
-      </p>
-      <div className="mt-2.5 flex items-center gap-2">
-        <button
-          type="button"
-          className={paperPrimaryButton}
-          disabled={busy}
-          onClick={() => onAccept(proposal)}
-        >
+      <p className="q-cite">Занятия смогут вставать только в это время, а уже расставленные придётся переразложить.</p>
+      <div className="q-acts">
+        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(proposal)}>
           {proposal.replace ? "Заменить" : "Добавить"}
         </button>
-        <button type="button" className={paperButton} disabled={busy} onClick={onDismiss}>
+        <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
           Не надо
         </button>
       </div>
-    </div>
+    </>
   );
 }

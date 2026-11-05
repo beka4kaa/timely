@@ -1,168 +1,278 @@
 "use client";
 
-// Где в книге идёт разговор.
-//
-// Список «Механика, §5.2, стр. 292» уже стоит под каждым ответом. Повторить его
-// в панели значило бы напечатать то же самое дважды, поэтому панель показывает
-// другое: корешок книги во всю ширину и процитированные страницы засечками на
-// нём. Сразу видно то, чего из списка не видно, — разговор про середину
-// учебника, или скачет по всей книге, или упёрся в одну главу.
-//
-// Клик по засечке прокручивает ленту к ответу, где эта страница цитировалась.
-// Перехода «в книгу» здесь нет и обещать его нельзя: читалки у нас пока нет.
+// Где в книге идёт разговор: обложка, страницы, на которые ссылались ответы, и то, что
+// на выбранной странице написано. Перехода «в книгу» здесь нет и обещать его нельзя:
+// читалки у нас пока нет. Кнопка ведёт к ответу, где страница цитировалась.
 
-import { useState } from "react";
-import { PanelRightClose } from "lucide-react";
+import type { BookSpine, SpineMark } from "@/lib/citation-spread";
+import type { CurriculumDocument } from "@/lib/curriculum-api";
+import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
 
-import { bookLabel } from "@/lib/book-label";
-import type { BookSpine } from "@/lib/citation-spread";
+import { placeLabel } from "./ask-stages";
+import { useSourceQuote } from "./source-quote";
+import type { Turn } from "./use-subject-chat";
+// Цвета обложек описаны у библиотеки: книга здесь того же цвета, что и на полке.
+import "@/styles/timely/page-curriculum.css";
 
-export function SourcesPanel({
-  spines,
-  authors,
-  hasLibrary,
-  onJump,
-  onCollapse,
+function pagesWord(count: number): string {
+  const tens = count % 100;
+  const ones = count % 10;
+  if (tens >= 11 && tens <= 14) return "страниц";
+  if (ones === 1) return "страница";
+  if (ones >= 2 && ones <= 4) return "страницы";
+  return "страниц";
+}
+
+function bookCaption(document: CurriculumDocument | undefined, pageCount: number): string {
+  const pages = pageCount ? `${pageCount} ${pagesWord(pageCount)}` : "";
+  return [coverAuthor(document?.authors), pages].filter(Boolean).join(", ");
+}
+
+/** Книга на краю панели: цвет от предмета, как на полке библиотеки. */
+function BookHead({
+  title,
+  caption,
+  subject,
+  shelfIndex,
 }: {
-  spines: BookSpine[];
-  /** Авторы по идентификатору книги: в цитате их нет, а в подписи они уместны. */
-  authors: Map<string, string[]>;
-  /** У разговора выбран предмет. Нет — и книгам взяться неоткуда. */
-  hasLibrary: boolean;
-  onJump: (turnIndex: number) => void;
-  onCollapse: () => void;
+  title: string;
+  caption: string;
+  subject: string;
+  shelfIndex: number;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-tm-surface text-tm-ink">
-      <div className="flex h-[46px] shrink-0 items-center justify-between border-b border-tm-line px-3">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
-          Источники
-        </span>
-        <button
-          type="button"
-          onClick={onCollapse}
-          aria-label="Свернуть источники"
-          title="Свернуть источники"
-          className="grid h-7 w-7 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-        >
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-3">
-        {!spines.length && (
-          <p className="text-[12px] leading-[1.55] text-tm-faint">
-            {hasLibrary
-              ? "Пока ни одной ссылки на книгу. Они появятся, когда ответ обопрётся на учебник."
-              : "Разговор без книги: отвечает модель, ссылаться не на что."}
-          </p>
-        )}
-
-        {spines.map((spine) => (
-          <Spine
-            key={spine.documentId}
-            spine={spine}
-            authors={authors.get(spine.documentId) ?? []}
-            onJump={onJump}
-          />
-        ))}
-      </div>
+    <div className="src-book">
+      <span className={`book mini ${coverClass(subject, shelfIndex)}`} aria-hidden="true" />
+      <span className="src-name">
+        {coverTitle(title) || "Книга"}
+        {caption ? <small>{caption}</small> : null}
+      </span>
     </div>
   );
 }
 
-function Spine({
+function markLabel(mark: SpineMark): string {
+  return mark.page === mark.pageEnd ? String(mark.page) : `${mark.page}–${mark.pageEnd}`;
+}
+
+/** Ответ, где страница цитировалась последний раз. */
+function lastTurnOf(mark: SpineMark): number {
+  return Math.max(...mark.turns);
+}
+
+/** Страница, с которой начинает панель: главная ссылка самого свежего ответа на эту книгу. */
+function latestMark(spine: BookSpine, turns: Turn[]): SpineMark | undefined {
+  const lastTurn = Math.max(-1, ...spine.marks.map(lastTurnOf));
+  const top = turns[lastTurn]?.citations?.find(
+    (item) => item.document_id === spine.documentId && item.page_start > 0,
+  );
+  return (
+    spine.marks.find((mark) => top && mark.page <= top.page_start && top.page_start <= mark.pageEnd) ??
+    spine.marks[0]
+  );
+}
+
+function CitedBook({
   spine,
-  authors,
+  document,
+  subject,
+  shelfIndex,
+  turns,
+  pickedPage,
+  onPickPage,
   onJump,
 }: {
   spine: BookSpine;
-  authors: string[];
+  document: CurriculumDocument | undefined;
+  subject: string;
+  shelfIndex: number;
+  turns: Turn[];
+  pickedPage: number | undefined;
+  onPickPage: (documentId: string, page: number) => void;
   onJump: (turnIndex: number) => void;
 }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const title = bookLabel(spine.title) || "Источник";
-  const caption = [authors[0], spine.pageCount ? `${spine.pageCount} стр.` : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const active =
+    spine.marks.find(
+      (mark) => pickedPage !== undefined && mark.page <= pickedPage && pickedPage <= mark.pageEnd,
+    ) ?? latestMark(spine, turns);
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate font-serif text-[13px] font-semibold text-tm-ink">
-          {title}
-        </span>
-        {caption && (
-          <span className="shrink-0 text-[10px] tabular-nums text-tm-faint">
-            {caption}
-          </span>
-        )}
-      </div>
-
-      {/* Корешок: срез страниц, если смотреть на книгу с торца. */}
-      <div
-        className="relative mt-2 h-7 overflow-hidden rounded-[3px] border border-tm-line bg-tm-surface-2"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(90deg, rgba(120,108,92,0.16) 0 1px, transparent 1px 4px)",
-        }}
-      >
-        {spine.marks.map((mark) => (
-          <button
-            key={mark.page}
-            type="button"
-            onClick={() => onJump(mark.turns[0])}
-            onMouseEnter={() => setHovered(mark.page)}
-            onMouseLeave={() => setHovered(null)}
-            onFocus={() => setHovered(mark.page)}
-            onBlur={() => setHovered(null)}
-            title={
-              mark.page === mark.pageEnd
-                ? `стр. ${mark.page}`
-                : `стр. ${mark.page}–${mark.pageEnd}`
-            }
-            aria-label={`Перейти к ответу со страницей ${mark.page}`}
-            className="absolute top-0 h-full -translate-x-1/2 rounded-[1px] outline-none transition-colors"
-            style={{
-              left: `${mark.at * 100}%`,
-              // Тонкая цитата всё равно должна быть видна и попадаема мышью.
-              width: `max(3px, ${mark.span * 100}%)`,
-              backgroundColor: hovered === mark.page ? "rgb(var(--tm-accent))" : "rgb(var(--tm-accent) / 0.55)",
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Номера страниц. На корешке они наехали бы друг на друга, а здесь их
-          видно все, и наведение связывает номер с засечкой. */}
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {spine.marks.map((mark) => (
-          <button
-            key={mark.page}
-            type="button"
-            onClick={() => onJump(mark.turns[0])}
-            onMouseEnter={() => setHovered(mark.page)}
-            onMouseLeave={() => setHovered(null)}
-            onFocus={() => setHovered(mark.page)}
-            onBlur={() => setHovered(null)}
-            className={`rounded-full border px-2 py-[2px] text-[10.5px] tabular-nums outline-none transition-colors ${
-              hovered === mark.page
-                ? "border-tm-accent bg-tm-accent-soft text-tm-accent"
-                : "border-tm-line bg-tm-surface text-tm-muted"
-            }`}
-          >
-            {mark.page === mark.pageEnd
-              ? mark.page
-              : `${mark.page}–${mark.pageEnd}`}
-          </button>
-        ))}
-        {!spine.marks.length && (
-          <span className="text-[10.5px] text-tm-faint">
-            {/* У EPUB страниц нет вовсе — засечке взяться неоткуда. */}
-            Ссылок без страниц: {spine.citations}
-          </span>
-        )}
-      </div>
+    <div className="src-block">
+      <BookHead
+        title={spine.title}
+        caption={bookCaption(document, spine.pageCount)}
+        subject={subject}
+        shelfIndex={shelfIndex}
+      />
+      {spine.marks.length ? (
+        <div className="tabs" role="group" aria-label="Страница">
+          {spine.marks.map((mark) => (
+            <button
+              key={mark.page}
+              type="button"
+              aria-pressed={mark === active}
+              onClick={() => onPickPage(spine.documentId, mark.page)}
+            >
+              {markLabel(mark)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {active ? (
+        <PagePaper spine={spine} mark={active} turns={turns} onJump={onJump} />
+      ) : (
+        <SectionsPaper spine={spine} turns={turns} onJump={onJump} />
+      )}
     </div>
+  );
+}
+
+function PagePaper({
+  spine,
+  mark,
+  turns,
+  onJump,
+}: {
+  spine: BookSpine;
+  mark: SpineMark;
+  turns: Turn[];
+  onJump: (turnIndex: number) => void;
+}) {
+  const turnIndex = lastTurnOf(mark);
+  const citation = turns[turnIndex]?.citations?.find(
+    (item) =>
+      item.document_id === spine.documentId &&
+      item.page_start <= mark.pageEnd &&
+      item.page_end >= mark.page,
+  );
+  const quote = useSourceQuote({
+    documentId: spine.documentId,
+    question: turns[turnIndex - 1]?.content ?? "",
+    pageStart: mark.page,
+    pageEnd: mark.pageEnd,
+    excerpt: citation?.excerpt,
+  });
+  const place = citation
+    ? placeLabel({
+        section_path: citation.section_path,
+        page_start: mark.page,
+        page_end: mark.pageEnd,
+      })
+    : "";
+
+  return (
+    <figure className="paper">
+      {quote ? <blockquote>{quote}</blockquote> : null}
+      <figcaption>
+        {place || `стр. ${markLabel(mark)}`}
+        <button className="link src-go" type="button" onClick={() => onJump(turnIndex)}>
+          К ответу
+        </button>
+      </figcaption>
+    </figure>
+  );
+}
+
+/** У EPUB страниц нет: носитель места там раздел. */
+function SectionsPaper({
+  spine,
+  turns,
+  onJump,
+}: {
+  spine: BookSpine;
+  turns: Turn[];
+  onJump: (turnIndex: number) => void;
+}) {
+  const places: { section: string; turn: number }[] = [];
+  turns.forEach((turn, index) => {
+    for (const item of turn.citations ?? []) {
+      if (item.document_id !== spine.documentId || !item.section_path) continue;
+      if (!places.some((place) => place.section === item.section_path)) {
+        places.push({ section: item.section_path, turn: index });
+      }
+    }
+  });
+
+  return (
+    <figure className="paper">
+      <figcaption>
+        {places.length ? (
+          places.map((place) => (
+            <button
+              key={place.section}
+              className="link src-place"
+              type="button"
+              onClick={() => onJump(place.turn)}
+            >
+              {place.section}
+            </button>
+          ))
+        ) : (
+          <>Ссылок на эту книгу: {spine.citations}</>
+        )}
+      </figcaption>
+    </figure>
+  );
+}
+
+export function SourcesPanel({
+  spines,
+  shelf,
+  documents,
+  subject,
+  turns,
+  pickedPages,
+  onPickPage,
+  onJump,
+}: {
+  spines: BookSpine[];
+  /** Обработанные книги предмета: они видны и до первой ссылки. */
+  shelf: CurriculumDocument[];
+  /** Все книги ученика: у ссылки нет автора, а у книги он есть. */
+  documents: CurriculumDocument[];
+  /** Название предмета: от него цвет обложки. */
+  subject: string;
+  turns: Turn[];
+  pickedPages: Record<string, number>;
+  onPickPage: (documentId: string, page: number) => void;
+  onJump: (turnIndex: number) => void;
+}) {
+  const cited = new Set(spines.map((spine) => spine.documentId));
+  const shelfIndex = (documentId: string) =>
+    Math.max(
+      0,
+      shelf.findIndex((document) => document.id === documentId),
+    );
+  const quiet = shelf.filter((document) => !cited.has(document.id));
+
+  return (
+    <aside className="sources" aria-label="Источники">
+      {spines.map((spine) => (
+        <CitedBook
+          key={spine.documentId}
+          spine={spine}
+          document={documents.find((document) => document.id === spine.documentId)}
+          subject={subject}
+          shelfIndex={shelfIndex(spine.documentId)}
+          turns={turns}
+          pickedPage={pickedPages[spine.documentId]}
+          onPickPage={onPickPage}
+          onJump={onJump}
+        />
+      ))}
+      {quiet.map((document) => (
+        <div className="src-block" key={document.id}>
+          <BookHead
+            title={document.title}
+            caption={bookCaption(document, document.page_count)}
+            subject={subject}
+            shelfIndex={shelfIndex(document.id)}
+          />
+        </div>
+      ))}
+      {spines.length ? null : (
+        <p className="src-empty">Когда ответ опрётся на книгу, здесь появятся её страницы.</p>
+      )}
+    </aside>
   );
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildCoursePath } from "./curriculum-path";
+import { axisWarp, buildCoursePath, placeAxisLabels } from "./curriculum-path";
 
 const TODAY = new Date("2026-08-11T00:00:00.000Z");
 
@@ -175,4 +175,97 @@ test("границы блока приходят датами, а не толь�
   assert.equal(path.blocks[0].startDate, "2026-08-11");
   assert.equal(path.blocks[1].endDate, "2026-09-08");
   assert.equal(path.weeks, 4);
+});
+
+test("начатый курс начинается с первого занятия, а сегодня стоит на оси", () => {
+  const path = buildCoursePath({
+    modules: [unit("a", 60), unit("b", 60)],
+    today: TODAY,
+    startedAt: "2026-07-28",
+    expectedFinish: "2026-08-25",
+  });
+  assert.ok(path);
+  // Две недели из четырёх уже прошло: глава шириной в половину, сегодня посередине.
+  assert.equal(Math.round(path.blocks[0].widthPct), 50);
+  assert.equal(Math.round(path.today?.atPct ?? -1), 50);
+  assert.equal(path.today?.date, "2026-08-11");
+});
+
+test("курс ещё не начат: ось начинается сегодня, даже если расписание впереди", () => {
+  const path = buildCoursePath({
+    modules: [unit("a", 60)],
+    today: TODAY,
+    startedAt: "2026-09-01",
+    expectedFinish: "2026-09-08",
+  });
+  assert.ok(path);
+  assert.equal(path.today?.atPct, 0);
+});
+
+test("просроченный курс: ось дотягивается до сегодня, и за финишем остаётся пустое место", () => {
+  const path = buildCoursePath({
+    modules: [unit("a", 60)],
+    today: TODAY,
+    startedAt: "2026-07-01",
+    expectedFinish: "2026-08-01",
+  });
+  assert.ok(path);
+  assert.equal(path.dated, true);
+  assert.equal(path.today?.atPct, 100);
+  assert.ok(path.coursePct < 100);
+});
+
+test("без календаря отметки сегодня нет", () => {
+  const path = buildCoursePath({ modules: [unit("a", 60)], today: TODAY });
+  assert.ok(path);
+  assert.equal(path.today, null);
+});
+
+test("подписи над осью: сегодня слева от точки, веха справа", () => {
+  const labels = placeAxisLabels(
+    [
+      { key: "end", kind: "end", atPct: 100, text: "14 марта" },
+      { key: "today", kind: "today", atPct: 26, text: "сегодня" },
+      { key: "m", kind: "mile", atPct: 28, text: "СОР, 6 ноября" },
+    ],
+    900,
+  );
+  assert.deepEqual(
+    labels.map((label) => [label.key, label.align]),
+    [
+      ["end", "end"],
+      ["today", "end"],
+      ["m", "start"],
+    ],
+  );
+});
+
+test("сегодня у левого края не вылезает за ось", () => {
+  const [today] = placeAxisLabels([{ key: "today", kind: "today", atPct: 0, text: "сегодня" }], 330);
+  assert.equal(today.align, "start");
+});
+
+test("подпись, которая наехала бы на важную, не печатается", () => {
+  const labels = placeAxisLabels(
+    [
+      { key: "end", kind: "end", atPct: 100, text: "14 марта" },
+      { key: "over", kind: "over", atPct: 98, text: "срок 10 марта" },
+      { key: "m", kind: "mile", atPct: 99, text: "Контрольная" },
+    ],
+    330,
+  );
+  assert.deepEqual(labels.map((label) => label.key), ["end"]);
+});
+
+test("короткий запас рисуется как есть, длинный ужимается, а концы оси на месте", () => {
+  const small = axisWarp(80, 30);
+  assert.equal(small(40), 40);
+  assert.equal(small(100), 100);
+
+  const wide = axisWarp(25, 30);
+  assert.equal(wide(0), 0);
+  assert.equal(wide(25), 70);
+  assert.equal(wide(12.5), 35);
+  assert.equal(wide(100), 100);
+  assert.ok(wide(60) > wide(25) && wide(60) < wide(100));
 });

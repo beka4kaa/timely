@@ -1,0 +1,91 @@
+/* Чат: то, чего нет в общих стилях. */
+
+/* ── Поле: многострочное, а общие правила написаны под input ── */
+.chat-composer .ti-host { line-height: 1.4; }
+.chat-composer textarea {
+  display: block; width: 100%; min-width: 0; min-height: 1.4em; padding: 0; border: 0;
+  background: transparent; font: inherit; resize: none; overflow-y: auto; scrollbar-width: none;
+}
+.chat-composer textarea:focus-visible { outline: none; }
+.chat-composer textarea::placeholder { color: var(--t-muted); }
+/* Длинный текст не упирается в край стекла, а отправка остаётся на своём месте */
+.chat-composer { padding-right: 14px; }
+.chat-composer .cmp-tools { margin-right: -6px; }
+/* Копия поверх поля той же ширины, иначе строки переносились бы в другом месте */
+.chat-composer .ti-area .ti-mirror { right: 0; }
+
+/* Длинное название предмета режется, а режим и отправка остаются на месте */
+.chat-composer .book-wrap { flex: 0 1 auto; min-width: 0; max-width: 240px; }
+.chat-composer .book-pick { max-width: 100%; }
+.book-pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.book-pick .i { flex: none; }
+.cmp-tools .book-menu { width: 232px; max-height: min(360px, 56vh); overflow-y: auto; scrollbar-width: thin; }
+.book-menu button { overflow-wrap: anywhere; }
+.book-note { padding: 7px 9px; color: var(--t-muted); font-size: 12.5px; }
+.book-add { display: block; padding: 7px 9px; border-radius: 9px; color: var(--t-muted); font-size: 13px; }
+.book-add:hover { background: var(--t-hover); color: var(--t-ink); }
+
+/* ── Переписка ── */
+.m-you { white-space: pre-wrap; overflow-wrap: anywhere; }
+.m-turn { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.m-ai { min-width: 0; overflow-wrap: break-word; }
+.m-ai .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 2px; }
+.m-outside { margin-bottom: 6px; color: var(--t-muted); font-family: var(--t-sans); font-size: 12.5px; }
+.m-cites { margin-top: 10px; color: var(--t-muted); font-family: var(--t-sans); font-size: 12.5px; line-height: 1.5; }
+.m-cites p + p { margin-top: 2px; }
+.m-fail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; width: fit-content; max-width: 100%; color: var(--t-ink-2); font-size: 14px; }
+.m-fail .btn { height: 28px; }
+.m-note { color: var(--t-muted); font-size: 13.5px; }
+.m-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat .log > * { flex: none; }
+.chat .log-new .m-goals { width: min(100%, 580px); text-align: left; }
+
+/* ── Список чатов в левой панели и в нижнем листе ── */
+.chat-row { position: relative; flex: none; }
+.chat-tools { position: absolute; top: 50%; right: 3px; display: none; align-items: center; gap: 1px; transform: translateY(-50%); }
+.chat-tool { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--t-muted); }
+.chat-tool:hover { background: var(--t-hover); color: var(--t-ink); }
+.chat-tool .i { width: 13px; height: 13px; }
+.chat-tool-more { display: none; }
+@media (hover: hover) {
+  .chat-row:hover .chat-tools, .chat-row:focus-within .chat-tools { display: flex; }
+  .chat-row:hover .chat-link, .chat-row:focus-within .chat-link { padding-right: 58px; }
+}
+/* Наводить нечем: значки ждут за кнопкой «ещё» */
+@media (hover: none) {
+  .chat-tools { display: flex; }
+  .chat-tool { width: 34px; height: 34px; border-radius: 9px; }
+  .chat-tool .i { width: 16px; height: 16px; }
+  .chat-tool-edit { display: none; }
+  .chat-tool-more { display: grid; }
+  .chat-row .chat-link { padding-right: 42px; }
+  .chat-row[data-revealed] .chat-tool-edit { display: grid; }
+  .chat-row[data-revealed] .chat-link { padding-right: 112px; }
+}
+.chat-rename { display: block; width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 9px; background: var(--t-fill); color: var(--t-ink); font: inherit; font-size: 13.5px; }
+.chat-rename:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.chat-asking { display: flex; align-items: center; gap: 1px; height: 30px; padding: 0 3px 0 8px; border-radius: 9px; background: var(--t-hover); font-size: 13.5px; }
+.chat-ask { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chat-answer { flex: none; height: 24px; padding: 0 8px; border-radius: 7px; font-size: 13px; }
+.chat-answer:hover { background: var(--t-fill); }
+.chat-hint { padding: 0 8px; color: var(--t-muted); font-size: 12.5px; line-height: 1.4; }
+.sheet .chat-rename { height: 42px; font-size: 16px; }
+.sheet .chat-asking { height: 42px; font-size: 15px; }
+.sheet .chat-answer { height: 34px; font-size: 15px; }
+.sheet .chat-hint { font-size: 14px; }
+
+/* ── Источники ── */
+.src-block { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; flex: none; width: 100%; }
+.src-block + .src-block { margin-top: 6px; }
+.src-name { min-width: 0; overflow-wrap: anywhere; }
+.src-empty { color: var(--t-muted); font-size: 12.5px; line-height: 1.4; }
+.paper figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; }
+.src-go { color: inherit; white-space: nowrap; }
+.src-place { display: block; color: inherit; text-align: left; }
+.sheet-sources .sources { padding: 10px 6px 6px; overflow: visible; }
+
+/* Колонка страницы прокручивается сама и держит снизу место под вкладки, а липкий элемент
+   отсчитывается от края этого отступа. Прототипа с окном это не касалось. */
+@media (max-width: 640px) {
+  .chat .talk > .composer { bottom: 0; }
+}

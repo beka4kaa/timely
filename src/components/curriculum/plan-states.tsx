@@ -1,38 +1,24 @@
 // Пограничные состояния страницы программы.
-//
-// Все — внутри `CoffeePageShell`: страница, потерявшая оправу, читается как
-// сбой приложения, а не как ответ на конкретную ситуацию.
 
 "use client";
 
 import Link from "next/link";
 
-import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
 import type { PlanPageErrorKind } from "./use-plan-page-data";
-import { paperButton, paperCard, paperPrimaryButton } from "./paper";
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <CoffeePageShell>
-      {children}
-    </CoffeePageShell>
-  );
-}
 
 export function PlanPageSkeleton() {
   return (
-    <Shell>
-      <div className="space-y-4" aria-busy>
-        <div className="h-[132px] animate-pulse rounded-[18px] border border-tm-line bg-tm-surface-2" />
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-4">
-            <div className="h-24 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
-            <div className="h-24 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
-          </div>
-          <div className="h-56 animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
-        </div>
+    <div className="content view cur-page" aria-busy="true" aria-label="Загружаю программу">
+      <span className="back">Курсы и книги</span>
+      <div className="course-skel" aria-hidden="true">
+        <span className="cur-skel skel-t" />
+        <span className="cur-skel skel-l" />
+        <span className="card skel-path" />
+        <span className="cur-skel skel-row" />
+        <span className="cur-skel skel-row" />
+        <span className="cur-skel skel-row" />
       </div>
-    </Shell>
+    </div>
   );
 }
 
@@ -52,30 +38,25 @@ export function PlanPageError({
   onRetry: () => void;
 }) {
   return (
-    <Shell>
-      <div className={`${paperCard} max-w-xl p-6`}>
-        <h2 className="font-serif text-[20px] tracking-[-0.02em] text-tm-ink">
-          {TITLES[kind]}
-        </h2>
-        <p className="mt-2 text-[13px] leading-6 text-tm-muted">{message}</p>
-
-        <div className="mt-5 flex flex-wrap gap-3">
-          {kind === "network" ? (
-            <button type="button" onClick={onRetry} className={paperPrimaryButton}>
-              Повторить
-            </button>
-          ) : (
-            <Link href="/dashboard/curriculum" className={paperPrimaryButton}>
-              Открыть курс по книге
-            </Link>
-          )}
-          {kind === "network" && (
-            <Link href="/dashboard/curriculum" className={paperButton}>
-              К курсу по книге
-            </Link>
-          )}
-        </div>
+    <div className="content view cur-page">
+      <Link className="back" href="/dashboard/curriculum">
+        Курсы и книги
+      </Link>
+      <header className="head">
+        <h1 className="title">{TITLES[kind]}</h1>
+      </header>
+      <p className="lede">{message}</p>
+      <div className="cur-acts">
+        {kind === "network" ? (
+          <button type="button" onClick={onRetry} className="btn btn-main">
+            Повторить
+          </button>
+        ) : (
+          <Link href="/dashboard/curriculum" className="btn btn-main">
+            К курсам и книгам
+          </Link>
+        )}
       </div>
-    </Shell>
+    </div>
   );
 }

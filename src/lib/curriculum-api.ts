@@ -756,6 +756,8 @@ export interface AskCitation {
   section_path: string;
   page_start: number;
   page_end: number;
+  /** Сам фрагмент. У разговоров, сохранённых раньше, его нет. */
+  excerpt?: string;
 }
 
 export interface AskMessage {
@@ -776,6 +778,8 @@ export async function askSubjectStream(
     goal_id: string | null;
     message: string;
     history?: AskMessage[];
+    /** Как тьютор ведёт разговор. Без него обычный режим. */
+    mode?: string;
   },
   signal?: AbortSignal,
 ): Promise<Response> {

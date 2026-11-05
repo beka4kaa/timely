@@ -17,16 +17,13 @@ import type {
   CoursePlan,
   CoursePlanSummary,
   CurriculumDocument,
-  LearningGoal,
-  StudyMaterial,
-  SubjectChatSummary,
 } from "@/lib/curriculum-api";
-import { subjectTitle } from "@/lib/curriculum-catalog";
 import {
   buildDay,
   homeworkOf,
   isOpenBlock,
   missedBlocks,
+  nextContest,
   nextSchoolDay,
   pendingRevisions,
   upcomingTests,
@@ -34,6 +31,7 @@ import {
   type BusyEntry,
   type DayModel,
   type HomeworkItem,
+  type NextContest,
   type UpcomingTest,
   type WeekDay,
 } from "@/lib/now-feed";
@@ -60,11 +58,9 @@ import type { DiaryLesson, DiaryWeek } from "@/types/diary";
 import type { Topic } from "@/types/mind";
 
 import {
-  CHATS_KEY,
   COMMITMENTS_KEY,
+  CONTESTS_KEY,
   DOCUMENTS_KEY,
-  GOALS_KEY,
-  MATERIALS_KEY,
   PLANS_KEY,
   SCHEDULES_KEY,
   TTL,
@@ -72,12 +68,10 @@ import {
   blocksKey,
   diaryKey,
   fetchBlocks,
-  fetchChats,
   fetchCommitments,
+  fetchContests,
   fetchDiaryWeek,
   fetchDocuments,
-  fetchGoals,
-  fetchMaterials,
   fetchPlan,
   fetchPlans,
   fetchRevisions,
@@ -93,7 +87,7 @@ export interface NowData {
   timeZone: string;
   today: string | null;
   /**
-   * Закрытые для этого аккаунта разделы — план, темы, курсы — не грузятся и
+   * Закрытые для этого аккаунта разделы — план, темы, контесты — не грузятся и
    * не показываются (то же правило, что у `FullAccessGate`).
    */
   denied: boolean;
@@ -108,28 +102,26 @@ export interface NowData {
   /** Задания к следующему учебному дню, если они записаны. */
   homework: { dateKey: string; items: HomeworkItem[] } | null;
   tests: UpcomingTest[];
+  /** Идущий контест или ближайший на этой неделе. */
+  contest: NextContest | null;
   missed: CalendarLearningBlock[];
   /** Первое занятие после сегодняшнего дня — для «на сегодня всё». */
   nextBlock: CalendarLearningBlock | null;
   revisions: ScheduleRevision[];
   topics: ResourceState<Topic[]>;
-  goals: ResourceState<LearningGoal[]>;
   plans: ResourceState<CoursePlanSummary[]>;
-  materials: ResourceState<StudyMaterial[]>;
   documents: ResourceState<CurriculumDocument[]>;
-  chats: SubjectChatSummary[];
   schedules: StudySchedule[] | undefined;
   /** Программа текущего шага — ради ссылки на страницы учебника. */
   heroPlan: CoursePlan | undefined;
   /**
    * Время фокуса за сегодня, уже записанное на сервере, секунды. Идущую и
-   * ещё не отправленную сессию досчитывает сама панель таймера — она и так
+   * ещё не отправленную сессию досчитывает сама подпись таймера — она и так
    * перерисовывается каждую секунду, а вся страница не должна.
    */
   focusLogged: number | null;
   /** Предмет (цель) программы — чтобы тьютор спрашивал по нужной книге. */
   goalOfPlan: (planId: string) => string | null;
-  subjectOfGoal: (goalId: string | null) => string;
   reloadPlan: () => void;
 }
 
@@ -204,11 +196,9 @@ export function useNowData(): NowData {
     { ttl: TTL.day },
   );
   const topics = useResource(allowed(WEAK_TOPICS_KEY), fetchWeakTopics, { ttl: TTL.day });
-  const goals = useResource(allowed(GOALS_KEY), fetchGoals, { ttl: TTL.library });
   const plans = useResource(allowed(PLANS_KEY), fetchPlans, { ttl: TTL.library });
-  const materials = useResource(allowed(MATERIALS_KEY), fetchMaterials, { ttl: TTL.library });
   const documents = useResource(allowed(DOCUMENTS_KEY), fetchDocuments, { ttl: TTL.library });
-  const chats = useResource(CHATS_KEY, fetchChats, { ttl: TTL.day });
+  const contests = useResource(allowed(CONTESTS_KEY), fetchContests, { ttl: TTL.library });
   const sessions = useResource(
     email && today ? `now:focus:${email}:${today}` : null,
     () => fetchSessions(2),
@@ -248,10 +238,11 @@ export function useNowData(): NowData {
     [diary.data, nextDiary.data],
   );
 
+  // Неделя в заголовке нужна и без плана: дни и контрольные знает дневник.
   const week = useMemo(() => {
-    if (!today || !days.length || !planLoaded) return [];
+    if (!today || !days.length) return [];
     return weekStrip(days, blocks.data ?? [], diary.data?.days ?? [], today, timeZone);
-  }, [today, days, planLoaded, blocks.data, diary.data, timeZone]);
+  }, [today, days, blocks.data, diary.data, timeZone]);
 
   const homework = useMemo(() => {
     if (!today) return null;
@@ -265,6 +256,11 @@ export function useNowData(): NowData {
     if (!today || !day) return [];
     return upcomingTests(diaryDays, today, day.nowMinutes);
   }, [today, day, diaryDays]);
+
+  const contest = useMemo(
+    () => (now ? nextContest(contests.data ?? [], now, timeZone) : null),
+    [now, contests.data, timeZone],
+  );
 
   const missed = useMemo(
     () => (today ? missedBlocks(blocks.data ?? [], today, timeZone) : []),
@@ -318,10 +314,6 @@ export function useNowData(): NowData {
     () => new Map((plans.data ?? []).map((plan) => [plan.id, plan.goal])),
     [plans.data],
   );
-  const titleByGoal = useMemo(
-    () => new Map((goals.data ?? []).map((goal) => [goal.id, subjectTitle(goal)])),
-    [goals.data],
-  );
 
   return {
     now,
@@ -335,20 +327,17 @@ export function useNowData(): NowData {
     week,
     homework,
     tests,
+    contest,
     missed,
     nextBlock,
     revisions: liveRevisions,
     topics,
-    goals,
     plans,
-    materials,
     documents,
-    chats: chats.data ?? [],
     schedules: schedules.data,
     heroPlan: heroPlan.data,
     focusLogged,
     goalOfPlan: (planId) => goalByPlan.get(planId) ?? null,
-    subjectOfGoal: (goalId) => (goalId ? titleByGoal.get(goalId) ?? "" : ""),
     reloadPlan: () => {
       blocks.reload();
       schedules.reload();

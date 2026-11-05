@@ -1,411 +1,458 @@
-﻿"use client"
+﻿"use client";
 
-import { useEffect, useState, useCallback, useRef } from "react"
-import { NotebookPenIcon, Loader2, Settings2Icon, BarChart2Icon, RefreshCwIcon, KeyboardIcon, AlertTriangleIcon } from "lucide-react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { WeekNav } from "@/components/diary/week-nav"
-import { DayTabs } from "@/components/diary/day-tabs"
-import { AmbientBackground } from "@/components/ambient-bg"
-import type { DiaryWeek, DayOfWeek } from "@/types/diary"
-import { toast } from "sonner"
-import { useDiaryHeader } from "@/contexts/diary-header-ctx"
+// Дневник в варианте «Задания»: не таблица недели, а список того, что задано, по дням
+// сдачи. Сбоку карточки уроков с оценками. Данные и записи живут в `use-diary-week.ts`,
+// поставить задание в план помогает `use-diary-plan.ts`.
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
+import { DayGroupCard } from "@/components/diary/day-group";
+import { LessonDialog, useSubjects } from "@/components/diary/lesson-dialog";
+import { SchoolCard } from "@/components/diary/school-card";
+import { useDiaryPlan } from "@/components/diary/use-diary-plan";
+import { useDiaryWeek } from "@/components/diary/use-diary-week";
+import { WeekVideos, weekLinkCount } from "@/components/diary/week-videos";
+import { Icon } from "@/components/shell/icons";
+import { SubNav } from "@/components/shell/tab-bar";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { nextUndoLabel } from "@/lib/diary-undo";
 import {
-  performUndo, performRedo, canUndo, canRedo, clearUndoHistory,
-  pushTemplateUndo, subscribeHistory,
-} from "@/lib/diary-undo"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog"
+  classesOfDay,
+  defaultWeekStart,
+  groupWeek,
+  localDateKey,
+  mondayOf,
+  taskCount,
+  weekRangeLabel,
+} from "@/lib/diary-tasks";
+import { dayMonthLabel, plural, weekdayLabel } from "@/lib/now-feed";
+import { shiftDateKey } from "@/lib/studyplan-calendar";
+import type { DiaryDay, DiaryLesson } from "@/types/diary";
+import "@/styles/timely/page-diary.css";
 
-function getMondayOfDate(d: Date): string {
-  const day = d.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  const m = new Date(d)
-  m.setDate(m.getDate() + diff)
-  return m.toISOString().slice(0, 10)
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function addWeeks(iso: string, delta: number): string {
-  const d = new Date(iso)
-  d.setDate(d.getDate() + delta * 7)
-  return d.toISOString().slice(0, 10)
-}
-
-function formatWeekRange(weekStart: string): string {
-  const start = new Date(weekStart)
-  const end = new Date(weekStart)
-  end.setDate(end.getDate() + 6)
-  const fmt = (d: Date) => d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
-  return `${fmt(start)} \u2014 ${fmt(end)}`
-}
-
-function isThisWeek(weekStart: string): boolean {
-  return weekStart === getMondayOfDate(new Date())
-}
-
-function getTodayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function todayDow(): DayOfWeek {
-  const map: DayOfWeek[] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
-  return map[new Date().getDay()]
-}
-
-function ShortcutRow({ keys, desc }: { keys: string[]; desc: string }) {
+function WeekSkeleton() {
   return (
-    <div className="flex items-center justify-between gap-4 py-2 border-b border-border/40 last:border-0">
-      <span className="text-sm text-muted-foreground flex-1">{desc}</span>
-      <div className="flex items-center gap-0.5 shrink-0">
-        {keys.map((k, i) => (
-          <span key={i} className="flex items-center gap-0.5">
-            {i > 0 && <span className="text-muted-foreground/40 text-xs px-0.5">+</span>}
-            <kbd className="px-2 py-0.5 rounded border border-border bg-muted text-xs font-mono font-semibold">{k}</kbd>
-          </span>
+    <div className="todo" role="status" aria-label="Загружаю неделю">
+      <div>
+        {[3, 2].map((rows, group) => (
+          <section className="td-day" key={group}>
+            <span className="dy-skel dy-skel-title" />
+            <div className="card dy-skel-card">
+              {Array.from({ length: rows }, (_, row) => (
+                <span className="dy-skel dy-skel-row" key={row} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
+      <aside className="todo-side">
+        <div className="tcard card dy-skel-card">
+          <span className="dy-skel dy-skel-row" />
+          <span className="dy-skel dy-skel-row" />
+        </div>
+      </aside>
     </div>
-  )
-}
-
-async function patchGradeApi(weekId: string, dayId: string, lessonId: string, field: string, value: any) {
-  await fetch("/api/diary/grade", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ weekId, dayId, lessonId, type: field, value }),
-  })
-}
-
-async function restoreWeekApi(_weekId: string, snapshot: any) {
-  await fetch("/api/diary/week", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(snapshot),
-  })
+  );
 }
 
 export default function DiaryPage() {
-  const [weekStart, setWeekStart] = useState(() => getMondayOfDate(new Date()))
-  const [week, setWeek] = useState<DiaryWeek | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [activeDow, setActiveDow] = useState<DayOfWeek>(() => todayDow())
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [applyingTemplate, setApplyingTemplate] = useState(false)
-  const [confirmTemplateOpen, setConfirmTemplateOpen] = useState(false)
-  const [undoAvail, setUndoAvail] = useState(false)
-  const [redoAvail, setRedoAvail] = useState(false)
-  const { register, unregister } = useDiaryHeader()
-
-  // Track undo/redo availability reactively
+  // Дата только с клиента: сервер живёт в другом часовом поясе, и первый кадр разошёлся бы.
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
-    return subscribeHistory(() => {
-      setUndoAvail(canUndo())
-      setRedoAvail(canRedo())
-    })
-  }, [])
+    setNow(new Date());
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const today = now ? localDateKey(now) : null;
 
-  // Register diary actions in the site header context
+  const [weekStart, setWeekStart] = useState<string | null>(null);
   useEffect(() => {
-    register({
-      onTemplate: handleTemplateClick,
-      onShortcuts: () => setShortcutsOpen(true),
-      onUndo: async () => {
-        if (!canUndo()) return
-        const label = await performUndo(patchGradeApi, restoreWeekApi)
-        if (label) { toast.success("Отменено", { description: label }); await loadWeek(weekStartRef.current) }
-      },
-      onRedo: async () => {
-        if (!canRedo()) return
-        const label = await performRedo(patchGradeApi, restoreWeekApi)
-        if (label) { toast.success("Возвращено", { description: label }); await loadWeek(weekStartRef.current) }
-      },
-      canUndo: undoAvail,
-      canRedo: redoAvail,
-      applyingTemplate,
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyingTemplate, undoAvail, redoAvail])
+    if (today && weekStart === null) setWeekStart(defaultWeekStart(today));
+  }, [today, weekStart]);
 
-  // Unregister when leaving the diary page
-  useEffect(() => () => unregister(), [unregister])
-  const weekStartRef = useRef(weekStart)
-  weekStartRef.current = weekStart
-  const weekRef = useRef(week)
-  weekRef.current = week
+  const api = useDiaryWeek(weekStart);
+  const plan = useDiaryPlan();
+  const { week, status } = api;
 
-  const loadWeek = useCallback(async (ws: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/diary/week?weekStart=${ws}`)
-      if (!res.ok) throw new Error(await res.text())
-      setWeek(await res.json())
-    } catch (e: any) {
-      setError(e.message || "Ошибка загрузки")
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { loadWeek(weekStart) }, [weekStart, loadWeek])
-
-  function changeWeek(delta: number) {
-    const ws = addWeeks(weekStart, delta)
-    setWeekStart(ws)
-    setActiveDow(isThisWeek(ws) ? todayDow() : "monday")
-  }
-
-  function goToday() {
-    const ws = getMondayOfDate(new Date())
-    setWeekStart(ws)
-    setActiveDow(todayDow())
-  }
-
-  async function applyTemplate() {
-    setApplyingTemplate(true)
-
-    // Fetch the latest week state from the server before snapshotting —
-    // DiaryPage.week is stale (grade changes update local state, not week state here)
-    let weekSnapshot: any = null
-    let freshWeekId: string = weekRef.current?.id ?? weekStartRef.current
-    try {
-      const freshRes = await fetch(`/api/diary/week?weekStart=${weekStartRef.current}`)
-      if (freshRes.ok) {
-        const freshWeek = await freshRes.json()
-        weekSnapshot = freshWeek           // store FULL week for reliable undo
-        freshWeekId = freshWeek.id         // real UUID
-      }
-    } catch {
-      // snapshot stays null — undo won't restore grades (acceptable fallback)
-    }
-
-    try {
-      const res = await fetch("/api/diary/week", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekStart }),
+  const [hasTemplate, setHasTemplate] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/diary/template")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (alive) setHasTemplate(Boolean(body?.active));
       })
-      if (!res.ok) throw new Error(await res.text())
-      const newWeek = await res.json()
-      setWeek(newWeek)
+      .catch(() => {
+        if (alive) setHasTemplate(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-      clearUndoHistory()
-      if (weekSnapshot) {
-        pushTemplateUndo({
-          weekId: freshWeekId,
-          weekSnapshot,  // full DiaryWeek before template was applied
-          label: `Шаблон применён к неделе ${formatWeekRange(weekStartRef.current)}`,
-        })
-      }
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [showPast, setShowPast] = useState(false);
+  const [showWeek, setShowWeek] = useState(false);
+  const [showVideos, setShowVideos] = useState(false);
+  const [lessonTarget, setLessonTarget] = useState<{ day: DiaryDay; lesson: DiaryLesson } | null>(null);
 
-      toast.success("Шаблон применён к текущей неделе", {
-        description: "Оценки и заметки обнулены. Нажмите Ctrl+Z чтобы отменить.",
-      })
-    } catch {
-      toast.error("Не удалось применить шаблон")
-    } finally {
-      setApplyingTemplate(false)
-    }
-  }
-
-  function handleTemplateClick() {
-    setConfirmTemplateOpen(true)
-  }
-
-  async function handleTemplateConfirm() {
-    setConfirmTemplateOpen(false)
-    await applyTemplate()
-  }
-
-  // Global keyboard shortcuts
+  // Другая неделя: всё развёрнутое и начатое относилось к прежней.
+  const closePlan = plan.close;
   useEffect(() => {
-    async function handleKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === "INPUT" || tag === "TEXTAREA") return
+    setShowPast(false);
+    setShowWeek(false);
+    closePlan();
+  }, [closePlan, weekStart]);
 
-      if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
-        setShortcutsOpen(true)
-        return
+  // Горячие клавиши как раньше: отмена и переход по неделям, вне полей ввода.
+  const { undo, redo } = api;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const element = event.target as HTMLElement | null;
+      const tag = element?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element?.isContentEditable) return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redo();
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setWeekStart((current) =>
+          current ? shiftDateKey(current, event.key === "ArrowLeft" ? -7 : 7) : current,
+        );
       }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [redo, undo]);
 
-      if (e.key === "T" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
-        e.preventDefault()
-        if (!applyingTemplate) handleTemplateClick()
-        return
-      }
+  const nowMinutes = now ? now.getHours() * 60 + now.getMinutes() : 0;
+  const tasks = useMemo(
+    () => (week && today ? groupWeek(week, today, nowMinutes) : null),
+    [nowMinutes, today, week],
+  );
 
-      if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-        e.preventDefault()
-        if (!canUndo()) { toast.info("Нечего отменять"); return }
-        const label = await performUndo(patchGradeApi, restoreWeekApi)
-        if (label) {
-          toast.success("Отменено", { description: label })
-          await loadWeek(weekStartRef.current)
-        }
-        return
-      }
+  const hasLinkedTests = Boolean(
+    week?.days.some((day) => day.lessons.some((lesson) => lesson.linkedSubjectIds?.length)),
+  );
+  const subjects = useSubjects(hasLinkedTests);
+  const subjectNames = useMemo(
+    () => new Map(subjects.map((subject) => [subject.id, subject.name])),
+    [subjects],
+  );
 
-      if (
-        ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey) && e.shiftKey) ||
-        (e.key === "y" && (e.ctrlKey || e.metaKey) && !e.shiftKey)
-      ) {
-        e.preventDefault()
-        if (!canRedo()) { toast.info("Нечего вернуть"); return }
-        const label = await performRedo(patchGradeApi, restoreWeekApi)
-        if (label) {
-          toast.success("Возвращено", { description: label })
-          await loadWeek(weekStartRef.current)
-        }
-        return
-      }
+  const thisMonday = today ? mondayOf(today) : null;
+  const isCurrentWeek = weekStart !== null && weekStart === thisMonday;
+  const isPastWeek = weekStart !== null && thisMonday !== null && weekStart < thisMonday;
 
-      if (e.key === "ArrowLeft" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault(); changeWeek(-1); return
-      }
-      if (e.key === "ArrowRight" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault(); changeWeek(1); return
-      }
-    }
+  const hasLessons = Boolean(week?.days.some((day) => classesOfDay(day).length));
+  const upcoming = tasks?.upcoming ?? [];
+  const past = tasks?.past ?? [];
+  const totalTasks = taskCount(upcoming) + taskCount(past);
+  const pastTaskCount = taskCount(past);
+  const openDialog = (day: DiaryDay, lesson: DiaryLesson) => setLessonTarget({ day, lesson });
 
-    window.addEventListener("keydown", handleKey)
-    return () => window.removeEventListener("keydown", handleKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyingTemplate])
+  const applyTemplate = () => {
+    setConfirmOpen(false);
+    void api.applyTemplate();
+  };
 
-  const today = getTodayIso()
-  const hasAnyLessons = week?.days.some(d => d.lessons.length > 0) ?? false
+  // Боковая колонка. На этой неделе сначала сегодня и вчера, остальное по кнопке.
+  const todayDay = today ? week?.days.find((day) => day.date === today) : undefined;
+  const yesterday = today ? shiftDateKey(today, -1) : "";
+  const yesterdayDay = week?.days.find((day) => day.date === yesterday);
+  const otherDays = (week?.days ?? [])
+    .filter((day) => classesOfDay(day).length)
+    .filter((day) => !isCurrentWeek || (day.date !== today && day.date !== yesterday))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const dayCardTitle = (day: DiaryDay) => `${capitalize(weekdayLabel(day.date))}, ${dayMonthLabel(day.date)}`;
+
+  const linkCount = week ? weekLinkCount(week) : 0;
 
   return (
-    <div className="relative min-h-full">
-      <AmbientBackground />
-      <div className="relative z-10 flex flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
-      {/* Week navigation */}
-      <div className="flex items-center justify-center">
-        <WeekNav
-          weekStart={weekStart}
-          label={formatWeekRange(weekStart)}
-          isCurrentWeek={isThisWeek(weekStart)}
-          onPrev={() => changeWeek(-1)}
-          onNext={() => changeWeek(1)}
-          onToday={goToday}
-          onWeekSelect={(ws) => { setWeekStart(ws); setActiveDow(isThisWeek(ws) ? todayDow() : "monday") }}
-        />
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <div className="flex items-center justify-center min-h-[320px]">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center gap-3 min-h-[300px] text-center">
-          <p className="text-destructive text-sm">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => loadWeek(weekStart)}>
-            Повторить
-          </Button>
-        </div>
-      ) : !hasAnyLessons ? (
-        <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-foreground/15 bg-white/40 dark:bg-white/[0.04] backdrop-blur-xl min-h-[350px] gap-4 text-center px-8 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-          <NotebookPenIcon className="h-12 w-12 text-muted-foreground/30" />
-          <div>
-            <p className="font-semibold text-muted-foreground">Расписание не настроено</p>
-            <p className="text-sm text-muted-foreground/70 mt-1 max-w-sm">
-              Настройте шаблон расписания, чтобы уроки появились в дневнике.
-            </p>
+    <div className="content view">
+      <SubNav group="study" />
+      <header className="head dy-head">
+        <h1 className="title">Дневник</h1>
+        <div className="head-tools">
+          <div className="dy-links">
+            <Link className="btn btn-text" href="/dashboard/diary/grades">
+              <span className="dy-w">Итоговые оценки</span>
+              <span className="dy-n">Оценки</span>
+            </Link>
+            <Link className="btn btn-text" href="/dashboard/diary/schedule">
+              <span className="dy-w">Шаблон расписания</span>
+              <span className="dy-n">Шаблон</span>
+            </Link>
+            {hasTemplate ? (
+              <button
+                type="button"
+                className="btn btn-text"
+                disabled={api.applying || status !== "ready"}
+                onClick={() => setConfirmOpen(true)}
+              >
+                <span className="dy-w">{api.applying ? "Применяю…" : "Применить шаблон"}</span>
+                <span className="dy-n">{api.applying ? "Применяю…" : "Применить"}</span>
+              </button>
+            ) : null}
+            {api.hasUndo ? (
+              <button
+                type="button"
+                className="btn btn-text"
+                title={nextUndoLabel() ?? undefined}
+                onClick={undo}
+              >
+                <Icon name="undo" />
+                Отменить
+              </button>
+            ) : null}
+            {!isCurrentWeek && thisMonday ? (
+              <button type="button" className="btn btn-text" onClick={() => setWeekStart(thisMonday)}>
+                Эта неделя
+              </button>
+            ) : null}
           </div>
-          <Button size="sm" asChild>
-            <Link href="/dashboard/diary/schedule">
-              <Settings2Icon className="h-3.5 w-3.5 mr-1.5" />
+          <div className="pager">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Прошлая неделя"
+              disabled={!weekStart}
+              onClick={() => weekStart && setWeekStart(shiftDateKey(weekStart, -7))}
+            >
+              <Icon name="chev-l" />
+            </button>
+            <span aria-live="polite">{weekStart ? weekRangeLabel(weekStart) : " "}</span>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Следующая неделя"
+              disabled={!weekStart}
+              onClick={() => weekStart && setWeekStart(shiftDateKey(weekStart, 7))}
+            >
+              <Icon name="chev-r" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {status === "error" ? (
+        <div className="card dy-empty" role="alert">
+          <h2>Дневник не загрузился</h2>
+          <p>Записи на месте, это ошибка связи. Попробуй ещё раз.</p>
+          <button type="button" className="btn btn-line" onClick={api.reload}>
+            Повторить
+          </button>
+        </div>
+      ) : !week || !today || !tasks || (!hasLessons && !totalTasks && hasTemplate === null) ? (
+        <WeekSkeleton />
+      ) : !hasLessons && !totalTasks ? (
+        <div className="card dy-empty">
+          <h2>{hasTemplate ? "На этой неделе нет уроков" : "Пока нет расписания"}</h2>
+          <p>
+            {hasTemplate
+              ? "В шаблоне нет уроков, или неделя собралась раньше него. Заполни шаблон или примени его к этой неделе."
+              : "Дневник собирается из шаблона: какие уроки в какой день. Заполни его один раз, и здесь появятся задания и оценки на каждую неделю."}
+          </p>
+          <div className="dy-empty-acts">
+            <Link className="btn btn-main" href="/dashboard/diary/schedule">
               Настроить расписание
             </Link>
-          </Button>
+            {hasTemplate ? (
+              <button type="button" className="btn btn-line" onClick={() => setConfirmOpen(true)}>
+                Применить шаблон
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : (
-        <DayTabs week={week!} activeDow={activeDow} today={today} onDayChange={setActiveDow} />
+        <div className="todo">
+          <div>
+            {totalTasks === 0 ? (
+              <p className="dy-note">
+                {upcoming.length
+                  ? "На этой неделе пока ничего не записано. Нажми «Добавить задание» у нужного дня."
+                  : "На этой неделе ничего не было записано."}
+              </p>
+            ) : null}
+
+            {upcoming.map((group) => (
+              <DayGroupCard
+                key={group.day.id}
+                group={group}
+                week={week}
+                canPlan
+                api={api}
+                plan={plan}
+                subjectNames={subjectNames}
+              />
+            ))}
+
+            {isCurrentWeek && upcoming.length === 0 ? (
+              <div className="card dy-empty">
+                <h2>На этой неделе больше ничего не задано</h2>
+                <p>Задания на понедельник записываются в следующую неделю.</p>
+                {thisMonday ? (
+                  <button
+                    type="button"
+                    className="btn btn-line"
+                    onClick={() => setWeekStart(shiftDateKey(thisMonday, 7))}
+                  >
+                    Следующая неделя
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {isPastWeek
+              ? past.map((group) => (
+                  <DayGroupCard
+                    key={group.day.id}
+                    group={group}
+                    week={week}
+                    canPlan={false}
+                    api={api}
+                    plan={plan}
+                    subjectNames={subjectNames}
+                  />
+                ))
+              : null}
+
+            {isCurrentWeek && past.length ? (
+              <div className="dy-more">
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  aria-expanded={showPast}
+                  onClick={() => setShowPast((value) => !value)}
+                >
+                  {showPast
+                    ? "Скрыть прошедшие дни"
+                    : `Прошедшие дни${
+                        pastTaskCount
+                          ? `, ${pastTaskCount} ${plural(pastTaskCount, ["задание", "задания", "заданий"])}`
+                          : ""
+                      }`}
+                </button>
+              </div>
+            ) : null}
+
+            {isCurrentWeek && showPast
+              ? past.map((group) => (
+                  <DayGroupCard
+                    key={`past-${group.day.id}`}
+                    group={group}
+                    week={week}
+                    canPlan={false}
+                    api={api}
+                    plan={plan}
+                    subjectNames={subjectNames}
+                  />
+                ))
+              : null}
+          </div>
+
+          <aside className={showWeek ? "todo-side is-all" : "todo-side"}>
+            {isCurrentWeek ? (
+              <>
+                <SchoolCard title="Сегодня в школе" day={todayDay} today={today} api={api} onOpenLesson={openDialog} />
+                {yesterdayDay && classesOfDay(yesterdayDay).length ? (
+                  <SchoolCard
+                    title="Вчера"
+                    day={yesterdayDay}
+                    today={today}
+                    quiet
+                    past
+                    api={api}
+                    onOpenLesson={openDialog}
+                  />
+                ) : null}
+                {showWeek
+                  ? otherDays.map((day) => (
+                      <SchoolCard
+                        key={day.id}
+                        title={dayCardTitle(day)}
+                        day={day}
+                        today={today}
+                        quiet
+                        api={api}
+                        onOpenLesson={openDialog}
+                      />
+                    ))
+                  : null}
+                {otherDays.length ? (
+                  <button
+                    type="button"
+                    className="btn btn-text dy-all"
+                    aria-expanded={showWeek}
+                    onClick={() => setShowWeek((value) => !value)}
+                  >
+                    {showWeek ? "Свернуть" : "Вся неделя"}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              otherDays.map((day) => (
+                <SchoolCard
+                  key={day.id}
+                  title={dayCardTitle(day)}
+                  day={day}
+                  today={today}
+                  quiet
+                  api={api}
+                  onOpenLesson={openDialog}
+                />
+              ))
+            )}
+          </aside>
+        </div>
       )}
 
-      {/* Grades link */}
-      <div className="flex justify-center pt-2 pb-1">
-        <Button variant="outline" size="sm" asChild className="gap-2 text-muted-foreground hover:text-foreground">
-          <Link href="/dashboard/diary/grades">
-            <BarChart2Icon className="h-3.5 w-3.5" />
-            Итоговые оценки
-          </Link>
-        </Button>
-      </div>
-
-      {/* Template confirmation dialog */}
-      <Dialog open={confirmTemplateOpen} onOpenChange={setConfirmTemplateOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangleIcon className="h-5 w-5 text-amber-500" />
-              Применить шаблон?
-            </DialogTitle>
-            <DialogDescription className="pt-1">
-              Это действие сбросит все оценки и домашние задания за текущую неделю
-              и заполнит её уроками из шаблона расписания.
-              <br />
-              <span className="text-foreground/80 font-medium mt-2 block">
-                Вы сможете отменить это через Ctrl+Z.
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => setConfirmTemplateOpen(false)}
+      {week && today && (hasLessons || totalTasks > 0) ? (
+        <>
+          {showVideos ? <WeekVideos key={week.id} week={week} today={today} api={api} /> : null}
+          <div className="page-foot">
+            <button
+              type="button"
+              className="link"
+              aria-expanded={showVideos}
+              onClick={() => setShowVideos((value) => !value)}
             >
-              Отмена
-            </Button>
-            <Button
-              onClick={handleTemplateConfirm}
-              disabled={applyingTemplate}
-              className="gap-1.5"
-            >
-              {applyingTemplate
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <RefreshCwIcon className="h-4 w-4" />}
-              Применить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Keyboard shortcuts dialog */}
-      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyboardIcon className="h-5 w-5 text-primary" />
-              Горячие клавиши — Дневник
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-xs text-muted-foreground -mt-1 mb-2">
-            Работают только когда фокус не в поле ввода.
-          </p>
-          <div className="flex flex-col">
-            <ShortcutRow keys={["Ctrl", "Z"]} desc="Отменить последнее действие" />
-            <ShortcutRow keys={["Ctrl", "Shift", "Z"]} desc="Повторить отменённое действие" />
-            <ShortcutRow keys={["Ctrl", "Shift", "T"]} desc="Применить шаблон к текущей неделе" />
-            <ShortcutRow keys={["Ctrl", "←"]} desc="Перейти на предыдущую неделю" />
-            <ShortcutRow keys={["Ctrl", "→"]} desc="Перейти на следующую неделю" />
-            <ShortcutRow keys={["?"]} desc="Открыть это окно с подсказками" />
+              {showVideos ? "Скрыть видео" : "Видео и трансляции"}
+              {!showVideos && linkCount ? `, ${linkCount}` : ""}
+            </button>
           </div>
-          <p className="text-xs text-muted-foreground mt-3 leading-relaxed border-t border-border pt-3">
-            <strong>Ctrl+Z / Ctrl+Shift+Z</strong> отменяет/возвращает как оценки, так и применение шаблона.
-            Текст (описание, заметки) сохраняется автоматически без истории.
-          </p>
+        </>
+      ) : null}
+
+      <LessonDialog target={lessonTarget} api={api} onClose={() => setLessonTarget(null)} />
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="dy-dialog">
+          <DialogTitle className="dy-dialog-title">Применить шаблон?</DialogTitle>
+          <DialogDescription className="dy-dialog-sub">
+            Все оценки и задания недели {weekStart ? weekRangeLabel(weekStart) : ""} сбросятся, а
+            уроки заполнятся из шаблона расписания. Вернуть всё можно кнопкой «Отменить».
+          </DialogDescription>
+          <div className="pop-acts">
+            <button type="button" className="btn btn-main" disabled={api.applying} onClick={applyTemplate}>
+              Применить
+            </button>
+            <button type="button" className="btn btn-text" onClick={() => setConfirmOpen(false)}>
+              Отмена
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
-      </div>
     </div>
-  )
+  );
 }

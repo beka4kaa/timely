@@ -1,0 +1,309 @@
+/* Токены новой системы. Монохром: чёрное, белое и серые между ними. Цвет есть
+   только у настоящих предметов: плашки, обложки, бейджи, маскот.
+   Старые --tm-* и shadcn живут в globals.css и сведены к тем же значениям. */
+:root {
+  --sb-w: 220px;
+  --content: 1040px;
+  --gutter: 36px;
+
+
+  --t-bg: #f4f4f5;
+  --t-hover: rgba(0, 0, 0, 0.045);
+  --t-fill: rgba(0, 0, 0, 0.06);
+  --t-line: rgba(0, 0, 0, 0.08);
+  --t-line-strong: rgba(0, 0, 0, 0.16);
+  --t-ink: #111112;
+  --t-ink-2: #3c3c40;
+  --t-muted: #6a6a70;
+  --t-faint: #98989e;
+  --t-on-ink: #ffffff;
+  --t-accent: #111112;
+  --t-on-accent: #ffffff;
+  --t-accent-soft: rgba(0, 0, 0, 0.06);
+  --t-ok: #1f7a55;
+  --t-warn: #c0392f;
+
+  /* Поверхность */
+  --t-card: #ffffff;
+  --t-card-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03), 0 14px 30px -24px rgba(0, 0, 0, 0.18);
+  --t-card-soft: rgba(255, 255, 255, 0.55);
+  --t-card-soft-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+
+  /* Стекло */
+  --t-glass: rgba(255, 255, 255, 0.62);
+  --t-glass-strong: rgba(255, 255, 255, 0.86);
+  --t-glass-sheen: rgba(255, 255, 255, 0.2);
+  --t-rim-hi: rgba(255, 255, 255, 0.95);
+  --t-rim-lo: rgba(255, 255, 255, 0.5);
+  --t-rim-panel: #ffffff;
+  --t-rim-shine: #ffffff;
+  --t-shine: rgba(255, 255, 255, 0.4);
+  --t-glass-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 36px -22px rgba(0, 0, 0, 0.3);
+  --t-top-light: rgba(255, 255, 255, 0.7);
+  --t-pill: #ffffff;
+  --t-pill-sh: 0 0.5px 2px rgba(0, 0, 0, 0.14);
+  --t-tube: rgba(0, 0, 0, 0.08);
+  --t-btn-main: #111112;
+  --t-btn-main-sh: none;
+  --t-paper: rgba(255, 255, 255, 0.8);
+
+  /* Бумага дневника */
+
+  /* Что видно сквозь стекло: только свет и тень */
+  --t-glow-b: rgba(0, 0, 0, 0.018);
+  --t-glow-c: rgba(0, 0, 0, 0.03);
+  --t-grain: 0.05;
+
+  /* Маскот белый в обеих темах */
+  --t-m-top: #e2e8fb;
+  --t-m-mid: #fbfcff;
+  --t-m-low: #f7f9ff;
+  --t-m-shade: #ccd6f3;
+  --t-m-core: #e8edfb;
+  --t-m-edge: #aab6dc;
+  --t-m-reflect: #ffffff;
+  --t-m-ink: #25263a;
+  --t-m-blush: #ffc2d2;
+  --t-m-hatch: #ee7e9f;
+  --t-m-aura: rgba(150, 170, 255, 0);
+  --t-fold: rgba(0, 0, 0, 0.07);
+  --t-m-floor: rgba(40, 46, 96, 0.34);
+  --t-cal-ev: rgba(17, 17, 18, 0.07);
+  --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
+  --t-cloud: #ffffff;
+  --t-cloud-rim: rgba(30, 34, 70, 0.14);
+  --t-cloud-sh: rgba(30, 34, 70, 0.2);
+  --t-sh-base: rgba(17, 17, 18, 0.56);
+  --t-sh-peak: #ffffff;
+
+  --t-sun-d: none;
+  --t-moon-d: block;
+
+  --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
+  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-hand: "Caveat", "Segoe Script", cursive;
+
+}
+
+.dark {
+    --t-bg: #0d0d0e;
+    --t-hover: rgba(255, 255, 255, 0.055);
+    --t-fill: rgba(255, 255, 255, 0.085);
+    --t-line: rgba(255, 255, 255, 0.07);
+    --t-line-strong: rgba(255, 255, 255, 0.15);
+    --t-ink: #ececee;
+    --t-ink-2: #c4c4c8;
+    --t-muted: #97979d;
+    --t-faint: #6c6c72;
+    --t-on-ink: #111112;
+    --t-accent: #e4e4e6;
+    --t-on-accent: #111112;
+    --t-accent-soft: rgba(255, 255, 255, 0.09);
+    --t-ok: #7fcfa6;
+    --t-warn: #ef8f86;
+
+    --t-card: rgba(255, 255, 255, 0.042);
+    --t-card-sh: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06), inset 0 0.5px 0 rgba(255, 255, 255, 0.05);
+    --t-card-soft: rgba(255, 255, 255, 0.026);
+    --t-card-soft-sh: inset 0 0 0 0.5px rgba(255, 255, 255, 0.05);
+
+    --t-glass: rgba(255, 255, 255, 0.06);
+    --t-glass-strong: rgba(38, 38, 40, 0.84);
+    --t-glass-sheen: rgba(255, 255, 255, 0.022);
+    --t-rim-hi: rgba(255, 255, 255, 0.24);
+    --t-rim-lo: rgba(255, 255, 255, 0.06);
+    --t-rim-panel: rgba(255, 255, 255, 0.6);
+    --t-rim-shine: rgba(255, 255, 255, 0.42);
+    --t-shine: rgba(255, 255, 255, 0.045);
+    --t-glass-shadow: 0 18px 44px -26px rgba(0, 0, 0, 0.8);
+    --t-top-light: rgba(255, 255, 255, 0.06);
+    --t-pill: rgba(255, 255, 255, 0.1);
+    --t-pill-sh: inset 0 0.5px 0 rgba(255, 255, 255, 0.08), 0 1px 3px -1px rgba(0, 0, 0, 0.5);
+    --t-tube: rgba(255, 255, 255, 0.08);
+    --t-btn-main: #e4e4e6;
+    --t-btn-main-sh: none;
+    --t-paper: rgba(255, 255, 255, 0.045);
+
+    --t-glow-b: rgba(255, 255, 255, 0.025);
+    --t-glow-c: rgba(255, 255, 255, 0.05);
+    --t-grain: 0.04;
+
+    --t-m-edge: rgba(214, 224, 255, 0.34);
+    --t-m-aura: rgba(255, 255, 255, 0.1);
+    --t-fold: rgba(0, 0, 0, 0.28);
+    --t-m-floor: rgba(0, 0, 0, 0.62);
+    --t-cal-ev: rgba(255, 255, 255, 0.1);
+    --t-cal-ev-hi: rgba(255, 255, 255, 0.15);
+    --t-cloud: #2c2c30;
+    --t-cloud-rim: rgba(255, 255, 255, 0.3);
+    --t-cloud-sh: rgba(0, 0, 0, 0.6);
+    --t-sh-base: rgba(255, 255, 255, 0.46);
+    --t-sh-peak: #ffffff;
+    --t-sun-d: block;
+    --t-moon-d: none;
+}
+
+/* Поддерево, которое всегда светлое: научная доска рисует холст своими цветами. */
+.tm-light {
+
+
+  --t-bg: #f4f4f5;
+  --t-hover: rgba(0, 0, 0, 0.045);
+  --t-fill: rgba(0, 0, 0, 0.06);
+  --t-line: rgba(0, 0, 0, 0.08);
+  --t-line-strong: rgba(0, 0, 0, 0.16);
+  --t-ink: #111112;
+  --t-ink-2: #3c3c40;
+  --t-muted: #6a6a70;
+  --t-faint: #98989e;
+  --t-on-ink: #ffffff;
+  --t-accent: #111112;
+  --t-on-accent: #ffffff;
+  --t-accent-soft: rgba(0, 0, 0, 0.06);
+  --t-ok: #1f7a55;
+  --t-warn: #c0392f;
+
+  /* Поверхность */
+  --t-card: #ffffff;
+  --t-card-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03), 0 14px 30px -24px rgba(0, 0, 0, 0.18);
+  --t-card-soft: rgba(255, 255, 255, 0.55);
+  --t-card-soft-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+
+  /* Стекло */
+  --t-glass: rgba(255, 255, 255, 0.62);
+  --t-glass-strong: rgba(255, 255, 255, 0.86);
+  --t-glass-sheen: rgba(255, 255, 255, 0.2);
+  --t-rim-hi: rgba(255, 255, 255, 0.95);
+  --t-rim-lo: rgba(255, 255, 255, 0.5);
+  --t-rim-panel: #ffffff;
+  --t-rim-shine: #ffffff;
+  --t-shine: rgba(255, 255, 255, 0.4);
+  --t-glass-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 36px -22px rgba(0, 0, 0, 0.3);
+  --t-top-light: rgba(255, 255, 255, 0.7);
+  --t-pill: #ffffff;
+  --t-pill-sh: 0 0.5px 2px rgba(0, 0, 0, 0.14);
+  --t-tube: rgba(0, 0, 0, 0.08);
+  --t-btn-main: #111112;
+  --t-btn-main-sh: none;
+  --t-paper: rgba(255, 255, 255, 0.8);
+
+  /* Бумага дневника */
+
+  /* Что видно сквозь стекло: только свет и тень */
+  --t-glow-b: rgba(0, 0, 0, 0.018);
+  --t-glow-c: rgba(0, 0, 0, 0.03);
+  --t-grain: 0.05;
+
+  /* Маскот белый в обеих темах */
+  --t-m-top: #e2e8fb;
+  --t-m-mid: #fbfcff;
+  --t-m-low: #f7f9ff;
+  --t-m-shade: #ccd6f3;
+  --t-m-core: #e8edfb;
+  --t-m-edge: #aab6dc;
+  --t-m-reflect: #ffffff;
+  --t-m-ink: #25263a;
+  --t-m-blush: #ffc2d2;
+  --t-m-hatch: #ee7e9f;
+  --t-m-aura: rgba(150, 170, 255, 0);
+  --t-fold: rgba(0, 0, 0, 0.07);
+  --t-m-floor: rgba(40, 46, 96, 0.34);
+  --t-cal-ev: rgba(17, 17, 18, 0.07);
+  --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
+  --t-cloud: #ffffff;
+  --t-cloud-rim: rgba(30, 34, 70, 0.14);
+  --t-cloud-sh: rgba(30, 34, 70, 0.2);
+  --t-sh-base: rgba(17, 17, 18, 0.56);
+  --t-sh-peak: #ffffff;
+
+  --t-sun-d: none;
+  --t-moon-d: block;
+
+  --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
+  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-hand: "Caveat", "Segoe Script", cursive;
+
+}
+
+@media print {
+  .dark {
+
+
+  --t-bg: #f4f4f5;
+  --t-hover: rgba(0, 0, 0, 0.045);
+  --t-fill: rgba(0, 0, 0, 0.06);
+  --t-line: rgba(0, 0, 0, 0.08);
+  --t-line-strong: rgba(0, 0, 0, 0.16);
+  --t-ink: #111112;
+  --t-ink-2: #3c3c40;
+  --t-muted: #6a6a70;
+  --t-faint: #98989e;
+  --t-on-ink: #ffffff;
+  --t-accent: #111112;
+  --t-on-accent: #ffffff;
+  --t-accent-soft: rgba(0, 0, 0, 0.06);
+  --t-ok: #1f7a55;
+  --t-warn: #c0392f;
+
+  /* Поверхность */
+  --t-card: #ffffff;
+  --t-card-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03), 0 14px 30px -24px rgba(0, 0, 0, 0.18);
+  --t-card-soft: rgba(255, 255, 255, 0.55);
+  --t-card-soft-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+
+  /* Стекло */
+  --t-glass: rgba(255, 255, 255, 0.62);
+  --t-glass-strong: rgba(255, 255, 255, 0.86);
+  --t-glass-sheen: rgba(255, 255, 255, 0.2);
+  --t-rim-hi: rgba(255, 255, 255, 0.95);
+  --t-rim-lo: rgba(255, 255, 255, 0.5);
+  --t-rim-panel: #ffffff;
+  --t-rim-shine: #ffffff;
+  --t-shine: rgba(255, 255, 255, 0.4);
+  --t-glass-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 36px -22px rgba(0, 0, 0, 0.3);
+  --t-top-light: rgba(255, 255, 255, 0.7);
+  --t-pill: #ffffff;
+  --t-pill-sh: 0 0.5px 2px rgba(0, 0, 0, 0.14);
+  --t-tube: rgba(0, 0, 0, 0.08);
+  --t-btn-main: #111112;
+  --t-btn-main-sh: none;
+  --t-paper: rgba(255, 255, 255, 0.8);
+
+  /* Бумага дневника */
+
+  /* Что видно сквозь стекло: только свет и тень */
+  --t-glow-b: rgba(0, 0, 0, 0.018);
+  --t-glow-c: rgba(0, 0, 0, 0.03);
+  --t-grain: 0.05;
+
+  /* Маскот белый в обеих темах */
+  --t-m-top: #e2e8fb;
+  --t-m-mid: #fbfcff;
+  --t-m-low: #f7f9ff;
+  --t-m-shade: #ccd6f3;
+  --t-m-core: #e8edfb;
+  --t-m-edge: #aab6dc;
+  --t-m-reflect: #ffffff;
+  --t-m-ink: #25263a;
+  --t-m-blush: #ffc2d2;
+  --t-m-hatch: #ee7e9f;
+  --t-m-aura: rgba(150, 170, 255, 0);
+  --t-fold: rgba(0, 0, 0, 0.07);
+  --t-m-floor: rgba(40, 46, 96, 0.34);
+  --t-cal-ev: rgba(17, 17, 18, 0.07);
+  --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
+  --t-cloud: #ffffff;
+  --t-cloud-rim: rgba(30, 34, 70, 0.14);
+  --t-cloud-sh: rgba(30, 34, 70, 0.2);
+  --t-sh-base: rgba(17, 17, 18, 0.56);
+  --t-sh-peak: #ffffff;
+
+  --t-sun-d: none;
+  --t-moon-d: block;
+
+  --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
+  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-hand: "Caveat", "Segoe Script", cursive;
+
+  }
+}

@@ -155,11 +155,11 @@ test("сводка показывает объём словами, а не го�
     sourceSummary(
       form({ kind: "practice_set", totalUnits: "10", minutesPerUnit: "180" }),
     ),
-    "10 вариантов · 30 ч",
+    "10 вариантов, 30 ч",
   );
   assert.equal(
     sourceSummary(form({ kind: "custom", totalUnits: "2", minutesPerUnit: "20" })),
-    "2 занятий · 40 мин",
+    "2 занятий, 40 мин",
   );
   assert.equal(sourceSummary(form({ totalUnits: "", minutesPerUnit: "" })), "");
 });

@@ -1,133 +1,132 @@
 "use client";
 
-// Одна реплика разговора и ссылки на книгу под ней.
-//
-// Два размера. `rail` — та же вёрстка, что была в панели: пузыри в 13 px,
-// ширина до 94 %. `page` — колонка на всю страницу, где ответ перестаёт быть
-// пузырём: рамка вокруг текста шириной в пол-экрана превращает объяснение в
-// карточку, а читается оно как страница. Пузырь остаётся только у вопроса —
-// там он и нужен, чтобы отличить свою реплику от чужой.
+// Одна реплика разговора. Вопрос в простом пузыре, ответ без рамки и с засечками: он
+// читается как страница книги. Этап работы одной строкой, больше ничего.
 
-import { BookOpen } from "lucide-react";
+import { memo } from "react";
 
-import { bookLabel, citationSpot } from "@/lib/book-label";
+import { bookLabel } from "@/lib/book-label";
 import type { AskCitation } from "@/lib/curriculum-api";
+
+import { askErrorText, placeLabel, stageLabel, STOPPED_ERROR } from "./ask-stages";
 import { MarkdownMessage } from "./markdown-message";
-import { ThinkingNote } from "./thinking-note";
-import { buildStages, foundSummary } from "./ask-stages";
 import type { Turn } from "./use-subject-chat";
 
-export type ChatVariant = "rail" | "page";
-
-export function AskTurn({
+export const AskTurn = memo(function AskTurn({
   turn,
-  variant = "rail",
   id,
+  onCite,
+  onRetry,
 }: {
   turn: Turn;
-  variant?: ChatVariant;
-  id?: string;
+  id: string;
+  /** Нажали на ссылку на страницу: показать её в источниках. */
+  onCite: (documentId: string, page: number) => void;
+  /** Только у ответа, который не получился, и только если он последний. */
+  onRetry?: () => void;
 }) {
-  const page = variant === "page";
-
   if (turn.role === "user") {
     return (
-      <div className="flex justify-end" id={id}>
-        <div
-          className={`whitespace-pre-wrap rounded-[16px] rounded-tr-[5px] bg-tm-strong text-tm-on-strong ${
-            page
-              ? "max-w-[84%] px-4 py-3 text-[15px] leading-[1.6]"
-              : "max-w-[94%] px-3.5 py-2.5 text-[13px] leading-[1.55]"
-          }`}
-        >
-          {turn.content}
-        </div>
-      </div>
+      <p className="m-you" id={id}>
+        {turn.content}
+      </p>
     );
   }
 
   const working = Boolean(turn.stage);
+  // Этап виден, пока модель молчит. Как только пошёл текст, он сам показывает работу.
+  const thinking = working && !turn.content;
+  // В разговоре без книги пометка сообщала бы об отсутствии того, чего никто не открывал.
+  const outsideBook = turn.grounded === false && turn.library !== false && Boolean(turn.content);
 
   return (
-    <div className="flex justify-start" id={id}>
-      <div
-        className={`flex flex-col ${page ? "w-full gap-2" : "max-w-[94%] gap-1.5"}`}
-      >
-        {(working || turn.durationMs) && (
-          <ThinkingNote
-            stages={buildStages(turn)}
-            streaming={working}
-            durationMs={turn.durationMs}
-            summary={foundSummary(turn)}
-          />
-        )}
+    <div className="m-turn" id={id}>
+      {thinking ? (
+        <p className="m-think shine" role="status">
+          {stageLabel(turn.stage ?? "", turn.found)}
+        </p>
+      ) : null}
 
-        {(turn.content || turn.error) && (
-          <div
-            className={
-              page
-                ? "text-[15px] leading-[1.7] text-tm-ink-2"
-                : "rounded-[16px] border border-tm-line bg-tm-surface/62 px-3.5 py-2.5 text-[13px] leading-[1.55] text-tm-ink-2"
-            }
-          >
-            {turn.error && <span className="text-tm-danger">{turn.error}</span>}
-            {/* Только когда книга была: в разговоре без книги пометка
-                сообщала бы об отсутствии того, чего никто не открывал. */}
-            {turn.grounded === false && turn.library !== false && !!turn.content && (
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-tm-faint">
-                В книге этого нет
-              </div>
-            )}
-            {turn.content && (
-              <MarkdownMessage content={turn.content} variant={variant} />
-            )}
-          </div>
-        )}
+      {turn.content ? (
+        <div className="m-ai">
+          {outsideBook ? <p className="m-outside">В книге этого нет, отвечаю своими словами</p> : null}
+          <MarkdownMessage content={turn.content} variant="page" />
+          {turn.citations?.length ? <Citations items={turn.citations} onCite={onCite} /> : null}
+        </div>
+      ) : null}
 
-        {!!turn.citations?.length && (
-          <Citations items={turn.citations} variant={variant} />
-        )}
-      </div>
+      {turn.error ? <TurnError raw={turn.error} onRetry={onRetry} /> : null}
+    </div>
+  );
+});
+
+function TurnError({ raw, onRetry }: { raw: string; onRetry?: () => void }) {
+  if (raw === STOPPED_ERROR) return <p className="m-think">{askErrorText(raw)}</p>;
+  return (
+    <div className="m-fail" role="alert">
+      <p>{askErrorText(raw)}</p>
+      {onRetry ? (
+        <button className="btn btn-line" type="button" onClick={onRetry}>
+          Повторить
+        </button>
+      ) : null}
     </div>
   );
 }
 
-/**
- * Ссылки на книгу.
- *
- * Название книги стоит ОДИН раз над списком. Раньше оно повторялось в каждой из
- * восьми ссылок, и вместе с длинным именем файла цитаты занимали больше места,
- * чем сам ответ.
- */
-export function Citations({
+interface BookSpots {
+  documentId: string;
+  title: string;
+  spots: { label: string; page: number }[];
+}
+
+/** Книга называется один раз. Несколько ссылок на одно место показываем одной. */
+function groupByBook(items: AskCitation[]): BookSpots[] {
+  const books: BookSpots[] = [];
+  for (const item of items) {
+    const label = placeLabel(item);
+    if (!label) continue;
+    let book = books.find((row) => row.documentId === item.document_id);
+    if (!book) {
+      book = { documentId: item.document_id, title: bookLabel(item.document_title), spots: [] };
+      books.push(book);
+    }
+    if (!book.spots.some((spot) => spot.label === label)) {
+      book.spots.push({ label, page: item.page_start });
+    }
+  }
+  return books;
+}
+
+function Citations({
   items,
-  variant = "rail",
+  onCite,
 }: {
   items: AskCitation[];
-  variant?: ChatVariant;
+  onCite: (documentId: string, page: number) => void;
 }) {
-  const title = bookLabel(items[0]?.document_title ?? "");
-  // Одна книга может дать несколько ссылок на одно место — показываем раз.
-  const spots = Array.from(
-    new Set(items.map((item) => citationSpot(item)).filter(Boolean)),
-  );
-
+  const books = groupByBook(items);
+  if (!books.length) return null;
   return (
-    <div className={variant === "page" ? "" : "px-1"}>
-      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-tm-faint">
-        <BookOpen className="h-3 w-3 shrink-0 text-tm-accent" />
-        <span className="truncate">{title || "Источник"}</span>
-      </div>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {spots.map((spot) => (
-          <span
-            key={spot}
-            className="rounded-full border border-tm-line bg-tm-surface px-2 py-[2px] text-[10.5px] tabular-nums text-tm-muted"
-          >
-            {spot}
-          </span>
-        ))}
-      </div>
+    <div className="m-cites">
+      {books.map((book) => (
+        <p key={book.documentId}>
+          <span>{book.title || "Источник"}: </span>
+          {book.spots.map((spot, index) => (
+            <span key={spot.label}>
+              {index ? ", " : null}
+              <button
+                className="link"
+                type="button"
+                title="Показать в источниках"
+                onClick={() => onCite(book.documentId, spot.page)}
+              >
+                {spot.label}
+              </button>
+            </span>
+          ))}
+        </p>
+      ))}
     </div>
   );
 }

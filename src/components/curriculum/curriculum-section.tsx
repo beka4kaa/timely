@@ -1,19 +1,20 @@
-// Что показывает раздел «Курс по книге»: каталог или мастер добавления.
+// Что показывает раздел «Курсы и книги»: стеллаж или мастер добавления.
 //
-// Раздел ВСЕГДА открывается каталогом. Это не мелочь оформления: мастер хранит
+// Раздел ВСЕГДА открывается стеллажом. Это не мелочь оформления: мастер хранил
 // последний сеанс в localStorage, и попытка «вернуть человека туда, где он был»
-// приводила к тому, что заход на /curriculum молча уводил на страницу давно
-// построенной программы. Адрес раздела обязан показывать раздел.
+// приводила к тому, что заход в раздел молча уводил на страницу давно построенной
+// программы. Адрес раздела обязан показывать раздел.
 //
-// Незаконченная работа при этом не теряется — она видна в каталоге: предмет без
-// книги, книга в обработке, программа без подтверждения. Вернуться в мастер
-// можно, но только нажав на это самому.
+// Незаконченная работа при этом не теряется, она видна на полке: предмет без книги,
+// книга в обработке, программа без подтверждения. Вернуться в мастер можно, но только
+// нажав на это самому.
 //
 // Решение «что показать» живёт здесь, а не в сторе: стор описывает ОДИН сеанс
-// добавления, и подмешивать в него режим экрана значило бы сохранять этот режим
-// в localStorage вместе с идентификаторами.
+// добавления, и подмешивать в него режим экрана незачем.
 
 "use client";
+
+import "@/styles/timely/page-curriculum.css";
 
 import { useState } from "react";
 
@@ -31,33 +32,27 @@ export function CurriculumSection() {
   const openBookProgress = useCurriculumStore((s) => s.openBookProgress);
 
   if (mode === "wizard") {
-    return (
-      <div className="w-full max-w-[760px]">
-        <CurriculumWizard onClose={() => setMode("catalog")} />
-      </div>
-    );
+    return <CurriculumWizard onClose={() => setMode("catalog")} />;
   }
 
   return (
-    <div className="w-full max-w-[860px]">
-      <CurriculumCatalog
-        onAddSubject={() => {
-          startNewSubject();
-          setMode("wizard");
-        }}
-        onAddBook={(goalId) => {
-          addBookToSubject(goalId);
-          setMode("wizard");
-        }}
-        onContinueSetup={(goal) => {
-          openSubjectSetup(goal);
-          setMode("wizard");
-        }}
-        onShowProgress={(goalId, document) => {
-          openBookProgress(goalId, document);
-          setMode("wizard");
-        }}
-      />
-    </div>
+    <CurriculumCatalog
+      onAddSubject={() => {
+        startNewSubject();
+        setMode("wizard");
+      }}
+      onAddBook={(goalId) => {
+        addBookToSubject(goalId);
+        setMode("wizard");
+      }}
+      onContinueSetup={(goal) => {
+        openSubjectSetup(goal);
+        setMode("wizard");
+      }}
+      onShowProgress={(goalId, document) => {
+        openBookProgress(goalId, document);
+        setMode("wizard");
+      }}
+    />
   );
 }

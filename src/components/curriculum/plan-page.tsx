@@ -1,64 +1,88 @@
-// Страница программы: путь курса, модули и действия.
+// Страница курса: путь по главам, список уроков, срок и источник.
 //
-// Герой страницы — ось ВРЕМЕНИ, а не ось страниц книги. Вопрос ученика здесь
-// один: жить ли по этой программе три месяца, — и все его части (когда
-// закончу, успею ли к сроку, что дальше) лежат во времени. Покрытие книги
-// осталось двумя строками под путём: это метрика качества генератора, и герой
-// экрана из неё выходил плохой.
+// Вопрос ученика здесь один: жить ли по этой программе три месяца, и все его части (когда
+// закончу, успею ли к сроку, что дальше) лежат во времени. Поэтому сверху ритм и финиш
+// словами, под ними путь, а покрытие книги осталось строкой у источника: это метрика
+// качества генератора, а не то, чем живёт ученик.
 //
-// Состояние подсветки живёт здесь, а не в контексте: связаны ровно две
-// половины экрана, и передать им пару `{hoveredTopicId, onHoverTopic}` дешевле
-// и понятнее, чем заводить провайдер.
+// Состояние подсветки живёт здесь, а не в контексте: связаны ровно две половины экрана, и
+// передать им пару `{hoveredTopicId, onHoverTopic}` дешевле, чем заводить провайдер.
 
 "use client";
 
-import { usePageSubject } from "@/contexts/active-subject";
+import "@/styles/timely/page-curriculum.css";
+
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
+import { Icon } from "@/components/shell/icons";
+import { usePageSubject } from "@/contexts/active-subject";
+import { useAskRail } from "@/contexts/ask-rail";
+import type { CoursePlan } from "@/lib/curriculum-api";
+import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
+import { locateInCourse } from "@/lib/curriculum-course-progress";
+import {
+  courseLede,
+  dayMonth,
+  forecastWarningMessage,
+  formatPlanDate,
+  paceAdvice,
+  parseForecast,
+} from "@/lib/curriculum-forecast";
 import { buildCoursePath } from "@/lib/curriculum-path";
-import { parseForecast } from "@/lib/curriculum-forecast";
 import { buildRibbon, coverageCaption, gapsCaption } from "@/lib/curriculum-ribbon";
-import { cleanDocumentTitle } from "@/lib/curriculum-title";
+
+import { kindLabel } from "./add-source.logic";
 import { PlanActions } from "./plan-actions";
 import { PlanModules } from "./plan-modules";
+import { PlanPaceForm } from "./plan-pace";
 import { PlanPath } from "./plan-path";
 import { PlanPageError, PlanPageSkeleton } from "./plan-states";
-import { paperCaption, paperCard } from "./paper";
+import { PlanStructureEditor } from "./plan-structure-editor";
 import {
+  type PlanPageReady,
   useApprovePlan,
   useGenerationContext,
   usePlanPageData,
 } from "./use-plan-page-data";
 
 export function CurriculumPlanPage({ planId }: { planId: string }) {
-  const { data, reload, setPlan } = usePlanPageData(planId);
+  const { data, reload, setPlan, setDeadline } = usePlanPageData(planId);
 
   if (data.state === "loading") return <PlanPageSkeleton />;
   if (data.state === "error") {
     return <PlanPageError kind={data.kind} message={data.message} onRetry={reload} />;
   }
 
-  return <PlanPageBody planId={planId} data={data} onPlanChange={setPlan} />;
+  return <PlanPageBody planId={planId} data={data} onPlanChange={setPlan} onDeadlineChange={setDeadline} />;
 }
 
 function PlanPageBody({
   planId,
   data,
   onPlanChange,
+  onDeadlineChange,
 }: {
   planId: string;
-  data: Extract<ReturnType<typeof usePlanPageData>["data"], { state: "ready" }>;
-  onPlanChange: (plan: import("@/lib/curriculum-api").CoursePlan) => void;
+  data: PlanPageReady;
+  onPlanChange: (plan: CoursePlan) => void;
+  onDeadlineChange: (date: string | null) => void;
 }) {
-  const { plan, document: book, goal, sections, degraded } = data;
+  const { plan, document: book, material, goal, sections, degraded, progress, progressFailed, siblings } =
+    data;
   const [hoveredTopicId, setHoveredTopicId] = useState<string | null>(null);
-  // Панель вопросов справа спрашивает по той книге, которая открыта.
-  usePageSubject(goal?.id ?? plan.goal);
+  const [pacing, setPacing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // `fromGeneration` здесь больше не нужен: перестройка стала действием
-  // сервера и доступна с любой страницы программы, а не только сразу после
-  // мастера.
+  // Мини-окно спрашивает по той книге, которая открыта.
+  const goalId = goal?.id ?? plan.goal;
+  usePageSubject(goalId);
+  const { prompt } = useAskRail();
+  const ask = (text: string) => prompt({ target: "book", goalId, text });
+
+  // `fromGeneration` здесь не нужен: перестройка это действие сервера и доступна с любой
+  // страницы программы, а не только сразу после мастера.
   const { reviewFindings } = useGenerationContext(planId);
   const { approve, busy, error } = useApprovePlan(planId, onPlanChange);
 
@@ -78,178 +102,309 @@ function PlanPageBody({
     [plan, book, sections],
   );
 
-  // Путь строится из длительностей глав и дат бэкенда. Своего календаря здесь
-  // нет намеренно: два несогласных прогноза на одном экране хуже одного.
+  const moduleMinutes = useMemo(
+    () =>
+      plan.modules.map((courseModule) => ({
+        id: courseModule.id,
+        title: courseModule.title,
+        numberLabel: courseModule.number_label,
+        // Своё поле модуля, при нуле сумма тем: так же считает строка главы в списке.
+        minutes:
+          courseModule.estimated_minutes ||
+          courseModule.topics.reduce((sum, topic) => sum + (topic.estimated_minutes || 0), 0),
+      })),
+    [plan],
+  );
+
+  const states = useMemo(
+    () =>
+      locateInCourse(
+        plan.modules.map((courseModule, index) => ({
+          id: courseModule.id,
+          minutes: moduleMinutes[index].minutes,
+          topics: courseModule.topics,
+        })),
+        progress?.progress ?? null,
+      ),
+    [plan, moduleMinutes, progress],
+  );
+
+  // Путь строится из длительностей глав и дат бэкенда. Своего календаря здесь нет намеренно:
+  // два несогласных прогноза на одном экране хуже одного.
   const forecast = useMemo(() => parseForecast(plan.forecast), [plan.forecast]);
   const path = useMemo(
     () =>
       buildCoursePath({
-        modules: plan.modules.map((courseModule) => ({
-          id: courseModule.id,
-          title: courseModule.title,
-          numberLabel: courseModule.number_label,
-          // Своё поле модуля, при нуле — сумма тем: так же считает шапка
-          // модуля в списке.
-          minutes:
-            courseModule.estimated_minutes ||
-            courseModule.topics.reduce(
-              (sum, topic) => sum + (topic.estimated_minutes || 0),
-              0,
-            ),
-        })),
+        modules: moduleMinutes,
         milestones: plan.milestones.map((milestone) => ({
           id: milestone.id,
           title: milestone.title,
           moduleId: milestone.module,
         })),
         today: new Date(),
+        startedAt: progress?.schedule.start_date ?? null,
         expectedFinish: forecast?.estimatedFinishDate ?? plan.forecast_finish_date,
         optimisticFinish: forecast?.optimisticFinishDate ?? null,
         realisticFinish: forecast?.realisticFinishDate ?? null,
         deadline: goal?.desired_finish_date ?? null,
       }),
-    [plan, forecast, goal],
+    [plan, moduleMinutes, forecast, goal, progress],
   );
 
   /** Какая глава подсвечена на пути: наводят-то на строку темы. */
   const hoveredModuleId = useMemo(() => {
     if (!hoveredTopicId) return null;
     for (const courseModule of plan.modules) {
-      if (courseModule.topics.some((topic) => topic.id === hoveredTopicId)) {
-        return courseModule.id;
-      }
+      if (courseModule.topics.some((topic) => topic.id === hoveredTopicId)) return courseModule.id;
     }
     return null;
   }, [plan, hoveredTopicId]);
 
-  /** Всё, что осталось от корешка: покрытие и пропуски одной строкой. */
-  const bookLines = useMemo(() => {
-    if (ribbon.unitCount === 0) return [];
+  const coverage = useMemo(() => {
+    if (ribbon.unitCount === 0) return "";
     const gaps = gapsCaption(ribbon);
-    return [`${coverageCaption(ribbon)}.`, gaps ? `${gaps}.` : ""].filter(Boolean);
+    return [`${coverageCaption(ribbon)}.`, gaps ? `${gaps}.` : ""].filter(Boolean).join(" ");
   }, [ribbon]);
 
   const blockers = reviewFindings.filter((finding) => finding.severity === "blocker");
-  const allTopicsCount = plan.modules.reduce(
-    (sum, courseModule) => sum + courseModule.topics.length,
-    0,
-  );
+  const allTopicsCount = plan.modules.reduce((sum, item) => sum + item.topics.length, 0);
+  // У программы по источнику без файла страниц нет и быть не может. Без этой проверки
+  // страница жаловалась бы на поломку там, где всё работает как задумано.
   const everythingUnsourced =
-    allTopicsCount > 0 && ribbon.unsourcedTopicIds.length === allTopicsCount;
+    Boolean(plan.document) && allTopicsCount > 0 && ribbon.unsourcedTopicIds.length === allTopicsCount;
+  const sourceDeleted = !plan.document && !plan.material;
 
-  // Программа по источнику без файла: страниц у неё нет и быть не может.
-  // Без этой проверки страница жаловалась на отсутствие карты страниц и на
-  // темы без ссылок на учебник — то есть сообщала о поломке там, где всё
-  // работает как задумано.
-  const fromMaterial = Boolean(plan.material);
+  // Все темы пройдены: прогноз больше ничего не значит.
+  const courseDone = allTopicsCount > 0 && states.currentTopicId === null;
+  const lede = courseDone
+    ? "Курс пройден."
+    : courseLede(forecast, {
+        sessionsPerWeek: plan.recommended_sessions_per_week,
+        minutesPerSession: plan.recommended_session_minutes,
+        finishDate: plan.forecast_finish_date,
+      });
+
+  const deadlineIso = goal?.desired_finish_date ?? null;
+  const feasible = forecast?.desiredDeadlineFeasible ?? null;
+  const advice = forecast ? paceAdvice(forecast, deadlineIso) : null;
+  const sourceTitle = book ? coverTitle(book.title) : (material?.title ?? "");
+  const canEdit = plan.status !== "active" && plan.status !== "archived";
+  const siblingIndex = siblings.findIndex((item) => item.id === plan.id);
 
   return (
-    <CoffeePageShell>
-      {/* Название программы — это СОДЕРЖАНИЕ страницы, а не её подпись, и
-          поэтому оно живёт здесь, а не в оболочке. Верхняя панель приложения
-          печатает статичное «Программа», одинаковое для всех курсов; какой
-          именно курс открыт, отвечает только эта строка. */}
-      <header className="mb-7 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-tm-line pb-6">
-        <div className="min-w-0">
-          <h1 className="font-serif text-[26px] leading-tight tracking-[-0.02em] text-tm-ink sm:text-[30px]">
-            {plan.title}
-          </h1>
-          {plan.objective ? (
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-6 text-tm-muted">
-              {plan.objective}
-            </p>
-          ) : null}
-        </div>
+    <div className="content view cur-page">
+      <Link className="back" href="/dashboard/curriculum">
+        Курсы и книги
+      </Link>
 
-        {book && (
-          <div className="shrink-0 text-right">
-            <p className={paperCaption}>Учебник</p>
-            <p
-              className="mt-0.5 max-w-[240px] truncate text-[13px] text-tm-ink"
-              title={book.title}
-            >
-              {cleanDocumentTitle(book.title)}
-            </p>
-          </div>
-        )}
+      <header className="head">
+        <h1 className="title">{plan.title}</h1>
+        <div className="head-tools">
+          {siblings.length > 1 && siblingIndex >= 0 ? (
+            <nav className="pager" aria-label="Другие курсы предмета">
+              <Link
+                className="icon-btn"
+                aria-label="Предыдущий курс"
+                href={`/dashboard/curriculum/plan/${siblings[(siblingIndex - 1 + siblings.length) % siblings.length].id}`}
+              >
+                <Icon name="chev-l" />
+              </Link>
+              <span>
+                {siblingIndex + 1} из {siblings.length}
+              </span>
+              <Link
+                className="icon-btn"
+                aria-label="Следующий курс"
+                href={`/dashboard/curriculum/plan/${siblings[(siblingIndex + 1) % siblings.length].id}`}
+              >
+                <Icon name="chev-r" />
+              </Link>
+            </nav>
+          ) : null}
+          <PlanActions
+            plan={plan}
+            approving={busy}
+            onApprove={() => void approve()}
+            onEditPace={() => setPacing((value) => !value)}
+            onEditStructure={() => setEditing(true)}
+            onError={setActionError}
+          />
+        </div>
       </header>
 
-      {plan.status === "rejected" && (
-        <div className="mb-5 rounded-[14px] border border-tm-accent-line bg-tm-bg px-4 py-3 text-[12px] leading-5 text-tm-accent">
-          Эту программу забраковал рецензент, поэтому начать по ней занятия
-          нельзя. Постройте её заново — исходный учебник и цель сохранены.
-        </div>
+      {lede ? (
+        <p className="lede">{lede}</p>
+      ) : (
+        <p className="lede">Ритм занятий не задан, без него календарь не построить.</p>
       )}
 
-      {blockers.length > 0 && (
-        <div className="mb-5 rounded-[14px] border border-tm-accent-line bg-tm-bg px-4 py-3">
-          <p className="text-[12px] font-medium text-tm-accent">
-            Рецензент оставил замечания
-          </p>
-          <ul className="mt-1.5 space-y-1 text-[12px] leading-5 text-tm-muted">
-            {blockers.map((finding, index) => (
-              <li key={`${finding.kind}-${index}`}>{finding.message}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {plan.objective && plan.objective !== plan.title ? (
+        <p className="course-goal">{plan.objective}</p>
+      ) : null}
 
-      {degraded && !fromMaterial && (
-        <div className="mb-5 rounded-[14px] bg-tm-surface-2 px-4 py-3 text-[12px] leading-5 text-tm-muted">
-          Учебник не загрузился, поэтому карта страниц недоступна. Сама
-          программа показана полностью.
-        </div>
-      )}
+      {error ? (
+        <p className="cur-alert is-bad" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {actionError ? (
+        <p className="cur-alert is-bad" role="alert">
+          {actionError}
+        </p>
+      ) : null}
 
-      {path && (
-        <PlanPath
+      {plan.status === "archived" ? (
+        <p className="cur-alert">Это прежняя версия программы, её заменила более новая.</p>
+      ) : null}
+      {plan.status === "rejected" ? (
+        <p className="cur-alert is-bad">
+          Эту программу забраковала проверка, поэтому начать по ней занятия нельзя. Построй её заново:
+          учебник и цель сохранены.
+        </p>
+      ) : null}
+      {blockers.length > 0 ? (
+        <div className="cur-alert is-bad">
+          <div>
+            Проверка оставила замечания
+            <ul className="cur-alert-list">
+              {blockers.map((finding, index) => (
+                <li key={`${finding.kind}-${index}`}>{finding.message}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+      {degraded ? (
+        <p className="cur-alert">Учебник не загрузился, поэтому страницы книги недоступны. Сама программа показана полностью.</p>
+      ) : null}
+      {sourceDeleted ? (
+        <p className="cur-alert">Источник этой программы удалён, поэтому ссылок на страницы нет.</p>
+      ) : null}
+
+      {pacing ? (
+        <PlanPaceForm
           plan={plan}
           goal={goal}
-          path={path}
-          bookLines={bookLines}
-          hoveredModuleId={hoveredModuleId}
           onPlanChange={onPlanChange}
+          onDeadlineChange={onDeadlineChange}
+          onClose={() => setPacing(false)}
         />
-      )}
+      ) : null}
 
-      {/* Пути нет — у программы нет ни одной главы с ненулевым временем. Книгу
-          это не отменяет: строку покрытия показываем всё равно. */}
-      {!path && bookLines.length > 0 && (
-        <p className={`${paperCard} px-4 py-3 text-[11px] leading-5 text-tm-faint`}>
-          {bookLines.join(" ")}
-        </p>
-      )}
+      {path ? <PlanPath path={path} states={states} hoveredModuleId={hoveredModuleId} /> : null}
 
-      {everythingUnsourced && !fromMaterial && (
-        <div className={`${paperCard} mb-1 mt-5 px-4 py-3 text-[12px] leading-5 text-tm-muted`}>
-          Ни одна тема не сослалась на страницы учебника — программа построена
-          по смыслу, а не по разделам книги.
+      <CourseNotes
+        deadline={deadlineIso}
+        feasible={feasible}
+        advice={advice}
+        milestones={path?.milestones ?? []}
+        warnings={forecast?.warnings ?? []}
+        noSchedule={plan.status === "active" && !progress && !progressFailed}
+      />
+
+      {book || material ? (
+        <div
+          className="src-book course-src"
+          data-attach={`${book ? "Книга" : kindLabel(material?.kind ?? "custom")} «${sourceTitle}»`}
+        >
+          <span className={`book mini ${coverClass(goal?.normalized_subject || sourceTitle)}`} aria-hidden="true" />
+          <span>
+            {material?.url ? (
+              <a className="link" href={material.url} target="_blank" rel="noreferrer noopener">
+                {sourceTitle}
+              </a>
+            ) : (
+              sourceTitle
+            )}
+            <small>
+              {book
+                ? [coverAuthor(book.authors), book.page_count > 0 ? `${book.page_count} стр.` : ""]
+                    .filter(Boolean)
+                    .join(", ")
+                : material
+                  ? `${kindLabel(material.kind)}, пройдено ${material.completed_units} из ${material.total_units} ${material.units_word}`
+                  : ""}
+            </small>
+            {coverage ? <small>{coverage}</small> : null}
+          </span>
         </div>
+      ) : null}
+
+      {everythingUnsourced ? (
+        <p className="cur-alert">
+          Ни одна тема не сослалась на страницы учебника: программа построена по смыслу, а не по разделам
+          книги.
+        </p>
+      ) : null}
+
+      {editing && canEdit ? (
+        <PlanStructureEditor plan={plan} onPlanChange={onPlanChange} onClose={() => setEditing(false)} />
+      ) : plan.modules.length > 0 ? (
+        <PlanModules
+          plan={plan}
+          states={states}
+          sourceTitle={sourceTitle}
+          onHoverTopic={setHoveredTopicId}
+          onAsk={ask}
+        />
+      ) : (
+        <p className="cur-alert">В программе пока нет ни одной главы. Построй её заново.</p>
       )}
 
-      <div className="mt-7">
-        {plan.modules.length > 0 ? (
-          <PlanModules
-            plan={plan}
-            hoveredTopicId={hoveredTopicId}
-            onHoverTopic={setHoveredTopicId}
-          />
-        ) : (
-          <div className={`${paperCard} p-6 text-[13px] text-tm-muted`}>
-            В программе пока нет ни одного модуля. Постройте её заново.
-          </div>
-        )}
-      </div>
-
-      <div className="mt-8 border-t border-tm-line pt-6">
-        <PlanActions
-          plan={plan}
-          approving={busy}
-          approveError={error}
-          onApprove={() => void approve()}
-          onPlanChange={onPlanChange}
-        />
-      </div>
-    </CoffeePageShell>
+      {plan.created_at ? (
+        <p className="course-foot">Программа построена {formatPlanDate(plan.created_at)}</p>
+      ) : null}
+    </div>
   );
+}
+
+/** «5» → «глава 5», а напечатанное в книге «Глава 5» остаётся как есть. */
+function chapterWord(label: string): string {
+  return /^\d/.test(label) ? `глава ${label}` : label;
+}
+
+function CourseNotes({
+  deadline,
+  feasible,
+  advice,
+  milestones,
+  warnings,
+  noSchedule,
+}: {
+  deadline: string | null;
+  feasible: boolean | null;
+  advice: string | null;
+  milestones: { id: string; title: string; moduleLabel: string }[];
+  warnings: string[];
+  noSchedule: boolean;
+}) {
+  // Срок обсуждается, только если его задавали: `null` здесь это «не спрашивали», а не
+  // «не успеешь».
+  const lines = [
+    feasible === true && deadline ? (
+      <li key="deadline">Успеваешь к сроку: {dayMonth(deadline)}.</li>
+    ) : null,
+    feasible === false && deadline ? (
+      <li key="deadline" className="is-bad">
+        К {dayMonth(deadline)} при таком темпе не выходит.{advice ? ` ${advice}` : ""}
+      </li>
+    ) : null,
+    ...milestones.map((milestone) => (
+      <li key={milestone.id}>
+        Веха: {milestone.title}
+        {milestone.moduleLabel ? `, ${chapterWord(milestone.moduleLabel)}` : ""}.
+      </li>
+    )),
+    ...warnings.map((code) => <li key={code}>{forecastWarningMessage(code)}</li>),
+    noSchedule ? (
+      <li key="no-schedule">
+        Расписания пока нет, поэтому прогресс не растёт.{" "}
+        <Link className="link" href="/dashboard/plan">
+          Разложить по дням
+        </Link>
+      </li>
+    ) : null,
+  ].filter(Boolean);
+
+  return lines.length > 0 ? <ul className="course-notes">{lines}</ul> : null;
 }

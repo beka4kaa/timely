@@ -1,0 +1,106 @@
+/* ══════════════════ Сейчас: то, чего нет в прототипе ══════════════════
+   В прототипе данные всегда на месте, а здесь бывают пустой день, ошибка и
+   предложения поменять план. Основа страницы лежит в ui.css. */
+
+/* Пока ничего не пришло */
+.now-skel { display: block; border-radius: 8px; background: var(--t-fill); }
+.now-skel + .now-skel { margin-top: 10px; }
+.now-skel.is-title { width: 280px; max-width: 60%; height: 33px; }
+.now-skel.is-week { width: 320px; max-width: 100%; height: 30px; border-radius: 11px; }
+.now-skel.is-big { width: 62%; height: 28px; }
+.now-skel.is-line { width: 44%; height: 14px; }
+.now-skel.is-btn { width: 136px; height: 32px; margin-top: 16px; border-radius: 10px; }
+.now-skel.is-tile { width: 76%; height: 13px; margin-top: 7px; border-radius: 6px; }
+
+/* Рядом может не быть ничего: например, у аккаунта без плана и без заданий */
+.home.no-side { grid-template-columns: minmax(0, 1fr); }
+
+/* ── Шаги ── */
+.step.is-live::before { background: var(--t-accent); box-shadow: none; }
+.step.is-live::after { background: color-mix(in srgb, var(--t-ink) 34%, transparent); }
+.step.is-free::before { display: none; }
+.step.is-rev::before { top: 24px; }
+/* Кружок у предложения ниже обычного: линия должна дойти до него */
+.step:has(+ .step.is-rev)::after { bottom: -26px; }
+
+.row .t small { margin-left: 7px; color: var(--t-muted); font-size: 12.5px; white-space: nowrap; }
+.row .t .i { display: inline-block; width: 13px; height: 13px; margin-left: 6px; color: var(--t-ok); stroke-width: 2; vertical-align: -1.5px; }
+.row-free { padding-block: 5px; }
+.row-free .t { color: var(--t-muted); font-size: 13px; }
+.school-list .is-now { color: var(--t-ink); font-weight: 500; }
+.school-foot { margin-top: 2px; }
+
+/* ── Идущий блок ── */
+.now-note { max-width: 56ch; margin-top: 6px; color: var(--t-muted); font-size: 13px; }
+.now-crit .link { white-space: normal; }
+.now-focus { margin-left: 4px; color: var(--t-muted); font-size: 12.5px; white-space: nowrap; }
+/* Tailwind знает класс ring и рисует по нему синюю обводку */
+.now .ring { box-shadow: none; transition: filter 140ms ease; }
+.now a.ring:hover { filter: contrast(1.25); }
+/* Обратный отсчёт длиннее минут: «24:13» должно уместиться внутри кольца */
+.now .ring.is-clock .ring-v { font-size: 16.5px; letter-spacing: -0.01em; }
+.now .ring.is-clock .ring-v small { margin-top: 3px; }
+
+/* Шага нет: те же колонки, но без кольца */
+.now-quiet .now-crit { max-width: 52ch; }
+.now-quiet.is-loading { min-height: 148px; }
+
+/* ── Предложение поменять план: поверхность, а не стекло, главный предмет один ── */
+.rev { --r: 14px; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 12px; margin-block: 5px; padding: 13px 14px 13px 10px; }
+.rev-mark { padding-top: 2px; color: var(--t-muted); }
+.rev-title { font-size: 14px; font-weight: 600; text-wrap: pretty; }
+.rev-sub { margin-top: 1px; color: var(--t-muted); font-size: 13px; }
+.rev-notice { margin-top: 9px; color: var(--t-warn); font-size: 13px; }
+.rev-blocked { margin-top: 9px; color: var(--t-ink-2); font-size: 13px; }
+.rev .q-acts { align-items: center; }
+.rev .q-acts small { color: var(--t-muted); font-size: 12.5px; }
+.rev .btn[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+
+/* ── Строки под лентой ── */
+.late-acts { display: flex; flex: none; gap: 2px; margin-left: auto; }
+.day-foot { margin-top: 6px; }
+
+/* ── Карточки сбоку ── */
+.tile.is-static:hover { background: var(--t-card-soft); transform: none; }
+.tile li small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.tile li + li { margin-top: 3px; }
+.tile-text { color: var(--t-muted); font-size: 13px; line-height: 1.4; }
+.tile-text + .go { margin-top: 6px; }
+.tile .go { text-align: left; }
+/* Вся карточка нажимается, а кнопка внутри остаётся одной кнопкой */
+.tile .go.is-stretched::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.tile-acts { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0 3px; }
+.tile-acts .btn { height: 28px; padding: 0 10px; }
+.tile-done { color: var(--t-muted); font-size: 12.5px; outline: none; }
+.tile-fail { color: var(--t-warn); font-size: 12.5px; }
+
+/* Колонка стала рядом карточек: короткие не растягиваются под длинную */
+@container main (max-width: 860px) {
+  .side { align-items: start; }
+  .tile.is-static { grid-column: 1 / -1; }
+}
+
+@container main (max-width: 620px) {
+  .rev { display: block; padding: 13px 14px; }
+  .rev-mark { display: none; }
+  .rev .q-diff li { grid-template-columns: minmax(0, 1fr); }
+  .rev .q-diff .chg { text-align: left; }
+  .now .ring.is-clock .ring-v { font-size: 14px; }
+  .step.is-rev::before { top: 22px; }
+  .now-skel.is-big { width: 70%; }
+}
+
+/* Самые узкие телефоны: семь дней должны уместиться */
+@container main (max-width: 350px) {
+  .weekline a { padding-inline: 6px; }
+}
+
+@media (max-width: 640px) {
+  .tile-acts .btn { height: 34px; }
+  .now-focus { flex-basis: 100%; margin: 2px 0 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .now-skel { animation: now-skel 1.6s ease-in-out infinite; }
+}
+@keyframes now-skel { 50% { opacity: 0.55; } }

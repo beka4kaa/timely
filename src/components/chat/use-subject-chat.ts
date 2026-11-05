@@ -22,9 +22,12 @@ import {
   updateChat,
   type AskCitation,
   type AskMessage,
+  type SubjectChat,
   type SubjectChatSummary,
 } from "@/lib/curriculum-api";
 import { readSse } from "@/lib/sse";
+
+import { STOPPED_ERROR } from "./ask-stages";
 
 export interface Turn extends AskMessage {
   citations?: AskCitation[];
@@ -35,7 +38,7 @@ export interface Turn extends AskMessage {
   error?: string;
   /** Этап, на котором находится ответ. Пусто — работа окончена. */
   stage?: string;
-  /** Сколько фрагментов нашлось: попадает в сводку под ответом. */
+  /** Сколько фрагментов нашлось. */
   found?: number;
   /** Длительность работы, мс. */
   durationMs?: number;
@@ -54,9 +57,8 @@ export interface UseSubjectChatOptions {
   /**
    * Какие чаты держать в списке.
    *
-   * `"subject"` — только текущего предмета: так устроена панель, где предмет
-   * выбирается сверху и служит папкой. `"all"` — все разом, для страницы, где
-   * история идёт сплошной лентой по дням.
+   * `"subject"` — только текущего предмета: так устроено мини-окно, где предмет
+   * выбирается в поле. `"all"` — все разом, для страницы чата.
    */
   scope?: "subject" | "all";
   /** Пока `false`, ничего не грузится: панель закрыта — запросов быть не должно. */
@@ -77,12 +79,28 @@ export interface SubjectChatEngine {
   chatId: string | null;
   /** Идёт первая загрузка списка. */
   loadingChats: boolean;
-  ask: (question: string, history?: Turn[]) => Promise<void>;
+  /** Список не загрузился. Пустым он от этого не становится. */
+  chatsFailed: boolean;
+  reloadChats: () => void;
+  /** `mode` — как тьютор ведёт разговор. Без него обычный режим. */
+  ask: (question: string, history?: Turn[], mode?: string) => Promise<void>;
+  /** Спросить заново то, на что не удалось ответить: неудачная пара уходит с экрана. */
+  retryLast: (mode?: string) => Promise<void>;
   stop: () => void;
   startNew: () => void;
-  openChat: (id: string) => Promise<void>;
+  /** Открывает разговор. `null` — открыть не вышло: удалён или нет связи. */
+  openChat: (id: string) => Promise<SubjectChat | null>;
   removeChat: (id: string) => Promise<void>;
   renameChat: (id: string, title: string) => Promise<void>;
+}
+
+/**
+ * Один разговор на экране. Новый объект на каждое открытие и на каждый новый чат: всё,
+ * что успело уйти в сеть для прошлого разговора, узнаёт по нему, что уже опоздало.
+ */
+interface Conversation {
+  /** Строка в базе. Пусто, пока разговор ни разу не сохранён. */
+  id: string | null;
 }
 
 export function useSubjectChat({
@@ -96,13 +114,32 @@ export function useSubjectChat({
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [chatsFailed, setChatsFailed] = useState(false);
+  const [listAttempt, setListAttempt] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const conversation = useRef<Conversation>({ id: null });
+  // Реплики, которые в базе уже есть: загруженные и только что записанные.
+  const storedTurns = useRef<Turn[] | null>(null);
+  // Записи идут строго по очереди: второй ответ не должен обогнать создание чата,
+  // иначе один разговор лёг бы в базу двумя строками.
+  const saves = useRef<Promise<void>>(Promise.resolve());
 
   // Предмет открытого разговора. Список чатов в режиме «все» от смены предмета
   // не перезагружается, но новый вопрос должен уйти в тот предмет, который
   // выбран СЕЙЧАС, — поэтому он читается из рефа, а не из замыкания `ask`.
   const goalRef = useRef(goalId);
   goalRef.current = goalId;
+
+  /**
+   * Переход к другому разговору. Лента очищается сразу: пока новая не загружена, на экране
+   * не должно быть старых реплик, иначе они записались бы в чужой чат.
+   */
+  const switchTo = useCallback((id: string | null) => {
+    abortRef.current?.abort();
+    conversation.current = { id };
+    setChatId(id);
+    setTurns([]);
+  }, []);
 
   // Список: в режиме предмета перезагружается при его смене, в режиме «все» —
   // один раз. Ключ строкой, потому что `null` — это законный предмет («без
@@ -117,36 +154,38 @@ export function useSubjectChat({
     if (!enabled) return;
     let alive = true;
     setLoadingChats(true);
+    setChatsFailed(false);
     void (async () => {
       const subject = goalRef.current;
       if (migrateLegacy && subject) await migrateLegacyTurns(subject);
       const rows = await listChats(
         scope === "all" ? undefined : subject,
-      ).catch(() => []);
+      ).catch(() => null);
       if (!alive) return;
-      setChats(rows);
+      setChats(rows ?? []);
+      setChatsFailed(rows === null);
       setLoadingChats(false);
     })();
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey, enabled, scope, migrateLegacy]);
+  }, [listKey, enabled, scope, migrateLegacy, listAttempt]);
+
+  const reloadChats = useCallback(() => setListAttempt((value) => value + 1), []);
 
   // Панель показывает чаты одного предмета, и открытый разговор из другого
   // предмета в ней выглядел бы чужим. На странице список общий, и закрывать
   // разговор при смене предмета в композере незачем.
   useEffect(() => {
     if (scope !== "subject") return;
-    abortRef.current?.abort();
-    setChatId(null);
-    setTurns([]);
-  }, [goalId, scope]);
+    switchTo(null);
+  }, [goalId, scope, switchTo]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const ask = useCallback(
-    async (question: string, historySource?: Turn[]) => {
+    async (question: string, historySource?: Turn[], mode?: string) => {
       const text = question.trim();
       if (!text || busy) return;
 
@@ -170,19 +209,23 @@ export function useSubjectChat({
         { role: "assistant", content: "", stage: goal ? "retrieving" : "answering" },
       ]);
 
-      const patchLast = (patch: Partial<Turn>) =>
+      // Прерванный поток может ещё отдать то, что лежит в буфере. Это уже чужая лента.
+      const patchLast = (patch: Partial<Turn>) => {
+        if (controller.signal.aborted) return;
         setTurns((prev) => {
           const next = [...prev];
           next[next.length - 1] = { ...next[next.length - 1], ...patch };
           return next;
         });
+      };
 
       try {
         const response = await askSubjectStream(
-          { goal_id: goal, message: text, history },
+          { goal_id: goal, message: text, history, ...(mode ? { mode } : {}) },
           controller.signal,
         );
         let answer = "";
+        let failed = false;
         for await (const { event, data } of readSse(response)) {
           if (event === "stage") {
             patchLast({
@@ -201,10 +244,11 @@ export function useSubjectChat({
           } else if (event === "done") {
             patchLast({ stage: "", durationMs: Date.now() - startedAt });
           } else if (event === "error") {
+            failed = true;
             patchLast({ stage: "", error: String(data.error ?? "Ошибка") });
           }
         }
-        if (!answer) {
+        if (!answer && !failed) {
           patchLast({ stage: "", error: "Пустой ответ." });
         }
       } catch (error) {
@@ -225,29 +269,45 @@ export function useSubjectChat({
     [busy, turns],
   );
 
+  const retryLast = useCallback(
+    async (mode?: string) => {
+      const question = turns[turns.length - 2];
+      if (busy || question?.role !== "user") return;
+      const earlier = turns.slice(0, -2);
+      setTurns(earlier);
+      await ask(question.content, earlier, mode);
+    },
+    [ask, busy, turns],
+  );
+
   // Сохраняем после завершённого ответа, а не на каждую букву потока: иначе на
-  // один вопрос уходит сотня запросов.
+  // один вопрос уходит сотня запросов. То, что только что загружено или записано,
+  // второй раз не пишем: открытие чата не должно поднимать его наверх списка.
   useEffect(() => {
-    if (busy || !turns.length) return;
-    let alive = true;
-    void (async () => {
-      const saved = await persistTurns({
-        chatId,
-        goalId: goalRef.current,
-        turns,
-      });
-      if (!alive || !saved) return;
-      if (saved.id !== chatId) setChatId(saved.id);
+    if (busy || !turns.length || turns === storedTurns.current) return;
+    storedTurns.current = turns;
+    const convo = conversation.current;
+    const goal = goalRef.current;
+    const showRow = (row: SubjectChatSummary) => {
+      const stillHere = conversation.current === convo;
+      if (stillHere) setChatId(row.id);
+      // В мини-окне ушедший разговор мог быть по другому предмету, и в этом списке ему
+      // не место. На странице список общий, и строка должна появиться в любом случае.
+      if (!stillHere && scope !== "all") return;
       setChats((prev) =>
-        prev.some((row) => row.id === saved.id)
-          ? prev.map((row) => (row.id === saved.id ? { ...row, ...saved } : row))
-          : [saved, ...prev],
+        prev.some((item) => item.id === row.id)
+          ? prev.map((item) => (item.id === row.id ? { ...item, ...row } : item))
+          : [row, ...prev],
       );
-    })();
-    return () => {
-      alive = false;
     };
-  }, [turns, busy, chatId]);
+    const showTitle = (id: string, title: string) =>
+      setChats((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, title } : item)),
+      );
+    saves.current = saves.current.then(() =>
+      persistTurns({ convo, goalId: goal, turns, showRow, showTitle }),
+    );
+  }, [turns, busy, scope]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -262,34 +322,47 @@ export function useSubjectChat({
       // ученику уже пригодилось. Пустой — заменяется пометкой.
       next[next.length - 1] = last.content
         ? { ...last, stage: "" }
-        : { ...last, stage: "", error: "Остановлено." };
+        : { ...last, stage: "", error: STOPPED_ERROR };
       return next;
     });
   }, []);
 
   /** Чистое состояние. Строка в базе появится с первым вопросом. */
-  const startNew = useCallback(() => {
-    abortRef.current?.abort();
-    setChatId(null);
-    setTurns([]);
-  }, []);
+  const startNew = useCallback(() => switchTo(null), [switchTo]);
 
-  const openChat = useCallback(async (id: string) => {
-    abortRef.current?.abort();
-    setChatId(id);
-    setTurns(await loadChatTurns(id));
-  }, []);
+  const openChat = useCallback(
+    async (id: string) => {
+      switchTo(id);
+      const convo = conversation.current;
+      // Чат мог быть удалён с другого устройства — показываем пустой, а не роняем панель.
+      const loaded = await getChat(id).catch(() => null);
+      // Пока ехал ответ, ученик ушёл к другому разговору: этот уже никому не нужен.
+      if (conversation.current !== convo) return loaded;
+      if (!loaded) {
+        switchTo(null);
+        return null;
+      }
+      const messages = (loaded.messages as Turn[]) ?? [];
+      storedTurns.current = messages;
+      setTurns(messages);
+      // Ссылка могла вести на чат, которого в загруженном списке нет.
+      setChats((prev) =>
+        prev.some((item) => item.id === id) || scope !== "all"
+          ? prev
+          : [{ ...loaded, message_count: messages.length }, ...prev],
+      );
+      return loaded;
+    },
+    [switchTo, scope],
+  );
 
   const removeChat = useCallback(
     async (id: string) => {
       await deleteChat(id).catch(() => undefined);
       setChats((prev) => prev.filter((row) => row.id !== id));
-      if (id === chatId) {
-        setChatId(null);
-        setTurns([]);
-      }
+      if (conversation.current.id === id) switchTo(null);
     },
-    [chatId],
+    [switchTo],
   );
 
   const renameChat = useCallback(async (id: string, title: string) => {
@@ -309,7 +382,10 @@ export function useSubjectChat({
     chats,
     chatId,
     loadingChats,
+    chatsFailed,
+    reloadChats,
     ask,
+    retryLast,
     stop,
     startNew,
     openChat,
@@ -341,49 +417,41 @@ async function migrateLegacyTurns(goalId: string): Promise<void> {
   }
 }
 
-async function loadChatTurns(chatId: string): Promise<Turn[]> {
-  try {
-    const chat = await getChat(chatId);
-    return (chat.messages as Turn[]) ?? [];
-  } catch {
-    // Чат мог быть удалён с другого устройства — показываем пустой, а не
-    // роняем панель.
-    return [];
-  }
-}
-
 /**
- * Пишет разговор в базу. Возвращает строку списка или `null` при отказе.
+ * Пишет разговор в базу.
  *
  * Чат создаётся здесь, а не при нажатии «Новый чат»: иначе список зарастал бы
- * пустыми строками от каждого случайного нажатия.
+ * пустыми строками от каждого случайного нажатия. Отказ молчаливый: разговор на
+ * экране остаётся и сохранится со следующим ответом.
  */
 async function persistTurns({
-  chatId,
+  convo,
   goalId,
   turns,
+  showRow,
+  showTitle,
 }: {
-  chatId: string | null;
+  convo: Conversation;
   goalId: string | null;
   turns: Turn[];
-}): Promise<SubjectChatSummary | null> {
+  showRow: (row: SubjectChatSummary) => void;
+  showTitle: (id: string, title: string) => void;
+}): Promise<void> {
   const messages = turns.slice(-MAX_STORED_TURNS);
   try {
-    if (chatId) {
-      const updated = await updateChat(chatId, { messages });
-      return { ...updated, message_count: messages.length };
+    if (convo.id) {
+      const updated = await updateChat(convo.id, { messages });
+      showRow({ ...updated, message_count: messages.length });
+      return;
     }
     const created = await createChat(goalId, { messages });
+    convo.id = created.id;
+    showRow({ ...created, message_count: messages.length });
     // Название придумывается после первого ответа и отдельным запросом: внутри
     // потока ученик ждал бы ещё и заголовок, которого не видит.
     const title = await renameChatAutomatically(created.id);
-    return {
-      ...created,
-      title: title || created.title,
-      message_count: messages.length,
-    };
+    if (title) showTitle(created.id, title);
   } catch {
     // Разговор на экране остаётся; сохранится со следующим ответом.
-    return null;
   }
 }

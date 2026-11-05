@@ -12,8 +12,11 @@ function chat(id: string, goal: string | null, day: number) {
   return { id, goal, updated_at: new Date(2026, 7, day).toISOString() };
 }
 
-test("папка на каждый предмет, в порядке каталога", () => {
-  const folders = buildChatFolders([], SUBJECTS);
+test("предметы идут в порядке каталога", () => {
+  const folders = buildChatFolders(
+    [chat("a", "алгебра", 10), chat("b", "физика", 9)],
+    SUBJECTS,
+  );
 
   assert.deepEqual(
     folders.map((folder) => folder.title),
@@ -21,12 +24,16 @@ test("папка на каждый предмет, в порядке катал�
   );
 });
 
-test("пустой предмет остаётся папкой", () => {
-  // Это способ начать разговор по предмету, а не мусор в списке.
+test("группы без разговоров нет", () => {
+  // Подпись, под которой ничего нет, это шум.
+  assert.deepEqual(buildChatFolders([], SUBJECTS), []);
+
   const folders = buildChatFolders([chat("a", "физика", 10)], SUBJECTS);
 
-  assert.equal(folders[1].title, "Алгебра");
-  assert.deepEqual(folders[1].chats, []);
+  assert.deepEqual(
+    folders.map((folder) => folder.title),
+    ["Механика"],
+  );
 });
 
 test("чаты ложатся в свой предмет", () => {
@@ -45,7 +52,7 @@ test("чаты ложатся в свой предмет", () => {
   );
 });
 
-test("внутри папки свежие сверху", () => {
+test("внутри группы свежие сверху", () => {
   const folders = buildChatFolders(
     [chat("старый", "физика", 1), chat("свежий", "физика", 11)],
     SUBJECTS,
@@ -57,34 +64,31 @@ test("внутри папки свежие сверху", () => {
   );
 });
 
-test("«Без книги» идёт последней и только когда не пуста", () => {
-  assert.equal(
-    buildChatFolders([chat("a", "физика", 10)], SUBJECTS).length,
-    2,
-  );
-
+test("«Общие» идут первыми", () => {
   const folders = buildChatFolders(
     [chat("a", "физика", 10), chat("b", null, 9)],
     SUBJECTS,
   );
 
-  assert.equal(folders.length, 3);
-  assert.equal(folders[2].title, NO_BOOK_FOLDER);
-  assert.equal(folders[2].goalId, null);
+  assert.deepEqual(
+    folders.map((folder) => folder.title),
+    [NO_BOOK_FOLDER, "Механика"],
+  );
+  assert.equal(folders[0].goalId, null);
 });
 
 test("разговор удалённого предмета не теряется", () => {
   // Предмет мог уйти, пока ехал список. Терять переписку молча нельзя.
   const folders = buildChatFolders([chat("a", "исчезнувший", 10)], SUBJECTS);
 
-  assert.equal(folders[2].title, NO_BOOK_FOLDER);
+  assert.equal(folders[0].title, NO_BOOK_FOLDER);
   assert.deepEqual(
-    folders[2].chats.map((row) => row.id),
+    folders[0].chats.map((row) => row.id),
     ["a"],
   );
 });
 
-test("без предметов остаются только разговоры без книги", () => {
+test("без предметов остаются только общие разговоры", () => {
   const folders = buildChatFolders([chat("a", null, 10)], []);
 
   assert.equal(folders.length, 1);

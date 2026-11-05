@@ -1,34 +1,45 @@
 "use client"
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+// Мои группы: таблицы для друзей и класса. Видят их только участники.
+
+import Link from "next/link"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Plus, Users, ChevronLeft, Search, X, Check, Crown, Trophy } from "lucide-react"
-import { cn } from "@/lib/utils"
+
+import { Icon } from "@/components/shell/icons"
+import { initialsOf } from "@/components/shell/sidebar"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  listPrivateBoards, createPrivateBoard, addBoardMember, searchUsers,
-  type PrivateBoard, type UserSearchResult, type LeaderboardUser,
+  addBoardMember,
+  createPrivateBoard,
+  listPrivateBoards,
+  searchUsers,
+  type LeaderboardUser,
+  type PrivateBoard,
+  type UserSearchResult,
 } from "@/lib/contest-api"
+import { ru } from "@/lib/contest-view"
+import { countryName, grouped } from "@/lib/rating-view"
 
-/** Display label for an account: local part of an email, else the username. */
-function accountLabel(username: string) {
-  return username.includes("@") ? username.split("@")[0] : username
-}
-function initials(s: string) {
-  const base = accountLabel(s)
-  return base.slice(0, 2).toUpperCase()
+function members(count: number) {
+  return `${count} ${ru(count, "участник", "участника", "участников")}`
 }
 
-/* ─────────────── Create-board dialog ─────────────── */
-function CreateBoardDialog({ open, onOpenChange, onCreated }: {
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : "попробуй ещё раз"
+}
+
+/* ─────────────── Новая группа ─────────────── */
+function CreateBoardDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
   open: boolean
-  onOpenChange: (v: boolean) => void
-  onCreated: (b: PrivateBoard) => void
+  onOpenChange: (value: boolean) => void
+  onCreated: (board: PrivateBoard) => void
 }) {
   const [name, setName] = useState("")
   const [query, setQuery] = useState("")
@@ -39,195 +50,278 @@ function CreateBoardDialog({ open, onOpenChange, onCreated }: {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!open) { setName(""); setQuery(""); setResults([]); setSelected(new Map()) }
+    if (!open) {
+      setName("")
+      setQuery("")
+      setResults([])
+      setSelected(new Map())
+    }
   }, [open])
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current)
-    if (!query.trim()) { setResults([]); return }
+    if (!query.trim()) {
+      setResults([])
+      setSearching(false)
+      return
+    }
     setSearching(true)
     debounce.current = setTimeout(() => {
       searchUsers(query.trim())
         .then(setResults)
-        .catch((e) => toast.error(`Поиск не удался: ${e.message}`))
+        .catch((error) => toast.error(`Поиск не удался: ${errorText(error)}`))
         .finally(() => setSearching(false))
     }, 280)
-    return () => { if (debounce.current) clearTimeout(debounce.current) }
+    return () => {
+      if (debounce.current) clearTimeout(debounce.current)
+    }
   }, [query])
 
-  const toggle = (u: UserSearchResult) =>
-    setSelected((m) => { const n = new Map(m); n.has(u.id) ? n.delete(u.id) : n.set(u.id, u); return n })
+  const toggle = (user: UserSearchResult) =>
+    setSelected((current) => {
+      const next = new Map(current)
+      if (next.has(user.id)) next.delete(user.id)
+      else next.set(user.id, user)
+      return next
+    })
 
   const create = async () => {
-    if (!name.trim()) { toast.error("Введите название лидерборда"); return }
+    if (!name.trim()) {
+      toast.error("Назови группу")
+      return
+    }
     setSaving(true)
     try {
       let board = await createPrivateBoard(name.trim())
-      for (const u of Array.from(selected.values())) {
-        board = await addBoardMember(board.id, { userId: u.id })
+      for (const user of Array.from(selected.values())) {
+        board = await addBoardMember(board.id, { userId: user.id })
       }
-      toast.success(`Лидерборд «${board.name}» создан`)
+      toast.success(`Группа «${board.name}» создана`)
       onCreated(board)
       onOpenChange(false)
-    } catch (e: any) {
-      toast.error(`Ошибка: ${e.message}`)
-    } finally { setSaving(false) }
+    } catch (error) {
+      toast.error(`Не получилось: ${errorText(error)}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Новый приватный лидерборд</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Новая группа</DialogTitle>
+        </DialogHeader>
         <div className="flex flex-col gap-3 py-1">
-          <Input placeholder="Название (например, «Группа МатАн»)" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            aria-label="Название группы"
+            placeholder="Например, 9 «Б»"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
 
-          {/* selected chips */}
-          {selected.size > 0 && (
+          {selected.size > 0 ? (
             <div className="flex flex-wrap gap-1.5">
-              {Array.from(selected.values()).map((u) => (
-                <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs">
-                  {accountLabel(u.username)}
-                  <button onClick={() => toggle(u)} className="text-muted-foreground hover:text-foreground"><X className="w-3 h-3" /></button>
+              {Array.from(selected.values()).map((user) => (
+                <span key={user.id} className="q-chip">
+                  <span>{user.username}</span>
+                  <button type="button" aria-label={`Убрать ${user.username}`} onClick={() => toggle(user)}>
+                    <Icon name="x" />
+                  </button>
                 </span>
               ))}
             </div>
-          )}
+          ) : null}
 
-          {/* player search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Найти игрока по имени или ID…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          </div>
+          <Input
+            aria-label="Найти ученика"
+            placeholder="Имя пользователя или номер"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
 
-          <div className="max-h-52 overflow-y-auto rounded-lg border border-border divide-y divide-border min-h-[3rem]">
+          <div className="pg-found">
             {searching ? (
-              <div className="flex items-center justify-center py-5 text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /></div>
+              <p className="small-note">Ищу…</p>
             ) : results.length === 0 ? (
-              <p className="px-3 py-4 text-center text-sm text-muted-foreground">{query.trim() ? "Никого не найдено" : "Начните вводить имя или ID"}</p>
-            ) : results.map((u) => {
-              const on = selected.has(u.id)
-              return (
-                <button key={u.id} type="button" onClick={() => toggle(u)} className={cn("w-full flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50", on && "bg-muted/60")}>
-                  <Avatar className="h-8 w-8 shrink-0 border border-border"><AvatarFallback className="bg-muted text-[10px] font-bold">{initials(u.username)}</AvatarFallback></Avatar>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium truncate">{accountLabel(u.username)}</span>
-                    <span className="block text-xs text-muted-foreground truncate">ID {u.id} · {u.overall_elo} pts</span>
-                  </span>
-                  <span className={cn("w-5 h-5 rounded-full border flex items-center justify-center shrink-0", on ? "bg-primary border-primary" : "border-border")}>
-                    {on && <Check className="w-3 h-3 text-primary-foreground" />}
-                  </span>
-                </button>
-              )
-            })}
+              <p className="small-note">{query.trim() ? "Никого не нашлось" : "Начни вводить имя или номер"}</p>
+            ) : (
+              results.map((user) => {
+                const on = selected.has(user.id)
+                return (
+                  <button
+                    key={user.id}
+                    type="button"
+                    className="pg-pick"
+                    aria-pressed={on}
+                    onClick={() => toggle(user)}
+                  >
+                    <span className="av" aria-hidden="true">
+                      {initialsOf(user.username)}
+                    </span>
+                    <span className="pg-pick-who">
+                      <b>{user.username}</b>
+                      <small>
+                        № {user.id}, {grouped(user.overall_elo)} {ru(user.overall_elo, "балл", "балла", "баллов")}
+                      </small>
+                    </span>
+                    {on ? <Icon name="check" /> : null}
+                  </button>
+                )
+              })
+            )}
           </div>
-          <p className="text-xs text-muted-foreground">{selected.size} игрок(ов) выбрано · вы будете добавлены автоматически</p>
+          <p className="small-note">Тебя добавим в группу сами.</p>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Отмена</Button>
-          <Button onClick={create} disabled={saving}>{saving && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}Создать</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Отмена
+          </Button>
+          <Button onClick={create} disabled={saving}>
+            {saving ? "Создаю…" : "Создать"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-/* ─────────────── Board detail (ranking) ─────────────── */
-function BoardDetail({ board, onBack }: { board: PrivateBoard; onBack: () => void }) {
+/* ─────────────── Таблица группы ─────────────── */
+function BoardDetail({
+  board,
+  meId,
+  onBack,
+}: {
+  board: PrivateBoard
+  meId: number | null
+  onBack: () => void
+}) {
   const ranked = useMemo(
-    () => [...board.members].sort((a, b) => b.overall_elo - a.overall_elo),
+    () => [...board.members].sort((a, b) => b.overall_elo - a.overall_elo || a.id - b.id),
     [board.members],
   )
-  const rankColor = (i: number) => (i === 0 ? "text-amber-400" : i === 1 ? "text-zinc-300" : i === 2 ? "text-orange-400" : "text-muted-foreground")
 
   return (
-    <div className="mt-4">
-      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3">
-        <ChevronLeft className="w-4 h-4" /> Все лидерборды
+    <div className="lb-main">
+      <button className="back" type="button" onClick={onBack}>
+        Все группы
       </button>
-      <div className="flex items-center gap-2 mb-1">
-        <Users className="w-5 h-5 text-primary" />
-        <h2 className="text-xl font-extrabold tracking-tight">{board.name}</h2>
+      <div className="lb-head rb-group-head">
+        <h2>{board.name}</h2>
+        <span>{members(ranked.length)}</span>
       </div>
-      <p className="text-sm text-muted-foreground mb-4">Владелец: {accountLabel(board.owner_name || "")} · {ranked.length} участник(ов)</p>
-
-      <div className="rounded-xl border border-border overflow-hidden">
-        <div className="grid grid-cols-[56px_1fr_90px] items-center gap-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border bg-card/40">
-          <span className="text-center">#</span><span>Игрок</span><span className="text-right">Рейтинг</span>
-        </div>
-        <div className="divide-y divide-border/60">
-          {ranked.map((u: LeaderboardUser, i) => (
-            <div key={u.id} className="grid grid-cols-[56px_1fr_90px] items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors">
-              <span className={cn("text-center font-extrabold tabular-nums flex items-center justify-center gap-1", rankColor(i))}>
-                {i === 0 && <Crown className="w-3.5 h-3.5" />}{i + 1}
-              </span>
-              <div className="flex items-center gap-3 min-w-0">
-                <Avatar className="h-9 w-9 border border-border shrink-0"><AvatarFallback className="bg-muted text-xs font-bold">{initials(u.username)}</AvatarFallback></Avatar>
-                <div className="min-w-0">
-                  <p className="font-semibold text-sm truncate">{accountLabel(u.username)}</p>
-                  {u.id === board.owner ? <p className="text-xs text-amber-400/80">владелец</p> : <p className="text-xs text-muted-foreground truncate">ID {u.id}</p>}
-                </div>
-              </div>
-              <span className="text-right font-bold tabular-nums">{u.overall_elo}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ol>
+        {ranked.map((user: LeaderboardUser, index) => {
+          const mine = user.id === meId
+          return (
+            <li key={user.id}>
+              <Link
+                className={mine ? "lr rb-row is-me glass" : "lr rb-row"}
+                href={mine ? "/dashboard/profile" : `/dashboard/profile/${user.id}`}
+              >
+                <span className="n">{index + 1}</span>
+                <span className="av" aria-hidden="true">
+                  {initialsOf(user.username)}
+                </span>
+                <span className="who">
+                  <b>{mine ? "Ты" : user.username}</b>
+                  {countryName(user.country_code) ? <small>{countryName(user.country_code)}</small> : null}
+                </span>
+                <span className="m tr">{user.id === board.owner ? "создатель" : ""}</span>
+                <span className="p">{grouped(user.overall_elo)}</span>
+              </Link>
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 }
 
-/* ─────────────── Root ─────────────── */
-export function PrivateLeaderboards() {
+/* ─────────────── Список групп ─────────────── */
+export function PrivateLeaderboards({ meId, noAccount }: { meId: number | null; noAccount: boolean }) {
   const [boards, setBoards] = useState<PrivateBoard[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [activeId, setActiveId] = useState<number | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
+    setFailed(false)
     listPrivateBoards()
       .then(setBoards)
-      .catch(() => setBoards([]))
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false))
   }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
-  const active = boards.find((b) => b.id === activeId) ?? null
-
-  if (active) return <BoardDetail board={active} onBack={() => setActiveId(null)} />
+  const active = boards.find((board) => board.id === activeId) ?? null
+  if (active) return <BoardDetail board={active} meId={meId} onBack={() => setActiveId(null)} />
 
   return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <p className="text-sm text-muted-foreground">Лидерборды для твоих групп — добавляй игроков и соревнуйтесь отдельно.</p>
-        <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="w-4 h-4 mr-1.5" />Создать</Button>
+    <section aria-label="Мои группы">
+      <div className="rb-groups-head">
+        <h2 className="sec">Мои группы</h2>
+        {!noAccount ? (
+          <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
+            <Icon name="plus" />
+            Новая группа
+          </button>
+        ) : null}
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
+        <p className="small-note" role="status">
+          Загружаю группы…
+        </p>
+      ) : failed ? (
+        <section className="ct-note card" role="alert">
+          <h2>Группы не загрузились</h2>
+          <p>Проверь связь и попробуй ещё раз.</p>
+          <button className="btn btn-line" type="button" onClick={load}>
+            Повторить
+          </button>
+        </section>
       ) : boards.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-center py-16 gap-3">
-          <Trophy className="w-10 h-10 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground max-w-xs">У тебя пока нет приватных лидербордов. Создай первый и добавь игроков по имени или ID.</p>
-        </div>
+        <section className="ct-note card">
+          <h2>Групп пока нет</h2>
+          <p>
+            {noAccount
+              ? "Группы появятся, когда аккаунт подключат к рейтингу."
+              : "Создай группу с друзьями или классом и соревнуйтесь только между собой."}
+          </p>
+        </section>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {boards.map((b) => (
-            <button key={b.id} onClick={() => setActiveId(b.id)} className="text-left rounded-xl border border-border bg-card/40 p-4 hover:bg-muted/40 hover:border-border transition-colors">
-              <div className="flex items-center gap-2 mb-2"><Users className="w-4 h-4 text-primary" /><span className="font-bold truncate">{b.name}</span></div>
-              <div className="flex -space-x-2 mb-2">
-                {b.members.slice(0, 5).map((m) => (
-                  <Avatar key={m.id} className="h-7 w-7 border-2 border-background"><AvatarFallback className="bg-muted text-[9px] font-bold">{initials(m.username)}</AvatarFallback></Avatar>
-                ))}
-                {b.members.length > 5 && <span className="h-7 w-7 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[9px] font-bold">+{b.members.length - 5}</span>}
-              </div>
-              <p className="text-xs text-muted-foreground">{b.members.length} участник(ов)</p>
-            </button>
+        <ul className="rb-groups">
+          {boards.map((board) => (
+            <li key={board.id}>
+              <button className="rb-group card" type="button" onClick={() => setActiveId(board.id)}>
+                <b>{board.name}</b>
+                <span className="rb-faces" aria-hidden="true">
+                  {board.members.slice(0, 5).map((member) => (
+                    <span key={member.id} className="av">
+                      {initialsOf(member.username)}
+                    </span>
+                  ))}
+                </span>
+                <small>{members(board.members.length)}</small>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
-      <CreateBoardDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={(b) => { load(); setActiveId(b.id) }} />
-    </div>
+      <CreateBoardDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(board) => {
+          load()
+          setActiveId(board.id)
+        }}
+      />
+    </section>
   )
 }

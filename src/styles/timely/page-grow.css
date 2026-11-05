@@ -1,0 +1,141 @@
+/* Цели и привычки: то, чего не было в прототипе. Настоящие данные просят больше состояний,
+   чем картинка: меню на карточке, пустые страницы, ошибки, своя дата в окне цели. */
+
+.ai-out .q-diff .chg { min-width: 0; overflow-wrap: anywhere; }
+.gr-offer-goals { margin-top: 10px; }
+.gr-offer-goals .gs-chip > span { max-width: 230px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ══════════════════ Меню на карточке ══════════════════ */
+.gm { display: inline-flex; flex: none; }
+.gm-btn { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--t-muted); transition: background 120ms ease, color 120ms ease; }
+.gm-btn:hover, .gm-btn[aria-expanded="true"] { background: var(--t-hover); color: var(--t-ink); }
+.gm-pop {
+  position: fixed; inset: auto; margin: 0; width: 236px; max-height: min(380px, calc(100dvh - 16px)); overflow: auto; padding: 5px;
+  border: 0; border-radius: 14px; background: var(--t-glass-strong); color: var(--t-ink);
+  -webkit-backdrop-filter: blur(30px) saturate(130%); backdrop-filter: blur(30px) saturate(130%);
+  box-shadow: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi);
+  font-family: var(--t-sans); font-size: 13px; font-weight: 400; line-height: 1.35; letter-spacing: normal; text-align: left; cursor: default; user-select: auto; -webkit-user-select: auto;
+}
+.gm-pop.gm-pop :focus-visible { outline-color: color-mix(in srgb, var(--t-ink) 62%, transparent); }
+.gm-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 6px 9px; border-radius: 9px; color: var(--t-ink); text-align: left; }
+.gm-item:hover { background: var(--t-hover); }
+.gm-item .i { width: 15px; height: 15px; color: var(--t-ink-2); }
+.gm-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.gm-note { padding: 6px 9px 8px; color: var(--t-muted); font-size: 12.5px; }
+.gm-form { padding: 4px; }
+.gm-input { width: 100%; padding: 6px 9px; border: 0; border-radius: 9px; outline: none; background: var(--t-fill); color: var(--t-ink); font: inherit; }
+.gm-input:focus { box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.gm-acts { display: flex; gap: 6px; margin-top: 8px; }
+.gm-acts .btn { height: 30px; }
+.gm-range { display: block; padding: 6px 9px 12px; }
+.gm-range-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 9px; color: var(--t-muted); font-size: 12.5px; }
+.gm-range-head b { color: var(--t-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.gm-range input {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 8px; margin: 0; border-radius: 99px; cursor: pointer;
+  background: linear-gradient(var(--t-accent), var(--t-accent)) no-repeat 0 0 / var(--v, 0%) 100%, var(--t-fill);
+}
+.gm-range input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--t-card); box-shadow: 0 0 0 0.5px var(--t-line-strong), 0 1px 3px rgba(0, 0, 0, 0.28); }
+.gm-range input::-moz-range-thumb { width: 20px; height: 20px; border: 0; border-radius: 50%; background: var(--t-card); box-shadow: 0 0 0 0.5px var(--t-line-strong), 0 1px 3px rgba(0, 0, 0, 0.28); }
+.gm-range input::-moz-range-track { background: transparent; }
+
+/* ══════════════════ Привычки ══════════════════ */
+.hb { -webkit-user-select: none; user-select: none; }
+.hb-bits { display: contents; }
+/* Строка под названием: чья это привычка и меню. Меню тихое: видно, когда карточка под курсором */
+.hb-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 19px; margin: 7px -5px 10px 48px; }
+.hb-line .hb-goal { min-width: 0; margin: 0; }
+.hb-line .gm { position: relative; z-index: 2; margin-block: -4px; }
+@media (hover: hover) {
+  .hb-line .gm-btn { opacity: 0; transition: opacity 120ms ease, background 120ms ease, color 120ms ease; }
+  .hb:hover .gm-btn, .hb:focus-within .gm-btn, .hb-line .gm-btn[aria-expanded="true"] { opacity: 1; }
+}
+.hb.is-done .gm-btn { color: rgba(255, 255, 255, 0.84); }
+.hb.is-done .gm-btn:hover, .hb.is-done .gm-btn[aria-expanded="true"] { background: rgba(255, 255, 255, 0.18); color: #ffffff; }
+.hb.is-done :focus-visible { outline-color: #ffffff; }
+.hb-emoji { font-size: 12.5px; line-height: 1; }
+.hb-ic .hb-emoji { font-size: 18px; transition: transform 320ms cubic-bezier(0.2, 1.5, 0.4, 1), opacity 160ms ease; }
+.hb.is-done .hb-ic .hb-emoji { opacity: 0; transform: scale(0.4) rotate(-30deg); }
+
+/* ══════════════════ Цели ══════════════════ */
+.gl-tools { display: flex; align-items: center; gap: 2px; margin: -3px -5px -3px 0; }
+.gl-tools .gl-pin { margin: 0; }
+.plq .gm-btn { width: 28px; height: 28px; border-radius: 50%; color: rgba(255, 255, 255, 0.72); }
+.plq .gm-btn:hover, .plq .gm-btn[aria-expanded="true"] { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
+.gl-hero-menu { position: absolute; z-index: 1; right: 8px; top: 8px; }
+/* Следующая тема бывает длинной: строка не заходит на гряду */
+.plq-hero.gl .plq-rules { display: -webkit-box; max-width: 400px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.gl-links .hb-emoji { font-size: 12px; }
+.gl-links > .gl-hb { white-space: nowrap; }
+.gs-chip .hb-emoji { font-size: 12px; }
+.gr-none { margin: 4px 0 24px; }
+
+/* «Что изучаю». Название предмета бывает целой фразой ученика, а Tailwind знает класс .ring */
+.gl-sec .pf-course .ring { box-shadow: none; }
+.gl-sec .pf-course .nm { min-width: 0; }
+.gl-sec .pf-course .nm b { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
+/* Достигнутые: маленькие плашки, слайм уже у флага */
+.gl-done { min-height: 124px; }
+.gl-done .plq-art { inset: auto 0 0 auto; width: 76%; height: 58%; }
+.gl-done .plq-name { position: relative; max-width: 100%; font-size: 14px; }
+
+/* Первый заход */
+.gl-invite { min-height: 216px; margin-bottom: 28px; }
+.gl-invite .plq-art { width: 56%; }
+.gl-invite .plq-name { max-width: 52%; margin-top: 6px; font-size: 24px; }
+.gl-invite .plq-rules { max-width: 44%; margin-top: 8px; }
+.gl-invite .btn { margin-top: 18px; }
+
+/* Окно цели. Название предмета бывает целой фразой ученика: чип от этого не должен расти */
+.gr-kind { justify-self: start; }
+.gsheet .gs-chip > span:last-child { max-width: 230px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.gs-empty { padding-top: 5px; }
+.gs-date {
+  min-height: 28px; padding: 2px 10px; border: 0; border-radius: 99px; background: transparent; color: var(--t-ink-2); font: inherit; font-size: 12.5px;
+  box-shadow: inset 0 0 0 1px var(--t-line); color-scheme: light; transition: background 120ms ease, color 120ms ease;
+}
+.gs-date:hover { background: var(--t-hover); color: var(--t-ink); }
+.gs-date[data-on="true"] { background: var(--t-accent); color: var(--t-on-accent); box-shadow: none; font-weight: 500; color-scheme: dark; }
+.dark .gs-date { color-scheme: dark; }
+.dark .gs-date[data-on="true"] { color-scheme: light; }
+
+/* ══════════════════ Загрузка, ошибка, пустая страница ══════════════════ */
+.gr-note { --r: 16px; margin-bottom: 18px; padding: 15px 18px 16px; }
+.gr-note h2 { font-size: 13.5px; font-weight: 600; }
+.gr-note p { margin-top: 2px; color: var(--t-muted); font-size: 13px; line-height: 1.4; }
+.gr-note .btn { margin-top: 11px; }
+.gr-invite { display: flex; align-items: center; gap: 16px; }
+.gr-slime { flex: none; width: 74px; height: 53px; overflow: visible; }
+.gr-skel { height: 196px; border-radius: 20px; background: var(--t-card-soft); box-shadow: var(--t-card-soft-sh); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .gm-pop:popover-open { animation: q-in 180ms cubic-bezier(0.2, 1.2, 0.4, 1) both; }
+  .gr-skel { animation: gr-breathe 1.6s ease-in-out infinite; }
+}
+@keyframes gr-breathe { 50% { opacity: 0.55; } }
+/* В общих стилях это не под условием: при «меньше движения» цвет появляется сразу */
+@media (prefers-reduced-motion: reduce) {
+  .hb-fill, .hb, .hb-ic, .hb-ic .i, .hb-ic .hb-emoji, .hb-days i { transition: none; }
+  .hb.fresh, .gl.fresh { animation: none; }
+}
+
+@container main (max-width: 620px) {
+  .plq-stub { position: static; }
+  /* У билета контеста картинка уезжает за край. Здесь по ней читают прогресс: вся тропа на виду */
+  .plq-hero.gl .plq-art { right: 26px; top: -14px; width: 245px; height: 120px; }
+  .gl-invite .plq-art { width: 76%; opacity: 0.7; }
+  .gl-invite .plq-name, .gl-invite .plq-rules { max-width: 100%; }
+  .plq-hero.gl .gl-due { line-height: 1.2; text-align: left; }
+  .ai-out .q-diff li { grid-template-columns: minmax(0, 1fr); }
+  .ai-out .q-diff .chg { text-align: left; }
+  .gr-invite { align-items: flex-start; }
+}
+@media (max-width: 640px) {
+  /* На телефоне поле 16 px, чтобы браузер не приближал страницу: копия такого же размера */
+  .ai-line .ti-mirror { font-size: 16px; }
+  .gm-btn { width: 34px; height: 34px; }
+  .plq .gm-btn { width: 34px; height: 34px; }
+  .gl-pin { width: 34px; height: 34px; }
+  .gm-item { min-height: 40px; }
+  .gm-input { font-size: 16px; }
+}

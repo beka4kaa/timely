@@ -633,6 +633,27 @@ export async function createCommitment(
 }
 
 /**
+ * Передвинуть разовую запись: ученик перетащил свой блок в сетке.
+ *
+ * Занятие программы двигается через ревизию (`moveBlock`), а занятое время ревизий не
+ * знает: это запись самого ученика, и правит он её сразу.
+ */
+export async function moveCommitment(
+  id: string,
+  input: { startAt: string; endAt: string; durationMinutes: number },
+): Promise<FixedCommitment> {
+  const response = await authFetch(`${BASE}/study-commitments/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      start_at: input.startAt,
+      end_at: input.endAt,
+      duration_minutes: input.durationMinutes,
+    }),
+  });
+  return unwrap<FixedCommitment>(response);
+}
+
+/**
  * Удалить занятое время.
  *
  * Удаляется вся запись целиком, а не один её день: повторяющаяся занятость —

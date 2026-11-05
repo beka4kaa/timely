@@ -58,6 +58,12 @@ export interface CoursePathInput {
   milestones?: readonly PathMilestoneInput[];
   /** Сегодня. Приходит снаружи, иначе расчёт нельзя проверить тестом. */
   today: Date;
+  /**
+   * Когда курс начался: начало его расписания. Раньше сегодня ось начинается
+   * отсюда, и пройденные главы остаются слева от отметки «сегодня». Пусто или
+   * позже сегодня: ось начинается сегодня.
+   */
+  startedAt?: string | null;
   expectedFinish?: string | null;
   optimisticFinish?: string | null;
   realisticFinish?: string | null;
@@ -107,6 +113,8 @@ export interface CoursePath {
   /** Докуда по оси дотягивается сам курс. 100 — ось кончается финишем. */
   coursePct: number;
   deadline: PathMark | null;
+  /** Где на оси сегодня. Без календаря отметки нет. */
+  today: PathMark | null;
   /** Доля курса правее срока. Ноль — успеваем. */
   overshootPct: number;
   /** Доля оси между финишем и сроком. Ноль — запаса нет. */
@@ -140,7 +148,9 @@ export function buildCoursePath(input: CoursePathInput): CoursePath | null {
   const totalMinutes = modules.reduce((sum, item) => sum + item.minutes, 0);
   if (modules.length === 0 || totalMinutes <= 0) return null;
 
-  const start = input.today.getTime();
+  const today = input.today.getTime();
+  const started = time(input.startedAt);
+  const start = started !== null && started < today ? started : today;
   const expected = time(input.expectedFinish);
   const realistic = time(input.realisticFinish);
   const optimistic = time(input.optimisticFinish);
@@ -152,9 +162,10 @@ export function buildCoursePath(input: CoursePathInput): CoursePath | null {
   const dated = courseEnd !== null && courseEnd > start;
 
   // Ось тянется до самого позднего события: за срок уходит перелёт, за финиш —
-  // запас. Без календаря ось — это просто сто процентов длительностей.
+  // запас, а просроченный курс ещё и до сегодня. Без календаря ось — это просто
+  // сто процентов длительностей.
   const axisEnd = dated
-    ? Math.max(courseEnd as number, realistic ?? 0, deadline ?? 0)
+    ? Math.max(courseEnd as number, realistic ?? 0, deadline ?? 0, today)
     : start;
   const axisSpan = dated ? axisEnd - start : 0;
 
@@ -217,6 +228,7 @@ export function buildCoursePath(input: CoursePathInput): CoursePath | null {
     dated,
     coursePct,
     deadline: mark(deadline),
+    today: mark(today),
     overshootPct:
       deadlinePct === null ? 0 : Math.max(0, coursePct - deadlinePct),
     slackPct: deadlinePct === null ? 0 : Math.max(0, deadlinePct - coursePct),
@@ -291,4 +303,84 @@ function buildTicks(start: number, end: number): PathTick[] {
   if (raw.length <= MAX_TICKS) return raw;
   const step = Math.ceil(raw.length / MAX_TICKS);
   return raw.filter((_, index) => index % step === 0);
+}
+
+// ──────────────────────────── Подписи над осью ───────────────────────────────
+
+export interface AxisLabelInput {
+  key: string;
+  /** `over`: срок, за который курс вылезает. Остальное отличается только порядком важности. */
+  kind: "end" | "today" | "over" | "mile";
+  atPct: number;
+  text: string;
+}
+
+export interface AxisLabel extends AxisLabelInput {
+  /** С какой стороны от своей точки стоит подпись. */
+  align: "start" | "end";
+}
+
+/** Сколько в среднем занимает буква подписи: 12 px, кириллица. */
+const LABEL_CHAR_PX = 6.6;
+/** Подпись длиннее этого читается хуже, чем её отсутствие: название есть в списке глав. */
+const LABEL_MAX_PX = 190;
+const LABEL_GAP_PX = 10;
+
+const LABEL_ORDER: AxisLabelInput["kind"][] = ["end", "today", "over", "mile"];
+
+/**
+ * Какие подписи поместятся над осью и с какой стороны от точки каждая встанет.
+ *
+ * Строка над осью одна, а отметки любят стоять рядом: сегодня и веха, срок и финиш. Подписи
+ * расставляются по важности, и те, что наехали бы на уже поставленные, не печатаются: сама
+ * отметка на оси при этом остаётся.
+ */
+export function placeAxisLabels(labels: readonly AxisLabelInput[], widthPx: number): AxisLabel[] {
+  const ordered = [...labels].sort(
+    (a, b) => LABEL_ORDER.indexOf(a.kind) - LABEL_ORDER.indexOf(b.kind),
+  );
+  const taken: [number, number][] = [];
+  const placed: AxisLabel[] = [];
+
+  const free = (from: number, to: number) =>
+    from >= 0 &&
+    to <= widthPx &&
+    taken.every(([a, b]) => to + LABEL_GAP_PX <= a || from - LABEL_GAP_PX >= b);
+
+  for (const label of ordered) {
+    const size = Math.min(LABEL_MAX_PX, label.text.length * LABEL_CHAR_PX);
+    const at = (label.atPct / 100) * widthPx;
+    // «Сегодня» стоит слева от точки: справа от неё начинается то, что ещё впереди.
+    const sides: ("start" | "end")[] =
+      label.kind === "today" || label.kind === "end" ? ["end", "start"] : ["start", "end"];
+    for (const align of sides) {
+      const from = align === "start" ? at : at - size;
+      const to = from + size;
+      if (free(from, to)) {
+        taken.push([from, to]);
+        placed.push({ ...label, align });
+        break;
+      }
+    }
+  }
+  return placed;
+}
+
+/**
+ * Как уместить главы, если запас длиннее самого курса.
+ *
+ * Курс на шесть недель со сроком через полгода честно занимает на оси четверть, и подписи
+ * глав превращаются в многоточия. Поэтому длину запаса на рисунке ограничиваем: он важен
+ * как факт, а его точный размер сказан словами. Внутри курса масштаб остаётся единым.
+ *
+ * Возвращает, куда на рисунке попадает точка оси. Порядок точек не меняется.
+ */
+export function axisWarp(coursePct: number, maxRestPct: number): (atPct: number) => number {
+  const rest = 100 - coursePct;
+  if (rest <= maxRestPct || coursePct <= 0) return (atPct) => atPct;
+  const shown = 100 - maxRestPct;
+  return (atPct) =>
+    atPct <= coursePct
+      ? (atPct / coursePct) * shown
+      : shown + ((atPct - coursePct) / rest) * maxRestPct;
 }

@@ -1,82 +1,86 @@
-// Строка темы — доступный путь к корешку.
+// Строка темы: что учить, где в книге и сколько времени.
 //
-// Отрезки на полосе не являются табстопами, поэтому клавиатурный фокус ЗДЕСЬ
-// обязан подсвечивать полосу: иначе связь «тема ↔ страницы книги» доступна
-// только мышью, а это и есть главное содержание экрана.
+// На строке только главное. Цель темы, все ссылки на страницы и что нужно знать заранее
+// раскрываются по нажатию: тем в курсе бывает полторы сотни, и все подробности разом
+// превратили бы список в стену текста.
+//
+// Наведение и фокус подсвечивают главу на пути: так тема находит своё место во времени.
 
 "use client";
 
-import { formatMinutes, uniqueSourceLabels } from "@/lib/curriculum-progress";
 import type { CourseTopic } from "@/lib/curriculum-api";
-import { paperFocus, paperNumber } from "./paper";
+import type { StepState } from "@/lib/curriculum-course-progress";
+import { formatMinutes, formatSource, uniqueSourceLabels } from "@/lib/curriculum-progress";
 
 export function PlanTopicRow({
   topic,
   titles,
-  hovered,
+  state,
+  sourceTitle,
   onHover,
+  onAsk,
 }: {
   topic: CourseTopic;
   titles: Map<string, string>;
-  hovered: boolean;
+  state: StepState;
+  /** Название источника: «Физика 9». Пусто у программ без книги. */
+  sourceTitle: string;
   onHover: (topicId: string | null) => void;
+  onAsk: (text: string) => void;
 }) {
   const sources = uniqueSourceLabels(topic.sources);
+  const page = shortPlace(topic.sources);
 
   return (
-    <li>
-      <div
-        tabIndex={0}
-        onMouseEnter={() => onHover(topic.id)}
-        onMouseLeave={() => onHover(null)}
-        onFocus={() => onHover(topic.id)}
-        onBlur={() => onHover(null)}
-        className={`${paperFocus} relative rounded-[10px] px-4 py-3 transition-colors ${
-          hovered ? "bg-tm-bg" : "bg-transparent"
-        }`}
-      >
-        {/* Тот же тон, каким на пути загорается глава этой темы: связь между
-            строкой и её местом во времени держится одной краской. Прежде здесь
-            был оттенок модуля из легенды корешка — легенды больше нет. */}
-        <span
-          aria-hidden
-          className={`absolute left-0 top-3 h-[calc(100%-1.5rem)] w-[3px] rounded-full bg-tm-accent transition-opacity duration-150 ${
-            hovered ? "opacity-100" : "opacity-0"
-          }`}
-        />
-
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[14px] leading-6 text-tm-ink">{topic.title}</p>
-            {topic.objective && (
-              <p className="mt-0.5 text-[12px] leading-5 text-tm-muted">
-                {topic.objective}
-              </p>
-            )}
-          </div>
-          <span className={`${paperNumber} shrink-0 text-[12px] text-tm-muted`}>
-            {formatMinutes(topic.estimated_minutes)}
+    <li
+      className={state === "todo" ? undefined : state}
+      data-attach={`Тема «${topic.title}»`}
+      onMouseEnter={() => onHover(topic.id)}
+      onMouseLeave={() => onHover(null)}
+      onFocus={() => onHover(topic.id)}
+      onBlur={() => onHover(null)}
+    >
+      <details>
+        <summary>
+          <span>{topic.title}</span>
+          <span className="m pg" title={sources.join("; ")}>
+            {page}
           </span>
+          <span className="m">{formatMinutes(topic.estimated_minutes)}</span>
+        </summary>
+        <div className="tp-more">
+          {topic.objective ? <p>{topic.objective}</p> : null}
+          {sources.length > 0 ? (
+            <p className="muted">
+              Источник: {sourceTitle ? `«${sourceTitle}», ` : ""}
+              {sources.join("; ")}
+            </p>
+          ) : null}
+          {topic.prerequisites.length > 0 ? (
+            <p className="muted">
+              {/* Названия, а не external_id: «kinematics_basics» ученику ничего не говорит. */}
+              Сначала: {topic.prerequisites.map((id) => titles.get(id) ?? id).join(", ")}
+            </p>
+          ) : null}
+          {topic.mastery_criteria ? (
+            <p className="muted">Готово, когда: {topic.mastery_criteria}</p>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-text"
+            onClick={() => onAsk(`Помоги разобраться с темой «${topic.title}»`)}
+          >
+            Спросить про тему
+          </button>
         </div>
-
-        {sources.length > 0 && (
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-tm-accent">
-            {sources.map((label) => (
-              <span key={`${topic.id}-${label}`} className={paperNumber}>
-                {label}
-              </span>
-            ))}
-          </p>
-        )}
-
-        {topic.prerequisites.length > 0 && (
-          <p className="mt-1.5 text-[11px] text-tm-faint">
-            {/* Названия, а не external_id: «kinematics_basics» ученику ничего
-                не говорит. */}
-            Сначала: {topic.prerequisites.map((id) => titles.get(id) ?? id).join(", ")}
-          </p>
-        )}
-      </div>
+      </details>
     </li>
   );
+}
+
+/** В колонке строки только страницы: полная ссылка на раздел живёт в подробностях. */
+function shortPlace(sources: CourseTopic["sources"]): string {
+  const first = sources.find((source) => (source.page_start ?? 0) > 0);
+  if (first) return formatSource({ page_start: first.page_start, page_end: first.page_end });
+  return sources[0] ? formatSource(sources[0]) : "";
 }

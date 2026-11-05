@@ -9,9 +9,9 @@ module.exports = {
   theme: {
   	extend: {
   		fontFamily: {
-  			sans: ['var(--font-onest)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-  			serif: ['var(--font-literata)', 'Georgia', 'Times New Roman', 'serif'],
-  			onest: ['var(--font-onest)', 'sans-serif'],
+  			sans: ['var(--font-golos)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+  			serif: ['var(--font-source-serif)', 'Georgia', 'Times New Roman', 'serif'],
+  			onest: ['var(--font-golos)', 'sans-serif'],
   			handwriting: ['var(--font-handwriting)', 'cursive'],
   			virgil: ['var(--font-handwriting)', 'cursive'],
   		},

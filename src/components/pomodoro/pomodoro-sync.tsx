@@ -3,22 +3,27 @@
 // Невидимый компонент: держит секундный тик помодоро и отправляет завершённые
 // фазы на бэкенд.
 //
-// Монтируется в layout дашборда, а не в шапку: `SiteHeader` возвращает `null`
-// на научной доске, и таймер бы вставал при переходе туда.
+// Монтируется в layout дашборда: таймер и слайм должны знать о сессии на любой
+// странице, а не только на странице помодоро.
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
 
+import { mascot } from "@/components/shell/mascot/mascot";
 import { createSession } from "@/lib/pomodoro-api";
+import { readSessionName, rememberSessionName } from "@/lib/pomodoro-names";
 import { usePomodoroStore } from "@/stores/pomodoro-store";
 
+import { useFocusUser } from "./use-focus-user";
+
 export function PomodoroSync() {
-  const { data: session } = useSession();
-  const email = session?.user?.email ?? null;
+  const email = useFocusUser();
   const tick = usePomodoroStore((state) => state.tick);
   const pending = usePomodoroStore((state) => state.pending);
   const dropPending = usePomodoroStore((state) => state.dropPending);
+  const focusing = usePomodoroStore((state) => state.running && state.phase === "focus");
   const flushing = useRef(false);
+  const named = useRef(new Set<string>());
+  const mascotFocused = useRef(false);
   const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
@@ -26,6 +31,26 @@ export function PomodoroSync() {
     const interval = window.setInterval(tick, 1000);
     return () => window.clearInterval(interval);
   }, [tick]);
+
+  // Слайм собран, пока идёт фокус. Маскот монтируется позже этого компонента, поэтому
+  // вызов откладывается: иначе после перезагрузки посреди сессии он бы об этом не узнал.
+  useEffect(() => {
+    if (focusing === mascotFocused.current) return;
+    const timer = window.setTimeout(() => {
+      mascotFocused.current = focusing;
+      mascot.focus(focusing);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusing]);
+
+  // Имя сессии на сервер не уходит, запоминаем его в браузере в момент окончания фазы.
+  useEffect(() => {
+    for (const item of pending) {
+      if (item.kind !== "focus" || named.current.has(item.localId)) continue;
+      named.current.add(item.localId);
+      rememberSessionName(item.started_at, readSessionName());
+    }
+  }, [pending]);
 
   useEffect(() => {
     if (!email || !pending.length || flushing.current) return;

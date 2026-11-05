@@ -4,7 +4,9 @@ import { test } from "node:test";
 import {
   buildDay,
   closedByRejecting,
+  attachLabel,
   criterionText,
+  dayHeading,
   dayPhrase,
   dayShortLabel,
   daySummary,
@@ -14,6 +16,7 @@ import {
   longDateLabel,
   mergeListRequests,
   missedBlocks,
+  nextContest,
   nextSchoolDay,
   partLabel,
   pickPresetIndex,
@@ -25,6 +28,7 @@ import {
   splitBlockTitle,
   upcomingTests,
   weekStrip,
+  workspaceOf,
 } from "./now-feed.ts";
 import type { CalendarLearningBlock, ScheduleRevision } from "./studyplan-api.ts";
 import type { DiaryLesson } from "../types/diary.ts";
@@ -238,6 +242,14 @@ test("домашнее задание берётся из уроков дня п
   );
 });
 
+test("сделанное в дневнике задание на главной больше не ждёт", () => {
+  const items = homeworkOf([
+    lesson("a", "08:00", "08:45", { subjectName: "Геометрия", homework: "№ 245" }),
+    lesson("b", "09:00", "09:45", { subjectName: "Химия", homework: "§8", homeworkDone: true }),
+  ]);
+  assert.deepEqual(items.map((item) => item.subject), ["Геометрия"]);
+});
+
 test("тест считается поводом готовиться, пока он впереди", () => {
   const days = [
     {
@@ -339,9 +351,73 @@ test("день во фразе — с предлогом и в нужном па
   assert.equal(dayPhrase("2026-11-03", "2026-10-31"), "во вторник");
   assert.equal(dayPhrase("2026-11-20", "2026-11-03"), "20 ноября");
   assert.equal(dayShortLabel("2026-11-04"), "4\u00a0нояб.");
-  assert.equal(homeworkTitle("2026-11-04", "2026-11-03"), "Д/З на завтра");
-  assert.equal(homeworkTitle("2026-11-09", "2026-11-06"), "Д/З на понедельник");
-  assert.equal(homeworkTitle("2026-11-11", "2026-11-06"), "Д/З на среду");
+  assert.equal(dayHeading("2026-11-04", "2026-11-03"), "Завтра");
+  assert.equal(dayHeading("2026-11-06", "2026-11-03"), "В пятницу");
+  assert.equal(homeworkTitle("2026-11-04", "2026-11-03"), "К завтра");
+  assert.equal(homeworkTitle("2026-11-09", "2026-11-06"), "К понедельнику");
+  assert.equal(homeworkTitle("2026-11-10", "2026-11-06"), "Ко вторнику");
+  assert.equal(homeworkTitle("2026-11-11", "2026-11-06"), "К среде");
+});
+
+test("подпись шага для мини-окна: тема, день и время", () => {
+  assert.equal(
+    attachLabel("Равноускоренное движение", "2026-11-03", 16 * 60 + 5),
+    "Равноускоренное движение, вт 16:05",
+  );
+});
+
+test("шаг с доской ведёт в чат по той же теме, пока доска выключена", () => {
+  const board = { course_plan: "p1", workspace_type: "smart_board" };
+  const off = workspaceOf(board, "Импульс", false);
+  assert.equal(off.label, "Открыть чат");
+  assert.ok(off.href.startsWith("/dashboard/chat?q="));
+  assert.ok(decodeURIComponent(off.href).includes("«Импульс»"));
+  assert.deepEqual(workspaceOf(board, "Импульс", true), {
+    label: "Открыть доску",
+    href: "/dashboard/whiteboard",
+  });
+});
+
+test("остальные шаги ведут туда, где занятие и проходит, с доской и без", () => {
+  for (const boardEnabled of [true, false]) {
+    assert.equal(
+      workspaceOf({ course_plan: "p1", workspace_type: "tutor_chat" }, "Импульс", boardEnabled).label,
+      "Начать с тьютором",
+    );
+    assert.deepEqual(
+      workspaceOf({ course_plan: "p1", workspace_type: "book_reader" }, "Импульс", boardEnabled),
+      { label: "Открыть книгу", href: "/dashboard/curriculum/plan/p1" },
+    );
+    assert.deepEqual(
+      workspaceOf({ course_plan: "p1", workspace_type: "answer_form" }, "Импульс", boardEnabled),
+      { label: "Открыть программу", href: "/dashboard/curriculum/plan/p1" },
+    );
+  }
+});
+
+test("контест: идущий важнее будущего, а дальний и прошедший не показываем", () => {
+  const contest = (id: number, start: string, end: string) => ({
+    id,
+    title: `Контест ${id}`,
+    start_time: start,
+    end_time: end,
+  });
+  const past = contest(1, "2026-11-01T10:00:00Z", "2026-11-01T11:30:00Z");
+  const soon = contest(2, "2026-11-07T11:00:00Z", "2026-11-07T12:30:00Z");
+  const later = contest(3, "2026-11-20T11:00:00Z", "2026-11-20T12:30:00Z");
+  const running = contest(4, "2026-11-03T16:00:00Z", "2026-11-03T17:30:00Z");
+
+  assert.deepEqual(nextContest([later, past, soon], NOW, TZ), {
+    id: 2,
+    title: "Контест 2",
+    running: false,
+    dateKey: "2026-11-07",
+    minutes: 11 * 60,
+  });
+  assert.equal(nextContest([soon, running], NOW, TZ)?.id, 4);
+  assert.equal(nextContest([soon, running], NOW, TZ)?.running, true);
+  assert.equal(nextContest([past, later], NOW, TZ), null);
+  assert.equal(nextContest([], NOW, TZ), null);
 });
 
 test("следующий учебный день пропускает выходные", () => {

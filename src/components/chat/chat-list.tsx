@@ -1,303 +1,254 @@
 "use client";
 
-// История разговоров: папки предметов, внутри — чаты.
+// Список разговоров: «Новый чат» и группы, сначала общие, дальше по предметам.
 //
-// Раньше здесь была лента по дням. Для одного предмета это работало, для пяти
-// нет: «вчера» не отвечает на вопрос «это была физика или алгебра», и разговоры
-// перемешивались. Предмет — естественная папка: своя книга, свои цитаты, свой
-// контекст ответа.
-//
-// Вид взят у дерева чатов в панели (`tutor-rail/chat-tree.tsx`): тот же шеврон,
-// тот же отступ за линейку полей `#dcd5c8`, тот же размер строки. Иконок папок
-// нет — отступ и линейка справляются сами. Скопирован ВИД, а не код: там
-// компактный выбор внутри всплывающего окна на один предмет, здесь навигация во
-// всю высоту с переименованием, удалением и созданием внутри папки. Общего у
-// них — две строки разметки, а расходятся требования почти во всём.
-//
-// Переименование появилось здесь впервые: `updateChat(id, {title})` на бэкенде
-// готов давно, кнопки не было нигде.
+// Рисуется дважды: порталом в левую панель и в нижнем листе на телефоне, где панели нет.
+// Переименование и удаление тихие: на широком экране значки появляются у строки при
+// наведении, на телефоне за кнопкой «ещё», потому что наводить там нечем.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  PanelLeftClose,
-  Pencil,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
 
+import { Icon } from "@/components/shell/icons";
 import { buildChatFolders, type FolderSubject } from "@/lib/chat-folders";
 import type { SubjectChatSummary } from "@/lib/curriculum-api";
+
+const NEW_TITLE = "Новый чат";
 
 export function ChatList({
   chats,
   subjects,
   activeId,
-  activeGoalId,
   loading,
+  failed,
+  onRetry,
   onOpen,
   onCreate,
-  onCreateIn,
   onRename,
   onDelete,
-  onCollapse,
 }: {
   chats: SubjectChatSummary[];
   subjects: FolderSubject[];
   activeId: string | null;
-  /** Предмет открытого разговора: его папка раскрывается сама. */
-  activeGoalId: string | null;
+  /** Пока не приехали предметы, групп не построить: всё свалилось бы в «Общие». */
   loading: boolean;
+  failed: boolean;
+  onRetry: () => void;
   onOpen: (id: string) => void;
   onCreate: () => void;
-  /** Новый разговор внутри папки: заодно переключает книгу. */
-  onCreateIn: (goalId: string | null) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  onCollapse: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [closed, setClosed] = useState<Set<string>>(() => new Set());
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  // Escape убирает поле, и оно теряет фокус. Без этой пометки уход фокуса
-  // сохранил бы то, от чего ученик только что отказался.
-  const cancelled = useRef(false);
-
-  useEffect(() => {
-    if (editingId) inputRef.current?.select();
-  }, [editingId]);
-
-  // Разговор открылся или сменилась книга — его папка раскрывается. Именно
-  // событием, а не правилом «активную всегда держать открытой»: иначе шеврон
-  // текущей папки перестал бы работать.
-  useEffect(() => {
-    setClosed((prev) => {
-      const key = activeGoalId ?? "none";
-      if (!prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-  }, [activeGoalId, activeId]);
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+  const [askingId, setAskingId] = useState<string | null>(null);
 
   const folders = buildChatFolders(chats, subjects);
 
-  // Раскрыто по умолчанию: закрывать всё при первом заходе значило бы прятать
-  // единственное содержимое колонки. Хранится, наоборот, множество ЗАКРЫТЫХ —
-  // так новая папка появляется открытой, а не потерянной.
-  const isOpen = (key: string) => !closed.has(key);
-  const toggle = (key: string) =>
-    setClosed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  return (
+    <>
+      <button className="nav-item sb-new" type="button" onClick={onCreate}>
+        <Icon name="plus" />
+        <span className="nav-text">{NEW_TITLE}</span>
+      </button>
 
-  const commit = () => {
-    if (editingId && draft.trim()) onRename(editingId, draft);
-    setEditingId(null);
-  };
+      {failed ? (
+        <p className="chat-hint">
+          Чаты не загрузились.{" "}
+          <button className="link" type="button" onClick={onRetry}>
+            Ещё раз
+          </button>
+        </p>
+      ) : !folders.length && !loading ? (
+        <p className="chat-hint">Здесь появятся твои разговоры.</p>
+      ) : null}
 
-  const startRename = (chat: SubjectChatSummary) => {
-    setDraft(chat.title || "");
-    setEditingId(chat.id);
+      {!failed && !loading
+        ? folders.map((folder) => (
+            <div className="nav-group" key={folder.goalId ?? "none"}>
+              <div className="nav-label">{folder.title}</div>
+              {folder.chats.map((chat) => (
+                <ChatRow
+                  key={chat.id}
+                  chat={chat}
+                  active={chat.id === activeId}
+                  editing={editingId === chat.id}
+                  revealed={revealedId === chat.id}
+                  asking={askingId === chat.id}
+                  onOpen={() => onOpen(chat.id)}
+                  onReveal={() =>
+                    setRevealedId((current) => (current === chat.id ? null : chat.id))
+                  }
+                  onEdit={() => {
+                    setRevealedId(null);
+                    setEditingId(chat.id);
+                  }}
+                  onEditEnd={(title) => {
+                    setEditingId(null);
+                    if (title !== null) onRename(chat.id, title);
+                  }}
+                  onAsk={() => {
+                    setRevealedId(null);
+                    setAskingId(chat.id);
+                  }}
+                  onAskEnd={(confirmed) => {
+                    setAskingId(null);
+                    if (confirmed) onDelete(chat.id);
+                  }}
+                />
+              ))}
+            </div>
+          ))
+        : null}
+    </>
+  );
+}
+
+function ChatRow({
+  chat,
+  active,
+  editing,
+  revealed,
+  asking,
+  onOpen,
+  onReveal,
+  onEdit,
+  onEditEnd,
+  onAsk,
+  onAskEnd,
+}: {
+  chat: SubjectChatSummary;
+  active: boolean;
+  editing: boolean;
+  revealed: boolean;
+  asking: boolean;
+  onOpen: () => void;
+  onReveal: () => void;
+  onEdit: () => void;
+  /** Новое имя или `null`, если ученик передумал. */
+  onEditEnd: (title: string | null) => void;
+  onAsk: () => void;
+  onAskEnd: (confirmed: boolean) => void;
+}) {
+  const title = chat.title || NEW_TITLE;
+  const noRef = useRef<HTMLButtonElement>(null);
+
+  // Разговор не восстановить, поэтому удаление в два шага, и фокус на безопасном ответе.
+  useEffect(() => {
+    if (asking) noRef.current?.focus({ preventScroll: true });
+  }, [asking]);
+
+  if (editing) return <RenameField title={chat.title} onEnd={onEditEnd} />;
+
+  if (asking) {
+    return (
+      <div
+        className="chat-row chat-asking"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onAskEnd(false);
+        }}
+      >
+        <span className="chat-ask">Удалить чат?</span>
+        <button className="chat-answer" type="button" onClick={() => onAskEnd(true)}>
+          Да
+        </button>
+        <button className="chat-answer" type="button" ref={noRef} onClick={() => onAskEnd(false)}>
+          Нет
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-row" data-revealed={revealed || undefined}>
+      <a
+        className="chat-link"
+        href={`/dashboard/chat?chat=${chat.id}`}
+        aria-current={active ? "true" : undefined}
+        title={title}
+        onClick={(event) => {
+          // Новая вкладка и средняя кнопка работают как у обычной ссылки: адрес открывает
+          // этот же разговор.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+          event.preventDefault();
+          onOpen();
+        }}
+      >
+        {title}
+      </a>
+      <span className="chat-tools">
+        <button
+          className="chat-tool chat-tool-edit"
+          type="button"
+          aria-label={`Переименовать чат «${title}»`}
+          title="Переименовать"
+          onClick={onEdit}
+        >
+          <Icon name="pencil" />
+        </button>
+        <button
+          className="chat-tool chat-tool-edit"
+          type="button"
+          aria-label={`Удалить чат «${title}»`}
+          title="Удалить"
+          onClick={onAsk}
+        >
+          <Icon name="x" />
+        </button>
+        <button
+          className="chat-tool chat-tool-more"
+          type="button"
+          aria-label={`Действия с чатом «${title}»`}
+          aria-expanded={revealed}
+          onClick={onReveal}
+        >
+          <Icon name="more" />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function RenameField({
+  title,
+  onEnd,
+}: {
+  title: string;
+  onEnd: (title: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(title);
+  const fieldRef = useRef<HTMLInputElement>(null);
+  // Escape убирает поле, и оно теряет фокус. Без этой пометки уход фокуса сохранил бы то,
+  // от чего ученик только что отказался.
+  const finished = useRef(false);
+
+  useEffect(() => {
+    fieldRef.current?.select();
+  }, []);
+
+  const finish = (value: string | null) => {
+    if (finished.current) return;
+    finished.current = true;
+    onEnd(value?.trim() ? value : null);
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-tm-surface text-tm-ink">
-      <div className="flex h-[46px] shrink-0 items-center gap-1 border-b border-tm-line px-2.5">
-        <button
-          type="button"
-          onClick={onCreate}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-1 text-[12px] font-medium text-tm-muted outline-none transition-colors hover:border-tm-accent hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-        >
-          <Plus className="h-3.5 w-3.5 shrink-0" />
-          Новый чат
-        </button>
-        <button
-          type="button"
-          onClick={onCollapse}
-          aria-label="Свернуть историю"
-          title="Свернуть историю"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-        >
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
-        {loading && !folders.length && (
-          <p className="px-2 py-3 text-[12px] text-tm-faint">Загружаю…</p>
-        )}
-        {!loading && !folders.length && (
-          <p className="px-2 py-3 text-[12px] leading-[1.5] text-tm-faint">
-            Предметов пока нет. Загрузите книгу в разделе «Предметы» — или
-            спросите без книги, разговор появится здесь.
-          </p>
-        )}
-
-        {folders.map((folder) => {
-          const key = folder.goalId ?? "none";
-          const open = isOpen(key);
-
-          return (
-            <div key={key} className="mb-0.5">
-              {/* ── Папка ──────────────────────────────────────────────── */}
-              <div className="group/folder flex items-center gap-0.5 rounded-[8px] pr-1 transition-colors hover:bg-tm-surface-2">
-                <button
-                  type="button"
-                  onClick={() => toggle(key)}
-                  aria-expanded={open}
-                  className="flex min-w-0 flex-1 items-center gap-1 px-1.5 py-1.5 text-left outline-none"
-                >
-                  {open ? (
-                    <ChevronDown className="h-3 w-3 shrink-0 text-tm-faint" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3 shrink-0 text-tm-faint" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate font-serif text-[12.5px] font-semibold text-tm-ink">
-                    {folder.title}
-                  </span>
-                  {/* Число разговоров, а не число книг: в списке чатов важно,
-                      сколько их. «Без книг» сказано в выборе книги. */}
-                  {!!folder.chats.length && (
-                    <span className="shrink-0 text-[10px] tabular-nums text-tm-faint">
-                      {folder.chats.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onCreateIn(folder.goalId)}
-                  aria-label={`Новый чат: ${folder.title}`}
-                  title="Новый чат по этому предмету"
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-tm-faint opacity-0 outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-muted focus-visible:opacity-100 group-hover/folder:opacity-100"
-                >
-                  <Plus className="h-3 w-3" />
-                </button>
-              </div>
-
-              {/* ── Разговоры внутри ───────────────────────────────────── */}
-              {open && (
-                <div className="ml-[13px] border-l border-tm-line pl-1.5">
-                  {!folder.chats.length && (
-                    <div className="px-2 py-1.5 text-[11px] text-tm-faint">
-                      Здесь пока пусто
-                    </div>
-                  )}
-
-                  {folder.chats.map((chat) => (
-                    <div
-                      key={chat.id}
-                      className={`group flex items-center gap-0.5 rounded-[8px] pr-1 transition-colors ${
-                        chat.id === activeId
-                          ? "bg-tm-surface-2"
-                          : "hover:bg-tm-surface-2"
-                      }`}
-                    >
-                      {editingId === chat.id ? (
-                        <input
-                          ref={inputRef}
-                          value={draft}
-                          onChange={(event) => setDraft(event.target.value)}
-                          onBlur={() => {
-                            if (cancelled.current) {
-                              cancelled.current = false;
-                              return;
-                            }
-                            commit();
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commit();
-                            }
-                            if (event.key === "Escape") {
-                              cancelled.current = true;
-                              setEditingId(null);
-                            }
-                          }}
-                          maxLength={200}
-                          className="min-w-0 flex-1 rounded-[6px] border border-tm-accent bg-tm-surface px-2 py-1 text-[12.5px] text-tm-ink outline-none"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onOpen(chat.id)}
-                          className={`min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[12.5px] transition-colors ${
-                            chat.id === activeId
-                              ? "font-medium text-tm-ink"
-                              : "text-tm-ink-2 hover:text-tm-ink"
-                          }`}
-                        >
-                          {chat.title || "Новый чат"}
-                        </button>
-                      )}
-
-                      {confirmDeleteId === chat.id ? (
-                        <span className="flex shrink-0 items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onDelete(chat.id);
-                              setConfirmDeleteId(null);
-                            }}
-                            aria-label="Подтвердить удаление"
-                            title="Удалить"
-                            className="grid h-6 w-6 place-items-center rounded-full text-tm-danger transition-colors hover:bg-tm-danger-soft"
-                          >
-                            <Check className="h-3 w-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(null)}
-                            aria-label="Отменить удаление"
-                            className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ) : (
-                        editingId !== chat.id && (
-                          <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                            <button
-                              type="button"
-                              onClick={() => startRename(chat)}
-                              aria-label="Переименовать чат"
-                              title="Переименовать"
-                              className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2 hover:text-tm-muted"
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(chat.id)}
-                              aria-label="Удалить чат"
-                              title="Удалить чат"
-                              // Удаление в два шага, как в дереве чатов панели:
-                              // разговор восстановить нельзя.
-                              className="grid h-6 w-6 place-items-center rounded-full text-tm-faint transition-colors hover:bg-tm-surface-2 hover:text-tm-muted"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </span>
-                        )
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="chat-row">
+      <input
+        ref={fieldRef}
+        className="chat-rename"
+        value={draft}
+        maxLength={200}
+        aria-label="Название чата"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => finish(draft)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(draft);
+          }
+          if (event.key === "Escape") finish(null);
+        }}
+      />
     </div>
   );
 }

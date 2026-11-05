@@ -1,70 +1,79 @@
-// «План» — один календарь времени ученика, а не календарь отдельного курса.
+// «План»: один календарь времени ученика, как в Google Календаре, и на неделю, и на день.
 
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
+import { Icon } from "@/components/shell/icons";
+import { mascot } from "@/components/shell/mascot/mascot";
+import { useQuick } from "@/components/shell/quick/quick-context";
+import { SubNav } from "@/components/shell/tab-bar";
 import { usePageSchedule } from "@/contexts/active-schedule";
-import {
-  paperButton,
-  paperCaption,
-  paperCard,
-  paperPrimaryButton,
-  paperQuietButton,
-  paperSegment,
-  paperSegmentActive,
-  paperSegmentIdle,
-  paperSegmentItem,
-  paperTile,
-} from "@/components/curriculum/paper";
-import {
-  buildCourseAccents,
-  expandCommitments,
-  isCommitmentEntry,
-} from "@/lib/studyplan-calendar-entries";
-import { weekLoad } from "@/lib/studyplan-load";
+import { useAskRail } from "@/contexts/ask-rail";
 import {
   applyStudyWindows,
   createCommitment,
   listTemplates,
   type FixedCommitment,
-  type StudySchedule,
 } from "@/lib/studyplan-api";
-import { layoutWeek, visibleRange, zonedDateKey } from "@/lib/studyplan-calendar";
 import {
-  durationLabel,
-  weekLabel,
-  weekdayOnLabel,
-} from "@/lib/studyplan-visuals";
+  shiftDateKey,
+  toInstant,
+  zonedDateKey,
+  zonedMinutes,
+} from "@/lib/studyplan-calendar";
+import {
+  expandCommitments,
+  isCommitmentEntry,
+} from "@/lib/studyplan-calendar-entries";
+import { durationLabel, weekLabel } from "@/lib/studyplan-visuals";
 
-import { BlockDetails } from "./block-details";
-import { DayView } from "./day-view";
-import { type CalendarEntry, useSchedule } from "./use-schedule";
+import { BlockCard, CalPopover, DraftCard } from "./block-details";
+import { PlanCalendar, type PlanDraft } from "./plan-calendar";
+import { usePlanDeadlines } from "./plan-deadlines";
+import {
+  NEW_BLOCK_MINUTES,
+  applyRevisionPreview,
+  clock,
+  dayShort,
+  fullDayLabel,
+  isOwnEvent,
+  monthCells,
+  monthTitle,
+  soonWhen,
+  upcomingDeadlines,
+  type Due,
+} from "./plan-grid.logic";
+import { usePlanPreview } from "./plan-preview";
 import {
   buildScheduleTargetOptions,
   resolveScheduleTarget,
 } from "./schedule-targets";
-import { WeekGrid } from "./week-grid";
+import { type CalendarEntry, useSchedule } from "./use-schedule";
+
+import "@/styles/timely/page-plan.css";
 
 type Mode = "week" | "day";
+type ScheduleApi = ReturnType<typeof useSchedule>;
 
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/** На таких ширинах недели нет: колонки слишком тесные. */
+const NARROW_MAIN = 760;
 const EMPTY_ENTRIES: CalendarEntry[] = [];
-
-/**
- * Один шаг истории удаления.
- *
- * Занятия и занятое время удаляются разными способами: занятие получает статус
- * «отменено» и живо на сервере, а занятость удаляется совсем — вернуть её можно
- * только пересозданием. Поэтому шаг хранит и идентификаторы занятий, и полные
- * записи занятости.
- */
-interface DeleteStep {
-  blockIds: string[];
-  commitments: FixedCommitment[];
-}
-const RELEASED_STATUSES = new Set(["cancelled", "rescheduled"]);
+const NO_COMMITMENTS: FixedCommitment[] = [];
+const NO_IDS: ReadonlySet<string> = new Set();
+const TOAST_MS = 9000;
+const NOTICE_MS = 14000;
+const FRESH_MS = 700;
 
 /** «1 занятие», «2 занятия», «5 занятий». */
 function blockWord(count: number): string {
@@ -76,22 +85,111 @@ function blockWord(count: number): string {
   return "занятий";
 }
 
+// ───────────────────────────── История действий ──────────────────────────────
+//
+// Шаг сам знает, как себя отменить, и возвращает обратный шаг для Ctrl+Shift+Z. Занятие
+// и занятое время отменяются по-разному: занятие получает статус и живо на сервере, а
+// занятость удаляется совсем и возвращается пересозданием, с новым идентификатором.
+
+interface HistoryStep {
+  run: () => Promise<HistoryStep | null>;
+}
+
+interface DeleteStep {
+  blockIds: string[];
+  commitments: FixedCommitment[];
+}
+
+type GetSchedule = () => ScheduleApi;
+
+/** Выполнить удаление. Обратный шаг только если что-то действительно ушло. */
+async function performDelete(get: GetSchedule, step: DeleteStep): Promise<HistoryStep | null> {
+  const cancelled = step.blockIds.length ? await get().cancel(step.blockIds) : [];
+  for (const item of step.commitments) await get().removeCommitment(item.id);
+  if (cancelled.length === 0 && step.commitments.length === 0) return null;
+  return restoreStep(get, { blockIds: cancelled, commitments: step.commitments });
+}
+
+function restoreStep(get: GetSchedule, step: DeleteStep): HistoryStep {
+  return {
+    run: async () => {
+      if (step.blockIds.length) await get().restore(step.blockIds);
+      const commitments: FixedCommitment[] = [];
+      for (const item of step.commitments) {
+        const created = await get().recreateCommitment(item);
+        if (created) commitments.push(created);
+      }
+      return { run: () => performDelete(get, { blockIds: step.blockIds, commitments }) };
+    },
+  };
+}
+
+/** Свой блок убирается, а повтор ставит его снова, уже с новым идентификатором. */
+function createdStep(get: GetSchedule, commitment: FixedCommitment): HistoryStep {
+  return {
+    run: async () => {
+      await get().removeCommitment(commitment.id);
+      return {
+        run: async () => {
+          const created = await get().recreateCommitment(commitment);
+          return created ? createdStep(get, created) : null;
+        },
+      };
+    },
+  };
+}
+
+function eventMoveStep(
+  get: GetSchedule,
+  commitmentId: string,
+  to: { startAt: Date; duration: number },
+  back: { startAt: Date; duration: number },
+): HistoryStep {
+  return {
+    run: async () => {
+      const done = await get().moveEvent(commitmentId, to.startAt, to.duration);
+      return done ? eventMoveStep(get, commitmentId, back, to) : null;
+    },
+  };
+}
+
 export function StudyPlanPage() {
   const schedule = useSchedule();
-  const [mode, setMode] = useState<Mode>("week");
-  // Выделение — список, а не одно занятие: рамкой можно захватить несколько и
-  // отменить их одним Delete. Карточка разбора показывается, когда выбрано
-  // ровно одно: у пачки нет «того самого» занятия, которое стоит разбирать.
+  const scheduleRef = useRef(schedule);
+  scheduleRef.current = schedule;
+  const getSchedule = useCallback<GetSchedule>(() => scheduleRef.current, []);
+
+  const { prompt, openRail, open: railOpen } = useAskRail();
+  const quick = useQuick();
+
+  const [chosenMode, setChosenMode] = useState<Mode>("week");
+  const [narrow, setNarrow] = useState(false);
+  const mode: Mode = narrow ? "day" : chosenMode;
+  // Выделение — список: рамкой можно захватить несколько занятий и убрать их одним
+  // Delete. Карточка открыта у одного.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [cardId, setCardId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PlanDraft | null>(null);
+  const [saving, setSaving] = useState(false);
   const [assistantTargetId, setAssistantTargetId] = useState<string | null>(null);
   const [dayKey, setDayKey] = useState<string | null>(null);
+  const [scrollNonce, setScrollNonce] = useState(0);
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(NO_IDS);
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  useIsoLayoutEffect(() => {
+    const main = document.querySelector<HTMLElement>(".main");
+    if (!main) return;
+    const check = () => setNarrow(main.clientWidth > 0 && main.clientWidth <= NARROW_MAIN);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(main);
+    return () => observer.disconnect();
+  }, []);
 
   const ready = schedule.data.state === "ready" ? schedule.data : null;
   const assistantScheduleOptions = useMemo(
-    () =>
-      ready
-        ? buildScheduleTargetOptions(ready.assistantSchedules, ready.plans)
-        : [],
+    () => (ready ? buildScheduleTargetOptions(ready.assistantSchedules, ready.plans) : []),
     [ready],
   );
   const assistantView = useMemo(
@@ -102,40 +200,46 @@ export function StudyPlanPage() {
         ready?.blocksBySchedule ?? {},
         ready?.schedules.map((item) => item.id) ?? [],
       ),
-    [
-      assistantScheduleOptions,
-      assistantTargetId,
-      ready?.blocksBySchedule,
-      ready?.schedules,
-    ],
+    [assistantScheduleOptions, assistantTargetId, ready?.blocksBySchedule, ready?.schedules],
   );
   const assistantScheduleOption = assistantView.option;
   const displayTimeZone = assistantScheduleOption?.timeZone ?? schedule.timeZone;
+  const commitmentSources = ready?.commitmentSources ?? NO_COMMITMENTS;
 
-  const entries = useMemo(() => {
+  const baseEntries = useMemo(() => {
     if (!ready) return EMPTY_ENTRIES;
     return [
       ...assistantView.blocks,
-      ...expandCommitments(
-        ready.commitmentSources,
-        schedule.days,
-        displayTimeZone,
-      ),
+      ...expandCommitments(ready.commitmentSources, schedule.days, displayTimeZone),
     ];
   }, [assistantView.blocks, displayTimeZone, ready, schedule.days]);
-  const range = useMemo(
-    () => visibleRange(entries, displayTimeZone),
-    [displayTimeZone, entries],
+
+  // Предложение помощника, которое ждёт ответа: календарь ещё тот же, сетка только показывает.
+  const previewDiff = usePlanPreview();
+  const preview = useMemo(
+    () => applyRevisionPreview(baseEntries, previewDiff),
+    [baseEntries, previewDiff],
   );
-  const columns = useMemo(
-    () =>
-      layoutWeek(entries, {
-        timeZone: displayTimeZone,
-        days: schedule.days,
-        range,
-      }),
-    [displayTimeZone, entries, schedule.days, range],
+  const entries = preview.entries;
+
+  const ownSources = useMemo(
+    () => new Map(commitmentSources.filter(isOwnEvent).map((item) => [item.id, item])),
+    [commitmentSources],
   );
+  const ownIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const entry of baseEntries) {
+      if (!isCommitmentEntry(entry)) continue;
+      const source = ownSources.get(entry.commitment_id);
+      // Запись через полночь развёрнута кусками: двигать кусок значило бы рвать её.
+      const whole =
+        source &&
+        Date.parse(source.start_at ?? "") === Date.parse(entry.start_at) &&
+        Date.parse(source.end_at ?? "") === Date.parse(entry.end_at);
+      if (whole) ids.add(entry.id);
+    }
+    return ids;
+  }, [baseEntries, ownSources]);
 
   const todayKey = zonedDateKey(new Date(), displayTimeZone);
   const activeDay =
@@ -144,158 +248,302 @@ export function StudyPlanPage() {
       : schedule.days.includes(todayKey)
         ? todayKey
         : schedule.days[0];
-  const selected =
-    selectedIds.length === 1
-      ? entries.find((entry) => entry.id === selectedIds[0]) ?? null
-      : null;
 
-  const selectAssistantSchedule = useCallback((scheduleId: string) => {
-    setAssistantTargetId(scheduleId);
-    // Карточка занятия не должна молча переопределять явный выбор в шапке.
-    setSelectedIds([]);
-  }, []);
-
-  // В другой вкладке выбранный proposal могли подтвердить или архивировать.
-  // Тогда показываем детерминированный fallback и одновременно нормализуем id,
-  // чтобы панель не считала исчезнувший вариант вечной «загрузкой».
-  useEffect(() => {
-    if (!ready || !assistantTargetId) return;
-    if (assistantScheduleOptions.some((item) => item.id === assistantTargetId)) {
-      return;
-    }
-    setAssistantTargetId(assistantScheduleOptions[0]?.id ?? null);
-  }, [assistantScheduleOptions, assistantTargetId, ready]);
-
-  const toggleSelected = useCallback((entryId: string, additive: boolean) => {
-    setSelectedIds((current) => {
-      if (!additive) return [entryId];
-      return current.includes(entryId)
-        ? current.filter((item) => item !== entryId)
-        : [...current, entryId];
-    });
-  }, []);
-
-  /**
-   * Что удалили последним Delete.
-   *
-   * Занятия и занятое время удаляются РАЗНЫМИ способами: занятие получает
-   * статус «отменено» и живо на сервере, а занятость удаляется совсем и
-   * восстанавливается пересозданием. Поэтому шаг истории держит и то и другое,
-   * а не список идентификаторов.
-   */
-  const [undoStack, setUndoStack] = useState<DeleteStep[]>([]);
-  const [redoStack, setRedoStack] = useState<DeleteStep[]>([]);
-
-  /** Сколько всего удалено последним Delete — для строки состояния. */
-  const lastStep = undoStack[undoStack.length - 1];
-  const deletedCount = lastStep
-    ? lastStep.blockIds.length + lastStep.commitments.length
-    : 0;
-
-  /** Выполнить удаление и вернуть шаг истории, если что-то действительно ушло. */
-  const applyDelete = useCallback(
-    async (step: DeleteStep): Promise<DeleteStep | null> => {
-      const cancelled = step.blockIds.length
-        ? await schedule.cancel(step.blockIds)
-        : [];
-      for (const item of step.commitments) {
-        await schedule.removeCommitment(item.id);
-      }
-      if (cancelled.length === 0 && step.commitments.length === 0) return null;
-      return { blockIds: cancelled, commitments: step.commitments };
-    },
-    [schedule],
+  const dues = usePlanDeadlines(ready ? todayKey : null, displayTimeZone, commitmentSources);
+  // Экзамен уже стоит в сетке со своим временем: в строке «весь день» он был бы дважды.
+  const weekDues = useMemo(
+    () => dues.filter((due) => schedule.days.includes(due.dateKey) && !due.id.startsWith("exam:")),
+    [dues, schedule.days],
+  );
+  const soon = useMemo(
+    () => (ready ? upcomingDeadlines(dues, todayKey, zonedMinutes(new Date(), displayTimeZone)) : []),
+    [displayTimeZone, dues, ready, todayKey],
   );
 
-  /**
-   * Delete удаляет выделенное.
-   *
-   * Раньше занятое время отсеивалось здесь же — «школу и репетитора календарь
-   * не отменяет», — и на экране из одних только таких блоков клавиша молча не
-   * делала ничего. Теперь удаляется и оно: занятость это отдельная запись, и
-   * убрать её ученик вправе.
-   */
-  const deleteSelected = useCallback(async () => {
-    const chosen = entries.filter((entry) => selectedIds.includes(entry.id));
-    const blockIds = chosen
-      .filter((entry) => !isCommitmentEntry(entry))
-      .map((entry) => entry.id);
+  const card = useMemo(
+    () => (cardId ? entries.find((entry) => entry.id === cardId) ?? null : null),
+    [cardId, entries],
+  );
 
-    // Повторяющаяся занятость развёрнута в пять блоков одной записи — по
-    // идентификатору записи их и схлопываем, иначе одно удаление ушло бы
-    // на сервер пятью запросами.
-    const commitmentIds = new Set(
-      chosen.filter(isCommitmentEntry).map((entry) => entry.commitment_id),
-    );
-    const commitments = (
-      schedule.data.state === "ready" ? schedule.data.commitmentSources : []
-    ).filter((item) => commitmentIds.has(item.id));
+  // Занятие могло исчезнуть из недели: карточка без него не нужна.
+  useEffect(() => {
+    if (cardId && !card) setCardId(null);
+  }, [card, cardId]);
 
-    if (blockIds.length === 0 && commitments.length === 0) return;
+  // ── Сообщения ───────────────────────────────────────────────────────────────
+  const dismissNotice = schedule.dismissNotice;
+  const showToast = useCallback((next: Toast) => setToast(next), []);
 
-    const done = await applyDelete({ blockIds, commitments });
-    if (!done) return;
-    setUndoStack((current) => [...current, done]);
-    // Новое действие обрывает ветку повтора — как в любом редакторе.
-    setRedoStack([]);
-    setSelectedIds([]);
-  }, [applyDelete, entries, schedule.data, selectedIds]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), TOAST_MS);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
-  /**
-   * Ctrl+Z — вернуть удалённое.
-   *
-   * Занятие восстанавливается статусом, занятость — пересозданием, поэтому у
-   * неё меняется идентификатор. Шаг истории обновляется новыми: без этого
-   * повтор через Ctrl+Shift+Z бил бы по строке, которой уже нет.
-   */
+  const notice = schedule.notice;
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(dismissNotice, NOTICE_MS);
+    return () => window.clearTimeout(timer);
+    // `dismissNotice` пересоздаётся на каждый рендер, а срок считается от сообщения.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notice]);
+
+  // ── История ─────────────────────────────────────────────────────────────────
+  const undoStack = useRef<HistoryStep[]>([]);
+  const redoStack = useRef<HistoryStep[]>([]);
+
+  const remember = useCallback((step: HistoryStep) => {
+    undoStack.current.push(step);
+    // Новое действие обрывает ветку повтора, как в любом редакторе.
+    redoStack.current = [];
+  }, []);
+
   const undo = useCallback(async () => {
-    const step = undoStack[undoStack.length - 1];
-    if (!step) {
-      // Удалять нечего — откатываем последний перенос. Ученику не нужно
-      // помнить, что именно он сделал последним.
-      if (schedule.lastRevision) {
-        await schedule.undoLast();
-        return true;
-      }
-      return false;
-    }
+    const step = undoStack.current.pop();
+    setToast(null);
+    if (!step) return;
+    const inverse = await step.run();
+    if (inverse) redoStack.current.push(inverse);
+  }, []);
 
-    setUndoStack((current) => current.slice(0, -1));
-    if (step.blockIds.length) await schedule.restore(step.blockIds);
-
-    const restored: FixedCommitment[] = [];
-    for (const item of step.commitments) {
-      const created = await schedule.recreateCommitment(item);
-      if (created) restored.push(created);
-    }
-
-    setRedoStack((current) => [
-      ...current,
-      { blockIds: step.blockIds, commitments: restored },
-    ]);
-    return true;
-  }, [schedule, undoStack]);
-
-  /** Ctrl+Shift+Z — удалить снова то, что только что вернули. */
   const redo = useCallback(async () => {
-    const step = redoStack[redoStack.length - 1];
-    if (!step) return false;
-    setRedoStack((current) => current.slice(0, -1));
-    const done = await applyDelete(step);
-    if (done) setUndoStack((current) => [...current, done]);
-    return true;
-  }, [applyDelete, redoStack]);
+    const step = redoStack.current.pop();
+    setToast(null);
+    if (!step) return;
+    const inverse = await step.run();
+    if (inverse) undoStack.current.push(inverse);
+  }, []);
+
+  // ── Выделение и карточка ────────────────────────────────────────────────────
+  const closeCard = useCallback(() => {
+    setCardId(null);
+    setSelectedIds([]);
+  }, []);
+
+  const openEntry = useCallback((entry: CalendarEntry) => {
+    setDraft(null);
+    setCardId(entry.id);
+    setSelectedIds([entry.id]);
+  }, []);
+
+  const toggleEntry = useCallback((entry: CalendarEntry) => {
+    setDraft(null);
+    setCardId(null);
+    setSelectedIds((current) =>
+      current.includes(entry.id) ? current.filter((item) => item !== entry.id) : [...current, entry.id],
+    );
+  }, []);
+
+  const dismissAll = useCallback(() => {
+    setDraft(null);
+    closeCard();
+  }, [closeCard]);
+
+  const selectMany = useCallback((ids: string[]) => {
+    setDraft(null);
+    setCardId(null);
+    setSelectedIds(ids);
+  }, []);
+
+  /** Нажатие на пустое место: первое закрывает открытое, новое занятие только со свободной сетки. */
+  const onSlot = useCallback(
+    (dateKeyAt: string, startMinutes: number) => {
+      if (cardId || selectedIds.length) {
+        closeCard();
+        return;
+      }
+      setDraft((current) => ({
+        dateKey: dateKeyAt,
+        startMinutes,
+        durationMinutes: NEW_BLOCK_MINUTES,
+        title: current?.title ?? "",
+      }));
+    },
+    [cardId, closeCard, selectedIds.length],
+  );
+
+  const pickDay = useCallback(
+    (key: string) => {
+      setDayKey(key);
+      // Как в Google Календаре: нажатие на день в неделе открывает этот день. На узком
+      // экране день и так один, а выбор режима остаётся за широким.
+      if (!narrow) setChosenMode("day");
+      dismissAll();
+    },
+    [dismissAll, narrow],
+  );
+
+  const pickMonthDay = useCallback(
+    (key: string) => {
+      setDayKey(key);
+      scheduleRef.current.goToDate(key);
+      dismissAll();
+    },
+    [dismissAll],
+  );
+
+  const stepView = useCallback(
+    (direction: -1 | 1) => {
+      dismissAll();
+      if (mode === "day") {
+        const next = shiftDateKey(activeDay, direction);
+        setDayKey(next);
+        scheduleRef.current.goToDate(next);
+        return;
+      }
+      setDayKey(shiftDateKey(activeDay, direction * 7));
+      scheduleRef.current.goToWeek(direction);
+    },
+    [activeDay, dismissAll, mode],
+  );
+
+  const goToday = useCallback(() => {
+    dismissAll();
+    setDayKey(null);
+    scheduleRef.current.goToWeek(0);
+    setScrollNonce((current) => current + 1);
+  }, [dismissAll]);
+
+  // ── Изменения ───────────────────────────────────────────────────────────────
+  const removeEntries = useCallback(
+    async (chosen: CalendarEntry[]) => {
+      const blockIds = chosen.filter((entry) => !isCommitmentEntry(entry)).map((entry) => entry.id);
+      // Повторяющаяся занятость развёрнута в пять блоков одной записи: по идентификатору
+      // записи их и схлопываем, иначе одно удаление ушло бы на сервер пятью запросами.
+      const commitmentIds = new Set(
+        chosen.flatMap((entry) => (isCommitmentEntry(entry) ? [entry.commitment_id] : [])),
+      );
+      const commitments = commitmentSources.filter((item) => commitmentIds.has(item.id));
+      if (blockIds.length === 0 && commitments.length === 0) return;
+
+      const done = await performDelete(getSchedule, { blockIds, commitments });
+      if (!done) return;
+      remember(done);
+      closeCard();
+      const count = blockIds.length + commitments.length;
+      showToast({
+        text: blockIds.length ? `Убрано: ${count} ${blockWord(count)}` : "Удалено",
+        action: "Вернуть",
+        onAction: () => void undo(),
+      });
+    },
+    [closeCard, commitmentSources, getSchedule, remember, showToast, undo],
+  );
+
+  const removeSelected = useCallback(
+    () => removeEntries(entries.filter((entry) => selectedIds.includes(entry.id) && !preview.ghosts.has(entry.id))),
+    [entries, preview.ghosts, removeEntries, selectedIds],
+  );
+
+  const removeSelectedRef = useRef(removeSelected);
+  removeSelectedRef.current = removeSelected;
+
+  const moveEntry = useCallback(
+    async (entry: CalendarEntry, dateKeyAt: string, startMinutes: number, duration: number) => {
+      const startAt = toInstant(dateKeyAt, startMinutes, displayTimeZone);
+      const sameStart = Date.parse(entry.start_at) === startAt.getTime();
+      const text =
+        sameStart && duration !== entry.duration_minutes
+          ? `Теперь ${durationLabel(duration)}`
+          : `Перенесено на ${dayShort(dateKeyAt)}, ${clock(startMinutes)}`;
+
+      if (isCommitmentEntry(entry)) {
+        const done = await getSchedule().moveEvent(entry.commitment_id, startAt, duration);
+        if (!done) return;
+        remember(
+          eventMoveStep(
+            getSchedule,
+            entry.commitment_id,
+            { startAt: new Date(entry.start_at), duration: entry.duration_minutes },
+            { startAt, duration },
+          ),
+        );
+        showToast({ text, action: "Вернуть как было", onAction: () => void undo() });
+        return;
+      }
+
+      const done = await getSchedule().move(
+        entry,
+        startAt,
+        duration !== entry.duration_minutes ? duration : undefined,
+      );
+      if (!done) return;
+      // Отменить можно только последнее подтверждённое изменение: так решает сервер.
+      remember({
+        run: async () => {
+          await getSchedule().undoLast();
+          return null;
+        },
+      });
+      showToast({ text, action: "Вернуть как было", onAction: () => void undo() });
+    },
+    [displayTimeZone, getSchedule, remember, showToast, undo],
+  );
+
+  const saveDraft = useCallback(async () => {
+    if (!draft || saving) return;
+    setSaving(true);
+    const title = draft.title.trim() || "Новое занятие";
+    const created = await getSchedule().addEvent({
+      title,
+      startAt: toInstant(draft.dateKey, draft.startMinutes, displayTimeZone),
+      durationMinutes: draft.durationMinutes,
+    });
+    setSaving(false);
+    // Не вышло: сообщение уже показано, а черновик с текстом остаётся на месте.
+    if (!created) return;
+    setDraft(null);
+    setFresh(new Set([`commitment:${created.id}:${draft.dateKey}`]));
+    window.setTimeout(() => setFresh(NO_IDS), FRESH_MS);
+    mascot.hop(0.42, "quiet");
+    remember(createdStep(getSchedule, created));
+    showToast({
+      text: `Поставил на ${dayShort(draft.dateKey)}, ${clock(draft.startMinutes)}`,
+      action: "Убрать",
+      onAction: () => void undo(),
+    });
+  }, [displayTimeZone, draft, getSchedule, remember, saving, showToast, undo]);
+
+  /** Занятие программы в этот слот ставит помощник: черновик уходит ему просьбой. */
+  const askAboutDraft = useCallback(() => {
+    if (!draft) return;
+    const name = draft.title.trim();
+    prompt({
+      target: "schedule",
+      text: `Поставь ${name ? `«${name}»` : "занятие"}: ${fullDayLabel(draft.dateKey).toLowerCase()}, в ${clock(draft.startMinutes)}, ${draft.durationMinutes} минут`,
+      send: true,
+    });
+    setDraft(null);
+  }, [draft, prompt]);
+
+  const moveViaAssistant = useCallback(
+    (entry: CalendarEntry) => {
+      const element = document.querySelector<HTMLElement>(`[data-entry="${CSS.escape(entry.id)}"]`);
+      if (element) quick.attach(element);
+      closeCard();
+      openRail();
+    },
+    [closeCard, openRail, quick],
+  );
+
+  const confirmProposal = useCallback(
+    async (id: string) => {
+      const done = await getSchedule().confirm(id);
+      if (!done) return;
+      mascot.hop(1);
+      showToast({ text: "Расписание подтверждено" });
+    },
+    [getSchedule, showToast],
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // Пока курсор в поле ввода, эти клавиши принадлежат тексту, а не
-      // календарю: Delete стирает символ, Ctrl+Z откатывает набор.
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      // Пока курсор в поле ввода, эти клавиши принадлежат тексту, а не календарю.
+      if (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable='true']")) return;
 
       const modifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
-
       // Ctrl+Shift+Z и Ctrl+Y — два общепринятых написания одного действия.
       if (modifier && (key === "y" || (key === "z" && event.shiftKey))) {
         event.preventDefault();
@@ -307,69 +555,42 @@ export function StudyPlanPage() {
         void undo();
         return;
       }
-
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       if (selectedIds.length === 0) return;
       event.preventDefault();
-      void deleteSelected();
+      void removeSelected();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelected, redo, selectedIds.length, undo]);
+  }, [redo, removeSelected, selectedIds.length, undo]);
 
-  // Считаем УЧЕБНОЕ время, без школы и репетитора: столько же показывает лента
-  // в шапке сетки, и это единственное время, которое ученик здесь двигает.
-  // Занятое время видно в самом календаре.
-  const load = useMemo(
-    () =>
-      weekLoad(
-        columns.map((column) => column.dateKey),
-        columns.flatMap((column) =>
-          column.blocks.flatMap((item) => {
-            const entry = item.block;
-            if (isCommitmentEntry(entry)) return [];
-            return [
-              {
-                dateKey: column.dateKey,
-                minutes: entry.duration_minutes,
-                // Здесь цвет не нужен — важны только суммы и пик, — поэтому
-                // группируем прямо по программе.
-                accent: entry.course_plan,
-                released: RELEASED_STATUSES.has(entry.status),
-              },
-            ];
-          }),
-        ),
-      ),
-    [columns],
-  );
-  const weekMinutes = load.totalMinutes;
+  // Выделили несколько: то же, что Delete, можно сделать и без клавиатуры.
+  const selectedCount = selectedIds.length;
+  useEffect(() => {
+    if (selectedCount < 2) return;
+    showToast({
+      text: `Выбрано: ${selectedCount} ${blockWord(selectedCount)}`,
+      action: "Убрать из плана",
+      onAction: () => void removeSelectedRef.current(),
+    });
+  }, [selectedCount, showToast]);
 
-  // «Плотнее всего в среду» имеет смысл, только когда занятых дней больше
-  // одного: у единственного дня недели пик — он сам, и подпись превращается
-  // в тавтологию.
-  const busyDays = load.days.filter((day) => day.totalMinutes > 0).length;
-  const peakColumn =
-    busyDays > 1
-      ? columns.find((column) => column.dateKey === load.peakDateKey) ?? null
-      : null;
+  const selectAssistantSchedule = useCallback((scheduleId: string) => {
+    setAssistantTargetId(scheduleId);
+    // Карточка занятия не должна молча переопределять явный выбор в окне помощника.
+    setCardId(null);
+    setSelectedIds([]);
+  }, []);
 
-  const selectedProposal = assistantView.proposalId
-    ? ready?.assistantSchedules.find(
-        (item) => item.id === assistantView.proposalId,
-      ) ?? null
-    : null;
+  // В другой вкладке выбранный вариант могли подтвердить или архивировать.
+  useEffect(() => {
+    if (!ready || !assistantTargetId) return;
+    if (assistantScheduleOptions.some((item) => item.id === assistantTargetId)) return;
+    setAssistantTargetId(assistantScheduleOptions[0]?.id ?? null);
+  }, [assistantScheduleOptions, assistantTargetId, ready]);
 
-  // Какое расписание правит помощник в панели справа.
-  //
-  // Считается ДО ранних возвратов ниже: `usePageSchedule` — хук, и после
-  // `return` его вызвать нельзя. Пока данные грузятся, расписания нет, и панель
-  // честно говорит, что выбрать нечего.
-  // `""` — расписаний нет вовсе; обычный чат остаётся доступен для советов, а
-  // /start создаст первый вариант. `null` бывает только во время загрузки.
-  const assistantScheduleId = !ready
-    ? null
-    : assistantScheduleOption?.id ?? "";
+  // `""` — расписаний нет вовсе; `null` только во время загрузки.
+  const assistantScheduleId = !ready ? null : assistantScheduleOption?.id ?? "";
 
   usePageSchedule({
     scheduleId: assistantScheduleId,
@@ -400,24 +621,16 @@ export function StudyPlanPage() {
       }
       await schedule.reload();
     },
-    // Ритм — рамка, внутри которой вообще может стоять занятие. Помощник его
-    // только предлагает: занятия по утрам вместо вечеров меняют жизнь ученика,
-    // а не расстановку блоков, и такое решение принимает он сам.
+    // Ритм — рамка, внутри которой вообще может стоять занятие. Помощник его только
+    // предлагает: занятия по утрам вместо вечеров меняют жизнь ученика, а не расстановку
+    // блоков, и такое решение принимает он сам.
     onStudyWindows: async (proposal) => {
-      const active = ready?.schedules.find(
-        (item) => item.id === assistantScheduleId,
-      );
-      if (!active?.template) {
-        throw new Error("Расписание ещё не загрузилось.");
-      }
-      // Прежние окна нужны только для замены: их идентификаторы есть лишь в
-      // самом шаблоне, а расписание отдаёт только его id.
+      const active = ready?.schedules.find((item) => item.id === assistantScheduleId);
+      if (!active?.template) throw new Error("Расписание ещё не загрузилось.");
+      // Прежние окна нужны только для замены: их идентификаторы есть лишь в самом шаблоне.
       const previousSlotIds = proposal.replace
-        ? (await listTemplates())
-            .find((item) => item.id === active.template)
-            ?.slots.map((slot) => slot.id) ?? []
+        ? (await listTemplates()).find((item) => item.id === active.template)?.slots.map((slot) => slot.id) ?? []
         : [];
-
       await applyStudyWindows(
         active.template,
         proposal.windows.map((window) => ({
@@ -431,350 +644,367 @@ export function StudyPlanPage() {
     },
   });
 
-  if (schedule.data.state === "loading") {
-    return (
-      <CoffeePageShell>
-        <div className={`${paperCard} h-[60vh] animate-pulse`} />
-      </CoffeePageShell>
-    );
-  }
+  const hasSchedule = assistantScheduleOptions.length > 0;
+  const startSetup = useCallback(() => {
+    prompt({ target: "schedule", text: "/start", send: true });
+  }, [prompt]);
 
-  if (schedule.data.state === "error") {
-    return (
-      <CoffeePageShell>
-        <div className={`${paperCard} p-6`}>
-          <p className="text-[14px] text-tm-ink-2">{schedule.data.message}</p>
-          <button
-            type="button"
-            className={`${paperButton} mt-4`}
-            onClick={() => void schedule.reload()}
-          >
-            Попробовать снова
-          </button>
-        </div>
-      </CoffeePageShell>
-    );
-  }
+  // Указанное курсором подсвечивается отсюда: класс на узле смыло бы первым же рендером.
+  const attached = quick.attached;
+  const pickedEntries = useMemo<ReadonlySet<string>>(
+    () => new Set(attached.flatMap((row) => (row.el.dataset.entry ? [row.el.dataset.entry] : []))),
+    [attached],
+  );
 
-  const data = schedule.data;
-  // Цвета программ раздаются по порядку списка, а не по хешу: иначе два курса
-  // могли достаться одному цвету, и правило «цвет = предмет» ломалось бы ровно
-  // там, где оно нужнее всего.
-  const accents = buildCourseAccents(data.plans);
+  const selectedProposal =
+    assistantView.proposalId && ready
+      ? ready.assistantSchedules.find((item) => item.id === assistantView.proposalId) ?? null
+      : null;
+  const waitingProposal =
+    !selectedProposal && ready ? ready.proposals.find((item) => item.feasible) ?? null : null;
 
   return (
-    <CoffeePageShell fillHeight maxWidthClassName="max-w-none">
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
-        {/* Одна строка вместо четырёх. Раньше над календарём стояли надстрочник,
-            заголовок, сводка и отдельная полоса программ — пять блоков, из-за
-            которых неделя начиналась только на трети экрана. Всё, что осталось,
-            стоит в один ряд: дата, сводка, легенда, навигация. */}
-        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-[18px] tracking-[-0.02em] text-tm-ink">
-              {weekLabel(schedule.days)}
-            </h1>
-            <p className="text-[12px] text-tm-muted">
-              {weekMinutes > 0 ? (
-                <>
-                  {durationLabel(weekMinutes)} учёбы
-                  {peakColumn ? (
-                    <>
-                      {" · плотнее "}
-                      {weekdayOnLabel(peakColumn.weekday)}
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                "свободна"
-              )}
-            </p>
-            {/* Легенды с названиями программ здесь больше нет. Названия у книг
-                длинные («_OceanofPDF.com_Hands-On_Machine_Learning_with…»), и
-                любая их подпись наверху съедала строку ради того, что и так
-                написано на каждом блоке третьей строкой. Цвет объясняет сам
-                блок. */}
-          </div>
-
-          {/* Навигация ничего не обводит. Раньше здесь стояли четыре рамки
-              подряд — три кнопки и переключатель вида, — и на кремовом фоне
-              они читались раньше самой недели. Теперь край появляется только
-              под курсором, а вид переключается утопленной дорожкой. */}
-          <div className="flex flex-wrap items-center gap-1">
-            <button
-              type="button"
-              aria-label="Предыдущая неделя"
-              className={`${paperQuietButton} px-2.5`}
-              onClick={() => {
-                setDayKey(null);
-                schedule.goToWeek(-1);
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              className={paperQuietButton}
-              onClick={() => {
-                setDayKey(null);
-                schedule.goToWeek(0);
-              }}
-            >
+    <div className="content view plan-view">
+      <SubNav group="study" />
+      <header className="head">
+        <h1 className="title">План</h1>
+        {ready ? (
+          <div className="head-tools">
+            <button className="btn btn-line" type="button" onClick={goToday}>
               Сегодня
             </button>
-            <button
-              type="button"
-              aria-label="Следующая неделя"
-              className={`${paperQuietButton} px-2.5`}
-              onClick={() => {
-                setDayKey(null);
-                schedule.goToWeek(1);
-              }}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <div className={`ml-2 ${paperSegment}`}>
+            <div className="pager">
+              <button className="icon-btn" type="button" aria-label="Назад" onClick={() => stepView(-1)}>
+                <Icon name="chev-l" />
+              </button>
+              <span>{mode === "day" ? fullDayLabel(activeDay) : weekLabel(schedule.days)}</span>
+              <button className="icon-btn" type="button" aria-label="Вперёд" onClick={() => stepView(1)}>
+                <Icon name="chev-r" />
+              </button>
+            </div>
+            <div className="tabs plan-mode" role="group" aria-label="Масштаб">
               {(["week", "day"] as Mode[]).map((value) => (
                 <button
                   key={value}
                   type="button"
                   aria-pressed={mode === value}
-                  onClick={() => setMode(value)}
-                  className={`${paperSegmentItem} ${
-                    mode === value ? paperSegmentActive : paperSegmentIdle
-                  }`}
+                  onClick={() => {
+                    setChosenMode(value);
+                    dismissAll();
+                  }}
                 >
                   {value === "week" ? "Неделя" : "День"}
                 </button>
               ))}
             </div>
           </div>
-        </header>
+        ) : null}
+      </header>
 
-        {/* Одна полоска на всё. Раньше здесь стопкой стояли карточка «не
-            помещается» с полным именем книги, сообщение об устаревшей версии и
-            строка отмены — три блока, съедавшие треть экрана над календарём.
-            Имена программ убраны совсем: они длинные, и на каждом блоке и так
-            написано, к какому курсу он относится. */}
-        <CalendarNotice
-          proposals={selectedProposal ? [selectedProposal] : []}
-          notice={schedule.notice}
-          cancelledCount={deletedCount}
-          hasUndo={Boolean(schedule.lastRevision)}
-          busy={schedule.busy}
-          onConfirm={(id) => void schedule.confirm(id)}
-          onDismiss={schedule.dismissNotice}
-          onUndo={() => void schedule.undoLast()}
-          onRestore={() => void undo()}
-        />
+      {schedule.data.state === "loading" ? (
+        <div className="cal card plan-skel" aria-busy="true" aria-label="Загружаю расписание" />
+      ) : null}
 
-        {/* Календарь занимает всё оставшееся место, как в любом календарном
-            приложении. Раньше рядом стояла колонка в 320 px, которая почти
-            всегда пустовала, — из-за неё неделя жалась, а под сеткой оставалась
-            полоса мёртвого пространства. Программы уехали строкой наверх,
-            карточка занятия всплывает поверх сетки и только когда нужна. */}
-        <div className="relative min-h-0 flex-1">
-          <div
-            className={`h-full ${mode === "week" ? "hidden lg:block" : "hidden"}`}
-          >
-            <WeekGrid
-                columns={columns}
-                range={range}
-                timeZone={displayTimeZone}
-                todayKey={todayKey}
-                selectedIds={selectedIds}
-                busy={schedule.busy}
-                accents={accents}
-                onSelect={(entry, additive) => toggleSelected(entry.id, additive)}
-                onSelectMany={setSelectedIds}
-                renderDetails={(entry) => (
-                  <BlockDetails
-                    block={entry}
-                    timeZone={displayTimeZone}
-                    busy={schedule.busy}
-                    onClose={() => setSelectedIds([])}
-                    onTogglePinned={(pinned) =>
-                      void schedule.setPinned([entry.id], pinned)
-                    }
-                  />
-                )}
-                onMove={(entry, startAt, duration) => {
-                  if (!isCommitmentEntry(entry)) {
-                    void schedule.move(entry, startAt, duration);
-                  }
-                }}
-            />
-          </div>
-
-          <div
-            className={`h-full overflow-y-auto ${
-              mode === "week" ? "lg:hidden" : ""
-            }`}
-          >
-            <DayView
-              column={columns.find((column) => column.dateKey === activeDay)}
-              dateKey={activeDay}
-              todayKey={todayKey}
-              selectedId={selectedIds[0] ?? null}
-              accents={accents}
-              onSelect={(entry) => setSelectedIds([entry.id])}
-              onChangeDay={(nextDay) => {
-                setDayKey(nextDay);
-                if (nextDay < schedule.days[0]) schedule.goToWeek(-1);
-                else if (nextDay > schedule.days[schedule.days.length - 1]) {
-                  schedule.goToWeek(1);
-                }
-              }}
-            />
-
-            {/* На узком экране всплывающей карточке негде встать, поэтому там
-                разбор занятия идёт следом за списком. */}
-            {selected ? (
-              <div className="mt-3 lg:hidden">
-                <BlockDetails
-                  block={selected}
-                  timeZone={displayTimeZone}
-                  busy={schedule.busy}
-                  onClose={() => setSelectedIds([])}
-                  onTogglePinned={(pinned) =>
-                    void schedule.setPinned([selected.id], pinned)
-                  }
-                />
-              </div>
-            ) : null}
-          </div>
-
-          {/* Помощник по расписанию живёт в панели справа: два разговора в одном
-              углу экрана заставляли выбирать между ними глазами. Страница
-              только сообщает панели, какое расписание на экране, — см.
-              `usePageSchedule` выше. */}
+      {schedule.data.state === "error" ? (
+        <div className="card plan-error" role="alert">
+          <p>{schedule.data.message}</p>
+          <button className="btn btn-line" type="button" onClick={() => void schedule.reload()}>
+            Попробовать снова
+          </button>
         </div>
-      </div>
-    </CoffeePageShell>
+      ) : null}
+
+      {ready ? (
+        <>
+          <ProposalLine
+            selected={selectedProposal}
+            waiting={waitingProposal}
+            busy={schedule.busy}
+            onConfirm={(id) => void confirmProposal(id)}
+            onShow={selectAssistantSchedule}
+            onAsk={() =>
+              prompt({
+                target: "schedule",
+                text: "Программа не помещается в свободное время. Что подвинуть?",
+                send: true,
+              })
+            }
+          />
+
+          <div className="cal-wrap" data-mode={mode}>
+            <PlanCalendar
+              mode={mode}
+              days={schedule.days}
+              entries={entries}
+              timeZone={displayTimeZone}
+              todayKey={todayKey}
+              pickedDay={activeDay}
+              selectedIds={selectedIds}
+              busy={schedule.busy}
+              dues={weekDues}
+              ownIds={ownIds}
+              leaving={preview.leaving}
+              ghosts={preview.ghosts}
+              resizing={preview.resizing}
+              fresh={fresh}
+              pickedEntries={pickedEntries}
+              draft={draft}
+              scrollNonce={scrollNonce}
+              onPickDay={pickDay}
+              onOpen={openEntry}
+              onToggle={toggleEntry}
+              onSelectMany={selectMany}
+              onSlot={onSlot}
+              onDismiss={dismissAll}
+              onMove={moveEntry}
+            >
+              {!hasSchedule && !railOpen ? (
+                <div className="plan-empty">
+                  <h2>Расписания пока нет</h2>
+                  <p>Ответь на пару вопросов, и появится черновик недели. В календарь он попадёт, только когда ты его подтвердишь.</p>
+                  <button className="btn btn-main" type="button" onClick={startSetup}>
+                    Настроить расписание
+                  </button>
+                </div>
+              ) : null}
+            </PlanCalendar>
+
+            <aside className="cal-side" aria-label="Месяц и ближайшие сроки">
+              <MiniMonth
+                pickedDay={activeDay}
+                days={schedule.days}
+                todayKey={todayKey}
+                onPick={pickMonthDay}
+              />
+              <SoonCard items={soon} todayKey={todayKey} />
+            </aside>
+          </div>
+
+          {card ? (
+            <CalPopover
+              anchor={`[data-entry="${CSS.escape(card.id)}"]`}
+              label={card.title}
+              layoutKey={`${card.start_at}:${mode}`}
+              onClose={(viaKeyboard) => {
+                const element = document.querySelector<HTMLElement>(`[data-entry="${CSS.escape(card.id)}"]`);
+                closeCard();
+                if (viaKeyboard) element?.focus({ preventScroll: true });
+              }}
+            >
+              <BlockCard
+                block={card}
+                timeZone={displayTimeZone}
+                busy={schedule.busy}
+                own={ownIds.has(card.id)}
+                recurring={
+                  isCommitmentEntry(card) &&
+                  commitmentSources.some((item) => item.id === card.commitment_id && item.weekday != null)
+                }
+                onMove={() => moveViaAssistant(card)}
+                onTogglePinned={(pinned) => {
+                  void schedule.setPinned([card.id], pinned).then((done) => {
+                    if (done) showToast({ text: pinned ? "Закреплено: занятие стоит на месте" : "Теперь можно двигать" });
+                  });
+                }}
+                onRemove={() => void removeEntries([card])}
+              />
+            </CalPopover>
+          ) : null}
+
+          {draft ? (
+            <CalPopover
+              anchor=".blk.draft"
+              label="Новое занятие"
+              autoFocus={false}
+              layoutKey={`${draft.dateKey}:${draft.startMinutes}:${mode}`}
+              onClose={() => setDraft(null)}
+            >
+              <DraftCard
+                draft={draft}
+                saving={saving}
+                canAsk={hasSchedule}
+                onTitle={(title) => setDraft((current) => (current ? { ...current, title } : current))}
+                onSave={() => void saveDraft()}
+                onAsk={askAboutDraft}
+              />
+            </CalPopover>
+          ) : null}
+        </>
+      ) : null}
+
+      <PlanToast
+        notice={notice}
+        toast={toast}
+        atTop={railOpen}
+        onDismissNotice={dismissNotice}
+        onDismissToast={() => setToast(null)}
+      />
+    </div>
   );
 }
 
-/**
- * Единственная полоска состояния над календарём.
- *
- * Показывает РОВНО ОДНО сообщение и одно действие. Раньше три источника —
- * предложения, ошибки и отмена переноса — рисовались каждый своей карточкой и
- * складывались стопкой; в худшем случае календарь начинался на середине экрана.
- * Порядок приоритета: ошибка важнее отмены, отмена важнее предложения.
- *
- * Названий программ здесь нет ни в одной ветке. Они длинные, а к какому курсу
- * относится занятие, написано на самом занятии.
- */
-function CalendarNotice({
-  proposals,
-  notice,
-  cancelledCount,
-  hasUndo,
+/** Черновик расписания: подтвердить его можно только здесь, поэтому строка заметна. */
+function ProposalLine({
+  selected,
+  waiting,
   busy,
   onConfirm,
-  onDismiss,
-  onUndo,
-  onRestore,
+  onShow,
+  onAsk,
 }: {
-  proposals: StudySchedule[];
-  notice: string | null;
-  cancelledCount: number;
-  hasUndo: boolean;
+  selected: { id: string; feasible: boolean } | null;
+  waiting: { id: string } | null;
   busy: boolean;
-  onConfirm: (proposalId: string) => void;
-  onDismiss: () => void;
-  onUndo: () => void;
-  onRestore: () => void;
+  onConfirm: (id: string) => void;
+  onShow: (id: string) => void;
+  onAsk: () => void;
 }) {
-  const row = `${paperTile} flex items-center justify-between gap-3 px-3 py-1.5 text-[12.5px]`;
-
-  // Отмена пачкой важнее всего остального: одна клавиша убрала несколько
-  // занятий, и выход назад должен быть на виду, а не за следующим сообщением.
-  if (cancelledCount > 0) {
+  if (selected?.feasible) {
     return (
-      <div className={row}>
-        <span className="text-tm-ink-2">
-          Удалено {cancelledCount} {blockWord(cancelledCount)}
-          <span className="ml-2 text-tm-muted">
-            Ctrl+Shift+Z — удалить снова
-          </span>
-        </span>
-        <button
-          type="button"
-          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
-          disabled={busy}
-          onClick={onRestore}
-        >
-          Вернуть · Ctrl+Z
-        </button>
-      </div>
-    );
-  }
-
-  if (notice) {
-    return (
-      <div className={row}>
-        <span className="min-w-0 truncate text-tm-danger">{notice}</span>
-        <button
-          type="button"
-          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
-          onClick={onDismiss}
-        >
-          Понятно
-        </button>
-      </div>
-    );
-  }
-
-  if (hasUndo) {
-    return (
-      <div className={row}>
-        <span className="text-tm-ink-2">Занятие перенесено</span>
-        <button
-          type="button"
-          className={`${paperButton} shrink-0 px-3 py-1 text-[12px]`}
-          disabled={busy}
-          onClick={onUndo}
-        >
-          Вернуть как было
-        </button>
-      </div>
-    );
-  }
-
-  const feasible = proposals.find((proposal) => proposal.feasible);
-  if (feasible) {
-    return (
-      <div className={row}>
-        <span className="text-tm-ink-2">
-          Новое расписание показано пунктиром
-        </span>
-        <button
-          type="button"
-          className={`${paperPrimaryButton} shrink-0 px-3 py-1 text-[12px]`}
-          disabled={busy}
-          onClick={() => onConfirm(feasible.id)}
-        >
+      <div className="plan-line card" role="status">
+        <span>Это черновик: новое расписание показано пунктиром.</span>
+        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onConfirm(selected.id)}>
           Подтвердить
         </button>
       </div>
     );
   }
-
-  if (proposals.length > 0) {
-    // Сколько именно не хватает и что с этим делать — вопрос к помощнику: он
-    // умеет и продлить курс, и разгрузить дни, а страница только сообщает факт.
+  if (selected) {
     return (
-      <div className={row}>
-        <span className="text-tm-danger">
-          Программа не помещается в свободное время
-        </span>
-        <span className="shrink-0 text-tm-muted">
-          спроси помощника, что подвинуть
-        </span>
+      <div className="plan-line card" role="status">
+        <span>Программа не помещается в свободное время.</span>
+        <button className="btn btn-line" type="button" disabled={busy} onClick={onAsk}>
+          Спросить, что подвинуть
+        </button>
       </div>
     );
   }
-
+  if (waiting) {
+    return (
+      <div className="plan-line card" role="status">
+        <span>Есть черновик расписания, он ждёт подтверждения.</span>
+        <button className="btn btn-line" type="button" onClick={() => onShow(waiting.id)}>
+          Показать
+        </button>
+      </div>
+    );
+  }
   return null;
+}
+
+function MiniMonth({
+  pickedDay,
+  days,
+  todayKey,
+  onPick,
+}: {
+  pickedDay: string;
+  days: string[];
+  todayKey: string;
+  onPick: (dateKey: string) => void;
+}) {
+  const cells = useMemo(() => monthCells(pickedDay), [pickedDay]);
+  return (
+    <section className="scard card">
+      <h2>{monthTitle(pickedDay)}</h2>
+      <div className="mm">
+        {["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((name) => (
+          <span key={name}>{name}</span>
+        ))}
+        {cells.map((cell) => (
+          <button
+            key={cell.dateKey}
+            type="button"
+            className={[
+              "m",
+              cell.out && "out",
+              days.includes(cell.dateKey) && "wk",
+              cell.dateKey === todayKey && "today",
+              cell.dateKey === pickedDay && "on",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label={fullDayLabel(cell.dateKey)}
+            aria-current={cell.dateKey === todayKey ? "date" : undefined}
+            onClick={() => onPick(cell.dateKey)}
+          >
+            {cell.day}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SoonCard({ items, todayKey }: { items: Due[]; todayKey: string }) {
+  return (
+    <section className="scard card">
+      <h2>Скоро</h2>
+      {items.length ? (
+        <ul className="soon">
+          {items.map((due) => (
+            <li key={due.id}>
+              <Link href={due.href}>
+                <span>{due.title}</span>
+                <small>{soonWhen(due, todayKey)}</small>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="small-note">
+          Близких сроков нет. Они появятся из контрольных в <Link href="/dashboard/diary">дневнике</Link> и{" "}
+          <Link href="/dashboard/goals">целей</Link> с датой.
+        </p>
+      )}
+    </section>
+  );
+}
+
+interface Toast {
+  text: string;
+  action?: string;
+  onAction?: () => void;
+}
+
+/** Плавает над страницей: сетка под ним не прыгает, как прыгала бы от строки над календарём. */
+function PlanToast({
+  notice,
+  toast,
+  atTop,
+  onDismissNotice,
+  onDismissToast,
+}: {
+  notice: string | null;
+  toast: Toast | null;
+  /** Внизу открыто мини-окно. */
+  atTop: boolean;
+  onDismissNotice: () => void;
+  onDismissToast: () => void;
+}) {
+  if (notice) {
+    return (
+      <div className={`toast plan-toast${atTop ? " at-top" : ""}`} role="alert">
+        <span>{notice}</span>
+        <button className="btn btn-text" type="button" onClick={onDismissNotice}>
+          Понятно
+        </button>
+      </div>
+    );
+  }
+  if (!toast) return null;
+  return (
+    <div className={`toast plan-toast${atTop ? " at-top" : ""}`} role="status">
+      <span>{toast.text}</span>
+      {toast.action ? (
+        <button className="btn btn-text" type="button" onClick={toast.onAction}>
+          {toast.action}
+        </button>
+      ) : (
+        <button className="icon-btn" type="button" aria-label="Закрыть" onClick={onDismissToast}>
+          <Icon name="x" />
+        </button>
+      )}
+    </div>
+  );
 }

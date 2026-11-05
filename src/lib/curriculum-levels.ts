@@ -126,5 +126,5 @@ export function spanCaption(pair: LevelPair): string {
   if (span === 0) {
     return "Программа на закрепление: уровень остаётся тем же, растёт уверенность.";
   }
-  return `Программа проведёт вас через ${span} ${stepsWord(span)}.`;
+  return `Программа проведёт тебя через ${span} ${stepsWord(span)}.`;
 }

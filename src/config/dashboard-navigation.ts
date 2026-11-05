@@ -1,22 +1,5 @@
-import type { LucideIcon } from "lucide-react";
-import {
-  AwardIcon,
-  CalendarIcon,
-  ChartLineIcon,
-  ClipboardCheckIcon,
-  GraduationCapIcon,
-  LibraryIcon,
-  MedalIcon,
-  MessagesSquareIcon,
-  NotebookPenIcon,
-  PresentationIcon,
-  SwordsIcon,
-  TimerIcon,
-  TrophyIcon,
-  ZapIcon,
-} from "lucide-react";
-
-import { NowIcon } from "./nav-icons.ts";
+import type { IconName } from "../components/shell/icons";
+import { BOARD_ENABLED } from "./features.ts";
 
 export interface DashboardNavigationAccess {
   is_admin?: boolean;
@@ -27,7 +10,7 @@ export interface DashboardNavigationAccess {
 export interface DashboardNavigationItem {
   title: string;
   url: string;
-  icon: LucideIcon;
+  icon: IconName;
   access?: "admin" | "moderator";
 }
 
@@ -98,8 +81,12 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
     subtitle: "Небольшие действия каждый день",
   },
   "/dashboard/goals": {
-    title: "Карта целей",
-    subtitle: "Планы, связи и прогресс",
+    title: "Цели",
+    subtitle: "Куда идёшь и к какому сроку",
+  },
+  "/dashboard/settings": {
+    title: "Настройки",
+    subtitle: "Напоминания и кто меня видит",
   },
   "/dashboard/nutrition": {
     title: "Питание",
@@ -187,22 +174,21 @@ const FALLBACK_META: DashboardPageMeta = {
 
 export type DashboardSectionKey =
   | "now"
-  | "study"
   | "tutor"
+  | "study"
+  | "growth"
   | "library"
-  | "contests"
-  | "progress";
+  | "contests";
 
 /**
- * Раздел верхнего уровня — то, что стоит в рейле и в нижней панели телефона.
+ * Группа левой панели. «Сейчас» и «Тьютор» идут первыми: это самые важные разделы.
  *
- * Шесть разделов из CLAUDE.md §16. Страниц внутри больше, и они живут в
- * `items`: рейл показывает их, когда раскрыт, а сам раздел ведёт на первую.
+ * На телефоне панели нет, там вкладки «Сейчас», «Тьютор», «Учёба», «Книги» и «Ещё».
  */
 export interface DashboardSection {
   key: DashboardSectionKey;
   title: string;
-  icon: LucideIcon;
+  icon: IconName;
   url: string;
   items: DashboardNavigationItem[];
 }
@@ -211,68 +197,60 @@ const dashboardSections: DashboardSection[] = [
   {
     key: "now",
     title: "Сейчас",
-    icon: NowIcon,
+    icon: "now",
     url: "/dashboard",
     items: [],
   },
   {
-    key: "study",
-    title: "Учёба",
-    icon: NotebookPenIcon,
-    url: "/dashboard/diary",
+    key: "tutor",
+    title: "Тьютор",
+    icon: "chat",
+    url: "/dashboard/chat",
     items: [
-      { title: "Дневник", url: "/dashboard/diary", icon: NotebookPenIcon },
-      { title: "План недели", url: "/dashboard/plan", icon: CalendarIcon },
-      { title: "Слабые темы", url: "/dashboard/weaknesses", icon: ZapIcon },
+      { title: "Чат", url: "/dashboard/chat", icon: "chat" },
+      // Доска жжёт токены: в продакшене она выключена, пока не докажет ценность.
+      ...(BOARD_ENABLED
+        ? ([{ title: "Научная доска", url: "/dashboard/whiteboard", icon: "board" }] as const)
+        : []),
     ],
   },
   {
-    key: "tutor",
-    title: "Тьютор",
-    icon: MessagesSquareIcon,
-    url: "/dashboard/chat",
+    key: "study",
+    title: "Учёба",
+    icon: "diary",
+    url: "/dashboard/diary",
     items: [
-      { title: "Чат по книге", url: "/dashboard/chat", icon: MessagesSquareIcon },
-      {
-        title: "Научная доска",
-        url: "/dashboard/whiteboard",
-        icon: PresentationIcon,
-      },
+      { title: "Дневник", url: "/dashboard/diary", icon: "diary" },
+      { title: "План", url: "/dashboard/plan", icon: "plan" },
+      { title: "Слабые темы", url: "/dashboard/weaknesses", icon: "target" },
+      { title: "Помодоро", url: "/dashboard/pomodoro", icon: "timer" },
+    ],
+  },
+  {
+    key: "growth",
+    title: "Рост",
+    icon: "mountain",
+    url: "/dashboard/goals",
+    items: [
+      { title: "Цели", url: "/dashboard/goals", icon: "mountain" },
+      { title: "Привычки", url: "/dashboard/habits", icon: "flame" },
     ],
   },
   {
     key: "library",
     title: "Библиотека",
-    icon: LibraryIcon,
+    icon: "book",
     url: "/dashboard/curriculum",
-    items: [],
+    items: [{ title: "Курсы и книги", url: "/dashboard/curriculum", icon: "book" }],
   },
   {
     key: "contests",
     title: "Соревнования",
-    icon: TrophyIcon,
+    icon: "flag",
     url: "/dashboard/arena/solve",
     items: [
-      { title: "Контесты", url: "/dashboard/arena/solve", icon: SwordsIcon },
-      { title: "Арена", url: "/dashboard/arena/review", icon: ClipboardCheckIcon },
-      { title: "Рейтинг", url: "/dashboard/leaderboard", icon: MedalIcon },
-      { title: "Достижения", url: "/dashboard/achievements", icon: AwardIcon },
-    ],
-  },
-  {
-    key: "progress",
-    title: "Прогресс",
-    icon: ChartLineIcon,
-    // Отдельной страницы прогресса пока нет; ближе всего к нему — оценки за
-    // четверть и год. Таймер — второй, со своей статистикой фокуса.
-    url: "/dashboard/diary/grades",
-    items: [
-      {
-        title: "Итоговые оценки",
-        url: "/dashboard/diary/grades",
-        icon: GraduationCapIcon,
-      },
-      { title: "Помодоро", url: "/dashboard/pomodoro", icon: TimerIcon },
+      { title: "Контесты", url: "/dashboard/arena/solve", icon: "flag" },
+      { title: "Рейтинг", url: "/dashboard/leaderboard", icon: "medal" },
     ],
   },
 ];
@@ -355,4 +333,49 @@ export function getDashboardPageMeta(pathname: string): DashboardPageMeta {
     .find((route) => pathname === route || pathname.startsWith(`${route}/`));
 
   return (matchingRoute ? dashboardPageMeta[matchingRoute] : undefined) ?? FALLBACK_META;
+}
+
+/** Страница для стилей и подсказок: `data-view` на корне документа. */
+export type DashboardView =
+  | "now"
+  | "chat"
+  | "board"
+  | "diary"
+  | "plan"
+  | "weak"
+  | "focus"
+  | "goals"
+  | "habits"
+  | "library"
+  | "course"
+  | "contests"
+  | "rating"
+  | "profile"
+  | "prefs"
+  | "other";
+
+const VIEW_ROUTES: Array<[string, DashboardView]> = [
+  ["/dashboard/curriculum/plan", "course"],
+  ["/dashboard/curriculum", "library"],
+  ["/dashboard/chat", "chat"],
+  ["/dashboard/whiteboard", "board"],
+  ["/dashboard/board", "board"],
+  ["/dashboard/diary", "diary"],
+  ["/dashboard/plan", "plan"],
+  ["/dashboard/weaknesses", "weak"],
+  ["/dashboard/pomodoro", "focus"],
+  ["/dashboard/goals", "goals"],
+  ["/dashboard/habits", "habits"],
+  ["/dashboard/arena", "contests"],
+  ["/dashboard/leaderboard", "rating"],
+  ["/dashboard/profile", "profile"],
+  ["/dashboard/settings", "prefs"],
+];
+
+export function dashboardViewOf(pathname: string): DashboardView {
+  if (pathname === "/dashboard" || pathname === "/dashboard/") return "now";
+  for (const [route, view] of VIEW_ROUTES) {
+    if (matches(pathname, route)) return view;
+  }
+  return "other";
 }

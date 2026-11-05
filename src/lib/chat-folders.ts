@@ -1,16 +1,14 @@
-// Разговоры по папкам: папка — это предмет.
+// Разговоры по группам в левой панели: сначала «Общие», дальше по предметам.
 //
-// Раньше список слева шёл сплошной лентой по дням. Для одного предмета это
-// работало, для пяти — нет: «вчера» ничего не говорит о том, физика это была
-// или алгебра, и разговоры разных предметов перемешивались в одну кашу.
+// Лента по дням для одного предмета работала, для пяти нет: «вчера» ничего не
+// говорит о том, физика это была или алгебра. Предмет это естественная группа: у
+// него своя книга, свои цитаты и свой контекст ответа.
 //
-// Предмет — естественная папка: у него своя книга, свои цитаты и свой контекст
-// ответа. Пустые папки остаются в списке: это способ начать разговор по
-// предмету, а не мусор.
+// Группа без разговоров в списке не показывается: подпись, под которой ничего нет,
+// это шум. Начать разговор по предмету можно из выбора книги в поле ввода.
 //
-// Отдельным модулем, потому что порядок и границы здесь важнее разметки:
-// предметы идут в порядке каталога, «Без книги» всегда последняя, внутри папки
-// свежие сверху.
+// Отдельным модулем, потому что порядок и границы здесь важнее разметки: внутри
+// группы свежие сверху, предметы идут в порядке каталога.
 
 export interface FolderSubject {
   goalId: string;
@@ -20,7 +18,7 @@ export interface FolderSubject {
 }
 
 export interface ChatFolder<T> {
-  /** `null` — папка разговоров без книги. */
+  /** `null` — разговоры без книги. */
   goalId: string | null;
   title: string;
   books: number;
@@ -32,8 +30,8 @@ interface FoldableChat {
   updated_at: string;
 }
 
-/** Заголовок папки для разговоров, у которых предмета нет. */
-export const NO_BOOK_FOLDER = "Без книги";
+/** Подпись группы для разговоров, у которых предмета нет. */
+export const NO_BOOK_FOLDER = "Общие";
 
 export function buildChatFolders<T extends FoldableChat>(
   chats: T[],
@@ -56,16 +54,7 @@ export function buildChatFolders<T extends FoldableChat>(
     else byGoal.set(chat.goal as string, [chat]);
   }
 
-  const folders: ChatFolder<T>[] = subjects.map((subject) => ({
-    goalId: subject.goalId,
-    title: subject.title,
-    books: subject.books,
-    chats: recentFirst(byGoal.get(subject.goalId) ?? []),
-  }));
-
-  // «Без книги» появляется, только когда в ней что-то есть: пустая папка
-  // сообщала бы об отсутствии разговоров, а не о возможности их завести —
-  // завести их можно из выбора книги в поле ввода.
+  const folders: ChatFolder<T>[] = [];
   if (loose.length) {
     folders.push({
       goalId: null,
@@ -74,12 +63,21 @@ export function buildChatFolders<T extends FoldableChat>(
       chats: recentFirst(loose),
     });
   }
-
+  for (const subject of subjects) {
+    const list = byGoal.get(subject.goalId);
+    if (!list) continue;
+    folders.push({
+      goalId: subject.goalId,
+      title: subject.title,
+      books: subject.books,
+      chats: recentFirst(list),
+    });
+  }
   return folders;
 }
 
 function recentFirst<T extends FoldableChat>(chats: T[]): T[] {
-  // Порядок сервера не гарантирован, а перескок дат внутри папки выглядит
+  // Порядок сервера не гарантирован, а перескок дат внутри группы выглядит
   // как сбой.
   return [...chats].sort(
     (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),

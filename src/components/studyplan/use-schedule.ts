@@ -34,6 +34,7 @@ import {
   listCommitments,
   listSchedules,
   moveBlock,
+  moveCommitment,
   undoRevision,
 } from "@/lib/studyplan-api";
 import { shiftDateKey, weekDays, zonedDateKey } from "@/lib/studyplan-calendar";
@@ -262,6 +263,16 @@ export function useSchedule() {
     [timeZone],
   );
 
+  /**
+   * Перейти к дате: мини-месяц и листание дня. Неделя та же — ничего не перечитываем:
+   * смена `anchor` заново запрашивает всю неделю.
+   */
+  const goToDate = useCallback((dateKey: string) => {
+    setAnchor((current) =>
+      weekDays(current)[0] === weekDays(dateKey)[0] ? current : dateKey,
+    );
+  }, []);
+
   const move = useCallback(
     async (block: LearningCalendarEntry, startAt: Date, durationMinutes?: number) => {
       setBusy(true);
@@ -274,15 +285,17 @@ export function useSchedule() {
         });
         setLastRevision(result.revision);
         await loadChanged({ calendarOnly: true });
+        return true;
       } catch (error) {
         if (error instanceof StudyplanApiError && error.isStale) {
-          setNotice("Календарь обновился — здесь была другая версия.");
+          setNotice("Календарь обновился: здесь была другая версия.");
           await loadChanged({ calendarOnly: true });
         } else {
           setNotice(
             error instanceof Error ? error.message : "Перенести не получилось.",
           );
         }
+        return false;
       } finally {
         setBusy(false);
       }
@@ -316,10 +329,12 @@ export function useSchedule() {
       try {
         await confirmSchedule(scheduleId);
         await loadChanged({ calendarOnly: true });
+        return true;
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Подтвердить не получилось.",
         );
+        return false;
       } finally {
         setBusy(false);
       }
@@ -399,16 +414,98 @@ export function useSchedule() {
   /** Закрепить занятие или отпустить его. */
   const setPinned = useCallback(
     async (blockIds: string[], pinned: boolean) => {
-      if (blockIds.length === 0) return;
+      if (blockIds.length === 0) return false;
       setBusy(true);
       setNotice(null);
       try {
         await pinBlocks(blockIds, pinned);
         await loadChanged({ calendarOnly: true });
+        return true;
       } catch (error) {
         setNotice(
           error instanceof Error ? error.message : "Не получилось изменить.",
         );
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadChanged],
+  );
+
+  /**
+   * Поставить свой блок на пустое место: разовая запись занятого времени.
+   *
+   * Занятие программы напрямую не создать, оно приходит из планировщика. Этой же записью
+   * помощник отвечает на просьбу «поставь просто блок», только здесь не нужна модель.
+   */
+  const addEvent = useCallback(
+    async (input: {
+      title: string;
+      startAt: Date;
+      durationMinutes: number;
+    }): Promise<FixedCommitment | null> => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        const startAt = input.startAt.toISOString();
+        const endAt = new Date(
+          input.startAt.getTime() + input.durationMinutes * 60_000,
+        ).toISOString();
+        const fields = {
+          title: input.title,
+          kind: "other" as const,
+          duration_minutes: input.durationMinutes,
+          start_at: startAt,
+          end_at: endAt,
+        };
+        const created = await createCommitment(fields, "manual");
+        await loadChanged();
+        return {
+          ...fields,
+          id: created.id,
+          weekday: null,
+          start_time: null,
+          valid_from: null,
+          valid_until: null,
+          source: "manual",
+          source_text: "",
+          created_at: new Date().toISOString(),
+        };
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Сохранить не получилось.",
+        );
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadChanged],
+  );
+
+  /** Передвинуть или растянуть свой блок. Ревизий у занятого времени нет. */
+  const moveEvent = useCallback(
+    async (
+      commitmentId: string,
+      startAt: Date,
+      durationMinutes: number,
+    ): Promise<boolean> => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        await moveCommitment(commitmentId, {
+          startAt: startAt.toISOString(),
+          endAt: new Date(startAt.getTime() + durationMinutes * 60_000).toISOString(),
+          durationMinutes,
+        });
+        await loadChanged();
+        return true;
+      } catch (error) {
+        setNotice(
+          error instanceof Error ? error.message : "Перенести не получилось.",
+        );
+        return false;
       } finally {
         setBusy(false);
       }
@@ -484,7 +581,10 @@ export function useSchedule() {
     notice,
     lastRevision,
     goToWeek,
+    goToDate,
     move,
+    addEvent,
+    moveEvent,
     undoLast,
     confirm,
     build,

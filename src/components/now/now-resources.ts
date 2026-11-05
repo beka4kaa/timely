@@ -6,14 +6,8 @@
 // главная грузит всё, а рейл на любой странице — блоки, темы и книги для своих
 // отметок. Один ключ — один запрос на обоих.
 
-import {
-  getPlan,
-  listChats,
-  listDocuments,
-  listGoals,
-  listMaterials,
-  listPlans,
-} from "@/lib/curriculum-api";
+import { listContests } from "@/lib/contest-api";
+import { getPlan, listDocuments, listPlans } from "@/lib/curriculum-api";
 import { mergeListRequests } from "@/lib/now-feed";
 import { invalidateResources } from "@/lib/resource-cache";
 import {
@@ -134,22 +128,18 @@ export async function reviewTopic(topicId: string, rating: "GOOD" | "AGAIN"): Pr
   if (!response.ok) throw new Error("Не удалось записать повторение");
 }
 
-// ── Библиотека и тьютор ───────────────────────────────────────────────────────
-
-export const GOALS_KEY = "now:goals";
-export const fetchGoals = () => listGoals();
+// ── Библиотека ────────────────────────────────────────────────────────────────
 
 export const PLANS_KEY = "now:plans";
 export const fetchPlans = () => listPlans();
 
-export const MATERIALS_KEY = "now:materials";
-export const fetchMaterials = () => listMaterials();
-
 export const DOCUMENTS_KEY = "now:documents";
 export const fetchDocuments = () => listDocuments();
 
-export const CHATS_KEY = "now:chats";
-export const fetchChats = () => listChats();
-
 export const planKey = (planId: string) => `now:plan:${planId}`;
 export const fetchPlan = (planId: string) => getPlan(planId);
+
+// ── Контесты ──────────────────────────────────────────────────────────────────
+
+export const CONTESTS_KEY = "now:contests";
+export const fetchContests = () => listContests();

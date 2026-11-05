@@ -1,21 +1,23 @@
 import type { Metadata, Viewport } from 'next'
-import { Onest, Literata } from 'next/font/google'
+import { Golos_Text, Source_Serif_4 } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { Toaster } from '@/components/ui/sonner'
 
-// Основной шрифт интерфейса и заголовки — те же, что на лендинге. Кириллица
-// обязательна: без неё русский текст падал в системный шрифт.
-const onest = Onest({
+// Golos Text говорит за интерфейс, Source Serif 4 там, где читают: заголовки
+// страниц, ответы тьютора, цитаты, формулы. Кириллица обязательна: без неё русский
+// текст падал в системный шрифт.
+const golos = Golos_Text({
   subsets: ['latin', 'cyrillic'],
-  variable: '--font-onest',
+  variable: '--font-golos',
 })
 
-const literata = Literata({
+const sourceSerif = Source_Serif_4({
   subsets: ['latin', 'cyrillic'],
+  style: ['normal', 'italic'],
   axes: ['opsz'],
-  variable: '--font-literata',
+  variable: '--font-source-serif',
 })
 // Handwriting font (Caveat) is self-hosted via @font-face in globals.css —
 // next/font/google can't reach Google Fonts in some environments.
@@ -99,8 +101,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <body className={`${onest.variable} ${literata.variable} font-sans`} suppressHydrationWarning>
+    <html lang="ru" className={`${golos.variable} ${sourceSerif.variable}`} suppressHydrationWarning>
+      <body className="font-sans" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
@@ -110,7 +112,7 @@ export default function RootLayout({
           <NextAuthProvider>
             <div className="min-h-screen bg-background">
               {children}
-              <Toaster position="top-right" richColors closeButton offset={72} />
+              <Toaster position="bottom-center" closeButton offset={88} />
             </div>
           </NextAuthProvider>
         </ThemeProvider>

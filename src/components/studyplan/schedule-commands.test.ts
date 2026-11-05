@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  defaultScheduleMode,
   matchingScheduleCommands,
   moveCommandSelection,
   parseScheduleCommand,
@@ -28,9 +29,10 @@ test("autocomplete находит основную команду и alias бе�
   );
 });
 
-test("/start доступен всегда, а /plan — после появления расписания", () => {
+test("/start и /advice доступны всегда, а /plan — после появления расписания", () => {
   const empty = scheduleCommands(false);
   assert.equal(empty.find((item) => item.id === "start")?.available, true);
+  assert.equal(empty.find((item) => item.id === "advice")?.available, true);
   assert.equal(empty.find((item) => item.id === "plan")?.available, false);
 
   const existing = scheduleCommands(true);
@@ -94,6 +96,28 @@ test("/start может перестроить ещё не подтверждё�
   assert.deepEqual(
     resolveScheduleSubmission("/start", "advice", true),
     { kind: "start" },
+  );
+});
+
+test("при наличии расписания обычное сообщение готовит изменение, совет только по команде", () => {
+  assert.equal(defaultScheduleMode(true), "plan");
+  assert.equal(defaultScheduleMode(false), "advice");
+  assert.deepEqual(
+    resolveScheduleSubmission("перенеси физику", defaultScheduleMode(true), true),
+    { kind: "message", message: "перенеси физику", mode: "plan" },
+  );
+  assert.deepEqual(resolveScheduleSubmission("/advice оцени неделю", "plan", true), {
+    kind: "message",
+    message: "оцени неделю",
+    mode: "advice",
+  });
+  assert.deepEqual(resolveScheduleSubmission("/advice", "plan", true), {
+    kind: "arm_advice",
+  });
+  assert.equal(resolveScheduleSubmission("/совет", "plan", true).kind, "arm_advice");
+  assert.deepEqual(
+    matchingScheduleCommands("/ad", true).map((item) => item.id),
+    ["advice"],
   );
 });
 

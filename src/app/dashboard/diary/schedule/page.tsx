@@ -1,26 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
-import {
-  ArrowLeftIcon,
-  PlusIcon,
-  Trash2Icon,
-  Loader2,
-  Settings2Icon,
-  CheckIcon,
-  GripVertical,
-  X,
-  Copy,
-  FilePlus,
-  Layers3,
-  Star,
-  Download,
-  Upload,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import Link from "next/link"
+import { GripVertical } from "lucide-react"
+import { Icon } from "@/components/shell/icons"
+import { SubNav } from "@/components/shell/tab-bar"
 import {
   Select,
   SelectContent,
@@ -33,10 +17,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { plural } from "@/lib/now-feed"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek, BlockType } from "@/types/diary"
 import { DAYS_ORDER, DAY_OF_WEEK_LABELS, BLOCK_TYPE_META, PRESET_BLOCK_TYPES } from "@/types/diary"
+import "@/styles/timely/page-diary.css"
 
 // ── Custom preset persistence ──────────────────────────────────────
 const CUSTOM_KEY = 'schedule_custom_block_types'
@@ -59,16 +44,6 @@ function getBlockLabel(type: BlockType, label: string, customs: CustomPreset[]) 
   if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].label
   const custom = customs.find(c => c.value === type)
   return custom?.label ?? label ?? type
-}
-
-function getBlockEmoji(type: BlockType, customs: CustomPreset[]) {
-  if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].emoji
-  return customs.find(c => c.value === type)?.emoji ?? '🔖'
-}
-
-function getBlockColor(type: BlockType) {
-  if (type in BLOCK_TYPE_META) return BLOCK_TYPE_META[type as keyof typeof BLOCK_TYPE_META].color
-  return 'text-pink-400'
 }
 
 interface BlockTypeComboboxProps {
@@ -124,65 +99,55 @@ function BlockTypeCombobox({ value, onValueChange, customs, onCustomsChange }: B
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          className={cn(
-            'flex items-center gap-1 h-7 px-2 rounded-md border border-input bg-transparent text-xs hover:bg-accent transition-colors w-28 shrink-0',
-            getBlockColor(value)
-          )}
-        >
-          <span>{getBlockEmoji(value, customs)}</span>
-          <span className="truncate">{getBlockLabel(value, '', customs)}</span>
+        <button type="button" className="ds-type" aria-label="Тип блока">
+          <span>{getBlockLabel(value, '', customs)}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-0" align="start">
-        <div className="flex flex-col">
-          <div className="border-b px-3 py-2">
-            <input
-              autoFocus
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && canCreate) create() }}
-              placeholder="Поиск или создать..."
-              className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-            />
-          </div>
-          <div className="py-1 max-h-48 overflow-auto">
-            {filtered.map(opt => (
-              <div
-                key={opt.value}
-                onClick={() => select(opt)}
-                className="flex items-center justify-between px-3 py-1.5 text-xs hover:bg-accent cursor-pointer rounded-sm mx-1 group"
-              >
-                <span className={cn('flex items-center gap-2', getBlockColor(opt.value))}>
-                  <span>{opt.emoji}</span>
-                  <span>{opt.label}</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  {value === opt.value && <CheckIcon className="h-3 w-3 text-primary" />}
-                  {!opt.isPreset && (
-                    <button
-                      onClick={e => removeCustom(e, opt.value)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 hover:text-destructive transition-all"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </span>
-              </div>
-            ))}
-            {canCreate && (
-              <div
-                onClick={create}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent cursor-pointer rounded-sm mx-1 text-muted-foreground"
-              >
-                <PlusIcon className="h-3 w-3" />
-                <span>Создать «{query}»</span>
-              </div>
-            )}
-            {filtered.length === 0 && !canCreate && (
-              <div className="px-3 py-2 text-xs text-muted-foreground">Ничего не найдено</div>
-            )}
-          </div>
+      <PopoverContent className="ds-type-pop w-52 rounded-xl p-0" align="start">
+        <input
+          autoFocus
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && canCreate) create() }}
+          placeholder="Поиск или новый тип"
+          aria-label="Поиск или новый тип блока"
+          className="ds-type-search"
+        />
+        <div className="ds-type-list">
+          {filtered.map(opt => (
+            <div
+              key={opt.value}
+              role="button"
+              tabIndex={0}
+              onClick={() => select(opt)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(opt) } }}
+              className="ds-type-opt"
+            >
+              <span>{opt.label}</span>
+              <span className="flex items-center gap-1">
+                {value === opt.value && <Icon name="check" />}
+                {!opt.isPreset && (
+                  <button
+                    type="button"
+                    onClick={e => removeCustom(e, opt.value)}
+                    className="ds-type-x"
+                    aria-label={`Удалить тип «${opt.label}»`}
+                  >
+                    <Icon name="x" />
+                  </button>
+                )}
+              </span>
+            </div>
+          ))}
+          {canCreate && (
+            <button type="button" onClick={create} className="ds-type-opt">
+              <span>Создать «{query}»</span>
+              <Icon name="plus" />
+            </button>
+          )}
+          {filtered.length === 0 && !canCreate && (
+            <div className="ds-type-none">Ничего не найдено</div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -331,7 +296,6 @@ function parseCsvToRows(csv: string): ParsedRow[] {
 }
 
 export default function SchedulePage() {
-  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -772,48 +736,42 @@ export default function SchedulePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="content view">
+        <SubNav group="study" />
+        <header className="head">
+          <h1 className="title">Шаблон расписания</h1>
+        </header>
+        <p className="dy-note" role="status">Загружаю шаблон…</p>
       </div>
     )
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-4 md:p-6 flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push('/dashboard/diary')}>
-          <ArrowLeftIcon className="h-4 w-4" />
-        </Button>
-        <Settings2Icon className="h-5 w-5 text-primary" />
-        <div>
-          <h1 className="text-lg font-bold leading-none">Настройка расписания</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Шаблон применяется к новым неделям. Уже открытые недели не меняются.
-          </p>
+    <div className="content view">
+      <SubNav group="study" />
+      <header className="head">
+        <h1 className="title">Шаблон расписания</h1>
+        <div className="head-tools">
+          <Link className="btn btn-text" href="/dashboard/diary">
+            <Icon name="chev-l" />
+            Дневник
+          </Link>
         </div>
-      </div>
+      </header>
+      <p className="dy-note">
+        Шаблон применяется к новым неделям. Неделя, в которой уже есть записи, не меняется.
+      </p>
 
-      {/* ── Template selector + actions ─────────────────────────────── */}
-      <div className="flex flex-col gap-3 rounded-xl border bg-muted/20 p-4">
-        <div className="flex items-center gap-2">
-          <Layers3 className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Шаблон расписания
-          </span>
-          {isActiveTemplate && (
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-medium">
-              <Star className="h-2.5 w-2.5" /> Активный
-            </span>
-          )}
-          {/* CSV buttons — top-right corner */}
-          <div className="ml-auto flex items-center gap-1">
+      {/* Какой шаблон открыт и что с ним можно сделать */}
+      <section className="card ds-card">
+        <div className="ds-card-top">
+          <h2>Шаблон</h2>
+          {isActiveTemplate && <span className="ds-badge">Активный</span>}
+          <div className="ds-card-tools">
             {templateId && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                title="Экспорт CSV"
+              <button
+                type="button"
+                className="btn btn-text"
                 onClick={() => exportToCsv(
                   templateName,
                   slotsByDay,
@@ -821,22 +779,17 @@ export default function SchedulePage() {
                   (type, label) => getBlockLabel(type, label, customPresets),
                 )}
               >
-                <Download className="h-3.5 w-3.5" />
-              </Button>
+                Экспорт CSV
+              </button>
             )}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              title="Импорт CSV"
+            <button
+              type="button"
+              className="btn btn-text"
               disabled={importingTemplate}
               onClick={() => importFileRef.current?.click()}
             >
-              {importingTemplate
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Upload className="h-3.5 w-3.5" />
-              }
-            </Button>
+              {importingTemplate ? "Загружаю…" : "Импорт CSV"}
+            </button>
             <input
               ref={importFileRef}
               type="file"
@@ -847,259 +800,174 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        {/* Template picker */}
         {allTemplates.length > 1 && (
           <Select value={templateId ?? ''} onValueChange={handleSwitchTemplate}>
-            <SelectTrigger className="h-8 text-sm max-w-xs">
-              <SelectValue placeholder="Выберите шаблон" />
+            <SelectTrigger className="ds-select ds-name" aria-label="Выбрать шаблон">
+              <SelectValue placeholder="Выбери шаблон" />
             </SelectTrigger>
             <SelectContent>
               {allTemplates.map(t => (
                 <SelectItem key={t.id} value={t.id}>
-                  <span className="flex items-center gap-1.5">
-                    {t.isActive && <Star className="h-3 w-3 text-primary" />}
-                    {t.name}
-                  </span>
+                  {t.name}{t.isActive ? ", активный" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
 
-        {/* Template name input */}
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="tpl-name" className="text-xs font-medium">Название шаблона</Label>
-          <Input
-            id="tpl-name"
+        <label className="field ds-name">
+          Название шаблона
+          <input
             value={templateName}
             onChange={e => setTemplateName(e.target.value)}
-            className="max-w-xs h-8 text-sm"
             placeholder="Моё расписание"
           />
-        </div>
+        </label>
 
-        {/* Actions row */}
-        <div className="flex flex-wrap gap-2">
-          {/* Create new empty template */}
-          <Button
-            size="sm" variant="outline"
-            className="h-7 text-xs gap-1.5"
-            onClick={handleCreateEmpty}
-            disabled={creatingTemplate}
-          >
-            {creatingTemplate
-              ? <Loader2 className="h-3 w-3 animate-spin" />
-              : <FilePlus className="h-3 w-3" />
-            }
-            Новый шаблон
-          </Button>
-
-          {/* Duplicate current template */}
+        <div className="ds-acts">
+          <button type="button" className="btn btn-line" onClick={handleCreateEmpty} disabled={creatingTemplate}>
+            {creatingTemplate ? "Создаю…" : "Новый шаблон"}
+          </button>
           {templateId && (
-            <Button
-              size="sm" variant="outline"
-              className="h-7 text-xs gap-1.5"
-              onClick={handleDuplicate}
-              disabled={duplicatingTemplate}
-            >
-              {duplicatingTemplate
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Copy className="h-3 w-3" />
-              }
-              Дублировать
-            </Button>
+            <button type="button" className="btn btn-line" onClick={handleDuplicate} disabled={duplicatingTemplate}>
+              {duplicatingTemplate ? "Копирую…" : "Дублировать"}
+            </button>
           )}
-
-          {/* Set as active (only shown when editing a non-active template) */}
           {templateId && !isActiveTemplate && (
-            <Button
-              size="sm" variant="secondary"
-              className="h-7 text-xs gap-1.5"
-              onClick={handleSetActive}
-              disabled={activatingTemplate}
-            >
-              {activatingTemplate
-                ? <Loader2 className="h-3 w-3 animate-spin" />
-                : <Star className="h-3 w-3" />
-              }
-              Сделать активным
-            </Button>
+            <button type="button" className="btn btn-line" onClick={handleSetActive} disabled={activatingTemplate}>
+              {activatingTemplate ? "Включаю…" : "Сделать активным"}
+            </button>
           )}
-
-          {/* Delete — only for non-active templates */}
           {templateId && !isActiveTemplate && (
-            <Button
-              size="sm" variant="ghost"
-              className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto"
-              onClick={handleDeleteTemplate}
-            >
-              <Trash2Icon className="h-3 w-3" />
+            <button type="button" className="btn btn-text danger" onClick={handleDeleteTemplate}>
               Удалить
-            </Button>
+            </button>
           )}
         </div>
-      </div>
+      </section>
 
       {subjects.length === 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-          Предметы не найдены. Добавьте предметы во вкладке Subjects, чтобы добавлять уроки. Другие блоки (перерыв, фокус, тест) доступны всегда.
+        <div className="card ds-warn">
+          <b>Предметов пока нет.</b>{" "}
+          <Link className="link" href="/dashboard/subjects">Добавь их</Link>, чтобы ставить уроки. Другие блоки (перерыв, фокус, тест) доступны и без них.
         </div>
       )}
 
-      {/* Days */}
-      <div className="flex flex-col gap-4">
-        {DAYS_ORDER.map(dow => {
-          const slots = slotsByDay[dow]
-          const isWeekend = dow === 'saturday' || dow === 'sunday'
-          return (
-            <div
-              key={dow}
-              className={cn(
-                "rounded-xl border bg-card overflow-hidden",
-                isWeekend && slots.length === 0 && "opacity-50"
+      {DAYS_ORDER.map(dow => {
+        const slots = slotsByDay[dow]
+        const isWeekend = dow === 'saturday' || dow === 'sunday'
+        return (
+          <section key={dow} className="ds-day">
+            <h2 className="sec">
+              {DAY_OF_WEEK_LABELS[dow]}
+              <span>{slots.length} {plural(slots.length, ['урок', 'урока', 'уроков'])}</span>
+            </h2>
+            <div className="card">
+              {slots.length === 0 && (
+                <p className="ds-none">Уроков нет{isWeekend ? ', выходной' : ''}</p>
               )}
-            >
-              {/* Day header */}
-              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/20">
-                <span className="font-semibold text-sm">{DAY_OF_WEEK_LABELS[dow]}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {slots.length} {slots.length === 1 ? 'урок' : slots.length < 5 ? 'урока' : 'уроков'}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-xs px-2 gap-1"
-                    onClick={() => addSlot(dow)}
+              {slots.map(slot => {
+                const isLesson = slot.blockType === 'lesson' || !slot.blockType
+                const subject = subjects.find(s => s.id === slot.subjectId)
+                return (
+                  <div
+                    key={slot._key}
+                    className="ds-slot"
+                    draggable
+                    onDragStart={() => handleDragStart(dow, slot._key)}
+                    onDragOver={e => handleDragOver(e, dow, slot._key)}
+                    onDrop={handleDrop}
                   >
-                    <PlusIcon className="h-3 w-3" />
-                    Добавить
-                  </Button>
-                </div>
-              </div>
+                    <GripVertical className="ds-grip" aria-hidden="true" />
+                    <span className="ds-n">{slot.lessonNumber}</span>
 
-              {/* Slot rows */}
-              {slots.length > 0 ? (
-                <div className="divide-y divide-border/50">
-                  {slots.map(slot => (
-                    <div
-                      key={slot._key}
-                      className="flex items-center gap-2 px-3 py-2 flex-wrap group"
-                      draggable
-                      onDragStart={() => handleDragStart(dow, slot._key)}
-                      onDragOver={e => handleDragOver(e, dow, slot._key)}
-                      onDrop={handleDrop}
-                    >
-                      {/* Drag handle */}
-                      <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground cursor-grab active:cursor-grabbing shrink-0 transition-colors" />
-                      {/* Lesson number badge */}
-                      <span className="text-xs font-bold text-muted-foreground min-w-[20px] text-center">
-                        {slot.lessonNumber}
-                      </span>
+                    <BlockTypeCombobox
+                      value={slot.blockType ?? 'lesson'}
+                      onValueChange={(type, lbl) => updateSlot(dow, slot._key, { blockType: type, label: lbl })}
+                      customs={customPresets}
+                      onCustomsChange={setCustomPresets}
+                    />
 
-                      {/* Block type selector */}
-                      <BlockTypeCombobox
-                        value={slot.blockType ?? 'lesson'}
-                        onValueChange={(type, lbl) => updateSlot(dow, slot._key, { blockType: type, label: lbl })}
-                        customs={customPresets}
-                        onCustomsChange={setCustomPresets}
+                    <span className="dy-input ds-time">
+                      <input
+                        value={slot.startTime}
+                        onChange={e => updateSlot(dow, slot._key, { startTime: formatHHMM(e.target.value) })}
+                        placeholder="08:00"
+                        aria-label="Начало"
+                        inputMode="numeric"
+                        maxLength={5}
                       />
+                    </span>
+                    <span className="dy-input ds-time">
+                      <input
+                        value={slot.endTime}
+                        onChange={e => updateSlot(dow, slot._key, { endTime: formatHHMM(e.target.value) })}
+                        placeholder="08:45"
+                        aria-label="Конец"
+                        inputMode="numeric"
+                        maxLength={5}
+                      />
+                    </span>
 
-                      {/* Start time */}
-                      <div className="flex flex-col gap-0.5 w-20">
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Начало</span>
-                        <Input
-                          value={slot.startTime}
-                          onChange={e => updateSlot(dow, slot._key, { startTime: formatHHMM(e.target.value) })}
-                          placeholder="08:00"
-                          className="h-7 text-xs px-2 font-mono"
-                          maxLength={5}
-                        />
-                      </div>
-
-                      {/* End time */}
-                      <div className="flex flex-col gap-0.5 w-20">
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">Конец</span>
-                        <Input
-                          value={slot.endTime}
-                          onChange={e => updateSlot(dow, slot._key, { endTime: formatHHMM(e.target.value) })}
-                          placeholder="08:45"
-                          className="h-7 text-xs px-2 font-mono"
-                          maxLength={5}
-                        />
-                      </div>
-
-                      {/* Subject select OR label input */}
-                      <div className="flex flex-col gap-0.5 flex-1 min-w-[140px]">
-                        <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
-                          {slot.blockType === 'lesson' || !slot.blockType ? 'Предмет' : 'Название'}
-                        </span>
-                        {(slot.blockType === 'lesson' || !slot.blockType) ? (
-                          <Select
-                            value={slot.subjectId}
-                            onValueChange={v => updateSlot(dow, slot._key, { subjectId: v })}
-                          >
-                            <SelectTrigger className="h-7 text-xs">
-                              <SelectValue placeholder="Выберите предмет">
-                                {subjects.find(s => s.id === slot.subjectId) ? (
-                                  <span>
-                                    {subjects.find(s => s.id === slot.subjectId)!.emoji}{' '}
-                                    {subjects.find(s => s.id === slot.subjectId)!.name}
-                                  </span>
-                                ) : 'Выберите предмет'}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {subjects.map(s => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  <span className="flex items-center gap-1.5">
-                                    <span>{s.emoji}</span>
-                                    <span>{s.name}</span>
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
+                    <div className="ds-what">
+                      {isLesson ? (
+                        <Select
+                          value={slot.subjectId}
+                          onValueChange={v => updateSlot(dow, slot._key, { subjectId: v })}
+                        >
+                          <SelectTrigger className="ds-select" aria-label="Предмет">
+                            <SelectValue placeholder="Выбери предмет">
+                              {subject ? subject.name : 'Выбери предмет'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {subjects.map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="dy-input">
+                          <input
                             value={slot.label ?? ''}
                             onChange={e => updateSlot(dow, slot._key, { label: e.target.value })}
-                            placeholder={getBlockLabel(slot.blockType, slot.label ?? '', customPresets) + '...'}
-                            className="h-7 text-xs px-2"
+                            placeholder={getBlockLabel(slot.blockType, slot.label ?? '', customPresets)}
+                            aria-label="Название блока"
                           />
-                        )}
-                      </div>
-
-                      {/* Remove button */}
-                      <button
-                        onClick={() => removeSlot(dow, slot._key)}
-                        className="mt-3.5 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
-                        title="Удалить урок"
-                      >
-                        <Trash2Icon className="h-3.5 w-3.5" />
-                      </button>
+                        </span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="px-4 py-3 text-xs text-muted-foreground/60">
-                  Нет уроков — {isWeekend ? 'выходной день' : 'нажмите «Добавить»'}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
 
-      {/* Save */}
-      <div className="flex items-center gap-3 sticky bottom-4">
-        <Button onClick={handleSave} disabled={saving} className="gap-2 shadow-lg">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckIcon className="h-4 w-4" />}
-          {saving ? 'Сохраняю...' : 'Сохранить расписание'}
-        </Button>
-        <Button variant="ghost" onClick={() => router.push('/dashboard/diary')}>
-          Назад к дневнику
-        </Button>
+                    <button
+                      type="button"
+                      onClick={() => removeSlot(dow, slot._key)}
+                      className="icon-btn"
+                      aria-label={`Убрать урок ${slot.lessonNumber}`}
+                    >
+                      <Icon name="x" />
+                    </button>
+                  </div>
+                )
+              })}
+              <div className="dy-add">
+                <span />
+                <button type="button" className="btn btn-text" onClick={() => addSlot(dow)}>
+                  <Icon name="plus" />
+                  Добавить урок
+                </button>
+              </div>
+            </div>
+          </section>
+        )
+      })}
+
+      <div className="glass ds-foot">
+        <button type="button" className="btn btn-main" onClick={handleSave} disabled={saving}>
+          {saving ? 'Сохраняю…' : 'Сохранить расписание'}
+        </button>
+        <Link className="btn btn-text" href="/dashboard/diary">
+          К дневнику
+        </Link>
       </div>
     </div>
   )

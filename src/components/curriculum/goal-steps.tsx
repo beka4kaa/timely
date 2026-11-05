@@ -1,26 +1,19 @@
-// Первые два шага: формулировка цели и персонализация.
+// Первые два шага мастера: формулировка цели и уточнение.
 //
-// Про уверенность нормализации. Провайдер-заглушка намеренно возвращает низкую
-// уверенность, и когда модель не настроена — это её штатный ответ. Показывать
-// такой разбор как факт нельзя, поэтому предмет и направление всегда остаются
-// редактируемыми полями, а не подписью.
+// Про уверенность разбора. Провайдер-заглушка намеренно возвращает низкую уверенность,
+// и когда модель не настроена, это её штатный ответ. Показывать такой разбор как факт
+// нельзя, поэтому предмет и раздел всегда остаются редактируемыми полями, а не подписью.
 
 "use client";
 
-import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { Balance, Level } from "@/lib/curriculum-api";
 import type { LevelPair } from "@/lib/curriculum-levels";
 import { useCurriculumStore } from "@/stores/curriculum-store";
+
 import { LevelSpan } from "./level-span";
-import {
-  paperCaption,
-  paperFocus,
-  paperPrimaryButton,
-  paperStrip,
-  paperTile,
-} from "./paper";
+import { WizardHead } from "./wizard-head";
 
 const EXAMPLES = [
   "Хочу научиться решать задачи по механике за 10 класс",
@@ -28,60 +21,69 @@ const EXAMPLES = [
   "Подтянуть органическую химию перед экзаменом",
 ];
 
-const fieldClass = `${paperFocus} w-full rounded-[12px] border border-tm-line bg-tm-surface px-3.5 py-2.5 text-[14px] text-tm-ink placeholder:text-tm-faint disabled:opacity-55`;
+/** Короче этого по фразе не понять, что учить. */
+const MIN_GOAL_LENGTH = 5;
 
 export function GoalStep() {
   const submitGoal = useCurriculumStore((s) => s.submitGoal);
   const busy = useCurriculumStore((s) => s.busy);
   const [text, setText] = useState("");
 
-  const canSubmit = text.trim().length >= 5 && !busy;
+  const length = text.trim().length;
+  const canSubmit = length >= MIN_GOAL_LENGTH && !busy;
 
   return (
-    <section className="space-y-5">
-      <header className="space-y-1.5">
-        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-tm-ink">
-          Что вы хотите выучить?
-        </h2>
-        <p className="text-[13px] leading-6 text-tm-muted">
-          Опишите своими словами. Программу построим по вашему учебнику, со
-          ссылками на конкретные страницы.
-        </p>
-      </header>
+    <>
+      <WizardHead title="Что хочешь выучить?">
+        Напиши своими словами. Программу составлю по твоему учебнику, со ссылками на страницы.
+      </WizardHead>
 
-      <textarea
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder="Например: хочу научиться решать задачи по механике"
-        rows={4}
-        disabled={busy}
-        className={`${fieldClass} resize-none leading-6`}
-      />
-
-      <div className="flex flex-wrap gap-2">
-        {EXAMPLES.map((example) => (
-          <button
-            key={example}
-            type="button"
-            onClick={() => setText(example)}
-            disabled={busy}
-            className={`${paperFocus} rounded-full border border-tm-line bg-tm-surface px-3.5 py-1.5 text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-ink disabled:opacity-50`}
-          >
-            {example}
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => void submitGoal(text.trim())}
-        disabled={!canSubmit}
-        className={paperPrimaryButton}
+      <form
+        className="card wz-sheet"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSubmit) void submitGoal(text.trim());
+        }}
       >
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-        Продолжить
-      </button>
-    </section>
+        <label className="field">
+          Цель
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Например: хочу научиться решать задачи по механике"
+            rows={4}
+            disabled={busy}
+          />
+        </label>
+        {length > 0 && length < MIN_GOAL_LENGTH ? (
+          <p className="cur-err" role="status">
+            Напиши чуть подробнее, чтобы было понятно, что учить.
+          </p>
+        ) : null}
+
+        <div className="gs-chips" role="group" aria-label="Примеры">
+          {EXAMPLES.map((example) => (
+            <button
+              key={example}
+              type="button"
+              className="gs-chip"
+              aria-pressed={text === example}
+              onClick={() => setText(example)}
+              disabled={busy}
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+
+        <div className="cur-acts">
+          <button type="submit" className="btn btn-main" disabled={!canSubmit}>
+            {busy ? "Разбираю цель…" : "Продолжить"}
+          </button>
+        </div>
+      </form>
+    </>
   );
 }
 
@@ -91,7 +93,7 @@ const BALANCES: { value: Balance; label: string; hint: string }[] = [
   { value: "practice", label: "Больше практики", hint: "упор на задачи" },
 ];
 
-/** Быстрые сроки. Расчёт даты — арифметика календаря, а не оценка прогноза. */
+/** Быстрые сроки. Расчёт даты это арифметика календаря, а не оценка прогноза. */
 const QUICK_DEADLINES: { label: string; months: number }[] = [
   { label: "Через месяц", months: 1 },
   { label: "Через три", months: 3 },
@@ -115,15 +117,16 @@ export function GoalConfirmStep() {
 
   const [subject, setSubject] = useState("");
   const [direction, setDirection] = useState("");
-  // Пара, а не два состояния: инвариант «цель не ниже текущего» принадлежит
-  // паре, и два независимых `useState` оставили бы невалидное состояние
-  // представимым.
+  // Пара, а не два состояния: инвариант «цель не ниже текущего» принадлежит паре, и два
+  // независимых `useState` оставили бы невалидное состояние представимым.
   const [levels, setLevels] = useState<LevelPair>({
     current: "beginner" as Level,
     target: "school_confident" as Level,
   });
   const [balance, setBalance] = useState<Balance>("balanced");
   const [finishDate, setFinishDate] = useState("");
+  // Модель могла не разобрать предмет: ругаться на пустое поле рано, пока не нажали «Всё верно».
+  const [tried, setTried] = useState(false);
 
   useEffect(() => {
     if (!goal) return;
@@ -136,7 +139,11 @@ export function GoalConfirmStep() {
 
   if (!goal) return null;
 
-  const submit = () =>
+  const subjectMissing = tried && !subject.trim();
+
+  const submit = () => {
+    setTried(true);
+    if (!subject.trim()) return;
     void saveGoalDetails(
       {
         current_level: levels.current,
@@ -149,137 +156,124 @@ export function GoalConfirmStep() {
         normalized_direction: direction.trim(),
       },
     );
+  };
 
   return (
-    <section className="space-y-5">
-      <header className="space-y-1.5">
-        <h2 className="font-serif text-[22px] tracking-[-0.025em] text-tm-ink">
-          Под кого строим курс
-        </h2>
-        <p className="text-[13px] leading-6 text-tm-muted">
-          Так мы поняли вашу формулировку. Поправьте, если что-то не так.
-        </p>
-      </header>
+    <>
+      <WizardHead title="Под кого строим курс">
+        Так я понял твою цель. Поправь, если что-то не так.
+      </WizardHead>
 
-      <blockquote className="border-l-2 border-tm-accent-line py-1 pl-4 font-serif text-[15px] leading-6 text-tm-ink-2">
-        {goal.original_text}
-      </blockquote>
+      <form
+        className="card wz-sheet"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy) submit();
+        }}
+      >
+        <blockquote className="wz-quote">{goal.original_text}</blockquote>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className={paperCaption}>Предмет</span>
-          <input
-            value={subject}
-            onChange={(event) => setSubject(event.target.value)}
-            placeholder="Физика"
-            disabled={busy}
-            className={`${fieldClass} mt-1.5`}
-          />
-        </label>
-        <label className="block">
-          <span className={paperCaption}>Раздел</span>
-          <input
-            value={direction}
-            onChange={(event) => setDirection(event.target.value)}
-            placeholder="Механика"
-            disabled={busy}
-            className={`${fieldClass} mt-1.5`}
-          />
-        </label>
-      </div>
+        <div className="cur-form-two">
+          <label className="field">
+            Предмет
+            <input
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              placeholder="Физика"
+              disabled={busy}
+              aria-invalid={subjectMissing}
+            />
+            {subjectMissing ? <span className="cur-err">Напиши предмет, без него курс не найти на полке.</span> : null}
+          </label>
+          <label className="field">
+            Раздел
+            <input
+              value={direction}
+              onChange={(event) => setDirection(event.target.value)}
+              placeholder="Механика"
+              disabled={busy}
+            />
+          </label>
+        </div>
 
-      <LevelSpan value={levels} onChange={setLevels} disabled={busy} />
+        <LevelSpan value={levels} onChange={setLevels} disabled={busy} />
 
-      <div className={`${paperStrip} p-5`}>
-        <p className={paperCaption} id="curriculum-balance-label">
-          Теория и практика
-        </p>
-        <div
-          role="radiogroup"
-          aria-labelledby="curriculum-balance-label"
-          className="mt-3 grid gap-2 sm:grid-cols-3"
-        >
-          {BALANCES.map((option) => {
-            const selected = balance === option.value;
-            return (
+        <div className="wz-block">
+          <p className="wz-label" id="curriculum-balance-label">
+            Теория и практика
+          </p>
+          <div className="opts" role="group" aria-labelledby="curriculum-balance-label">
+            {BALANCES.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                role="radio"
-                aria-checked={selected}
+                aria-pressed={balance === option.value}
                 disabled={busy}
                 onClick={() => setBalance(option.value)}
-                className={`${paperTile} ${paperFocus} px-3.5 py-3 text-left transition-colors ${
-                  selected
-                    ? "border-tm-accent-line !bg-tm-accent-soft"
-                    : "hover:border-tm-line-strong"
-                }`}
               >
-                <span
-                  className={`block text-[13px] ${
-                    selected ? "text-tm-accent" : "text-tm-ink-2"
-                  }`}
-                >
-                  {option.label}
-                </span>
-                <span className="mt-0.5 block text-[11px] text-tm-faint">
-                  {option.hint}
-                </span>
+                {option.label}
+                <span>{option.hint}</span>
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className={`${paperStrip} p-5`}>
-        <p className={paperCaption}>Желаемый срок</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            value={finishDate}
-            min={todayIso()}
-            onChange={(event) => setFinishDate(event.target.value)}
-            disabled={busy}
-            aria-label="Желаемая дата завершения"
-            className={`${fieldClass} w-auto`}
-          />
-          {QUICK_DEADLINES.map((quick) => (
-            <button
-              key={quick.months}
-              type="button"
-              onClick={() => setFinishDate(isoAfterMonths(quick.months))}
-              disabled={busy}
-              className={`${paperFocus} rounded-full border border-tm-line bg-tm-surface px-3.5 py-1.5 text-[12px] text-tm-muted transition-colors hover:border-tm-accent hover:text-tm-ink disabled:opacity-50`}
-            >
-              {quick.label}
-            </button>
-          ))}
-          {finishDate && (
-            <button
-              type="button"
-              onClick={() => setFinishDate("")}
-              disabled={busy}
-              className="text-[12px] text-tm-faint underline-offset-4 hover:underline"
-            >
-              Без срока
-            </button>
-          )}
+        <div className="wz-block">
+          <p className="wz-label" id="curriculum-deadline-label">
+            Когда хочешь закончить
+          </p>
+          <div className="wz-deadline" role="group" aria-labelledby="curriculum-deadline-label">
+            <label className="field wz-date">
+              <span className="sr-only">Дата</span>
+              <input
+                type="date"
+                value={finishDate}
+                min={todayIso()}
+                onChange={(event) => setFinishDate(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <div className="gs-chips">
+              {QUICK_DEADLINES.map((quick) => {
+                const iso = isoAfterMonths(quick.months);
+                return (
+                  <button
+                    key={quick.months}
+                    type="button"
+                    className="gs-chip"
+                    aria-pressed={finishDate === iso}
+                    onClick={() => setFinishDate(iso)}
+                    disabled={busy}
+                  >
+                    {quick.label}
+                  </button>
+                );
+              })}
+              {finishDate ? (
+                <button
+                  type="button"
+                  className="gs-chip"
+                  aria-pressed="false"
+                  onClick={() => setFinishDate("")}
+                  disabled={busy}
+                >
+                  Без срока
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p className="wz-hint">
+            Это пожелание, а не обещание: успеваешь или нет, посчитаю, когда программа будет готова.
+          </p>
         </div>
-        <p className="mt-3 text-[12px] leading-5 text-tm-muted">
-          Это пожелание, а не обещание: успеваете вы или нет, посчитаем после
-          того, как программа будет построена.
-        </p>
-      </div>
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={busy || !subject.trim()}
-        className={paperPrimaryButton}
-      >
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-        Всё верно
-      </button>
-    </section>
+        <div className="cur-acts">
+          <button type="submit" className="btn btn-main" disabled={busy}>
+            {busy ? "Сохраняю…" : "Всё верно"}
+          </button>
+        </div>
+      </form>
+    </>
   );
 }

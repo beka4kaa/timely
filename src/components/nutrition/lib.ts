@@ -159,7 +159,7 @@ export const GLASS_INTERACTIVE =
   'hover:shadow-[0_12px_40px_rgba(15,23,42,0.12)] hover:-translate-y-0.5'
 
 /** Фирменный peach → lavender акцент (как в habits). */
-export const ACCENT_GRADIENT = 'linear-gradient(135deg, #fdba74 0%, #f0abfc 50%, #c4b5fd 100%)'
+export const ACCENT_GRADIENT = 'linear-gradient(135deg, #3c3c40 0%, #111112 100%)'
 
 /** Безопасно парсит число из строки инпута (пустое/мусор → 0, без минусов). */
 export function parseNum(v: string): number {

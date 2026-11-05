@@ -1,0 +1,228 @@
+/* ══════════════════ Дневник: всё сверх прототипа ══════════════════
+   Основа (.todo .td .td-day .tcard .g) лежит в pages.css. Здесь то, чего у прототипа не
+   было, потому что он ничего не записывал: правка на месте, форма задания, выбор оценки,
+   пустые состояния, а также страницы шаблона и итоговых оценок. */
+
+/* В прототипе двоек не было, а в настоящем дневнике бывают. */
+.g1, .g2 { color: var(--t-warn); }
+
+/* ── Шапка ── */
+.dy-head .head-tools { margin-left: auto; justify-content: flex-end; }
+.dy-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; }
+.dy-links .btn { height: 30px; }
+.dy-links .btn:disabled { opacity: 0.5; }
+.dy-links .i { width: 14px; height: 14px; }
+.dy-n { display: none; }
+.pager .icon-btn:disabled { opacity: 0.4; }
+
+/* ── Строка задания ── */
+.td-s.test { font-weight: 600; }
+.td-check { position: relative; flex: none; }
+/* Кружок маленький, а попасть в него пальцем надо с первого раза. */
+.td-check::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; }
+.dy-text { width: 100%; border-radius: 4px; text-align: left; cursor: text; overflow-wrap: anywhere; transition: color 120ms ease; }
+.dy-text:hover { color: var(--t-ink); }
+.dy-text.is-empty { color: var(--t-faint); }
+a.td-plan:hover { color: var(--t-ink); text-decoration: underline; text-decoration-color: var(--t-line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+/* Поле в строке. Текст стоит ровно там же, где стоял текст задания. */
+.dy-input { display: block; min-width: 0; border-radius: 7px; background: var(--t-fill); transition: box-shadow 120ms ease; }
+.dy-input:focus-within { box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.dy-input input { display: block; width: 100%; height: 26px; padding: 0 6px 0 3px; border: 0; outline: none; background: transparent; color: var(--t-ink); font: inherit; font-size: 13px; }
+.dy-input input::placeholder { color: var(--t-faint); }
+/* Плавный ввод: буквы рисует зеркало поверх поля, а само поле прозрачное. */
+.dy-input.ti input { color: transparent; caret-color: transparent; }
+.td .dy-input { margin: 1px 0 0 -3px; }
+.dy-input-min input { -moz-appearance: textfield; appearance: textfield; }
+.dy-input-min input::-webkit-outer-spin-button, .dy-input-min input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.dy-select { width: 100%; min-width: 0; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: var(--t-fill); color: var(--t-ink); font: inherit; font-size: 13px; }
+.dy-select:focus-visible { outline-offset: 0; }
+.dark .dy-select { color-scheme: dark; }
+
+/* Предпросмотр: куда встанет задание, пока ничего не изменилось */
+.dy-plan { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 7px; padding: 8px 8px 8px 11px; border-radius: 10px; background: var(--t-hover); font-size: 13px; }
+.dy-plan-acts { display: flex; flex-wrap: wrap; gap: 2px; }
+.dy-plan .btn { height: 28px; padding-inline: 10px; font-size: 12.5px; }
+.dy-plan .btn:disabled { opacity: 0.6; }
+
+/* ── Добавить задание ── */
+.dy-add { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding: 1px 2px 1px 10px; }
+.dy-add .btn { height: 30px; font-size: 12.5px; }
+.dy-add .i { width: 14px; height: 14px; }
+.dy-none { color: var(--t-faint); font-size: 13px; }
+.dy-add-form { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr) auto auto; align-items: center; gap: 6px; padding: 6px; }
+.dy-add-form .btn { height: 28px; padding-inline: 10px; font-size: 12.5px; }
+.dy-add-form .btn:disabled { opacity: 0.45; }
+.dy-note { margin-bottom: 14px; color: var(--t-muted); font-size: 13.5px; }
+.dy-more { margin-top: 12px; margin-left: -9px; }
+.dy-more + .td-day { margin-top: 12px; }
+.dy-more .btn { height: 30px; }
+
+/* ── Боковые карточки ── */
+.tcard li { min-width: 0; }
+.dy-lesson { min-width: 0; border-radius: 4px; text-align: left; overflow-wrap: anywhere; }
+.dy-lesson:hover { text-decoration: underline; text-decoration-color: var(--t-line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.dy-grade { position: relative; display: block; width: 18px; min-height: 16px; color: inherit; }
+.dy-grade.g { font-size: 22px; }
+.dy-grade.g3, .dy-grade.g2, .dy-grade.g1 { color: var(--t-warn); }
+/* Цифра узкая: нажимать можно рядом с ней. */
+.dy-grade::after { content: ""; position: absolute; inset: -7px -10px; }
+.dy-grade.is-empty { color: var(--t-faint); font-size: 18px; transition: color 120ms ease; }
+.dy-grade.is-empty:hover { color: var(--t-ink); }
+.dy-all { justify-self: start; height: 30px; margin-left: -4px; }
+/* Развернули неделю: «Вчера» на узком экране тоже нужно. */
+.todo-side.is-all .tcard-past { display: block; }
+
+/* Выбор оценки: окно поверх карточки, плотное */
+div.dy-grades { background: var(--t-cloud); color: var(--t-ink); box-shadow: var(--t-glass-shadow); }
+.dy-grades-row { display: flex; align-items: center; gap: 2px; }
+.dy-g { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; font-family: var(--t-hand); font-size: 23px; font-weight: 500; line-height: 1; transition: background 120ms ease; }
+.dy-g:hover { background: var(--t-hover); }
+.dy-g[aria-pressed="true"] { background: var(--t-accent); color: var(--t-on-accent); }
+.dy-g-clear { color: var(--t-muted); }
+.dy-g-clear .i { width: 13px; height: 13px; }
+
+/* ── Пустые состояния ── */
+.dy-empty { --r: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 20px 20px; }
+.dy-empty h2 { font-size: 13.5px; font-weight: 600; }
+.dy-empty p { max-width: 56ch; color: var(--t-muted); font-size: 13.5px; }
+.dy-empty .btn, .dy-empty-acts { margin-top: 4px; }
+.dy-empty-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.dy-empty-acts .btn { margin-top: 0; }
+
+.dy-skel { display: block; border-radius: 7px; background: var(--t-fill); }
+.dy-skel-title { width: 150px; height: 22px; margin-bottom: 12px; }
+.dy-skel-card { --r: 16px; display: grid; gap: 14px; padding: 16px; }
+.dy-skel-row { width: 72%; height: 28px; }
+.dy-skel-row:nth-child(2n) { width: 54%; }
+
+/* ── Видео ── */
+.dy-videos { margin-top: 26px; }
+.dy-videos-card { --r: 16px; padding: 4px; }
+.dy-video { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 7px 6px 7px 10px; border-radius: 12px; }
+.dy-video img, .dy-video-ph { display: block; width: 64px; height: 38px; border-radius: 7px; background: var(--t-fill); object-fit: cover; }
+.dy-video-b { min-width: 0; }
+.dy-video-name { display: block; overflow: hidden; font-size: 13.5px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+a.dy-video-name:hover { text-decoration: underline; text-decoration-color: var(--t-line-strong); text-underline-offset: 3px; }
+.dy-video small { display: block; color: var(--t-muted); font-size: 12.5px; }
+.dy-videos-none { padding: 10px 10px 8px; color: var(--t-muted); font-size: 13px; }
+.dy-video-form { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1.4fr) minmax(0, 1fr) 58px auto; align-items: center; gap: 6px; padding: 6px; }
+.dy-video-form .btn { height: 28px; padding-inline: 10px; font-size: 12.5px; }
+.dy-video-form .btn:disabled { opacity: 0.45; }
+
+/* ── Окно об уроке и подтверждение ── */
+div.dy-dialog { width: calc(100vw - 32px); max-width: 420px; gap: 12px; padding: 20px; border: 0; border-radius: 18px; background: var(--t-cloud); color: var(--t-ink); font-family: var(--t-sans); font-size: 13.5px; box-shadow: var(--t-glass-shadow); }
+.dy-dialog-title { padding-right: 24px; font-family: var(--t-serif); font-size: 20px; font-weight: 400; line-height: 1.25; letter-spacing: -0.01em; }
+.dy-dialog-sub { margin-top: -8px; color: var(--t-muted); font-size: 13px; line-height: 1.45; }
+.dy-field { display: flex; flex-direction: column; gap: 4px; color: var(--t-muted); font-size: 12.5px; }
+.dy-field .dy-grades-row { color: var(--t-ink); margin-left: -6px; }
+.dy-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dy-chips .btn { height: 28px; padding-inline: 10px; color: var(--t-ink); font-size: 12.5px; }
+.dy-chips .btn[aria-pressed="true"] { background: var(--t-accent); color: var(--t-on-accent); }
+
+/* ══════════════════ Итоговые оценки ══════════════════ */
+.dg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.dg-months { flex: 1; min-width: 0; }
+.dg-year { display: inline-flex; }
+.dy-tbl-card { --r: 16px; padding: 4px 0; }
+.dy-tbl-wrap { overflow-x: auto; border-radius: inherit; }
+.dy-tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums lining-nums; }
+.dy-tbl th, .dy-tbl td { height: 36px; padding: 0 4px; border-bottom: 1px solid var(--t-line); font-weight: 400; text-align: center; }
+.dy-tbl tbody tr:last-child > *, .dy-tbl tfoot tr:last-child > * { border-bottom: 0; }
+.dy-tbl thead th { color: var(--t-muted); font-size: 12.5px; border-bottom-color: var(--t-line-strong); }
+.dy-tbl tfoot th, .dy-tbl tfoot td { border-top: 1px solid var(--t-line-strong); }
+.dy-tbl .g { display: inline-block; font-size: 20px; line-height: 1; text-align: center; }
+/* Первая и последняя колонки стоят на месте. Фон из двух слоёв, потому что карточка в тёмной теме полупрозрачная. */
+.dy-tbl .dy-pin { position: sticky; z-index: 1; background: linear-gradient(var(--t-card), var(--t-card)), var(--t-bg); }
+.dy-tbl .dy-pin-l { left: 0; padding-left: 15px; text-align: left; white-space: nowrap; }
+.dy-tbl .dy-pin-r { right: 0; padding-right: 12px; font-weight: 500; }
+.dy-tbl.is-year { min-width: 720px; }
+.dy-tbl.is-month { table-layout: fixed; min-width: 880px; font-size: 13px; }
+.dy-tbl.is-month thead th:not(.dy-pin) { font-size: 11px; }
+.dy-tbl.is-month th, .dy-tbl.is-month td { padding: 0; }
+.dy-tbl.is-month .dy-pin-l { padding-left: 15px; overflow: hidden; text-overflow: ellipsis; }
+.dy-tbl.is-month .g { font-size: 17px; }
+.dg-sum { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-bottom: 10px; color: var(--t-muted); font-size: 13px; }
+.dg-videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.dg-video { --r: 14px; display: flex; flex-direction: column; overflow: hidden; transition: transform 180ms cubic-bezier(0.2, 1.2, 0.4, 1); }
+.dg-video:hover { transform: translateY(-1px); }
+.dg-video-art { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--t-fill); }
+.dg-video-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.dg-video-time { position: absolute; right: 6px; bottom: 6px; padding: 1px 5px; border-radius: 5px; background: rgba(0, 0, 0, 0.72); color: #ffffff; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dg-video-b { display: block; padding: 9px 12px 11px; }
+.dg-video-b b { display: block; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
+.dg-video-b small { display: block; margin-top: 2px; color: var(--t-muted); font-size: 12.5px; }
+
+/* ══════════════════ Шаблон расписания ══════════════════ */
+.ds-card { --r: 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; padding: 14px 15px 15px; }
+.ds-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.ds-card-top h2 { font-size: 13.5px; font-weight: 600; }
+.ds-card-tools { display: flex; gap: 2px; margin-left: auto; }
+.ds-badge { color: var(--t-muted); font-size: 12.5px; }
+.ds-name { max-width: 320px; }
+.ds-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.ds-acts .btn { height: 30px; font-size: 12.5px; }
+.ds-acts .btn:disabled, .ds-card-tools .icon-btn:disabled { opacity: 0.5; }
+.ds-acts .danger { margin-left: auto; }
+.ds-warn { margin-bottom: 18px; padding: 12px 15px; color: var(--t-muted); font-size: 13.5px; }
+.ds-warn b { color: var(--t-ink); font-weight: 500; }
+.ds-day { margin-top: 18px; }
+.ds-day > .sec { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.ds-day > .sec span { color: var(--t-muted); font-family: var(--t-sans); font-size: 12.5px; letter-spacing: 0; }
+.ds-day .card { --r: 16px; padding: 4px; }
+.ds-slot { display: grid; grid-template-columns: 16px 16px minmax(0, 118px) 62px 62px minmax(0, 1fr) 28px; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; border-radius: 12px; transition: background 120ms ease; }
+.ds-slot:hover { background: var(--t-hover); }
+.ds-grip { width: 16px; color: var(--t-faint); cursor: grab; }
+.ds-grip:active { cursor: grabbing; }
+.ds-n { color: var(--t-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: center; }
+.ds-time input { font-variant-numeric: tabular-nums; text-align: center; padding-inline: 3px; }
+.ds-type { display: flex; align-items: center; width: 100%; height: 28px; padding: 0 8px; border-radius: 8px; background: var(--t-fill); font-size: 13px; text-align: left; }
+.ds-type span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+div.ds-type-pop { border: 0; background: var(--t-cloud); color: var(--t-ink); box-shadow: var(--t-glass-shadow); }
+.ds-type-search { width: 100%; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--t-line); outline: none; background: transparent; color: var(--t-ink); font-size: 13px; }
+.ds-type-list { max-height: 200px; overflow: auto; padding: 4px; }
+.ds-type-opt { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 5px 8px; border-radius: 8px; color: var(--t-ink); font-size: 13px; text-align: left; cursor: pointer; }
+.ds-type-opt:hover { background: var(--t-hover); }
+.ds-type-opt .i { width: 13px; height: 13px; }
+.ds-type-opt .ds-type-x { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--t-muted); }
+.ds-type-opt .ds-type-x:hover { background: var(--t-fill); color: var(--t-warn); }
+.ds-type-none { padding: 8px; color: var(--t-muted); font-size: 12.5px; }
+button.ds-select { height: 28px; padding-inline: 8px; border: 0; border-radius: 8px; background: var(--t-fill); box-shadow: none; color: var(--t-ink); font-size: 13px; }
+button.ds-select:focus { box-shadow: none; outline: 1.5px solid color-mix(in srgb, var(--t-ink) 62%, transparent); outline-offset: 1px; }
+.ds-none { padding: 7px 10px; color: var(--t-muted); font-size: 13px; }
+.ds-foot { --r: 14px; position: sticky; bottom: 14px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: fit-content; max-width: 100%; margin-top: 20px; padding: 5px; }
+.ds-foot .btn:disabled { opacity: 0.6; }
+
+/* ── Узкие экраны ── */
+@container main (max-width: 700px) {
+  .dy-video-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dy-video-form .dy-select, .dy-video-form .dy-input:nth-of-type(1) { grid-column: 1 / -1; }
+  .dy-input-min { order: 1; }
+  .dy-video-form .btn { order: 2; }
+  .ds-slot { grid-template-columns: 16px 16px minmax(0, 1fr) 62px 62px 28px; }
+  .ds-slot .ds-what { grid-column: 3 / -1; grid-row: 2; }
+}
+
+@container main (max-width: 620px) {
+  /* Как в прототипе: заголовок и неделя на одной строке, тихие ссылки под ними */
+  .dy-head .head-tools { display: contents; }
+  .dy-head .dy-links { order: 3; justify-content: flex-start; width: 100%; margin-left: -9px; }
+  .dy-w { display: none; }
+  .dy-n { display: inline; }
+  .dy-add-form { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .dy-add-form .dy-select, .dy-add-form .dy-input { grid-column: 1 / -1; }
+  .dy-add-form .dy-input input, .dy-add-form .dy-select { height: 34px; }
+  .dy-add-form .btn { grid-column: auto; justify-self: start; }
+  .dy-plan { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 640px) {
+  /* iOS увеличивает страницу, если шрифт в поле меньше 16 */
+  .dy-input input, .dy-select, .ds-type-search { font-size: 16px; }
+  .dy-plan .btn, .dy-add-form .btn, .dy-video-form .btn, .dy-add .btn { height: 34px; }
+  .dy-links .btn { height: 30px; padding-inline: 9px; }
+  .dy-grade::after { inset: -9px -12px; }
+  .ds-acts .btn { height: 34px; }
+  /* Над вкладками и строкой мини-окна */
+  .ds-foot { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+}

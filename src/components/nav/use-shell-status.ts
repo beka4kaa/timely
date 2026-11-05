@@ -52,7 +52,9 @@ export function useShellStatus(enabled: boolean): ShellStatus {
       now && blocks.data
         ? buildDay({ now, timeZone, lessons: [], blocks: blocks.data }).hero?.mode === "now"
         : false;
-    const dueReviews = (topics.data ?? []).filter((topic) => isDueToday(topic.nextReviewAt)).length;
+    const dueReviews = (topics.data ?? []).filter(
+      (topic) => !topic.archived && isDueToday(topic.nextReviewAt),
+    ).length;
     const ingesting = (documents.data ?? []).some(
       (document) => !isTerminal(document.ingestion_status),
     );

@@ -1,16 +1,19 @@
 import type { Metadata } from "next"
-import { AppSidebar } from "@/components/app-sidebar"
-import { SiteHeader } from "@/components/site-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
-import { DiaryHeaderProvider } from "@/contexts/diary-header-ctx"
+import { IconSprite } from "@/components/shell/icons"
+import { Mascot } from "@/components/shell/mascot/mascot"
+import { QuickProvider } from "@/components/shell/quick/quick-context"
+import { Sidebar } from "@/components/shell/sidebar"
+import { TabBar } from "@/components/shell/tab-bar"
+import { ViewTracker } from "@/components/shell/view-tracker"
 import { ActiveSubjectProvider } from "@/contexts/active-subject"
 import { ActiveScheduleProvider } from "@/contexts/active-schedule"
 import { AskRailProvider } from "@/contexts/ask-rail"
 import { DashboardShellProvider } from "@/contexts/dashboard-shell"
-import { MobileTabBar } from "@/components/nav/mobile-tab-bar"
 import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
+import "@/styles/timely/index.css"
 
 export const metadata: Metadata = {
   title: {
@@ -26,43 +29,44 @@ export const metadata: Metadata = {
   },
 }
 
+// Свёрнутая панель применяется до первой отрисовки, иначе она моргала бы на каждой загрузке.
+const NAV_BOOT = `try{if(localStorage.getItem("timely-nav")==="collapsed")document.documentElement.classList.add("nav-collapsed")}catch(e){}`
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
+    <>
+    <script dangerouslySetInnerHTML={{ __html: NAV_BOOT }} />
     <AuthGuard requireAuth={true}>
-      <DiaryHeaderProvider>
         <ActiveSubjectProvider>
         <ActiveScheduleProvider>
         <AskRailProvider>
+        <QuickProvider>
         <DashboardShellProvider>
-        {/* Цвета — токены из globals.css (светлая и тёмная тема), без
-            локальных переопределений. */}
-        <div className="timely-dashboard-shell relative h-screen w-full overflow-hidden bg-tm-bg text-tm-ink">
-          {/* Секундный тик помодоро и отправка завершённых сессий.
-              Живёт в layout, чтобы таймер шёл на всех страницах дашборда. */}
+        <div className="timely-dashboard-shell">
+          <IconSprite />
+          <div className="scene" aria-hidden="true" />
+          {/* Секундный тик помодоро и отправка завершённых сессий. Живёт в layout,
+              чтобы таймер шёл на всех страницах. */}
           <PomodoroSync />
-          <SiteHeader />
-          <AppSidebar />
+          <ViewTracker />
+          <Sidebar />
           <DashboardMain>{children}</DashboardMain>
-          {/* Разговор справа. Живёт в layout по той же причине, что и
-              PomodoroSync: панель нужна на любой странице дашборда. Открытая,
-              она сдвигает `DashboardMain`, а не ложится поверх, — так же, как
-              чат доски сдвигает холст.
-
-              На «Плане» это помощник по расписанию, на остальных страницах —
-              вопросы по книге предмета; выбор режима внутри самой панели. */}
+          <Mascot />
+          {/* Мини-окно внизу. На «Плане» это помощник по расписанию, на остальных
+              страницах вопросы тьютору; выбор режима внутри. */}
           <SubjectAskRail />
-          {/* Разделы на телефоне: на ≥768 px их показывает рейл слева. */}
-          <MobileTabBar />
+          <TabBar />
         </div>
         </DashboardShellProvider>
+        </QuickProvider>
         </AskRailProvider>
         </ActiveScheduleProvider>
         </ActiveSubjectProvider>
-      </DiaryHeaderProvider>
     </AuthGuard>
+    </>
   )
 }

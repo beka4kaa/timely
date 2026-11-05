@@ -1,0 +1,259 @@
+/* Курсы и книги: то, чего нет в общих стилях стеллажа и страницы курса. */
+
+/* ── Обложки: настоящие предметы, им можно быть цветными ── */
+.cv-teal { --b1: #2f9c95; --b2: #14605c; }
+.cv-mint { --b1: #cdeee6; --b2: #9fd6c9; color: #134b44; }
+.cv-green { --b1: #5c9e5a; --b2: #2c6130; }
+.cv-sage { --b1: #d5e3c8; --b2: #aec69d; color: #2c4a22; }
+.cv-amber { --b1: #d08a3c; --b2: #8a5316; }
+.cv-sand { --b1: #efdfc4; --b2: #d6bf97; color: #54391a; }
+.cv-ocean { --b1: #3a86a8; --b2: #1a4f68; }
+.cv-sky { --b1: #cfe3f5; --b2: #a6c6e3; color: #173f66; }
+.cv-coral { --b1: #d9705e; --b2: #8e3527; }
+.cv-blush { --b1: #f6d6cd; --b2: #e3b1a5; color: #6c2a1c; }
+.cv-slate { --b1: #5b6472; --b2: #2c323c; }
+.cv-mist { --b1: #d9dde3; --b2: #b3bac4; color: #2a303a; }
+
+.shelf-book .book, .wz-cover .book { text-align: left; }
+/* У кнопки содержимое по умолчанию стоит посередине, а на обложке название сверху */
+button.book { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
+.book .cv-t { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; }
+.book.is-long .cv-t { font-size: 12.5px; line-height: 1.14; -webkit-line-clamp: 5; }
+.shelf-book .book small, .wz-cover .book small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.book.is-failed { filter: saturate(0.35); opacity: 0.72; }
+.book.is-failed:hover { opacity: 1; }
+
+/* ── Карточка предмета ── */
+.cab-tools { position: absolute; z-index: 1; top: 9px; right: 9px; }
+.shelf-head h2 { display: -webkit-box; overflow: hidden; padding-right: 26px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.shelf-head h2 small { color: var(--t-muted); font-size: 12.5px; font-weight: 400; }
+a.shelf-head:hover h2 { text-decoration: underline; text-decoration-color: var(--t-line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.cab-courses { display: grid; gap: 9px; margin-top: 8px; }
+.cab-course { display: block; min-width: 0; }
+.cab-course-t { display: block; overflow: hidden; font-size: 13px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.cab-course .cab-line { margin-top: 3px; }
+.cab-course:hover .cab-course-t { text-decoration: underline; text-decoration-color: var(--t-line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.cab-setup { margin-top: 6px; color: var(--t-muted); font-size: 12.5px; }
+
+.shelves { margin-top: auto; }
+.shelves > * + * { margin-top: 4px; }
+.shelf-book { position: relative; flex: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .shelf-book:hover .book { transform: translateY(-4px) rotate(-1deg); }
+  .shelf-book:hover .book-more { transform: translateY(-4px); }
+}
+.shelf-book span.book { cursor: default; }
+
+/* Меню книги лежит на обложке и появляется, когда до неё дотянулись */
+.book-more { position: absolute; z-index: 2; right: 4px; bottom: 4px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: rgba(0, 0, 0, 0.34); color: #ffffff; transition: opacity 120ms ease, transform 200ms cubic-bezier(0.2, 1.3, 0.4, 1), background 120ms ease; }
+.book-more:hover { background: rgba(0, 0, 0, 0.55); }
+.book-more .i { width: 14px; height: 14px; }
+@media (hover: hover) {
+  .book-more { opacity: 0; }
+  .shelf-book:hover .book-more, .book-more:focus-visible, .book-more[data-state="open"] { opacity: 1; }
+}
+
+/* Пустое место на полке */
+.book-slot { display: grid; place-items: center; width: 92px; height: 122px; border: 1px dashed var(--t-line-strong); border-radius: 3px 6px 6px 3px; color: var(--t-muted); transition: background 120ms ease, color 120ms ease; }
+button.book-slot:hover { background: var(--t-hover); color: var(--t-ink); }
+
+.caps li { overflow: hidden; text-overflow: ellipsis; }
+.caps li.is-wide { width: auto; }
+.caps li.is-bad { color: var(--t-warn); font-weight: 500; }
+
+/* То, что ждёт решения */
+.cab-notes { display: grid; gap: 8px; margin-top: 10px; color: var(--t-muted); font-size: 12.5px; line-height: 1.35; }
+.cab-notes li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; min-width: 0; }
+.cab-notes li > span { flex: 1 1 130px; min-width: 0; overflow-wrap: anywhere; }
+/* Длинное объяснение занимает всю ширину: кнопка рядом сжала бы его в узкую колонку */
+.cab-notes li.is-bad > span { flex-basis: 100%; color: var(--t-ink-2); }
+.cab-notes .btn { height: 28px; padding: 0 10px; font-size: 12.5px; }
+
+/* Заглушка, пока стеллаж грузится */
+.cur-skel { display: block; border-radius: 8px; background: var(--t-fill); }
+.skel-t { width: 42%; height: 20px; }
+.skel-l { width: 72%; height: 12px; margin-top: 10px; }
+.skel-b { width: 92px; height: 122px; margin: auto 0 22px 8px; border-radius: 3px 6px 6px 3px; }
+.cab-skel { min-height: 244px; }
+.skel-path { display: block; height: 84px; margin: 16px 0; }
+.skel-row { height: 18px; margin-top: 12px; }
+@media (prefers-reduced-motion: no-preference) {
+  .cur-skel { animation: cur-skel 1.5s ease-in-out infinite; }
+}
+@keyframes cur-skel { 50% { opacity: 0.55; } }
+
+/* ── Пустая библиотека и ошибка загрузки ── */
+.lib-empty { --r: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; max-width: 640px; padding: 22px 24px; }
+.lib-empty > div:last-child { flex: 1 1 260px; min-width: 0; }
+.lib-empty h2 { font-size: 13.5px; font-weight: 600; }
+.lib-empty p { margin: 4px 0 14px; color: var(--t-muted); font-size: 13.5px; }
+.lib-empty-shelf { flex: none; width: 124px; }
+.lib-empty-shelf .book-slot { margin: 0 auto; }
+
+/* ── Сообщения и формы ── */
+.cur-alert { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; padding: 9px 13px; border-radius: 12px; background: var(--t-hover); color: var(--t-ink-2); font-size: 13px; }
+.cur-alert.is-bad { color: var(--t-warn); }
+.cur-alert .icon-btn { margin: -4px -6px -4px 0; color: inherit; }
+.cur-alert-list { margin-top: 4px; color: var(--t-muted); font-size: 12.5px; }
+.cur-err { color: var(--t-warn); font-size: 12.5px; }
+.cur-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cur-page .btn:disabled, .cur-form .btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.cur-page .btn:disabled:active, .cur-form .btn:disabled:active { transform: none; }
+
+.cur-menu { display: flex; flex-direction: column; }
+.cur-menu > button, .cur-menu > a { display: block; width: 100%; padding: 7px 9px; border-radius: 9px; font-size: 13px; text-align: left; }
+.cur-menu > button:hover:not(:disabled), .cur-menu > a:hover { background: var(--t-hover); }
+.cur-menu > button:disabled { color: var(--t-muted); cursor: not-allowed; }
+.cur-menu > button.is-danger { color: var(--t-warn); font-weight: 500; }
+.cur-menu hr { margin: 4px 9px; border: 0; border-top: 1px solid var(--t-line); }
+.cur-menu-note { padding: 5px 9px 4px; color: var(--t-muted); font-size: 12.5px; }
+
+.cur-form { display: grid; gap: 10px; font-size: 13px; }
+.cur-form .tabs { width: fit-content; }
+.cur-form .tabs button { height: 26px; padding: 0 9px; font-size: 12.5px; }
+.cur-form-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cur-form-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.dark .field input[type="date"] { color-scheme: dark; }
+.cur-page .field input::placeholder, .cur-page .field textarea::placeholder, .cur-form .field input::placeholder { color: var(--t-faint); }
+/* Меню и формы живут в портале, за пределами каркаса с его общим правилом фокуса */
+.cur-menu :focus-visible, .cur-form :focus-visible { outline: 1.5px solid color-mix(in srgb, var(--t-ink) 62%, transparent); outline-offset: 2px; }
+.field input[aria-invalid="true"], .field textarea[aria-invalid="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t-warn) 55%, transparent); }
+
+/* ── Мастер: лист на странице ── */
+.wz-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 10px; }
+.wz-top .back { margin: 0; }
+.wz-rail { display: flex; gap: 14px; color: var(--t-faint); font-size: 12.5px; }
+.wz-rail li { display: inline-flex; align-items: center; gap: 4px; }
+.wz-rail .i { width: 13px; height: 13px; }
+.wz-rail .is-done { color: var(--t-muted); }
+.wz-rail [aria-current="step"] { color: var(--t-ink); font-weight: 500; }
+.wz-sheet { --r: 18px; display: grid; gap: 16px; max-width: 640px; padding: 18px 20px 20px; }
+.wz-sheet .field { min-width: 0; }
+.wz-sheet .gs-chips { min-width: 0; }
+.wz-sheet .gs-chip { text-align: left; }
+.wz-quote { padding-left: 12px; border-left: 2px solid var(--t-line-strong); font-family: var(--t-serif); font-size: 15px; line-height: 1.42; }
+.wz-block { min-width: 0; }
+.wz-label { margin-bottom: 6px; color: var(--t-muted); font-size: 12.5px; }
+.wz-hint { margin-top: 8px; color: var(--t-muted); font-size: 12.5px; }
+.wz-deadline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wz-date { width: auto; }
+.wz-date input { width: 158px; }
+.wz-again { margin-top: 14px; margin-left: -9px; }
+.wz-wait { margin-top: 0; }
+
+.wz-level-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; font-size: 12.5px; }
+.wz-level-head .wz-label { margin: 0; }
+.wz-track { height: 8px; border-radius: 99px; background: var(--t-fill); }
+.wz-track-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--t-line-strong); }
+.wz-track-fill { border-radius: 99px; background: color-mix(in srgb, var(--t-ink) 42%, transparent); }
+.wz-thumb { display: block; width: 18px; height: 18px; border-radius: 50%; box-shadow: var(--t-pill-sh); }
+.wz-thumb.is-from { background: var(--t-card); box-shadow: inset 0 0 0 2px var(--t-ink), var(--t-pill-sh); }
+.dark .wz-thumb.is-from { background: var(--t-bg); }
+.wz-thumb.is-to { background: var(--t-ink); }
+.wz-track-ends { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+
+.wz-drop { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 26px 16px; border: 1px dashed var(--t-line-strong); border-radius: 14px; color: var(--t-muted); font-size: 12.5px; text-align: center; transition: background 120ms ease, border-color 120ms ease; }
+.wz-drop:hover:not(:disabled), .wz-drop.is-over { background: var(--t-hover); border-color: var(--t-ink); }
+.wz-drop:disabled { cursor: not-allowed; opacity: 0.6; }
+.wz-drop .i { width: 22px; height: 22px; margin-bottom: 6px; }
+.wz-drop b { max-width: 100%; color: var(--t-ink); font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.wz-upload { display: grid; gap: 6px; font-size: 12.5px; }
+
+.wz-reading { grid-template-columns: 124px minmax(0, 1fr); gap: 22px; align-items: start; }
+.wz-cover .book { margin: 0 auto; }
+.wz-step { margin-bottom: 7px; font-size: 13.5px; font-weight: 500; }
+.wz-step .muted { font-weight: 400; }
+.wz-phases { display: grid; gap: 6px; margin-top: 14px; font-size: 13.5px; }
+.wz-phases li { display: flex; align-items: center; gap: 10px; }
+.wz-phases .dot { flex: none; }
+.wz-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.wz-stats dd { font-size: 17px; font-weight: 600; line-height: 1.2; }
+.wz-stats dt { font-size: 12px; }
+.wz-warnings { display: grid; gap: 4px; margin-top: 12px; color: var(--t-ink-2); font-size: 12.5px; }
+.wz-details { margin-top: 12px; font-size: 12.5px; }
+.wz-details ul { margin-top: 4px; }
+
+/* ── Страница курса ── */
+.course-goal { max-width: 62ch; margin: -8px 0 16px; color: var(--t-muted); font-size: 13.5px; }
+.course-path { min-width: 0; }
+.course-path .tube { overflow: hidden; }
+.course-path .tube i { min-width: 0; }
+.course-path .path-mark { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.course-path .path-mark.mile::after { display: none; }
+.course-path .path-mark.is-over { color: var(--t-warn); }
+.course-path .path-mark.mile:not(.end) { transform: none; }
+.course-path .path-rest .tube { background: repeating-linear-gradient(90deg, var(--t-line-strong) 0 6px, transparent 6px 12px); }
+.course-path .is-hot .tube { --c: var(--t-ink); background: color-mix(in srgb, var(--t-ink) 34%, transparent); }
+.course-path .is-hot b { color: var(--t-ink); }
+.course-path .is-over .tube { background: transparent; box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.course-path .path-now { display: none; margin-top: 8px; font-size: 12.5px; font-weight: 500; }
+.course-path.cur-outside .path-now { display: block; }
+.course-path.no-labels .path-track b { display: none; }
+.course-path.no-marks { padding-top: 18px; }
+.course-path.no-marks .path-track { margin-top: 0; }
+
+/* Отметки стоят поверх дорожки: дорожка начинается на 34 px от верха карточки */
+.path-tick, .path-dot { position: absolute; z-index: 2; left: calc(18px + (100% - 36px) * var(--f)); }
+.path-tick { top: 31px; width: 2px; height: 14px; margin-left: -1px; border-radius: 2px; background: var(--t-ink); }
+.path-tick.is-deadline { background: var(--t-muted); }
+.path-tick.is-deadline.is-over { background: var(--t-warn); }
+.path-dot { top: 35px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: var(--t-ink); box-shadow: 0 0 0 1.5px var(--t-bg); }
+
+.course-notes { display: grid; gap: 3px; max-width: 72ch; margin: -2px 0 16px 2px; color: var(--t-muted); font-size: 12.5px; }
+.course-notes .is-bad { color: var(--t-warn); }
+
+.course-src { align-items: flex-start; margin: 0 0 16px 2px; font-size: 13px; }
+.course-src small + small { margin-top: 1px; }
+.course-src .book.mini { flex: none; }
+
+.course-mods { display: grid; gap: 2px; }
+.course-part { margin: 18px 0 6px 2px; }
+.course-mods > div:first-child .course-part { margin-top: 2px; }
+.mod-num { color: var(--t-muted); font-weight: 400; }
+.mod-goal { padding: 0 14px 6px 35px; color: var(--t-muted); font-size: 13px; }
+.mod-ask { padding: 0 8px 4px 26px; }
+.mod-ask .btn { height: 28px; padding-inline: 9px; }
+.course-foot { margin: 16px 0 0 2px; color: var(--t-faint); font-size: 12px; }
+
+/* Строка темы раскрывается, поэтому сетка переехала на summary */
+.course-tps li { display: block; padding: 0; }
+.course-tps li.done > details:first-child { color: inherit; }
+.course-tps li.cur > details:first-child { font-weight: 400; }
+.course-tps summary { display: grid; grid-template-columns: minmax(0, 1fr) 118px 74px; align-items: baseline; gap: 0 10px; margin-inline: -6px; padding: 4px 6px; border-radius: 8px; }
+.course-tps summary:hover { background: var(--t-hover); }
+.course-tps .pg { overflow: hidden; text-overflow: ellipsis; }
+.course-tps li.done summary > :first-child { color: var(--t-muted); }
+.course-tps li.cur summary > :first-child { font-weight: 600; }
+.tp-more { display: grid; gap: 3px; padding: 2px 0 8px; font-size: 13px; }
+.tp-more .btn { justify-self: start; height: 28px; margin: 2px 0 0 -9px; padding-inline: 9px; }
+
+.course-sheet { --r: 16px; display: grid; gap: 12px; margin-bottom: 14px; padding: 14px 16px 16px; }
+.course-sheet h2 { font-size: 13.5px; font-weight: 600; }
+.course-pace { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+
+.course-edit { display: grid; gap: 0; }
+.course-edit-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-bottom: 8px; }
+.course-edit-head .sec { margin: 0; }
+.course-edit-head .muted { flex: 1; font-size: 12.5px; }
+.edit-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px auto auto auto; align-items: center; gap: 4px 6px; font-size: 12.5px; }
+.edit-row.is-module { grid-template-columns: minmax(0, 1fr) auto; font-weight: 500; }
+.edit-row.is-module input { font-weight: 500; }
+.edit-order { display: flex; gap: 1px; }
+
+@container main (max-width: 620px) {
+  .wz-reading { grid-template-columns: minmax(0, 1fr); }
+  .wz-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .course-pace, .cur-form-two { grid-template-columns: minmax(0, 1fr); }
+  .course-tps summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .mod-goal { padding: 0 10px 6px 31px; }
+  .mod-ask { padding-left: 22px; }
+  .course-path .path-track { gap: 2px; }
+  /* Подпись текущей главы живёт отдельной строкой: ширина глав должна оставаться честной */
+  .course-path .path-track .cur { flex-grow: var(--h); }
+  .course-path .path-track > div b { display: none; }
+  .course-path .path-now { display: block; }
+  .path-tick, .path-dot { left: calc(14px + (100% - 28px) * var(--f)); }
+  .edit-row { grid-template-columns: minmax(0, 1fr) 68px auto auto; }
+  .edit-row > .muted { display: none; }
+  .edit-row .field:first-child { grid-column: 1 / -1; }
+}

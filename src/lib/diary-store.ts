@@ -241,7 +241,7 @@ export async function applyTemplateToWeek(
       if (existing) {
         // Build lookup: dayOfWeek+lessonNumber → existing lesson data
         type LessonKey = string // `${dayOfWeek}:${lessonNumber}`
-        const preserved = new Map<LessonKey, Pick<DiaryLesson, 'grades' | 'homework' | 'notes'>>()
+        const preserved = new Map<LessonKey, Pick<DiaryLesson, 'grades' | 'homework' | 'notes' | 'homeworkDone'>>()
         for (const day of existing.days) {
           for (const lesson of day.lessons) {
             const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
@@ -249,6 +249,7 @@ export async function applyTemplateToWeek(
               grades: lesson.grades,
               homework: lesson.homework,
               notes: lesson.notes,
+              homeworkDone: lesson.homeworkDone,
             })
           }
         }
@@ -262,6 +263,7 @@ export async function applyTemplateToWeek(
               lesson.grades = saved.grades
               lesson.homework = saved.homework
               lesson.notes = saved.notes
+              lesson.homeworkDone = saved.homeworkDone
             }
           }
         }
@@ -368,6 +370,7 @@ function isWeekUnchanged(week: DiaryWeek): boolean {
       if (g.retelling !== null || g.exercises !== null || g.test !== null) return false
       if (lesson.homework && lesson.homework.trim() !== '') return false
       if (lesson.notes && lesson.notes.trim() !== '') return false
+      if (lesson.homeworkDone) return false
     }
   }
   return true
@@ -375,18 +378,23 @@ function isWeekUnchanged(week: DiaryWeek): boolean {
 
 // ── DiaryWeek persistence ─────────────────────────────────────
 
+// Обе записи бросают при отказе бэкенда. Раньше ответ не проверялся, и API
+// отвечал 200 с данными, которые никуда не легли: ученик видел свою оценку на
+// экране и терял её при следующем открытии.
 async function persistWeek(userId: string, week: DiaryWeek): Promise<void> {
-  await diaryFetch(userId, '/weeks/', {
+  const res = await diaryFetch(userId, '/weeks/', {
     method: 'POST',
     body: JSON.stringify(week),
   })
+  if (!res.ok) throw new Error(`Failed to save week: ${res.status}`)
 }
 
 async function replaceWeek(userId: string, weekId: string, week: DiaryWeek): Promise<void> {
-  await diaryFetch(userId, `/weeks/${weekId}/`, {
+  const res = await diaryFetch(userId, `/weeks/${weekId}/`, {
     method: 'PUT',
     body: JSON.stringify(week),
   })
+  if (!res.ok) throw new Error(`Failed to save week: ${res.status}`)
 }
 
 export async function getOrCreateWeek(

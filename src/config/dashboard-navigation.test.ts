@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  dashboardViewOf,
   getDashboardNavigation,
   getDashboardPageMeta,
   getDashboardSections,
   matchNavigation,
 } from "./dashboard-navigation.ts";
 
-test("шесть разделов из продуктовой схемы, по порядку", () => {
+test("группы левой панели: тьютор сразу под «Сейчас»", () => {
   assert.deepEqual(
     getDashboardSections().map((section) => section.title),
-    ["Сейчас", "Учёба", "Тьютор", "Библиотека", "Соревнования", "Прогресс"],
+    ["Сейчас", "Тьютор", "Учёба", "Рост", "Библиотека", "Соревнования"],
   );
 });
 
@@ -23,16 +24,29 @@ test("«Сейчас» горит только на корне, а не на к�
   assert.equal(matchNavigation("/dashboard/profile").section, null);
 });
 
-test("побеждает самый точный пункт: оценки — прогресс, а не дневник", () => {
-  assert.deepEqual(matchNavigation("/dashboard/diary/grades"), {
-    section: "progress",
-    itemUrl: "/dashboard/diary/grades",
-  });
+test("побеждает самый точный пункт: страница курса в библиотеке, шаблон в дневнике", () => {
   assert.deepEqual(matchNavigation("/dashboard/diary/schedule"), {
     section: "study",
     itemUrl: "/dashboard/diary",
   });
   assert.equal(matchNavigation("/dashboard/curriculum/plan/42").section, "library");
+  assert.equal(matchNavigation("/dashboard/habits").section, "growth");
+});
+
+test("страница для стилей: курс отдельно от библиотеки, неизвестная без своего вида", () => {
+  assert.equal(dashboardViewOf("/dashboard"), "now");
+  assert.equal(dashboardViewOf("/dashboard/curriculum/plan/42"), "course");
+  assert.equal(dashboardViewOf("/dashboard/curriculum"), "library");
+  assert.equal(dashboardViewOf("/dashboard/weaknesses"), "weak");
+  assert.equal(dashboardViewOf("/dashboard/nutrition"), "other");
+});
+
+test("доска выключена: в панели только чат", () => {
+  const tutor = getDashboardSections().find((section) => section.key === "tutor");
+  assert.deepEqual(
+    tutor?.items.map((item) => item.url),
+    ["/dashboard/chat"],
+  );
 });
 
 test("у раздела из одной страницы пункт меню — он сам", () => {

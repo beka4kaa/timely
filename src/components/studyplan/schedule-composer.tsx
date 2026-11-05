@@ -1,22 +1,25 @@
 "use client";
 
+// Поле помощника по расписанию в мини-окне: та же разметка, что у быстрого запроса, плюс
+// меню команд. Обычное сообщение готовит изменение, совет остаётся за `/advice`.
+
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { ArrowUp, Loader2, Square, X } from "lucide-react";
+import { createPortal } from "react-dom";
+
+import { Icon } from "@/components/shell/icons";
+import { QuickChips, QuickTools } from "@/components/shell/quick/quick-composer";
+import { useQuick, withAttached } from "@/components/shell/quick/quick-context";
+import { useSmoothInput } from "@/components/shell/smooth-input";
 
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-
-import {
+  defaultScheduleMode,
   matchingScheduleCommands,
   moveCommandSelection,
   resolveScheduleSubmission,
@@ -25,17 +28,17 @@ import {
   type ScheduleCommand,
 } from "./schedule-commands";
 
-const ADVICE_SUGGESTIONS = [
-  "Оцени нагрузку на этой неделе",
-  "Где план слишком плотный?",
-  "Что можно улучшить?",
+const MAX_HEIGHT = 160;
+
+const SUGGESTIONS = [
+  "Сегодня освобожусь в семь",
+  "Перенеси физику на завтра",
+  "Сделай занятия короче",
+  "Добавь подготовку к контрольной",
 ];
 
-const PLAN_SUGGESTIONS = [
-  "Разгрузи среду",
-  "Я пропустил три дня, восстанови план",
-  "По вторникам с 16:00 секция на два часа",
-];
+/** Когда указано занятие, подсказки про него. */
+const ATTACHED_SUGGESTIONS = ["Перенеси на завтра", "Сделай короче"];
 
 export function ScheduleComposer({
   hasSchedule,
@@ -43,7 +46,8 @@ export function ScheduleComposer({
   disabled = false,
   showSuggestions = false,
   resetKey = 0,
-  armPlanKey = 0,
+  focusKey = 0,
+  initialDraft,
   onSubmit,
   onStart,
   onStop,
@@ -53,27 +57,40 @@ export function ScheduleComposer({
   disabled?: boolean;
   showSuggestions?: boolean;
   resetKey?: number;
-  /** Клик по синему /plan в пустом состоянии активирует следующий запрос. */
-  armPlanKey?: number;
+  /** Меняется, когда фокус должен вернуться в поле. */
+  focusKey?: number;
+  /** Текст, подставленный в поле извне. */
+  initialDraft?: { text: string; nonce: number } | null;
   onSubmit: (text: string, mode: ScheduleAssistantMode) => void;
   onStart: () => void;
   onStop?: () => void;
 }) {
+  const { attached, clearAttached, listening, heard, suggestSlot } = useQuick();
   const [draft, setDraft] = useState("");
-  const [pendingMode, setPendingMode] =
-    useState<ScheduleAssistantMode>("advice");
+  const [adviceArmed, setAdviceArmed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [error, setError] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fieldRef = useRef<HTMLTextAreaElement | null>(null);
   const menuId = useId();
+  useSmoothInput(fieldRef);
 
   const query = slashQuery(draft);
-  const matches = useMemo(
-    () => matchingScheduleCommands(draft, hasSchedule),
-    [draft, hasSchedule],
-  );
+  const matches = useMemo(() => matchingScheduleCommands(draft, hasSchedule), [draft, hasSchedule]);
   const menuOpen = query !== null && !menuDismissed && !busy && !disabled;
+  const selected = activeIndex >= 0 ? matches[activeIndex] : undefined;
+
+  const fit = useCallback(() => {
+    const node = fieldRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, MAX_HEIGHT)}px`;
+  }, []);
+  useEffect(fit, [draft, fit]);
+
+  const focusField = useCallback(() => {
+    window.requestAnimationFrame(() => fieldRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     const firstAvailable = matches.findIndex((item) => item.available);
@@ -82,259 +99,240 @@ export function ScheduleComposer({
 
   useEffect(() => {
     setDraft("");
-    setPendingMode("advice");
+    setAdviceArmed(false);
     setMenuDismissed(false);
     setError("");
   }, [hasSchedule, resetKey]);
 
   useEffect(() => {
-    if (armPlanKey <= 0 || !hasSchedule) return;
-    setDraft("");
-    setPendingMode("plan");
-    setMenuDismissed(false);
-    setError("");
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [armPlanKey, hasSchedule]);
+    if (focusKey > 0) focusField();
+  }, [focusField, focusKey]);
 
-  const resetTextarea = () => {
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-  };
+  // Пока выбирается другое расписание, поле выключено, а выключенное теряет фокус. Вернуть
+  // его надо, только если он был здесь: чужую кнопку дёргать незачем.
+  const hadFocus = useRef(false);
+  const wasDisabled = useRef(disabled);
+  useEffect(() => {
+    if (wasDisabled.current && !disabled && hadFocus.current) focusField();
+    wasDisabled.current = disabled;
+  }, [disabled, focusField]);
 
-  const execute = (value: string) => {
-    if (busy || disabled) return;
-    const result = resolveScheduleSubmission(
-      value,
-      pendingMode,
-      hasSchedule,
-    );
-    if (result.kind === "empty") return;
-    if (result.kind === "error") {
-      setError(result.message);
-      return;
-    }
+  useEffect(() => {
+    if (!initialDraft?.text) return;
+    setDraft(initialDraft.text);
+    focusField();
+  }, [focusField, initialDraft]);
 
-    setError("");
-    setMenuDismissed(false);
-    if (result.kind === "start") {
+  const execute = useCallback(
+    (value: string) => {
+      if (busy || disabled) return;
+      const mode = adviceArmed ? "advice" : defaultScheduleMode(hasSchedule);
+      const result = resolveScheduleSubmission(value, mode, hasSchedule);
+      if (result.kind === "empty") return;
+      if (result.kind === "error") {
+        setError(result.message);
+        return;
+      }
+
+      setError("");
+      setMenuDismissed(false);
       setDraft("");
-      setPendingMode("advice");
-      resetTextarea();
-      onStart();
-      return;
-    }
-    if (result.kind === "arm_plan") {
-      setDraft("");
-      setPendingMode("plan");
-      resetTextarea();
-      requestAnimationFrame(() => textareaRef.current?.focus());
-      return;
-    }
+      if (result.kind === "start") {
+        setAdviceArmed(false);
+        onStart();
+        return;
+      }
+      if (result.kind === "arm_plan" || result.kind === "arm_advice") {
+        setAdviceArmed(result.kind === "arm_advice");
+        focusField();
+        return;
+      }
 
-    // /plan всегда одноразовый: после отправки следующий обычный вопрос снова
-    // становится безопасной оценкой расписания.
-    setDraft("");
-    setPendingMode("advice");
-    resetTextarea();
-    onSubmit(result.message, result.mode);
-  };
+      // `/advice` одноразовый: следующее сообщение снова готовит изменение.
+      setAdviceArmed(false);
+      onSubmit(withAttached(result.message, attached), result.mode);
+      clearAttached();
+    },
+    [adviceArmed, attached, busy, clearAttached, disabled, focusField, hasSchedule, onStart, onSubmit],
+  );
 
   const chooseCommand = (item: ScheduleCommand) => execute(item.command);
-  const selected = activeIndex >= 0 ? matches[activeIndex] : undefined;
-  const suggestions = pendingMode === "plan" ? PLAN_SUGGESTIONS : ADVICE_SUGGESTIONS;
+
+  const handled = useRef(0);
+  useEffect(() => {
+    if (!heard || heard.id === handled.current) return;
+    handled.current = heard.id;
+    setDraft(heard.text);
+    if (heard.final && heard.text) execute(heard.text);
+  }, [execute, heard]);
+
+  const suggestions = attached.length ? ATTACHED_SUGGESTIONS : SUGGESTIONS;
+  const showSuggest = showSuggestions && hasSchedule && !draft.trim() && !busy && !disabled && !listening;
+
+  let placeholder = "Что поменять?";
+  if (!hasSchedule) placeholder = "Спроси или напиши /start";
+  if (adviceArmed) placeholder = "О чём совет?";
+  if (listening) placeholder = "Слушаю…";
 
   return (
-    <div className="relative w-full">
+    <>
+      {suggestSlot && showSuggest
+        ? createPortal(
+            suggestions.map((text, index) => (
+              <button
+                key={text}
+                className="q-sug"
+                type="button"
+                style={{ animationDelay: `${index * 36}ms` }}
+                onClick={() => execute(text)}
+              >
+                {text}
+              </button>
+            )),
+            suggestSlot,
+          )
+        : null}
+
       {menuOpen ? (
-        <div
-          id={menuId}
-          role="listbox"
-          aria-label="Команды помощника по расписанию"
-          className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-30 overflow-hidden rounded-[15px] border border-tm-line bg-tm-surface p-1.5 shadow-[0_16px_42px_rgba(0,0,0,0.16)]"
-        >
-          <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-tm-faint">
-            Навыки расписания
-          </div>
+        <div id={menuId} className="ps-cmds" role="listbox" aria-label="Команды помощника">
           {matches.length ? (
             matches.map((item, index) => (
               <button
                 key={item.id}
                 id={`${menuId}-${item.id}`}
+                className="ps-cmd"
                 type="button"
                 role="option"
                 aria-selected={index === activeIndex}
                 aria-disabled={!item.available}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => chooseCommand(item)}
-                className={`group flex w-full items-start gap-3 rounded-[11px] px-2.5 py-2 text-left outline-none transition-colors ${
-                  index === activeIndex ? "bg-tm-surface-2" : "hover:bg-tm-surface-2"
-                } ${item.available ? "" : "opacity-55"}`}
               >
-                <span className="min-w-[54px] pt-px font-mono text-[12px] font-semibold text-[#2563eb] decoration-[#2563eb] dark:text-[#93b4ff] dark:decoration-[#93b4ff] decoration-dotted underline-offset-4 group-hover:underline group-focus-visible:underline">
-                  {item.command}
-                </span>
-                <span className="min-w-0">
-                  <span className="block font-serif text-[12px] font-semibold text-tm-ink">
-                    {item.title}
-                  </span>
-                  <span className="mt-0.5 block text-[10.5px] leading-snug text-tm-faint">
-                    {item.available ? item.description : item.unavailableReason}
-                  </span>
-                </span>
+                <b>{item.command}</b>
+                <span>{item.available ? item.description : item.unavailableReason}</span>
               </button>
             ))
           ) : (
-            <div className="px-2.5 py-2 text-[11.5px] text-tm-muted">
-              Такой команды нет. Доступны <CommandWord>/start</CommandWord> и{" "}
-              <CommandWord>/plan</CommandWord>.
-            </div>
+            <p className="q-cite">Такой команды нет. Есть /start, /plan и /advice.</p>
           )}
         </div>
       ) : null}
 
-      {showSuggestions && hasSchedule ? (
-        <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-          {suggestions.map((prompt) => (
+      <QuickChips />
+      {adviceArmed ? (
+        <div className="q-chips">
+          <span className="q-chip">
+            <span>Только совет, без изменений</span>
             <button
-              key={prompt}
               type="button"
-              onClick={() => execute(prompt)}
-              disabled={busy || disabled}
-              className="shrink-0 rounded-full border border-tm-line bg-tm-surface px-3 py-1.5 font-serif text-[12px] text-tm-muted transition-colors hover:border-tm-line-strong hover:text-tm-ink disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Обычный режим: подготовить изменение"
+              onClick={() => {
+                setAdviceArmed(false);
+                focusField();
+              }}
             >
-              {prompt}
+              <Icon name="x" />
             </button>
-          ))}
+          </span>
         </div>
       ) : null}
 
-      <div className="flex items-end gap-2 rounded-[17px] border border-tm-line bg-tm-surface px-3 py-2 shadow-[0_8px_24px_rgba(67,57,45,0.06)] transition-[border-color,box-shadow] focus-within:border-[#6f95e8] focus-within:shadow-[0_10px_30px_rgba(43,96,190,0.10)]">
-        {pendingMode === "plan" ? (
-          <button
-            type="button"
-            onClick={() => {
-              setPendingMode("advice");
-              setError("");
-              textareaRef.current?.focus();
+      <form
+        className="q-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          execute(draft);
+        }}
+      >
+        <span className="ti-host">
+          <textarea
+            ref={fieldRef}
+            className="q-input"
+            role="combobox"
+            rows={1}
+            value={draft}
+            disabled={disabled}
+            placeholder={placeholder}
+            aria-label="Что поменять в плане"
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
+            aria-activedescendant={menuOpen && selected ? `${menuId}-${selected.id}` : undefined}
+            aria-autocomplete="list"
+            autoComplete="off"
+            style={{ maxHeight: MAX_HEIGHT }}
+            onFocus={() => {
+              hadFocus.current = true;
             }}
-            aria-label="Отключить навык /plan"
-            className="mb-0.5 inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-[#b8caf5] bg-[#edf3ff] px-2 font-mono text-[11px] font-semibold text-[#2563eb] dark:border-tm-line dark:bg-tm-sky dark:text-[#93b4ff] outline-none hover:underline hover:decoration-dotted hover:underline-offset-4 focus-visible:ring-2 focus-visible:ring-[#6f95e8]/35"
-          >
-            /plan
-            <X className="h-3 w-3" aria-hidden />
-          </button>
-        ) : null}
-
-        <textarea
-          ref={textareaRef}
-          role="combobox"
-          placeholder={
-            pendingMode === "plan"
-              ? "Что изменить в плане?"
-              : hasSchedule
-                ? "Оцени расписание или введи /"
-                : "Введи /start"
-          }
-          rows={1}
-          value={draft}
-          disabled={disabled}
-          aria-expanded={menuOpen}
-          aria-controls={menuOpen ? menuId : undefined}
-          aria-activedescendant={
-            menuOpen && selected ? `${menuId}-${selected.id}` : undefined
-          }
-          aria-autocomplete="list"
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setMenuDismissed(false);
-            setError("");
-          }}
-          onInput={(event) => {
-            const node = event.currentTarget;
-            node.style.height = "auto";
-            node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
-          }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
-            if (
-              menuOpen &&
-              (event.key === "ArrowDown" || event.key === "ArrowUp")
-            ) {
-              event.preventDefault();
-              const direction = event.key as "ArrowDown" | "ArrowUp";
-              setActiveIndex((current) =>
-                moveCommandSelection(current, direction, matches.length),
-              );
-              return;
-            }
-            if (menuOpen && event.key === "Escape") {
-              event.preventDefault();
-              setMenuDismissed(true);
-              return;
-            }
-            if (
-              menuOpen &&
-              selected &&
-              (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey))
-            ) {
-              event.preventDefault();
-              chooseCommand(selected);
-              return;
-            }
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              execute(draft);
-            }
-          }}
-          style={{ maxHeight: 160 }}
-          className="min-h-[24px] min-w-0 flex-1 resize-none self-center bg-transparent py-1 font-serif text-[14px] leading-relaxed text-tm-ink outline-none placeholder:text-tm-faint"
-        />
-
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => (busy && onStop ? onStop() : execute(draft))}
-                disabled={busy ? !onStop : !draft.trim() || disabled}
-                aria-label={busy && onStop ? "Остановить" : "Отправить"}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#567fd8] text-white outline-none transition-colors hover:bg-[#3d67c2] disabled:bg-tm-surface-3 disabled:text-tm-faint"
-              >
-                {busy ? (
-                  onStop ? (
-                    <Square className="h-3.5 w-3.5 fill-current" />
-                  ) : (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              {busy && onStop ? "Остановить" : "Отправить (Enter)"}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+            onBlur={(event) => {
+              // Выключение поля тоже снимает фокус, и это не уход с поля.
+              if (!event.currentTarget.disabled) hadFocus.current = false;
+            }}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setMenuDismissed(false);
+              setError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (menuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                event.preventDefault();
+                const direction = event.key as "ArrowDown" | "ArrowUp";
+                setActiveIndex((current) => moveCommandSelection(current, direction, matches.length));
+                return;
+              }
+              if (menuOpen && event.key === "Escape") {
+                // Сначала закрывается меню, а не всё окно.
+                event.preventDefault();
+                event.stopPropagation();
+                event.nativeEvent.stopImmediatePropagation();
+                setMenuDismissed(true);
+                return;
+              }
+              if (menuOpen && selected && (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey))) {
+                event.preventDefault();
+                chooseCommand(selected);
+                return;
+              }
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                execute(draft);
+              }
+            }}
+          />
+        </span>
+      </form>
 
       {error ? (
-        <p className="mt-1.5 px-1 text-[11px] leading-snug text-tm-danger" role="alert">
+        <p className="q-cite" role="alert">
           {error}
         </p>
-      ) : pendingMode === "plan" ? (
-        <p className="mt-1.5 px-1 text-[10.5px] text-[#7787a8]">
-          Следующее сообщение подготовит изменение, но не применит его само.
-        </p>
       ) : null}
-    </div>
-  );
-}
 
-export function CommandWord({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="font-mono font-semibold text-[#2563eb] decoration-[#2563eb] dark:text-[#93b4ff] dark:decoration-[#93b4ff] decoration-dotted underline-offset-4 hover:underline">
-      {children}
-    </span>
+      <div className="q-tools">
+        {!hasSchedule ? (
+          <button className="q-tool" type="button" disabled={disabled} onClick={onStart}>
+            <Icon name="plan" />
+            <span>Настроить расписание</span>
+          </button>
+        ) : null}
+        <QuickTools />
+        <span className="q-hint">Esc, чтобы закрыть</span>
+        {busy && onStop ? (
+          <button className="send q-send" type="button" aria-label="Остановить" title="Остановить" onClick={onStop}>
+            <span className="q-stop" />
+          </button>
+        ) : (
+          <button
+            className="send q-send"
+            type="button"
+            aria-label="Отправить"
+            disabled={busy || disabled || !draft.trim()}
+            onClick={() => execute(draft)}
+          >
+            <Icon name="arrow-up" />
+          </button>
+        )}
+      </div>
+    </>
   );
 }

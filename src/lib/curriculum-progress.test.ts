@@ -107,7 +107,7 @@ test("неизвестный код не оставляет пользовате
 
 test("зависшая обработка получает честный заголовок и безопасное сообщение", () => {
   assert.equal(ingestionFailureTitle(true), "Обработка прервалась");
-  assert.equal(ingestionFailureTitle(false), "Обработать учебник не удалось");
+  assert.equal(ingestionFailureTitle(false), "Прочитать учебник не удалось");
   assert.match(ingestionErrorMessage("stalled"), /файл сохранён/i);
   assert.doesNotMatch(ingestionErrorMessage("stalled"), /памят/i);
 });

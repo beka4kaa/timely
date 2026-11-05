@@ -1,10 +1,10 @@
 "use client";
 
-// Открыта ли панель вопросов и какой она ширины.
+// Открыто ли мини-окно и что ему передали со страницы.
 //
-// Состояние вынесено из самой панели, потому что от него зависит ширина
-// `<main>`: панель не перекрывает страницу, а сдвигает её — так же, как чат
-// доски сдвигает холст. Значит, о ней должен знать и контент.
+// Состояние вынесено из самого окна, потому что его открывают отовсюду: «Нужна помощь»
+// на карточке, «Спросить» у слайма, блок плана. На телефоне страница под окном остаётся,
+// поэтому при уходе на узкий экран оно закрывается само.
 
 import {
   createContext,
@@ -17,18 +17,9 @@ import {
 } from "react";
 import { isRailFreeRoute } from "@/config/rail-free-routes";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
-import {
-  RAIL_KEYBOARD_STEP,
-  clampRailWidth,
-  defaultRailWidth,
-  restoreRailWidth,
-} from "@/lib/rail-width";
-
-const OPEN_KEY = "timely.ask.open";
-const WIDTH_KEY = "timely.ask.width";
 
 /**
- * Просьба открыть панель с готовым контекстом.
+ * Просьба открыть окно с готовым контекстом.
  *
  * Так другие части дашборда передают в панель вопрос, не зная, как устроен
  * разговор внутри: карточка «Сейчас» просит помочь с блоком, тьютор на
@@ -76,24 +67,8 @@ interface AskRailValue {
    */
   focusRequest: FocusRequest | null;
   consumeFocus: (id: number) => void;
-  /**
-   * Панели на этой странице нет вовсе.
-   *
-   * Читается и самой панелью (ранний `return null`), и здесь: `open` при этом
-   * принудительно `false`, иначе `DashboardMain` сдвинул бы контент вправо под
-   * панель, которой не существует.
-   */
+  /** На этой странице окна нет вовсе: на странице чата своё поле. */
   hidden: boolean;
-  /** Узкий экран: там панель перекрывает страницу, а не сдвигает её. */
-  isMobile: boolean;
-  /** Текущая ширина в пикселях. Ноль до первого замера окна. */
-  width: number;
-  /** Идёт перетаскивание: анимацию на это время снимают. */
-  dragging: boolean;
-  setWidth: (width: number) => void;
-  setDragging: (dragging: boolean) => void;
-  nudgeWidth: (delta: number) => void;
-  resetWidth: () => void;
 }
 
 const AskRailContext = createContext<AskRailValue>({
@@ -106,22 +81,12 @@ const AskRailContext = createContext<AskRailValue>({
   focusRequest: null,
   consumeFocus: () => {},
   hidden: false,
-  isMobile: false,
-  width: 0,
-  dragging: false,
-  setWidth: () => {},
-  setDragging: () => {},
-  nudgeWidth: () => {},
-  resetWidth: () => {},
 });
 
 const MOBILE_BREAKPOINT = 768;
 
 export function AskRailProvider({ children }: { children: React.ReactNode }) {
   const [remembered, setOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [width, setWidthState] = useState(0);
-  const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState<AskPrompt | null>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   /** Откуда открыли: закрыв панель, фокус возвращается туда. */
@@ -139,34 +104,17 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
     let wasMobile: boolean | null = null;
     const check = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
-      setIsMobile(mobile);
-      // На узком экране панель занимает его целиком, и раскрытой по памяти
-      // она закрыла бы страницу, на которую ученик только что перешёл. Только
-      // при переходе в узкий экран, а не на каждый resize: на Android его шлёт
-      // и выехавшая клавиатура, и панель закрывалась бы под пальцем.
+      // Только при переходе в узкий экран, а не на каждый resize: на Android размер меняет
+      // и выехавшая клавиатура, и окно закрывалось бы прямо под пальцами.
       if (mobile && wasMobile !== true) setOpen(false);
       wasMobile = mobile;
-      // Окно могло уменьшиться: прежняя ширина оставила бы от страницы полосу.
-      setWidthState((current) =>
-        current ? clampRailWidth(current, window.innerWidth) : current,
-      );
     };
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  useEffect(() => {
-    setWidthState(
-      restoreRailWidth(window.localStorage.getItem(WIDTH_KEY), window.innerWidth),
-    );
-    if (window.innerWidth >= MOBILE_BREAKPOINT) {
-      setOpen(window.localStorage.getItem(OPEN_KEY) === "1");
-    }
-  }, []);
-
   const openFor = useCallback((target: FocusRequest["target"]) => {
-    window.localStorage.setItem(OPEN_KEY, "1");
     const active = document.activeElement;
     openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
     setOpen(true);
@@ -182,7 +130,6 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const closeRail = useCallback(() => {
-    window.localStorage.setItem(OPEN_KEY, "0");
     setOpen(false);
     const opener = openerRef.current;
     openerRef.current = null;
@@ -208,24 +155,6 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
     setPending((current) => (current?.id === id ? null : current));
   }, []);
 
-  const setWidth = useCallback((next: number) => {
-    const clamped = clampRailWidth(next, window.innerWidth);
-    setWidthState(clamped);
-    // Ширина принадлежит экрану, а не ученику: на ноутбуке и на мониторе
-    // удобны разные, поэтому localStorage, а не профиль на сервере.
-    window.localStorage.setItem(WIDTH_KEY, String(clamped));
-  }, []);
-
-  const nudgeWidth = useCallback(
-    (delta: number) => setWidth((width || defaultRailWidth(window.innerWidth)) + delta),
-    [setWidth, width],
-  );
-
-  const resetWidth = useCallback(
-    () => setWidth(defaultRailWidth(window.innerWidth)),
-    [setWidth],
-  );
-
   const value = useMemo(
     () => ({
       open,
@@ -237,13 +166,6 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
       focusRequest,
       consumeFocus,
       hidden,
-      isMobile,
-      width,
-      dragging,
-      setWidth,
-      setDragging,
-      nudgeWidth,
-      resetWidth,
     }),
     [
       open,
@@ -255,12 +177,6 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
       focusRequest,
       consumeFocus,
       hidden,
-      isMobile,
-      width,
-      dragging,
-      setWidth,
-      nudgeWidth,
-      resetWidth,
     ],
   );
   return <AskRailContext.Provider value={value}>{children}</AskRailContext.Provider>;
@@ -269,5 +185,3 @@ export function AskRailProvider({ children }: { children: React.ReactNode }) {
 export function useAskRail() {
   return useContext(AskRailContext);
 }
-
-export { RAIL_KEYBOARD_STEP };

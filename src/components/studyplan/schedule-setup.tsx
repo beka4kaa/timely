@@ -1,4 +1,4 @@
-// Пошаговая настройка первого расписания для правой rail-панели.
+// Пошаговая настройка расписания в мини-окне.
 //
 // Бэкенд владеет порядком вопросов и подписывает каждое состояние. Компонент
 // лишь показывает варианты, нормализует разрешённые свободные ответы и создаёт
@@ -7,15 +7,9 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  paperButton,
-  paperFocus,
-  paperPrimaryButton,
-  paperTile,
-} from "@/components/curriculum/paper";
+import { Icon } from "@/components/shell/icons";
 import {
   StudyplanApiError,
   type ScheduleSetupCreatedResponse,
@@ -262,23 +256,17 @@ export function ScheduleSetup({
 
   if (phase === "intro") {
     return (
-      <SetupCard
-        phase={phase}
-        title="Настроим твою неделю"
-        onCancel={onCancel ? cancel : undefined}
-      >
-        <p className="text-[12.5px] leading-relaxed text-tm-muted">
-          Ответь на несколько коротких вопросов. Сначала покажем черновик —
-          ничего не попадёт в расписание без твоего подтверждения.
+      <SetupCard phase={phase} title="Настроим твою неделю">
+        <p className="q-status">
+          Ответь на несколько коротких вопросов. Сначала покажу черновик: в расписание
+          ничего не попадёт без твоего подтверждения.
         </p>
-        <button
-          type="button"
-          className={`${paperPrimaryButton} mt-4 w-full`}
-          onClick={begin}
-        >
-          Настроить расписание
-          <ArrowRight className="h-3.5 w-3.5" />
-        </button>
+        <div className="q-acts">
+          <button className="btn btn-main" type="button" onClick={begin}>
+            Настроить расписание
+          </button>
+          {onCancel ? <CancelButton onClick={cancel} /> : null}
+        </div>
       </SetupCard>
     );
   }
@@ -286,21 +274,18 @@ export function ScheduleSetup({
   if (phase === "blocked") {
     const noPlans = errorCode === "no_active_course_plans";
     return (
-      <SetupCard
-        phase={phase}
-        title={noPlans ? "Сначала нужна учебная программа" : "Нужен ещё один шаг"}
-        onCancel={onCancel ? cancel : undefined}
-      >
-        <p className="text-[12.5px] leading-relaxed text-tm-muted">{error}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+      <SetupCard phase={phase} title={noPlans ? "Сначала нужна учебная программа" : "Нужен ещё один шаг"}>
+        <p className="q-status">{error}</p>
+        <div className="q-acts">
           {noPlans ? (
-            <Link href="/dashboard/curriculum" className={paperPrimaryButton}>
+            <Link href="/dashboard/curriculum" className="btn btn-main">
               Создать программу
             </Link>
           ) : null}
-          <button type="button" className={paperButton} onClick={begin}>
+          <button className="btn btn-text" type="button" onClick={begin}>
             Проверить снова
           </button>
+          {onCancel ? <CancelButton onClick={cancel} /> : null}
         </div>
       </SetupCard>
     );
@@ -308,25 +293,18 @@ export function ScheduleSetup({
 
   if (phase === "error") {
     return (
-      <SetupCard
-        phase={phase}
-        title="Не удалось продолжить"
-        onCancel={onCancel ? cancel : undefined}
-      >
-        <p className="text-[12.5px] leading-relaxed text-tm-danger" role="alert">
+      <SetupCard phase={phase} title="Не удалось продолжить">
+        <p className="q-status" role="alert">
           {error}
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={paperPrimaryButton}
-            onClick={() => void loadStep(retryRef.current)}
-          >
+        <div className="q-acts">
+          <button className="btn btn-main" type="button" onClick={() => void loadStep(retryRef.current)}>
             Повторить
           </button>
-          <button type="button" className={paperButton} onClick={begin}>
+          <button className="btn btn-text" type="button" onClick={begin}>
             Начать заново
           </button>
+          {onCancel ? <CancelButton onClick={cancel} /> : null}
         </div>
       </SetupCard>
     );
@@ -334,17 +312,10 @@ export function ScheduleSetup({
 
   if (phase === "created") {
     return (
-      <SetupCard
-        phase={phase}
-        title="Черновик готов"
-        onCancel={onCancel ? cancel : undefined}
-      >
-        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-tm-ink-2">
-          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#3973b8]" />
-          Проверь занятия в календаре и подтверди расписание отдельной кнопкой.
-        </p>
+      <SetupCard phase={phase} title="Черновик готов">
+        <p className="q-status">Проверь занятия в календаре и подтверди расписание отдельной кнопкой.</p>
         {error ? (
-          <p className="mt-3 text-[11.5px] text-tm-danger" role="alert">
+          <p className="q-status" role="alert">
             {error}
           </p>
         ) : null}
@@ -352,62 +323,32 @@ export function ScheduleSetup({
     );
   }
 
-  const title = summary
-    ? "Такой ритм подойдёт?"
-    : question?.text ?? "Готовлю следующий вопрос…";
+  const title = summary ? "Такой ритм подойдёт?" : question?.text ?? "Готовлю следующий вопрос…";
 
   return (
-    <SetupCard
-      phase={phase}
-      title={title}
-      step={step}
-      totalSteps={totalSteps}
-      onCancel={onCancel ? cancel : undefined}
-    >
-      {notice ? (
-        <p className="mb-3 rounded-[10px] bg-tm-surface-2 px-2.5 py-2 text-[10.5px] text-tm-muted">
-          {notice}
-        </p>
-      ) : null}
+    <SetupCard phase={phase} title={title} step={step} totalSteps={totalSteps}>
+      {notice ? <p className="q-cite">{notice}</p> : null}
 
-      {phase === "loading" ? (
-        <div className="flex min-h-24 items-center justify-center gap-2 text-[11px] text-tm-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-          Подбираю следующий вопрос…
-        </div>
-      ) : null}
+      {phase === "loading" ? <p className="q-status shine">Подбираю следующий вопрос…</p> : null}
 
       {phase === "question" && question ? (
-        <div className="space-y-1.5">
+        <div className="ps-opts">
           {question.options.map((option) => (
             <button
               key={option.id}
               type="button"
+              className="ps-opt"
               disabled={Boolean(selectedOption)}
               aria-pressed={selectedOption === option.id}
               onClick={() => answerQuestion(option.id, option.id, "option")}
-              className={`w-full rounded-[13px] border px-3 py-2.5 text-left outline-none transition-colors ${paperFocus} ${
-                selectedOption === option.id
-                  ? "border-[#8aaed8] bg-[#eef5fd] text-[#263d5a] dark:border-tm-accent-line dark:bg-tm-sky dark:text-tm-ink"
-                  : "border-tm-line bg-tm-surface/60 text-tm-ink-2 hover:border-tm-line-strong hover:bg-tm-sky/60"
-              }`}
             >
-              <span className="block font-serif text-[12px] font-semibold leading-tight">
-                {option.label}
-              </span>
-              {option.description ? (
-                <span className="mt-1 block text-[10px] leading-snug text-tm-faint">
-                  {option.description}
-                </span>
-              ) : null}
+              {option.label}
+              {option.description ? <small>{option.description}</small> : null}
             </button>
           ))}
 
           {question.has_more ? (
-            <Link
-              href="/dashboard/curriculum"
-              className={`block w-full rounded-[12px] border border-dashed border-tm-line px-3 py-2 text-[11px] text-tm-muted transition-colors hover:border-tm-line-strong hover:bg-tm-sky/60 hover:text-tm-ink ${paperFocus}`}
-            >
+            <Link href="/dashboard/curriculum" className="ps-opt is-quiet">
               Показать все программы
             </Link>
           ) : null}
@@ -415,19 +356,19 @@ export function ScheduleSetup({
           {allowOther && !otherOpen ? (
             <button
               type="button"
+              className="ps-opt is-quiet"
               onClick={() => {
                 setOtherOpen(true);
                 setError("");
               }}
-              className={`w-full rounded-[12px] border border-dashed border-tm-line px-3 py-2 text-left text-[11px] text-tm-muted transition-colors hover:border-tm-line-strong hover:bg-tm-sky/60 hover:text-tm-ink ${paperFocus}`}
             >
-              Другое — напишу сам
+              Другое, напишу сам
             </button>
           ) : null}
 
           {allowOther && otherOpen ? (
             <form
-              className="flex gap-1.5 pt-1"
+              className="ps-other"
               onSubmit={(event) => {
                 event.preventDefault();
                 answerQuestion(otherValue, "other", "other");
@@ -444,21 +385,15 @@ export function ScheduleSetup({
                 }}
                 placeholder={customPlaceholder(question.id)}
                 aria-label="Свой ответ"
-                className="h-9 min-w-0 flex-1 rounded-[11px] border border-tm-line bg-tm-surface/75 px-3 font-serif text-[12px] text-tm-ink outline-none placeholder:text-tm-faint focus:border-[#6d9acc]"
               />
-              <button
-                type="submit"
-                disabled={!otherValue.trim()}
-                aria-label="Сохранить свой ответ"
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#3973b8] text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-tm-surface-3 disabled:text-tm-faint"
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
+              <button className="send" type="submit" disabled={!otherValue.trim()} aria-label="Сохранить свой ответ">
+                <Icon name="arrow-up" />
               </button>
             </form>
           ) : null}
 
           {error ? (
-            <p className="pt-1 text-[10.5px] text-tm-danger" role="alert">
+            <p className="q-cite" role="alert">
               {error}
             </p>
           ) : null}
@@ -466,65 +401,54 @@ export function ScheduleSetup({
       ) : null}
 
       {(phase === "summary" || phase === "creating") && summary ? (
-        <div>
-          <p className="mb-3 text-[11px] leading-relaxed text-tm-faint">
-            Создадим только черновик. Затем ты проверишь занятия в календаре и
-            подтвердишь их отдельно.
-          </p>
-          <dl className="divide-y divide-tm-line rounded-[13px] border border-tm-line bg-tm-surface/55 px-3">
+        <>
+          <ul className="q-diff">
             {scheduleSetupSummaryRows(summary).map((row) => (
-              <div
-                key={row.label}
-                className="grid grid-cols-[72px_1fr] gap-2 py-2 text-[10.5px]"
-              >
-                <dt className="text-tm-faint">{row.label}</dt>
-                <dd className="font-medium text-tm-ink-2">{row.value}</dd>
-              </div>
+              <li key={row.label}>
+                <span className="nm">{row.label}</span>
+                <span className="chg">
+                  <b>{row.value}</b>
+                </span>
+              </li>
             ))}
-          </dl>
-
-          <p className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-tm-muted">
-            <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#3973b8]" />
-            Занятия появятся как предложение — их ещё можно проверить.
-          </p>
-
+          </ul>
+          <p className="q-cite">Создам только черновик: ты проверишь занятия в календаре и подтвердишь их отдельно.</p>
           {error ? (
-            <p className="mt-3 text-[10.5px] text-tm-danger" role="alert">
+            <p className="q-status" role="alert">
               {error}
             </p>
           ) : null}
-
-          <div className="mt-4 grid grid-cols-[0.8fr_1.2fr] gap-1.5">
+          <div className="q-acts">
             <button
+              className="btn btn-main"
               type="button"
               disabled={phase === "creating"}
-              className="h-9 rounded-[12px] border border-tm-line bg-tm-surface/60 text-[11px] text-tm-muted outline-none transition-colors hover:bg-tm-surface focus-visible:ring-2 focus-visible:ring-tm-accent/25 disabled:opacity-50"
-              onClick={begin}
-            >
-              Заново
-            </button>
-            <button
-              type="button"
-              disabled={phase === "creating"}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-[12px] bg-[#3973b8] text-[11px] font-medium text-white outline-none transition-colors hover:bg-[#2f64a3] focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35 disabled:bg-[#62626d]"
               onClick={() => void createProposal()}
             >
-              {phase === "creating" ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
-                  Создаю…
-                </>
-              ) : (
-                <>
-                  Показать в календаре
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </>
-              )}
+              {phase === "creating" ? "Создаю…" : "Показать в календаре"}
             </button>
+            <button className="btn btn-text" type="button" disabled={phase === "creating"} onClick={begin}>
+              Заново
+            </button>
+            {onCancel ? <CancelButton onClick={cancel} /> : null}
           </div>
+        </>
+      ) : null}
+
+      {onCancel && phase !== "summary" && phase !== "creating" ? (
+        <div className="q-acts">
+          <CancelButton onClick={cancel} />
         </div>
       ) : null}
     </SetupCard>
+  );
+}
+
+function CancelButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="btn btn-text" type="button" onClick={onClick}>
+      Не сейчас
+    </button>
   );
 }
 
@@ -533,62 +457,36 @@ function SetupCard({
   title,
   step,
   totalSteps,
-  onCancel,
   children,
 }: {
   phase: SetupPhase;
   title: string;
   step?: number;
   totalSteps?: number;
-  onCancel?: () => void;
   children: React.ReactNode;
 }) {
-  const activeStep = Math.min(
-    Math.max(1, totalSteps ?? 1),
-    Math.max(1, step ?? 1),
-  );
+  const activeStep = Math.min(Math.max(1, totalSteps ?? 1), Math.max(1, step ?? 1));
 
   return (
     <section
+      className="ps-setup"
       data-state={phase}
       aria-busy={phase === "loading" || phase === "creating"}
-      aria-live="polite"
-      className={`${paperTile} p-3.5 shadow-[0_8px_28px_rgba(67,57,45,0.05)]`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#3973b8] dark:text-[#93b4ff]">
-            <span>Настройка недели</span>
-            {step && totalSteps ? (
-              <span
-                className="font-sans normal-case tracking-normal text-tm-faint"
-                role="progressbar"
-                aria-label={`Шаг ${activeStep} из ${totalSteps}`}
-                aria-valuemin={1}
-                aria-valuemax={totalSteps}
-                aria-valuenow={activeStep}
-              >
-                {activeStep}/{totalSteps}
-              </span>
-            ) : null}
-          </div>
-          <h2 className="mt-1.5 font-serif text-[18px] font-medium leading-[1.2] tracking-[-0.02em] text-tm-ink">
-            {title}
-          </h2>
-        </div>
-        {onCancel ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Закрыть настройку"
-            title="Закрыть настройку"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-[#78a4d5]/35"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
-      </div>
-      <div className="mt-3">{children}</div>
+      {step && totalSteps ? (
+        <p
+          className="ps-step"
+          role="progressbar"
+          aria-label={`Шаг ${activeStep} из ${totalSteps}`}
+          aria-valuemin={1}
+          aria-valuemax={totalSteps}
+          aria-valuenow={activeStep}
+        >
+          Шаг {activeStep} из {totalSteps}
+        </p>
+      ) : null}
+      <h2 className="q-say">{title}</h2>
+      {children}
     </section>
   );
 }

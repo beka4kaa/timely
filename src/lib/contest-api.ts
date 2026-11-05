@@ -25,6 +25,8 @@ export interface Me {
   is_admin: boolean
   has_full_access: boolean
   ai_plan: "free" | "pro" | "max"
+  /** «О себе». Видит только сам ученик: в рейтинге и поиске этого поля нет. */
+  bio: string
   authenticated?: boolean
 }
 
@@ -50,6 +52,7 @@ export interface Submission {
   file_url_or_code: string
   student_solution_image: string
   status: SubmissionStatus
+  reviewed_at: string | null
   created_at: string
 }
 
@@ -122,6 +125,10 @@ async function unwrap<T>(res: Response): Promise<T> {
 // ── current user / role ──────────────────────────────────────────────
 export const getMe = async (): Promise<Me> => unwrap(await authFetch(url("/api/me/")))
 
+/** Меняется только описание: роли и рейтинг сервер через этот адрес не принимает. */
+export const updateMe = async (data: { bio: string }): Promise<Me> =>
+  unwrap(await authFetch(url("/api/me/"), { method: "PATCH", body: JSON.stringify(data) }))
+
 // ── tasks ────────────────────────────────────────────────────────────
 export const listTasks = async (): Promise<ContestTask[]> =>
   unwrap(await authFetch(url("/api/tasks/")))
@@ -167,6 +174,10 @@ export const rejectSubmission = async (id: number): Promise<Submission> =>
 // ── leaderboards ─────────────────────────────────────────────────────
 export const listGlobalLeaderboard = async (): Promise<LeaderboardUser[]> =>
   unwrap(await authFetch(url("/api/leaderboard/")))
+
+/** Строка одного ученика из рейтинга: всё, что о нём можно показать другим. */
+export const getLeaderboardUser = async (id: number): Promise<LeaderboardUser> =>
+  unwrap(await authFetch(url(`/api/leaderboard/${id}/`)))
 
 export const listPrivateBoards = async (): Promise<PrivateBoard[]> =>
   unwrap(await authFetch(url("/api/private-leaderboards/")))
@@ -222,5 +233,5 @@ export function useMe() {
     refresh()
   }, [refresh])
 
-  return { me, loading, refresh }
+  return { me, loading, refresh, setMe }
 }

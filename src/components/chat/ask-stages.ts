@@ -1,14 +1,9 @@
-// Этапы ответа по книге → строки «заметки на полях».
+// Что показать ученику, пока идёт ответ и когда он не получился.
 //
 // Свой словарь, а не общий с доской (`board-stages.ts`): у доски свои этапы
-// («рисую схему»), и `ThinkingNote` намеренно не знает ни одного набора.
+// («рисую схему»).
 
-import type { ThinkingStage } from "./thinking-note";
-import type { Turn } from "./use-subject-chat";
-
-// Этапы в порядке прохождения. Больше трёх не бывает намеренно: длинный список
-// превращает заметку на полях в чеклист.
-export const STAGE_ORDER = ["retrieving", "found", "answering"] as const;
+import { citationSpot } from "@/lib/book-label";
 
 export function stageLabel(stage: string, found?: number): string {
   if (stage === "retrieving") return "Ищу в книге";
@@ -27,27 +22,33 @@ export function fragmentWord(count: number): string {
   return "фрагментов";
 }
 
-/** Этапы для заметки: пройденные гаснут, текущий остаётся живым. */
-export function buildStages(turn: Turn): ThinkingStage[] {
-  const current = STAGE_ORDER.indexOf(turn.stage as (typeof STAGE_ORDER)[number]);
-  if (current < 0) return [];
-  // Без книги поиска не было, и первые два этапа показывать не за что: ответ
-  // начинается сразу с «отвечаю».
-  const passed = STAGE_ORDER.slice(0, current + 1).filter(
-    (key) => turn.library !== false || key === "answering",
-  );
-  const activeAt = passed.length - 1;
-  return passed.map((key, index) => ({
-    key,
-    label: stageLabel(key, turn.found),
-    done: index < activeAt,
-  }));
+/** Место в книге. В разделе без значка параграфа ставим его сами: «§8, стр. 38», а не «8, стр. 38». */
+export function placeLabel(citation: {
+  section_path: string;
+  page_start: number;
+  page_end: number;
+}): string {
+  const spot = citationSpot(citation);
+  return /^\d/.test(spot) ? `§${spot}` : spot;
 }
 
-/** Сводка под завершённым ответом: «8 фрагментов» или «в книге не нашлось». */
-export function foundSummary(turn: Turn): string | undefined {
-  if (turn.found === undefined) return undefined;
-  return turn.found
-    ? `${turn.found} ${fragmentWord(turn.found)}`
-    : "в книге не нашлось";
+/** Ученик сам остановил ответ, а модель ещё ничего не сказала. Это не сбой. */
+export const STOPPED_ERROR = "Остановлено.";
+
+const EMPTY_ERROR = "Пустой ответ.";
+const NOT_FOUND_ERROR = "Предмет не найден.";
+const NETWORK = /failed to fetch|load failed|networkerror|network error/i;
+
+/**
+ * Понятная фраза вместо технической ошибки.
+ *
+ * В потоке сервер отдаёт текст исключения как есть, а там бывают адреса, коды и имена
+ * классов. Ученику от них пользы нет: подробности остаются в журнале сервера.
+ */
+export function askErrorText(raw: string): string {
+  if (raw === STOPPED_ERROR) return "Остановлено";
+  if (raw === EMPTY_ERROR) return "Тьютор ничего не ответил. Попробуй спросить ещё раз.";
+  if (raw === NOT_FOUND_ERROR) return "Этой книги больше нет. Выбери другую и спроси ещё раз.";
+  if (NETWORK.test(raw)) return "Нет связи с сервером. Проверь интернет и попробуй ещё раз.";
+  return "Тьютор сейчас не отвечает. Попробуй ещё раз через минуту.";
 }

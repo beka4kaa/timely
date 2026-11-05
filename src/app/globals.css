@@ -123,146 +123,149 @@
 
 :root {
   --font-handwriting: 'Caveat', cursive;
+  /* Старые имена шрифтов ведут на новые: так их читают модули лендинга и входа. */
+  --font-onest: var(--font-golos);
+  --font-literata: var(--font-source-serif);
   /* Нижняя панель разделов на телефоне. На ≥768 px её нет — там рейл слева. */
   --tm-tabbar-h: calc(62px + env(safe-area-inset-bottom));
 }
 
 @layer base {
   /*
-   * Палитра Timely (как на лендинге): тёплая бумага, почти чёрные чернила,
-   * сиреневый акцент. `--tm-*` — RGB-тройки для Tailwind-цветов `tm-*`
-   * (с поддержкой прозрачности: `bg-tm-surface/80`), shadcn-переменные ниже
-   * собраны из тех же значений.
+   * Палитра Timely: монохром, чёрное, белое и серые между ними. `--tm-*` — RGB-тройки
+   * для Tailwind-цветов `tm-*` (с поддержкой прозрачности: `bg-tm-surface/80`),
+   * shadcn-переменные ниже собраны из тех же значений. Новые страницы берут токены
+   * `--t-*` из styles/timely/tokens.css; здесь те же цвета для всего, что ещё на Tailwind.
    */
   :root {
-    --tm-bg: 251 250 247;
+    --tm-bg: 244 244 245;
     --tm-surface: 255 255 255;
-    --tm-surface-2: 244 242 238;
-    --tm-surface-3: 234 232 226;
-    --tm-line: 231 228 221;
-    --tm-line-strong: 211 208 200;
-    --tm-ink: 23 23 31;
-    --tm-ink-2: 59 59 71;
-    --tm-muted: 98 98 109;
-    --tm-faint: 154 154 165;
-    --tm-strong: 22 22 29;
+    --tm-surface-2: 238 238 240;
+    --tm-surface-3: 228 228 231;
+    --tm-line: 228 228 231;
+    --tm-line-strong: 205 205 210;
+    --tm-ink: 17 17 18;
+    --tm-ink-2: 60 60 64;
+    --tm-muted: 106 106 112;
+    --tm-faint: 152 152 158;
+    --tm-strong: 17 17 18;
     --tm-on-strong: 255 255 255;
-    --tm-accent: 116 72 196;
-    --tm-accent-soft: 239 231 252;
-    --tm-accent-line: 205 184 242;
-    --tm-pink: 248 210 226;
-    --tm-lilac: 224 208 247;
-    --tm-sky: 207 229 248;
-    --tm-mint: 211 240 228;
-    --tm-pink-ink: 166 46 100;
-    --tm-lilac-ink: 116 72 196;
-    --tm-sky-ink: 30 98 160;
-    --tm-mint-ink: 26 112 88;
-    --tm-warn: 163 90 29;
-    --tm-margin: 236 196 213;
-    --tm-dot: 23 23 31;
-    --tm-danger: 176 71 62;
+    --tm-accent: 17 17 18;
+    --tm-accent-soft: 236 236 238;
+    --tm-accent-line: 205 205 210;
+    --tm-pink: 236 236 238;
+    --tm-lilac: 236 236 238;
+    --tm-sky: 236 236 238;
+    --tm-mint: 236 236 238;
+    --tm-pink-ink: 60 60 64;
+    --tm-lilac-ink: 60 60 64;
+    --tm-sky-ink: 60 60 64;
+    --tm-mint-ink: 60 60 64;
+    --tm-warn: 192 57 47;
+    --tm-margin: 205 205 210;
+    --tm-dot: 17 17 18;
+    --tm-danger: 192 57 47;
     --tm-danger-soft: 251 238 236;
     --tm-danger-line: 236 200 195;
 
-    --background: 45 33% 98%;
-    --foreground: 240 15% 11%;
-    --primary: 240 14% 10%;
+    --background: 240 5% 96%;
+    --foreground: 240 3% 7%;
+    --primary: 240 3% 7%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 21% 95%;
-    --secondary-foreground: 240 15% 11%;
-    --muted: 40 21% 95%;
-    --muted-foreground: 240 5% 41%;
-    --accent: 40 21% 95%;
-    --accent-foreground: 240 15% 11%;
-    --destructive: 0 72% 51%;
+    --secondary: 240 5% 94%;
+    --secondary-foreground: 240 3% 7%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 3% 43%;
+    --accent: 240 5% 94%;
+    --accent-foreground: 240 3% 7%;
+    --destructive: 4 61% 47%;
     --destructive-foreground: 0 0% 100%;
-    --border: 42 17% 89%;
-    --input: 42 17% 89%;
-    --ring: 261 51% 53%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 3% 30%;
     --radius: 0.5rem;
     --card: 0 0% 100%;
-    --card-foreground: 240 15% 11%;
+    --card-foreground: 240 3% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 15% 11%;
-    --chart-1: 261 51% 53%;
-    --chart-2: 207 65% 47%;
-    --chart-3: 335 52% 51%;
-    --chart-4: 160 59% 33%;
-    --chart-5: 38 80% 55%;
-    --sidebar-background: 45 33% 98%;
-    --sidebar-foreground: 240 15% 11%;
-    --sidebar-primary: 240 14% 10%;
+    --popover-foreground: 240 3% 7%;
+    --chart-1: 240 3% 7%;
+    --chart-2: 240 3% 30%;
+    --chart-3: 240 3% 50%;
+    --chart-4: 240 3% 65%;
+    --chart-5: 240 4% 80%;
+    --sidebar-background: 240 5% 96%;
+    --sidebar-foreground: 240 3% 7%;
+    --sidebar-primary: 240 3% 7%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 40 21% 95%;
-    --sidebar-accent-foreground: 240 15% 11%;
-    --sidebar-border: 42 17% 89%;
-    --sidebar-ring: 261 51% 53%;
+    --sidebar-accent: 240 5% 94%;
+    --sidebar-accent-foreground: 240 3% 7%;
+    --sidebar-border: 240 6% 90%;
+    --sidebar-ring: 240 3% 30%;
   }
 
   .dark {
-    --tm-bg: 13 14 21;
-    --tm-surface: 22 23 34;
-    --tm-surface-2: 28 29 41;
-    --tm-surface-3: 37 38 53;
-    --tm-line: 42 43 57;
-    --tm-line-strong: 59 60 76;
-    --tm-ink: 238 238 245;
-    --tm-ink-2: 210 210 222;
-    --tm-muted: 165 166 180;
-    --tm-faint: 111 112 128;
-    --tm-strong: 241 241 246;
-    --tm-on-strong: 17 17 24;
-    --tm-accent: 196 168 255;
-    --tm-accent-soft: 38 31 66;
-    --tm-accent-line: 75 60 125;
-    --tm-pink: 74 34 57;
-    --tm-lilac: 51 39 92;
-    --tm-sky: 27 52 82;
-    --tm-mint: 22 58 48;
-    --tm-pink-ink: 245 156 195;
-    --tm-lilac-ink: 196 168 255;
-    --tm-sky-ink: 140 202 255;
-    --tm-mint-ink: 127 220 185;
-    --tm-warn: 242 179 122;
-    --tm-margin: 77 43 66;
+    --tm-bg: 13 13 14;
+    --tm-surface: 24 24 26;
+    --tm-surface-2: 30 30 33;
+    --tm-surface-3: 40 40 44;
+    --tm-line: 38 38 42;
+    --tm-line-strong: 56 56 62;
+    --tm-ink: 236 236 238;
+    --tm-ink-2: 196 196 200;
+    --tm-muted: 151 151 157;
+    --tm-faint: 108 108 114;
+    --tm-strong: 228 228 230;
+    --tm-on-strong: 17 17 18;
+    --tm-accent: 228 228 230;
+    --tm-accent-soft: 38 38 42;
+    --tm-accent-line: 62 62 68;
+    --tm-pink: 38 38 42;
+    --tm-lilac: 38 38 42;
+    --tm-sky: 38 38 42;
+    --tm-mint: 38 38 42;
+    --tm-pink-ink: 196 196 200;
+    --tm-lilac-ink: 196 196 200;
+    --tm-sky-ink: 196 196 200;
+    --tm-mint-ink: 196 196 200;
+    --tm-warn: 239 143 134;
+    --tm-margin: 56 56 62;
     --tm-dot: 255 255 255;
-    --tm-danger: 255 155 143;
+    --tm-danger: 239 143 134;
     --tm-danger-soft: 58 28 32;
     --tm-danger-line: 107 47 53;
 
-    --background: 232 24% 7%;
-    --foreground: 240 26% 95%;
-    --primary: 240 22% 95%;
-    --primary-foreground: 240 17% 8%;
-    --secondary: 235 19% 14%;
-    --secondary-foreground: 240 26% 95%;
-    --muted: 235 19% 14%;
-    --muted-foreground: 236 9% 68%;
-    --accent: 235 19% 14%;
-    --accent-foreground: 240 26% 95%;
-    --destructive: 0 62% 50%;
+    --background: 240 4% 5%;
+    --foreground: 240 5% 93%;
+    --primary: 240 5% 90%;
+    --primary-foreground: 240 3% 7%;
+    --secondary: 240 4% 14%;
+    --secondary-foreground: 240 5% 93%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 3% 60%;
+    --accent: 240 4% 14%;
+    --accent-foreground: 240 5% 93%;
+    --destructive: 4 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 236 15% 19%;
-    --input: 236 15% 19%;
-    --ring: 259 100% 83%;
-    --card: 235 21% 11%;
-    --card-foreground: 240 26% 95%;
-    --popover: 235 21% 11%;
-    --popover-foreground: 240 26% 95%;
-    --chart-1: 259 100% 83%;
-    --chart-2: 207 100% 77%;
-    --chart-3: 335 84% 79%;
-    --chart-4: 156 58% 68%;
-    --chart-5: 38 90% 65%;
-    --sidebar-background: 232 24% 7%;
-    --sidebar-foreground: 240 26% 95%;
-    --sidebar-primary: 240 22% 95%;
-    --sidebar-primary-foreground: 240 17% 8%;
-    --sidebar-accent: 235 19% 14%;
-    --sidebar-accent-foreground: 240 26% 95%;
-    --sidebar-border: 236 15% 19%;
-    --sidebar-ring: 259 100% 83%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 240 5% 70%;
+    --card: 240 4% 9%;
+    --card-foreground: 240 5% 93%;
+    --popover: 240 4% 9%;
+    --popover-foreground: 240 5% 93%;
+    --chart-1: 240 5% 90%;
+    --chart-2: 240 4% 70%;
+    --chart-3: 240 3% 55%;
+    --chart-4: 240 3% 40%;
+    --chart-5: 240 3% 28%;
+    --sidebar-background: 240 4% 5%;
+    --sidebar-foreground: 240 5% 93%;
+    --sidebar-primary: 240 5% 90%;
+    --sidebar-primary-foreground: 240 3% 7%;
+    --sidebar-accent: 240 4% 14%;
+    --sidebar-accent-foreground: 240 5% 93%;
+    --sidebar-border: 240 4% 16%;
+    --sidebar-ring: 240 5% 70%;
   }
 }
 
@@ -281,75 +284,65 @@
  * холст фиксированными цветами, и тёмные токены вокруг него спорили бы с ним.
  */
 .tm-light {
-  --tm-bg: 251 250 247;
+  --tm-bg: 244 244 245;
   --tm-surface: 255 255 255;
-  --tm-surface-2: 244 242 238;
-  --tm-surface-3: 234 232 226;
-  --tm-line: 231 228 221;
-  --tm-line-strong: 211 208 200;
-  --tm-ink: 23 23 31;
-  --tm-ink-2: 59 59 71;
-  --tm-muted: 98 98 109;
-  --tm-faint: 154 154 165;
-  --tm-strong: 22 22 29;
+  --tm-surface-2: 238 238 240;
+  --tm-surface-3: 228 228 231;
+  --tm-line: 228 228 231;
+  --tm-line-strong: 205 205 210;
+  --tm-ink: 17 17 18;
+  --tm-ink-2: 60 60 64;
+  --tm-muted: 106 106 112;
+  --tm-faint: 152 152 158;
+  --tm-strong: 17 17 18;
   --tm-on-strong: 255 255 255;
-  --tm-accent: 116 72 196;
-  --tm-accent-soft: 239 231 252;
-  --tm-accent-line: 205 184 242;
-  --tm-pink: 248 210 226;
-  --tm-lilac: 224 208 247;
-  --tm-sky: 207 229 248;
-  --tm-mint: 211 240 228;
-  --tm-pink-ink: 166 46 100;
-  --tm-lilac-ink: 116 72 196;
-  --tm-sky-ink: 30 98 160;
-  --tm-mint-ink: 26 112 88;
-  --tm-warn: 163 90 29;
-  --tm-margin: 236 196 213;
-  --tm-dot: 23 23 31;
-  --tm-danger: 176 71 62;
+  --tm-accent: 17 17 18;
+  --tm-accent-soft: 236 236 238;
+  --tm-accent-line: 205 205 210;
+  --tm-pink: 236 236 238;
+  --tm-lilac: 236 236 238;
+  --tm-sky: 236 236 238;
+  --tm-mint: 236 236 238;
+  --tm-pink-ink: 60 60 64;
+  --tm-lilac-ink: 60 60 64;
+  --tm-sky-ink: 60 60 64;
+  --tm-mint-ink: 60 60 64;
+  --tm-warn: 192 57 47;
+  --tm-margin: 205 205 210;
+  --tm-dot: 17 17 18;
+  --tm-danger: 192 57 47;
   --tm-danger-soft: 251 238 236;
   --tm-danger-line: 236 200 195;
-  --background: 45 33% 98%;
-  --foreground: 240 15% 11%;
-  --primary: 240 14% 10%;
+  --background: 240 5% 96%;
+  --foreground: 240 3% 7%;
+  --primary: 240 3% 7%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 40 21% 95%;
-  --secondary-foreground: 240 15% 11%;
-  --muted: 40 21% 95%;
-  --muted-foreground: 240 5% 41%;
-  --accent: 40 21% 95%;
-  --accent-foreground: 240 15% 11%;
-  --border: 42 17% 89%;
-  --input: 42 17% 89%;
-  --ring: 261 51% 53%;
+  --secondary: 240 5% 94%;
+  --secondary-foreground: 240 3% 7%;
+  --muted: 240 5% 94%;
+  --muted-foreground: 240 3% 43%;
+  --accent: 240 5% 94%;
+  --accent-foreground: 240 3% 7%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 240 3% 30%;
   --card: 0 0% 100%;
-  --card-foreground: 240 15% 11%;
+  --card-foreground: 240 3% 7%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 15% 11%;
+  --popover-foreground: 240 3% 7%;
   color-scheme: light;
-}
-
-.timely-dashboard-surface {
-  background-color: rgb(var(--tm-bg));
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    rgb(var(--tm-dot) / 0.06) 1px,
-    transparent 1.15px
-  );
-  background-size: 28px 28px;
 }
 
 /* Цвет текста при выделении не задаём: внутри тёмных пузырей (bg-tm-strong)
    он слился бы с фоном. */
 .timely-dashboard-shell ::selection {
-  background: rgb(var(--tm-accent) / 0.25);
+  background: rgb(var(--tm-accent) / 0.16);
 }
 
 .timely-dashboard-surface h1 {
-  font-family: var(--font-literata), Georgia, "Times New Roman", serif;
-  font-weight: 500;
-  letter-spacing: -0.025em;
+  font-family: var(--t-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
 }
 
 .timely-dashboard-surface [data-timely-card] {
@@ -359,58 +352,60 @@
 @media print {
   /* Печать всегда светлая, даже если интерфейс в тёмной теме. */
   .dark {
-    --tm-bg: 251 250 247;
+    --tm-bg: 244 244 245;
     --tm-surface: 255 255 255;
-    --tm-surface-2: 244 242 238;
-    --tm-surface-3: 234 232 226;
-    --tm-line: 231 228 221;
-    --tm-line-strong: 211 208 200;
-    --tm-ink: 23 23 31;
-    --tm-ink-2: 59 59 71;
-    --tm-muted: 98 98 109;
-    --tm-faint: 154 154 165;
-    --tm-strong: 22 22 29;
+    --tm-surface-2: 238 238 240;
+    --tm-surface-3: 228 228 231;
+    --tm-line: 228 228 231;
+    --tm-line-strong: 205 205 210;
+    --tm-ink: 17 17 18;
+    --tm-ink-2: 60 60 64;
+    --tm-muted: 106 106 112;
+    --tm-faint: 152 152 158;
+    --tm-strong: 17 17 18;
     --tm-on-strong: 255 255 255;
-    --tm-accent: 116 72 196;
-    --tm-accent-soft: 239 231 252;
-    --tm-accent-line: 205 184 242;
-    --tm-pink: 248 210 226;
-    --tm-lilac: 224 208 247;
-    --tm-sky: 207 229 248;
-    --tm-mint: 211 240 228;
-    --tm-pink-ink: 166 46 100;
-    --tm-lilac-ink: 116 72 196;
-    --tm-sky-ink: 30 98 160;
-    --tm-mint-ink: 26 112 88;
-    --tm-warn: 163 90 29;
-    --tm-margin: 236 196 213;
-    --tm-dot: 23 23 31;
-    --tm-danger: 176 71 62;
+    --tm-accent: 17 17 18;
+    --tm-accent-soft: 236 236 238;
+    --tm-accent-line: 205 205 210;
+    --tm-pink: 236 236 238;
+    --tm-lilac: 236 236 238;
+    --tm-sky: 236 236 238;
+    --tm-mint: 236 236 238;
+    --tm-pink-ink: 60 60 64;
+    --tm-lilac-ink: 60 60 64;
+    --tm-sky-ink: 60 60 64;
+    --tm-mint-ink: 60 60 64;
+    --tm-warn: 192 57 47;
+    --tm-margin: 205 205 210;
+    --tm-dot: 17 17 18;
+    --tm-danger: 192 57 47;
     --tm-danger-soft: 251 238 236;
     --tm-danger-line: 236 200 195;
-    --background: 45 33% 98%;
-    --foreground: 240 15% 11%;
-    --primary: 240 14% 10%;
+    --background: 240 5% 96%;
+    --foreground: 240 3% 7%;
+    --primary: 240 3% 7%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 21% 95%;
-    --secondary-foreground: 240 15% 11%;
-    --muted: 40 21% 95%;
-    --muted-foreground: 240 5% 41%;
-    --accent: 40 21% 95%;
-    --accent-foreground: 240 15% 11%;
-    --border: 42 17% 89%;
-    --input: 42 17% 89%;
-    --ring: 261 51% 53%;
+    --secondary: 240 5% 94%;
+    --secondary-foreground: 240 3% 7%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 3% 43%;
+    --accent: 240 5% 94%;
+    --accent-foreground: 240 3% 7%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 3% 30%;
     --card: 0 0% 100%;
-    --card-foreground: 240 15% 11%;
+    --card-foreground: 240 3% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 15% 11%;
+    --popover-foreground: 240 3% 7%;
     color-scheme: light;
   }
 
   .timely-dashboard-shell > header,
   .timely-dashboard-shell > aside,
-  .timely-dashboard-shell > nav {
+  .timely-dashboard-shell > nav,
+  .timely-dashboard-shell > .mascot,
+  .timely-dashboard-shell > .quick {
     display: none !important;
   }
 

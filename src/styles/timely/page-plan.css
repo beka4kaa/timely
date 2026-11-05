@@ -1,0 +1,114 @@
+/* ══════════════════ План: добавки к .cal из grow.css ══════════════════
+   В прототипе сетка 8:00–22:00. В приложении она всегда сутки целиком: блок можно
+   перетащить и на семь утра, а одно и то же занятие не прыгает по экрану. */
+.plan-cal { --from: 0; --span: 24; position: relative; }
+.plan-cal .hours, .plan-cal .wcol { height: calc(var(--span) * var(--hh)); }
+.plan-cal .cal-body { height: clamp(380px, calc(100vh - 212px), calc(var(--span) * var(--hh))); -webkit-user-select: none; user-select: none; }
+.plan-view:has(.plan-line) .plan-cal .cal-body { height: clamp(380px, calc(100vh - 264px), calc(var(--span) * var(--hh))); }
+.plan-cal .blk:focus-visible, .plan-cal .busy:focus-visible { outline-offset: 0; z-index: 3; }
+.plan-cal.is-dragging, .plan-cal.is-dragging .wcol { cursor: grabbing; }
+
+/* Состояния настоящих занятий */
+.plan-cal .blk.is-fixed { cursor: pointer; }
+.plan-cal .blk.is-fixed::after { display: none; }
+.plan-cal .blk.past:not(.is-fixed) { cursor: grab; }
+.plan-cal .blk.is-sel, .plan-cal .busy.is-sel { z-index: 3; box-shadow: inset 0 0 0 1.5px var(--t-ink); }
+.plan-cal .blk.is-draft { background: transparent; outline: 1px dashed color-mix(in srgb, var(--t-ink) 42%, transparent); outline-offset: -1px; }
+.plan-cal .blk.is-draft:hover { background: var(--t-hover); }
+.plan-cal .blk.is-draft.is-sel { box-shadow: none; outline: 1.5px dashed var(--t-ink); }
+.plan-cal .blk.is-pinned { padding-right: 14px; }
+.plan-cal .blk.is-pinned::after { display: block; left: auto; right: 5px; top: 5px; bottom: auto; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.55; cursor: inherit; }
+.plan-cal .blk.missed { opacity: 0.72; }
+.plan-cal .blk.missed::before { background: var(--t-warn); }
+.plan-cal .blk.done { padding-right: 18px; }
+.blk-check { position: absolute; right: 4px; top: 4px; width: 11px; height: 11px; color: var(--t-muted); stroke-width: 2; }
+
+/* Занятое время можно открыть и удалить, но не двигать */
+.plan-cal .busy { cursor: pointer; }
+.plan-cal .busy span { display: block; overflow: hidden; overflow-wrap: break-word; }
+.plan-cal .busy:hover { color: var(--t-ink); }
+
+/* Узкая колонка дня: название тоже переносится по строкам, сколько их поместится */
+.cal[data-mode="day"].plan-cal .blk[data-lines="2"] b { -webkit-line-clamp: 2; }
+.cal[data-mode="day"].plan-cal .blk[data-lines="3"] b { -webkit-line-clamp: 3; }
+.cal[data-mode="day"].plan-cal .blk[data-lines="4"] b { -webkit-line-clamp: 4; }
+
+/* Сроки на один день идут столбиком */
+.plan-cal .ca { display: grid; align-content: start; gap: 2px; }
+.due-more { padding: 0 8px; color: var(--t-muted); font-size: 11px; line-height: 14px; }
+
+.plan-marquee { position: absolute; z-index: 5; border-radius: 6px; background: var(--t-accent-soft); box-shadow: inset 0 0 0 1px var(--t-line-strong); pointer-events: none; }
+
+/* Месяц: кнопками стали все дни, в прототипе только дни недели */
+.plan-view .mm .m { padding: 0; }
+
+/* Загрузка, ошибка, пустой календарь */
+.plan-skel { height: clamp(420px, calc(100vh - 124px), 800px); }
+.plan-error { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 16px 18px; font-size: 14px; }
+.plan-empty { position: absolute; z-index: 6; left: 50%; top: 50%; width: min(372px, calc(100% - 32px)); padding: 22px 24px 24px; border-radius: 20px; background: var(--t-card); box-shadow: var(--t-card-sh), inset 0 0 0 0.5px var(--t-line); text-align: center; transform: translate(-50%, -50%); }
+.plan-empty h2 { font-family: var(--t-serif); font-size: 21px; font-weight: 400; line-height: 1.2; }
+.plan-empty p { margin-top: 7px; color: var(--t-muted); font-size: 13.5px; line-height: 1.42; }
+.plan-empty .btn { width: 100%; height: 44px; margin-top: 16px; font-size: 14.5px; }
+
+/* Черновик расписания: подтверждается только здесь */
+.plan-line { --r: 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 12px; padding: 8px 8px 8px 15px; font-size: 13.5px; }
+.plan-line span { min-width: 0; }
+.plan-line .btn { height: 30px; }
+
+/* Сообщение поверх страницы: сетка под ним не прыгает */
+.plan-toast { display: flex; align-items: center; gap: 4px 10px; width: max-content; padding: 5px 6px 5px 14px; }
+.plan-toast span { min-width: 0; }
+.plan-toast .btn { flex: none; height: 28px; }
+.plan-toast .icon-btn { width: 24px; height: 24px; }
+.plan-toast .icon-btn .i { width: 12px; height: 12px; }
+.plan-toast.at-top { top: 18px; bottom: auto; }
+
+/* Карточка занятия */
+.cal-pop { max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; scrollbar-width: thin; outline: none; }
+.cal-pop .pop-note { color: var(--t-ink-2); }
+.pop-form input:focus { border-bottom-color: var(--t-ink); }
+
+/* ══════════════════ Помощник в мини-окне ══════════════════ */
+.q-tool:disabled { opacity: 0.45; cursor: default; }
+.ps-target { min-width: 0; max-width: calc(100% - 92px); }
+.ps-target span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ps-target .i { flex: none; }
+.q-book-menu button:disabled { opacity: 0.45; }
+
+/* Меню команд стоит в окне, а не висит над ним: стекло его не обрежет */
+.ps-cmds { display: grid; gap: 1px; margin: 0 6px 8px -6px; }
+.ps-cmd { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 9px; font-size: 13px; text-align: left; }
+.ps-cmd[aria-selected="true"], .ps-cmd:hover { background: var(--t-hover); }
+.ps-cmd[aria-disabled="true"] { opacity: 0.55; }
+.ps-cmd b { flex: none; min-width: 56px; font-weight: 600; }
+.ps-cmd span { min-width: 0; color: var(--t-muted); font-size: 12.5px; }
+.q-form + .q-cite { margin: 6px 6px 0 3px; }
+
+/* Настройка расписания: поля ввода под ней нет, и черта отделять нечего */
+.q-answer:has(> .ps-setup) { max-height: min(62vh, 460px); margin-bottom: 0; padding-bottom: 3px; border-bottom: 0; }
+.ps-setup { display: flex; flex-direction: column; gap: 8px; }
+.ps-setup .q-acts { margin-top: 2px; }
+.ps-setup .q-diff { margin-top: 0; }
+.ps-step { color: var(--t-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ps-opts { display: grid; gap: 4px; }
+.ps-opt { display: block; width: 100%; padding: 7px 11px; border-radius: 11px; background: var(--t-fill); font-size: 13.5px; font-weight: 500; line-height: 1.3; text-align: left; transition: background 120ms ease, color 120ms ease; }
+.ps-opt:hover { background: var(--t-line-strong); }
+.ps-opt small { display: block; margin-top: 1px; color: var(--t-muted); font-size: 12px; font-weight: 400; }
+.ps-opt[aria-pressed="true"] { background: var(--t-accent); color: var(--t-on-accent); }
+.ps-opt[aria-pressed="true"] small { color: color-mix(in srgb, var(--t-on-accent) 68%, transparent); }
+.ps-opt:disabled:not([aria-pressed="true"]) { opacity: 0.5; }
+.ps-opt.is-quiet { background: transparent; box-shadow: inset 0 0 0 1px var(--t-line); color: var(--t-muted); font-weight: 400; }
+.ps-opt.is-quiet:hover { background: var(--t-hover); color: var(--t-ink); }
+.ps-other { display: flex; align-items: center; gap: 6px; padding-top: 2px; }
+.ps-other input { flex: 1; min-width: 0; height: 34px; padding: 0 11px; border: 0; border-radius: 11px; outline: none; background: var(--t-fill); color: var(--t-ink); font: inherit; font-size: 13.5px; }
+.ps-other input::placeholder { color: var(--t-muted); }
+
+@container main (max-width: 620px) {
+  .plan-cal .cal-body { height: clamp(360px, calc(100vh - 300px), calc(var(--span) * var(--hh))); }
+  .plan-view:has(.plan-line) .plan-cal .cal-body { height: clamp(360px, calc(100vh - 360px), calc(var(--span) * var(--hh))); }
+  .plan-skel { height: clamp(380px, calc(100vh - 220px), 700px); }
+}
+@media (max-width: 640px) {
+  .pop-form input, .ps-other input { font-size: 16px; }
+  .plan-toast { max-width: calc(100vw - 24px); white-space: normal; }
+}

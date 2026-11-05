@@ -161,7 +161,7 @@ export function prepareSource(
   };
 }
 
-/** «10 вариантов · 30 ч» — сводка формы до отправки. */
+/** «10 вариантов, 30 ч»: сводка формы до отправки. */
 export function sourceSummary(values: SourceFormValues): string {
   const totalUnits = parseCount(values.totalUnits);
   const minutesPerUnit = parseCount(values.minutesPerUnit);
@@ -170,5 +170,5 @@ export function sourceSummary(values: SourceFormValues): string {
   const minutes = totalUnits * minutesPerUnit;
   const hours = Math.round(minutes / 6) / 10;
   const time = minutes < 60 ? `${minutes} мин` : `${hours} ч`;
-  return `${totalUnits} ${unitsHint(values.kind)} · ${time}`;
+  return `${totalUnits} ${unitsHint(values.kind)}, ${time}`;
 }

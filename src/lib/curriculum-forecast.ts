@@ -84,11 +84,11 @@ const WARNINGS: Record<string, string> = {
   // «Невозможно» не пишем: бэкенд ограничивает расчёт пятью годами, и «нет»
   // здесь значит «не при таком темпе», а не «никогда».
   horizon_exceeded:
-    "При таком темпе курс выходит за пять лет — дальше расчёт не идёт. Добавьте занятий в неделю.",
+    "При таком темпе курс выходит за пять лет, дальше расчёт не идёт. Добавь занятий в неделю.",
   deadline_unreachable_at_any_pace:
-    "К этому сроку не успеть даже занимаясь каждый день. Сдвиньте срок или сократите программу.",
+    "К этому сроку не успеть, даже если заниматься каждый день. Сдвинь срок или сократи программу.",
   sessions_per_week_capped_by_available_days:
-    "Занятий в неделю выбрано больше, чем дней для учёбы — лишние перенесены на следующую неделю.",
+    "Занятий в неделю больше, чем дней для учёбы. Лишние перенесены на следующую неделю.",
   forecast_skipped_zero_duration:
     "У программы нулевая длительность, поэтому прогноз не считался.",
   forecast_not_possible: "Прогноз посчитать не удалось.",
@@ -117,12 +117,87 @@ export function formatPlanDate(iso: string | null): string {
   });
 }
 
-/** Короткая дата для микрошкалы: «20 мая». */
+/** Короткая дата для подсказок: «20 мая». */
 export function formatShortDate(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+/**
+ * Дата бэкенда в местном дне.
+ *
+ * «2027-03-14» без времени `new Date` читает как полночь по Гринвичу, и к западу от
+ * него это уже тринадцатое марта.
+ */
+function localDay(iso: string): Date {
+  const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return plain
+    ? new Date(Number(plain[1]), Number(plain[2]) - 1, Number(plain[3]))
+    : new Date(iso);
+}
+
+/** День и месяц словами: «14 марта». Год дописывается, только если он не этот. */
+export function dayMonth(iso: string, now: Date = new Date()): string {
+  const date = localDay(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const text = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return date.getFullYear() === now.getFullYear() ? text : `${text} ${date.getFullYear()}`;
+}
+
+/** Разброс финиша: «7 и 14 марта», а в разные месяцы «28 февраля и 14 марта». */
+export function finishRange(from: string, to: string, now: Date = new Date()): string {
+  const a = localDay(from);
+  const b = localDay(to);
+  const sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  return sameMonth ? `${a.getDate()} и ${dayMonth(to, now)}` : `${dayMonth(from, now)} и ${dayMonth(to, now)}`;
+}
+
+/**
+ * Строка под заголовком курса: ритм, финиш и запас.
+ *
+ * «3 занятия в неделю по 45 минут. Закончишь между 7 и 14 марта, запас есть.»
+ * Части без данных просто пропадают: если прогноза нет, остаётся одна правда.
+ */
+export function courseLede(
+  forecast: PlanForecast | null,
+  fallback: {
+    sessionsPerWeek: number | null;
+    minutesPerSession: number | null;
+    finishDate: string | null;
+  },
+  now: Date = new Date(),
+): string {
+  const rhythm = rhythmLine(
+    forecast?.sessionsPerWeek ?? fallback.sessionsPerWeek,
+    forecast?.minutesPerSession ?? fallback.minutesPerSession,
+  );
+  const optimistic = forecast?.optimisticFinishDate ?? null;
+  const realistic = forecast?.realisticFinishDate ?? null;
+  const expected = forecast?.estimatedFinishDate ?? fallback.finishDate;
+  const risk = forecast?.risk ? riskLabel(forecast.risk).toLowerCase() : null;
+
+  // Прогноз считается один раз и сам не обновляется: дата могла уже пройти, а «закончишь в
+  // прошлом месяце» читается как поломка.
+  const latest = realistic ?? expected;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (latest && localDay(latest) < today) {
+    return [rhythm, `По прогнозу курс должен был закончиться ${dayMonth(latest, now)}`, "Пересчитай темп"]
+      .filter(Boolean)
+      .map((part) => `${part}.`)
+      .join(" ");
+  }
+
+  let finish = "";
+  if (optimistic && realistic && optimistic !== realistic) {
+    finish = `Закончишь между ${finishRange(optimistic, realistic, now)}`;
+  } else if (expected) {
+    finish = `Закончишь к ${dayMonth(expected, now)}`;
+  }
+  if (finish && risk) finish += `, ${risk}`;
+
+  return [rhythm, finish].filter(Boolean).map((part) => `${part}.`).join(" ");
 }
 
 function sessionsWord(count: number): string {

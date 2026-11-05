@@ -1,10 +1,14 @@
-// Управляющие команды правой панели расписания.
+// Управляющие команды помощника по расписанию в мини-окне.
 //
 // Модуль не зависит от React: slash-токен разбирается локально и никогда не
 // становится частью сообщения модели.
+//
+// Окно спрашивает «Что поменять?», поэтому при наличии расписания обычное сообщение
+// идёт в режиме `plan`: он только готовит предложение, а применяет его сам ученик. Совет
+// без изменений остаётся за `/advice`.
 
 export type ScheduleAssistantMode = "advice" | "plan";
-export type ScheduleCommandId = "start" | "plan";
+export type ScheduleCommandId = "start" | "plan" | "advice";
 
 export interface ScheduleCommand {
   id: ScheduleCommandId;
@@ -26,6 +30,7 @@ export type ScheduleSubmission =
   | { kind: "empty" }
   | { kind: "start" }
   | { kind: "arm_plan" }
+  | { kind: "arm_advice" }
   | { kind: "message"; message: string; mode: ScheduleAssistantMode }
   | { kind: "error"; message: string };
 
@@ -44,13 +49,25 @@ const COMMAND_DEFINITIONS = [
     title: "Изменить расписание",
     description: "Перенести занятия, разгрузить день или восстановить план.",
   },
+  {
+    id: "advice",
+    command: "/advice",
+    aliases: ["/совет"],
+    title: "Только совет",
+    description: "Оценить нагрузку и подсказать, ничего не меняя.",
+  },
 ] as const;
+
+/** Обычное сообщение без команды: есть расписание, значит его и меняем. */
+export function defaultScheduleMode(hasSchedule: boolean): ScheduleAssistantMode {
+  return hasSchedule ? "plan" : "advice";
+}
 
 export function scheduleCommands(
   hasSchedule: boolean,
 ): ScheduleCommand[] {
   return COMMAND_DEFINITIONS.map((definition) => {
-    const available = definition.id === "start" || hasSchedule;
+    const available = definition.id !== "plan" || hasSchedule;
     return {
       ...definition,
       aliases: [...definition.aliases],
@@ -137,10 +154,15 @@ export function resolveScheduleSubmission(
       ? { kind: "message", message: parsed.argument, mode: "plan" }
       : { kind: "arm_plan" };
   }
+  if (parsed?.id === "advice") {
+    return parsed.argument
+      ? { kind: "message", message: parsed.argument, mode: "advice" }
+      : { kind: "arm_advice" };
+  }
   if (message.startsWith("/")) {
     return {
       kind: "error",
-      message: "Неизвестная команда. Доступны /start и /plan.",
+      message: "Неизвестная команда. Доступны /start, /plan и /advice.",
     };
   }
   return { kind: "message", message, mode: pendingMode };

@@ -1,88 +1,97 @@
-// Один модуль: заголовок-раскрывашка и список тем.
+// Одна глава программы: раскрывашка со списком тем.
 //
-// Нумерация здесь честная: модули — это упорядоченная последовательность
-// (`order_index`), и порядок несёт смысл, который ученику нужен. Поэтому номер
-// стоит рядом с названием, а не как декоративный маркер.
+// Порядок глав несёт смысл, поэтому номер из книги стоит рядом с названием. Текущая глава
+// открыта сразу и лежит на карточке, остальные просто строки: глаз находит место сразу.
 
 "use client";
 
-import { ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { CourseModule } from "@/lib/curriculum-api";
+import type { CourseStates, StepState } from "@/lib/curriculum-course-progress";
 import { formatMinutes } from "@/lib/curriculum-progress";
+import { plural } from "@/lib/now-feed";
+
 import { PlanTopicRow } from "./plan-topic-row";
-import { paperCard, paperFocus, paperNumber } from "./paper";
 
 export function PlanModuleStrip({
   courseModule,
-  index,
+  states,
   titles,
-  hoveredTopicId,
+  sourceTitle,
   onHoverTopic,
+  onAsk,
 }: {
-  // Имя `module` роняет @next/next/no-assign-module-variable — на это уже
-  // наступали в предыдущей версии экрана.
+  // Имя `module` роняет @next/next/no-assign-module-variable.
   courseModule: CourseModule;
-  index: number;
+  states: CourseStates;
   titles: Map<string, string>;
-  hoveredTopicId: string | null;
+  sourceTitle: string;
   onHoverTopic: (topicId: string | null) => void;
+  onAsk: (text: string) => void;
 }) {
-  const [open, setOpen] = useState(index === 0);
-  const minutes = courseModule.topics.reduce(
-    (sum, topic) => sum + (topic.estimated_minutes || 0),
-    0,
-  );
+  const state: StepState = states.modules.get(courseModule.id)?.state ?? "todo";
+  const current = state === "cur";
+  const [open, setOpen] = useState(current);
+
+  // Текущая глава могла смениться после пересчёта: открываем её, чужие не трогаем.
+  useEffect(() => {
+    if (current) setOpen(true);
+  }, [current]);
+
+  const minutes =
+    courseModule.estimated_minutes ||
+    courseModule.topics.reduce((sum, topic) => sum + (topic.estimated_minutes || 0), 0);
+  const count = courseModule.topics.length;
 
   return (
-    <section className={`${paperCard} overflow-hidden`}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className={`${paperFocus} flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-tm-surface-2`}
-      >
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <span className={`${paperNumber} shrink-0 text-[13px] text-tm-faint`}>
-              {/* Номер главы из книги, если он есть: рядом с «Глава 3» свой
-                  порядковый номер списка читался бы как «6 Глава 3». */}
-              {courseModule.number_label || index + 1}
-            </span>
-            <span className="truncate font-serif text-[17px] tracking-[-0.02em] text-tm-ink">
-              {courseModule.title}
-            </span>
-          </span>
-          {courseModule.objective && (
-            <span className="mt-1 block text-[12px] leading-5 text-tm-muted">
-              {courseModule.objective}
-            </span>
-          )}
+    <details
+      className={current ? "mod is-cur card" : "mod"}
+      open={open}
+      data-attach={`Глава «${courseModule.title}»`}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span className={state === "todo" ? "dot" : `dot ${state}`} aria-hidden="true" />
+        <span className="mt">
+          {courseModule.number_label ? (
+            <span className="mod-num">{courseModule.number_label} </span>
+          ) : null}
+          {courseModule.title}
         </span>
-        <span className="flex shrink-0 items-center gap-3 pt-1 text-[11px] text-tm-faint">
-          <span className={paperNumber}>
-            {courseModule.topics.length} тем · {formatMinutes(minutes)}
-          </span>
-          <ChevronDown
-            className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-          />
+        <span className="m mc">
+          {count} {plural(count, ["тема", "темы", "тем"])}, {formatMinutes(minutes)}
         </span>
-      </button>
+      </summary>
 
-      {open && (
-        <ul className="border-t border-tm-line px-2 pb-2 pt-1">
-          {courseModule.topics.map((topic) => (
-            <PlanTopicRow
-              key={topic.id}
-              topic={topic}
-              titles={titles}
-              hovered={hoveredTopicId === topic.id}
-              onHover={onHoverTopic}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
+      {/* Содержимое не рисуем, пока глава закрыта: тем в курсе бывает полторы сотни. */}
+      {open ? (
+        <>
+          {courseModule.objective ? <p className="mod-goal">{courseModule.objective}</p> : null}
+          <ul className="tps course-tps">
+            {courseModule.topics.map((topic) => (
+              <PlanTopicRow
+                key={topic.id}
+                topic={topic}
+                titles={titles}
+                state={states.topics.get(topic.id) ?? "todo"}
+                sourceTitle={sourceTitle}
+                onHover={onHoverTopic}
+                onAsk={onAsk}
+              />
+            ))}
+          </ul>
+          <p className="mod-ask">
+            <button
+              type="button"
+              className="btn btn-text"
+              onClick={() => onAsk(`Что важно понять в главе «${courseModule.title}»?`)}
+            >
+              Спросить про главу
+            </button>
+          </p>
+        </>
+      ) : null}
+    </details>
   );
 }

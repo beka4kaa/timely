@@ -11,20 +11,10 @@
 
 import { useMemo, useState } from "react";
 
-import { paperButton, paperCaption } from "@/components/curriculum/paper";
-import { buildCourseAccents } from "@/lib/studyplan-calendar-entries";
-import {
-  layoutWeek,
-  toInstant,
-  visibleRange,
-  weekDays,
-  zonedDateKey,
-} from "@/lib/studyplan-calendar";
+import { toInstant, weekDays, zonedDateKey } from "@/lib/studyplan-calendar";
 
-import { BlockDetails } from "./block-details";
-import { DayView } from "./day-view";
+import { PlanCalendar } from "./plan-calendar";
 import type { CalendarEntry } from "./use-schedule";
-import { WeekGrid } from "./week-grid";
 
 const TZ = "Asia/Almaty";
 
@@ -146,86 +136,46 @@ export function PlanQaBoard() {
   const todayKey = zonedDateKey(new Date(), TZ);
   const days = useMemo(() => weekDays(todayKey), [todayKey]);
   const entries = useMemo(() => (empty ? [] : buildEntries(days)), [days, empty]);
-  const range = useMemo(() => visibleRange(entries, TZ), [entries]);
-  const columns = useMemo(
-    () => layoutWeek(entries, { timeZone: TZ, days, range }),
-    [days, entries, range],
-  );
-  const accents = useMemo(() => buildCourseAccents(PLANS), []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className={paperCaption}>Стенд календаря</div>
-          <p className="mt-0.5 text-[12.5px] text-tm-muted">
-            Пересечения, длинный и короткий блок, предложение, отменённое,
-            занятое время, линия «сейчас», пустая неделя.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className={paperButton}
-            onClick={() => setEmpty((value) => !value)}
-          >
+    <div className="content view">
+      <header className="head">
+        <h1 className="title">Стенд календаря</h1>
+        <div className="head-tools">
+          <span className="head-note">выделено: {selectedIds.length}</span>
+          <button className="btn btn-line" type="button" onClick={() => setEmpty((value) => !value)}>
             {empty ? "С занятиями" : "Пустая неделя"}
           </button>
           <button
+            className="btn btn-line"
             type="button"
-            className={paperButton}
             onClick={() => setMode((value) => (value === "week" ? "day" : "week"))}
           >
             {mode === "week" ? "День" : "Неделя"}
           </button>
-          <span className="text-[12px] text-tm-muted">
-            выделено: {selectedIds.length}
-          </span>
         </div>
       </header>
-
-      <div className="min-h-0 flex-1">
-        {mode === "week" ? (
-          <WeekGrid
-            columns={columns}
-            range={range}
-            timeZone={TZ}
-            todayKey={todayKey}
-            selectedIds={selectedIds}
-            accents={accents}
-            onSelect={(entry, additive) =>
-              setSelectedIds((current) =>
-                additive
-                  ? current.includes(entry.id)
-                    ? current.filter((item) => item !== entry.id)
-                    : [...current, entry.id]
-                  : [entry.id],
-              )
-            }
-            onSelectMany={setSelectedIds}
-            onMove={() => {}}
-            renderDetails={(entry) => (
-              <BlockDetails
-                block={entry}
-                timeZone={TZ}
-                onClose={() => setSelectedIds([])}
-                onTogglePinned={() => {}}
-              />
-            )}
-          />
-        ) : (
-          <div className="h-full overflow-y-auto">
-            <DayView
-              column={columns.find((column) => column.dateKey === todayKey)}
-              dateKey={todayKey}
-              todayKey={todayKey}
-              selectedId={selectedIds[0] ?? null}
-              accents={accents}
-              onSelect={(entry) => setSelectedIds([entry.id])}
-              onChangeDay={() => {}}
-            />
-          </div>
-        )}
+      <div className="cal-wrap">
+        <PlanCalendar
+          mode={mode}
+          days={days}
+          entries={entries}
+          timeZone={TZ}
+          todayKey={todayKey}
+          pickedDay={todayKey}
+          selectedIds={selectedIds}
+          onPickDay={() => setMode("day")}
+          onOpen={(entry) => setSelectedIds([entry.id])}
+          onToggle={(entry) =>
+            setSelectedIds((current) =>
+              current.includes(entry.id) ? current.filter((item) => item !== entry.id) : [...current, entry.id],
+            )
+          }
+          onSelectMany={setSelectedIds}
+          onSlot={() => setSelectedIds([])}
+          onDismiss={() => setSelectedIds([])}
+          onMove={() => {}}
+        />
       </div>
     </div>
   );

@@ -26,12 +26,6 @@ export const DAY_GOAL_MIN = 180;
 export const MIN_LOGGED_SECONDS = 60;
 
 export const HEAT_WEEKS = 52;
-export const CHART_DAYS = 21;
-
-export const RU_MONTHS = [
-  "янв", "фев", "мар", "апр", "май", "июн",
-  "июл", "авг", "сен", "окт", "ноя", "дек",
-];
 
 export const RU_DAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 

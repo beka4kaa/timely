@@ -1,5 +1,6 @@
 "use client";
 
+import { Icon as SpriteIcon } from "@/components/shell/icons";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 import {
@@ -40,7 +41,6 @@ import {
   useAIUsageSummary,
 } from "@/components/board/usage-tracker";
 import { BoardSettingsDialog } from "@/components/board/settings-dialog";
-import { MobileDashboardMenu } from "@/components/mobile-dashboard-menu";
 import { useMe } from "@/lib/contest-api";
 import { getDashboardNavigation } from "@/config/dashboard-navigation";
 import {
@@ -541,7 +541,13 @@ export default function WhiteboardPage() {
             <span className="hidden sm:inline">Поделиться</span>
           </button>
 
-          <MobileDashboardMenu navigationGroups={navigationGroups} />
+          <Link
+            href="/dashboard"
+            aria-label="На главную"
+            className="grid h-9 w-9 place-items-center rounded-[10px] text-tm-muted hover:bg-tm-surface-2 hover:text-tm-ink"
+          >
+            <SpriteIcon name="chev-l" />
+          </Link>
         </div>
       </header>
 
@@ -559,7 +565,6 @@ export default function WhiteboardPage() {
               >
                 {group.items.map((item) => {
                   const active = item.url === "/dashboard/whiteboard";
-                  const Icon = item.icon;
                   return (
                     <Tooltip key={item.url}>
                       <TooltipTrigger asChild>
@@ -573,7 +578,7 @@ export default function WhiteboardPage() {
                               : "text-tm-faint hover:bg-tm-surface-2 hover:text-tm-ink"
                           }`}
                         >
-                          <Icon className="h-4 w-4" />
+                          <SpriteIcon name={item.icon} />
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent

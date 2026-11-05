@@ -2,26 +2,16 @@
 // Вынесены отдельно от компонентов, чтобы покрыть тестами без рендера React.
 
 import {
-  CHART_DAYS,
   DAY_GOAL_MIN,
   HEAT_WEEKS,
   RU_DAYS,
-  RU_MONTHS,
   type FocusSessionRow,
+  type PomodoroPhase,
   dayKey,
   hm,
-  presetAt,
 } from "./pomodoro";
 
-/** Пять ступеней насыщенности календаря активности. */
-export const HEAT_COLORS = [
-  "rgb(var(--tm-surface-3))", // без занятий
-  "rgb(var(--tm-accent) / 0.25)", // < 30 мин
-  "rgb(var(--tm-accent) / 0.5)", // < 75 мин
-  "rgb(var(--tm-accent) / 0.75)", // < 135 мин
-  "rgb(var(--tm-accent))", // больше
-] as const;
-
+/** Пять ступеней насыщенности календаря активности: классы `.h0`…`.h4`. */
 export function heatLevel(seconds: number): number {
   if (!seconds) return 0;
   const minutes = seconds / 60;
@@ -29,10 +19,6 @@ export function heatLevel(seconds: number): number {
   if (minutes < 75) return 2;
   if (minutes < 135) return 3;
   return 4;
-}
-
-export function heatColor(seconds: number): string {
-  return HEAT_COLORS[heatLevel(seconds)];
 }
 
 function startOfDay(date: Date): Date {
@@ -55,7 +41,7 @@ export interface HeatCell {
   key: string;
   date: Date;
   seconds: number;
-  color: string;
+  level: number;
   isToday: boolean;
   isFuture: boolean;
   tooltipTitle: string;
@@ -64,7 +50,6 @@ export interface HeatCell {
 
 export interface HeatWeek {
   key: string;
-  month: string;
   days: HeatCell[];
 }
 
@@ -96,27 +81,20 @@ export function buildHeatWeeks(
   let cursor = addDays(endOfWeek, -(weeks * 7 - 1));
 
   const result: HeatWeek[] = [];
-  let lastMonth = -1;
 
   for (let week = 0; week < weeks; week += 1) {
     const days: HeatCell[] = [];
-    let month = "";
 
     for (let index = 0; index < 7; index += 1) {
       const date = new Date(cursor);
       const isFuture = date > todayStart;
       const seconds = isFuture ? 0 : secondsOn(daily, date);
 
-      if (index === 0 && !isFuture && date.getMonth() !== lastMonth) {
-        lastMonth = date.getMonth();
-        month = RU_MONTHS[date.getMonth()];
-      }
-
       days.push({
         key: dayKey(date),
         date,
         seconds,
-        color: isFuture ? "transparent" : heatColor(seconds),
+        level: heatLevel(seconds),
         isToday: dayKey(date) === todayKey,
         isFuture,
         tooltipTitle: seconds > 0 ? `${hm(seconds)} учёбы` : "Без занятий",
@@ -126,7 +104,7 @@ export function buildHeatWeeks(
       cursor = addDays(cursor, 1);
     }
 
-    result.push({ key: days[0].key, month, days });
+    result.push({ key: days[0].key, days });
   }
 
   return result;
@@ -179,7 +157,6 @@ export interface DayBar {
   ratio: number;
   label: string;
   isToday: boolean;
-  reachedGoal: boolean;
   tooltipTitle: string;
   tooltipSub: string;
 }
@@ -208,7 +185,6 @@ function buildBars(
     ratio: max > 0 ? row.seconds / max : 0,
     label: label(row.date),
     isToday: row.isToday,
-    reachedGoal: row.seconds >= DAY_GOAL_MIN * 60,
     tooltipTitle: row.seconds > 0 ? `${hm(row.seconds)} учёбы` : "Без занятий",
     tooltipSub: longDateLabel(row.date),
   }));
@@ -222,15 +198,6 @@ export function buildWeekBars(
   return buildBars(daily, today, 7, (date) => RU_DAYS[date.getDay()], 60 * 60);
 }
 
-/** Последний 21 день — подписи числами месяца. */
-export function buildChartBars(
-  daily: Record<string, number>,
-  today: Date,
-  days: number = CHART_DAYS,
-): DayBar[] {
-  return buildBars(daily, today, days, (date) => String(date.getDate()), 60 * 60);
-}
-
 export function sumSeconds(bars: DayBar[]): number {
   return bars.reduce((total, bar) => total + bar.seconds, 0);
 }
@@ -238,15 +205,13 @@ export function sumSeconds(bars: DayBar[]): number {
 export interface HistoryRow {
   id: number;
   time: string;
-  title: string;
-  meta: string;
-  duration: string;
   isFocus: boolean;
-  /** Сколько из пяти делений заполнено — доля выполненной фазы. */
-  filledDots: number;
+  startedAt: string;
+  minutes: number;
+  stoppedEarly: boolean;
 }
 
-/** Строки таблицы «История сессий» — по убыванию времени начала. */
+/** Строки списка сессий — по убыванию времени начала. */
 export function buildHistoryRows(sessions: FocusSessionRow[]): HistoryRow[] {
   return sessions
     .slice()
@@ -254,30 +219,14 @@ export function buildHistoryRows(sessions: FocusSessionRow[]): HistoryRow[] {
       (a, b) =>
         new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
     )
-    .map((session) => {
-      const date = new Date(session.started_at);
-      const isFocus = session.kind === "focus";
-      const planned = session.planned_seconds || session.seconds || 1;
-      const completed = session.seconds >= session.planned_seconds;
-
-      return {
-        id: session.id,
-        time:
-          String(date.getHours()).padStart(2, "0") +
-          ":" +
-          String(date.getMinutes()).padStart(2, "0"),
-        title: isFocus ? "Фокус-сессия" : "Перерыв",
-        meta:
-          `${session.preset_focus_min}/${session.preset_break_min} · ` +
-          (completed ? "завершено полностью" : "остановлено раньше"),
-        duration: hm(session.seconds),
-        isFocus,
-        filledDots: Math.max(
-          1,
-          Math.min(5, Math.round((session.seconds / planned) * 5)),
-        ),
-      };
-    });
+    .map((session) => ({
+      id: session.id,
+      time: clockTime(new Date(session.started_at)),
+      isFocus: session.kind === "focus",
+      startedAt: session.started_at,
+      minutes: Math.round(session.seconds / 60),
+      stoppedEarly: session.seconds < session.planned_seconds,
+    }));
 }
 
 export interface TodayStats {
@@ -307,8 +256,105 @@ export function buildTodayStats(
   };
 }
 
-/** Подпись ритма для текущей сессии, например «50/10». */
-export function presetLabel(presetIndex: number): string {
-  const preset = presetAt(presetIndex);
-  return `${preset.focus}/${preset.brk}`;
+function minutesWord(count: number): string {
+  const hundred = count % 100;
+  const ten = hundred % 10;
+  if (hundred > 10 && hundred < 20) return "минут";
+  if (ten === 1) return "минута";
+  if (ten >= 2 && ten <= 4) return "минуты";
+  return "минут";
+}
+
+/** «16:55» в зоне браузера. */
+export function clockTime(date: Date): string {
+  return (
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0")
+  );
+}
+
+export interface DialTick {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+}
+
+const DIAL_CENTER = 140;
+const DIAL_OUTER = 136;
+const DIAL_INNER = 118;
+const DIAL_INNER_LONG = 111;
+
+/**
+ * Циферблат: одна чёрточка на минуту, каждая пятая длиннее. Чем минут больше, тем чёрточки
+ * тоньше, чтобы они не слипались и в коротком перерыве, и в полуторачасовом марафоне.
+ */
+export function dialTicks(plannedSeconds: number): DialTick[] {
+  const count = Math.max(1, Math.round(plannedSeconds / 60));
+  const width = Number(Math.max(2.4, Math.min(6, 190 / count)).toFixed(1));
+  const round = (value: number) => Number(value.toFixed(2));
+  return Array.from({ length: count }, (_, index) => {
+    const angle = (index / count) * 2 * Math.PI - Math.PI / 2;
+    const inner = index % 5 === 0 ? DIAL_INNER_LONG : DIAL_INNER;
+    return {
+      x1: round(DIAL_CENTER + inner * Math.cos(angle)),
+      y1: round(DIAL_CENTER + inner * Math.sin(angle)),
+      x2: round(DIAL_CENTER + DIAL_OUTER * Math.cos(angle)),
+      y2: round(DIAL_CENTER + DIAL_OUTER * Math.sin(angle)),
+      width,
+    };
+  });
+}
+
+/** Прошедшие минуты гаснут, идущая дышит. */
+export function tickClass(index: number, elapsedSeconds: number, remainingSeconds: number): string {
+  const gone = Math.floor(elapsedSeconds / 60);
+  if (index < gone) return "gone";
+  return index === gone && remainingSeconds > 0 ? "now" : "";
+}
+
+/** Подпись под цифрами: когда закончится, на паузе, или сколько будет идти. */
+export function dialSubtitle({
+  phase,
+  running,
+  remaining,
+  planned,
+  now,
+}: {
+  phase: PomodoroPhase;
+  running: boolean;
+  remaining: number;
+  planned: number;
+  /** Момент, от которого считать конец, epoch ms. */
+  now: number;
+}): string {
+  const end = clockTime(new Date(now + remaining * 1000));
+  if (running) return phase === "break" ? `перерыв, до ${end}` : `до ${end}`;
+  if (remaining < planned) return `пауза, до ${end}`;
+  const minutes = Math.round(planned / 60);
+  const length = `${minutes} ${minutesWord(minutes)}`;
+  return phase === "break" ? `перерыв ${length}` : length;
+}
+
+/** Имя сессии хранится по моменту начала: сервер отдаёт его в другой записи, чем принял. */
+export function sessionKey(startedAt: string): string {
+  return String(new Date(startedAt).getTime());
+}
+
+/** Запоминает имя сессии. Старые забываются первыми, чтобы хранилище не росло вечно. */
+export function withSessionName(
+  names: Record<string, string>,
+  startedAt: string,
+  name: string,
+  limit = 200,
+): Record<string, string> {
+  const key = sessionKey(startedAt);
+  const clean = name.trim();
+  if (!clean || names[key]) return names;
+  const entries = Object.entries({ ...names, [key]: clean });
+  if (entries.length <= limit) return Object.fromEntries(entries);
+  entries.sort(([a], [b]) => Number(a) - Number(b));
+  return Object.fromEntries(entries.slice(entries.length - limit));
 }

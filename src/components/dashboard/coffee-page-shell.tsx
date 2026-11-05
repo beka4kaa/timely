@@ -39,23 +39,13 @@ export function CoffeePageShell({
 }: CoffeePageShellProps) {
   return (
     <div
-      className={`relative overflow-hidden bg-tm-bg text-tm-ink ${
+      className={`relative overflow-hidden text-tm-ink ${
         fillHeight ? "flex h-full min-h-full flex-col" : "min-h-full"
       }`}
     >
       <div
-        className="pointer-events-none absolute inset-0 opacity-55"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 1px 1px, rgb(var(--tm-dot) / 0.08) 1px, transparent 0)",
-          backgroundSize: "30px 30px",
-        }}
-      />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-tm-surface via-tm-bg/80 to-transparent" />
-
-      <div
         className={`relative mx-auto w-full ${maxWidthClassName} px-5 sm:px-8 lg:px-10 ${
-          fillHeight ? "flex min-h-0 flex-1 flex-col pb-5 pt-5" : "pb-16 pt-8"
+          fillHeight ? "flex min-h-0 flex-1 flex-col pb-5 pt-5" : "pb-[130px] pt-8"
         } ${contentClassName}`}
       >
         {actions && (

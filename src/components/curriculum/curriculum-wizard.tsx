@@ -1,15 +1,13 @@
-// Мастер «Курс по книге»: цель → учебник → обработка → программа.
+// Мастер добавления: цель → учебник → обработка → программа.
 //
-// Компонент тонкий: он выбирает шаг и показывает общие для всех шагов вещи —
-// полоску шагов и ошибку. Вся логика живёт в сторе, вся арифметика — в
-// `lib/curriculum-progress`.
+// Компонент тонкий: он выбирает шаг и показывает общие для всех шагов вещи: полоску
+// шагов и ошибку. Вся логика живёт в сторе, вся арифметика в `lib/curriculum-progress`.
 //
-// Готовой программы здесь больше нет: она живёт на своём роуте, потому что это
-// экран, на который возвращаются каждый день, и на него нужна ссылка.
+// Готовой программы здесь нет: она живёт на своём адресе, потому что это экран, на
+// который возвращаются каждый день, и на него нужна ссылка.
 
 "use client";
 
-import { AlertTriangle, ArrowLeft, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -17,18 +15,14 @@ import { GoalConfirmStep, GoalStep } from "@/components/curriculum/goal-steps";
 import { IngestionProgress } from "@/components/curriculum/ingestion-progress";
 import { PlanGenerationStep } from "@/components/curriculum/plan-review";
 import { UploadStep } from "@/components/curriculum/upload-step";
+import { Icon } from "@/components/shell/icons";
 import { type WizardStep, useCurriculumStore } from "@/stores/curriculum-store";
-import { paperFocus } from "./paper";
 
 /** Крупные вехи для полоски вверху. Внутренние шаги в неё не выносим. */
 const RAIL: { key: string; label: string; steps: WizardStep[] }[] = [
   { key: "goal", label: "Цель", steps: ["goal", "goal_confirm"] },
   { key: "book", label: "Учебник", steps: ["upload", "processing"] },
-  {
-    key: "plan",
-    label: "Программа",
-    steps: ["planning", "plan_review", "done"],
-  },
+  { key: "plan", label: "Программа", steps: ["planning", "plan_review", "done"] },
 ];
 
 export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
@@ -39,8 +33,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   const clearError = useCurriculumStore((s) => s.clearError);
   const reset = useCurriculumStore((s) => s.reset);
 
-  // Готовая программа показывается на своём роуте: это экран, на который
-  // возвращаются каждый день, и на него нужна ссылка.
+  // Готовая программа показывается на своём адресе.
   const readyToRedirect = planId && (step === "plan_review" || step === "done");
   useEffect(() => {
     if (readyToRedirect) router.replace(`/dashboard/curriculum/plan/${planId}`);
@@ -48,87 +41,74 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
 
   if (readyToRedirect) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-5 w-5 animate-spin text-tm-faint" />
+      <div className="content view cur-page">
+        <p className="lede wz-wait" role="status">
+          Открываю программу…
+        </p>
       </div>
     );
   }
 
   const activeRail = RAIL.findIndex((item) => item.steps.includes(step));
-  // Ошибку генерации показывает сам экран генерации — дублировать её сверху не
-  // нужно, иначе одно и то же сообщение выводится дважды.
+  // Ошибку генерации показывает сам экран генерации: дублировать её сверху не нужно.
   const showBanner = error && step !== "planning";
 
   return (
-    <div className="space-y-7">
-      {onClose ? (
-        <button
-          type="button"
-          onClick={() => {
-            // Сеанс сбрасывается вместе с уходом: он живёт в памяти и нужен
-            // ровно до возвращения в каталог, где то же самое видно с сервера.
-            reset();
-            onClose();
-          }}
-          className={`${paperFocus} -mb-2 inline-flex items-center gap-1.5 rounded-full text-[12px] text-tm-faint underline-offset-4 hover:text-tm-muted hover:underline`}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />К предметам
-        </button>
+    <div className="content view cur-page">
+      <div className="wz-top">
+        {onClose ? (
+          <button
+            type="button"
+            className="back"
+            onClick={() => {
+              // Сеанс сбрасывается вместе с уходом: он нужен ровно до возвращения на
+              // стеллаж, где то же самое видно с сервера.
+              reset();
+              onClose();
+            }}
+          >
+            Курсы и книги
+          </button>
+        ) : (
+          <span />
+        )}
+
+        <ol className="wz-rail" aria-label="Шаги">
+          {RAIL.map((item, index) => (
+            <li
+              key={item.key}
+              className={index < activeRail ? "is-done" : undefined}
+              aria-current={index === activeRail ? "step" : undefined}
+            >
+              {index < activeRail ? <Icon name="check" /> : null}
+              {item.label}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {showBanner ? (
+        <div className="cur-alert is-bad" role="alert">
+          <span>{error.message}</span>
+          <button type="button" className="icon-btn" onClick={clearError} aria-label="Скрыть ошибку">
+            <Icon name="x" />
+          </button>
+        </div>
       ) : null}
 
-      <ol className="flex items-center gap-2.5 text-[11px]">
-        {RAIL.map((item, index) => (
-          <li key={item.key} className="flex items-center gap-2.5">
-            <span
-              className={
-                index === activeRail
-                  ? "rounded-full border border-tm-accent-line bg-tm-bg px-3 py-1 text-tm-accent"
-                  : index < activeRail
-                    ? "rounded-full px-3 py-1 text-tm-muted"
-                    : "rounded-full px-3 py-1 text-tm-faint"
-              }
-            >
-              {item.label}
-            </span>
-            {index < RAIL.length - 1 && (
-              <span className="h-px w-5 bg-tm-surface-3" aria-hidden />
-            )}
-          </li>
-        ))}
-      </ol>
+      {step === "goal" ? <GoalStep /> : null}
+      {step === "goal_confirm" ? <GoalConfirmStep /> : null}
+      {step === "upload" ? <UploadStep /> : null}
+      {step === "processing" ? <IngestionProgress /> : null}
+      {step === "planning" ? <PlanGenerationStep /> : null}
 
-      {showBanner && (
-        <div className="flex items-start gap-2.5 rounded-[14px] border border-tm-danger-line bg-tm-danger-soft px-4 py-3 text-[13px] text-tm-danger">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span className="flex-1 leading-5">{error.message}</span>
-          <button
-            type="button"
-            onClick={clearError}
-            aria-label="Скрыть ошибку"
-            className={`${paperFocus} rounded-full p-0.5 text-[#b08b84] hover:text-tm-danger`}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {step === "goal" && <GoalStep />}
-      {step === "goal_confirm" && <GoalConfirmStep />}
-      {step === "upload" && <UploadStep />}
-      {step === "processing" && <IngestionProgress />}
-      {step === "planning" && <PlanGenerationStep />}
-
-      {step !== "goal" && (
-        <div className="border-t border-tm-line pt-5">
-          <button
-            type="button"
-            onClick={reset}
-            className={`${paperFocus} rounded-full text-[12px] text-tm-faint underline-offset-4 hover:text-tm-muted hover:underline`}
-          >
+      {step !== "goal" ? (
+        <p className="wz-again">
+          <button type="button" className="btn btn-text" onClick={reset}>
             Начать заново
           </button>
-        </div>
-      )}
+        </p>
+      ) : null}
     </div>
   );
 }

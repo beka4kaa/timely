@@ -4,6 +4,9 @@ import { test } from "node:test";
 // Расширение указано намеренно — см. комментарий в
 // src/lib/image-model-selection.test.ts.
 import {
+  courseLede,
+  dayMonth,
+  finishRange,
   forecastWarningMessage,
   paceAdvice,
   parseForecast,
@@ -83,7 +86,7 @@ test("одни предупреждения без чисел — всё ещё 
 
 test("предупреждения переводятся, а неизвестный код показывается как есть", () => {
   assert.match(forecastWarningMessage("horizon_exceeded"), /пять лет/);
-  assert.match(forecastWarningMessage("deadline_unreachable_at_any_pace"), /Сдвиньте срок/);
+  assert.match(forecastWarningMessage("deadline_unreachable_at_any_pace"), /Сдвинь срок/);
   assert.equal(forecastWarningMessage("unknown_code"), "unknown_code");
 });
 
@@ -132,4 +135,48 @@ test("без достижимого темпа совет молчит вмес�
   const parsed = parseForecast({ ...FULL, required_sessions_per_week: null });
   assert.ok(parsed);
   assert.equal(paceAdvice(parsed, "2026-05-01"), null);
+});
+
+const NOW = new Date(2026, 10, 5);
+
+test("дата словами: год только если он не этот", () => {
+  assert.equal(dayMonth("2026-12-14", NOW), "14 декабря");
+  assert.equal(dayMonth("2027-03-14", NOW), "14 марта 2027");
+});
+
+test("разброс финиша: один месяц не повторяется", () => {
+  assert.equal(finishRange("2026-12-07", "2026-12-14", NOW), "7 и 14 декабря");
+  assert.equal(finishRange("2026-11-28", "2026-12-14", NOW), "28 ноября и 14 декабря");
+});
+
+test("строка под заголовком: ритм, финиш и запас", () => {
+  const forecast = parseForecast({ ...FULL, sessions_per_week: 3, minutes_per_session: 45, optimistic_finish_date: "2026-12-07", realistic_finish_date: "2026-12-14", risk: "low" });
+  assert.equal(
+    courseLede(forecast, { sessionsPerWeek: null, minutesPerSession: null, finishDate: null }, NOW),
+    "3 занятия в неделю по 45 минут. Закончишь между 7 и 14 декабря, запас есть.",
+  );
+});
+
+test("строка под заголовком без прогноза: остаётся то, что известно", () => {
+  assert.equal(
+    courseLede(null, { sessionsPerWeek: 2, minutesPerSession: 40, finishDate: "2026-12-14" }, NOW),
+    "2 занятия в неделю по 40 минут. Закончишь к 14 декабря.",
+  );
+  assert.equal(courseLede(null, { sessionsPerWeek: null, minutesPerSession: null, finishDate: null }, NOW), "");
+});
+
+test("строка под заголовком: прогноз, который уже прошёл, не обещает закончить в прошлом", () => {
+  const forecast = parseForecast({ ...FULL, sessions_per_week: 3, minutes_per_session: 45, optimistic_finish_date: "2026-10-24", realistic_finish_date: "2026-10-26", estimated_finish_date: "2026-10-25", risk: "low" });
+  assert.equal(
+    courseLede(forecast, { sessionsPerWeek: null, minutesPerSession: null, finishDate: null }, NOW),
+    "3 занятия в неделю по 45 минут. По прогнозу курс должен был закончиться 26 октября. Пересчитай темп.",
+  );
+});
+
+test("финиш сегодня ещё не в прошлом", () => {
+  const forecast = parseForecast({ ...FULL, optimistic_finish_date: "2026-11-05", realistic_finish_date: "2026-11-05", estimated_finish_date: "2026-11-05", risk: "medium" });
+  assert.match(
+    courseLede(forecast, { sessionsPerWeek: null, minutesPerSession: null, finishDate: null }, NOW),
+    /Закончишь к 5 ноября, впритык\.$/,
+  );
 });

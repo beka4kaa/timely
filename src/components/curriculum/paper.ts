@@ -1,107 +1,52 @@
-// Общие классы «бумажного» диалекта раздела.
+// Общие классы раздела для компонентов, которые ещё собираются из строк утилит.
 //
-// В приложении три сложившихся визуальных языка, и curriculum должен говорить
-// на том же, что шапка и помодоро: `CoffeePageShell`, Georgia, тёплые хексы.
-// Стоковые `<Button>` и `bg-card/50` сюда не годятся — под тёплой темой они
-// рендерятся коричневыми прямоугольниками, которые все выразительные страницы
-// приложения намеренно обходят.
-//
-// Это строки утилит, а не CSS-классы: у них нет специфичности, поэтому они не
-// схлопываются друг с другом на отступах между секциями.
-//
-// ПОВЕРХНОСТИ БЕЗ ОБВОДКИ. Раньше каждая поверхность несла три сигнала края
-// сразу: обводку, заливку и тень. Внутри двадцати пикселей набегало три линии
-// подряд — контур карточки, внутренний разделитель, контур плитки, — и на
-// кремовом фоне это читалось как сетка, а не как бумага.
-//
-// Теперь край несёт заливка, глубину — мягкая тень, а линия осталась ровно
-// там, где она разделяет (`paperRule`), а не обводит. Отсюда же правило
-// заливок: поднятая поверхность светлее фона, утопленная — темнее. Без
-// обводки различить их можно только так, поэтому `paperTile` стал темнее
-// страницы, а не светлее, как был.
+// Раньше здесь жил «бумажный» диалект с тёплыми хексами. Теперь это те же кирпичи,
+// что у остальных страниц: `.card`, `.btn`, `.tabs` и токены `--t-*`. Имена оставлены:
+// файл импортируют соседние разделы, и им незачем знать о переезде.
 
 /** Крупная поверхность: модуль, панель прогноза, состояние ошибки. */
-export const paperCard =
-  "rounded-[20px] bg-tm-surface shadow-[0_1px_2px_rgba(70,54,36,0.04),0_10px_30px_-14px_rgba(70,54,36,0.16)]";
+export const paperCard = "card [--r:18px]";
 
-/** Та же поверхность с меньшим радиусом: шаг мастера, корешок, шкала уровней. */
-export const paperStrip =
-  "rounded-[18px] bg-tm-surface shadow-[0_1px_2px_rgba(70,54,36,0.04),0_10px_30px_-14px_rgba(70,54,36,0.16)]";
+/** Та же поверхность с меньшим радиусом: шаг мастера, шкала уровней. */
+export const paperStrip = "card [--r:16px]";
 
-/**
- * Утопленная плитка: строка темы, ячейка выбора, врезка с пояснением.
- *
- * Темнее и поднятой карточки, и фона страницы — одна заливка обязана работать
- * в обоих контекстах, потому что плитки встречаются и внутри `paperCard`, и
- * прямо на полотне раздела.
- */
-export const paperInset = "rounded-[14px] bg-tm-surface-2";
+/** Утопленная плитка: строка темы, ячейка выбора, врезка с пояснением. */
+export const paperInset = "rounded-[14px] bg-[var(--t-hover)]";
 
-/** @deprecated Имя из времён обводок. Осталось синонимом, чтобы не переписывать 19 файлов разом. */
+/** @deprecated Имя из времён обводок. Осталось синонимом для соседних разделов. */
 export const paperTile = paperInset;
 
-/** Разделитель внутри поверхности. Единственная линия, которая уцелела. */
-export const paperRule = "border-t border-tm-line";
+/** Разделитель внутри поверхности. */
+export const paperRule = "border-t border-[var(--t-line)]";
 
 export const paperFocus =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tm-accent/35";
+  "focus-visible:outline focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--t-ink)_62%,transparent)]";
+
+const PAPER_DISABLED = "disabled:cursor-not-allowed disabled:opacity-55";
 
 /** Второстепенное действие. */
-export const paperButton =
-  `inline-flex items-center justify-center gap-2 rounded-full border border-tm-line bg-tm-surface px-4 py-2 text-[13px] text-tm-ink-2 transition-colors hover:border-tm-accent hover:bg-tm-bg hover:text-tm-ink disabled:cursor-not-allowed disabled:opacity-55 ${paperFocus}`;
+export const paperButton = `btn btn-line ${PAPER_DISABLED}`;
 
-/**
- * Тихое действие: навигация, переключение, всё, что нажимают часто.
- *
- * Края нет, пока на кнопку не навели. Ряд из трёх таких кнопок не рисует на
- * странице три рамки — а именно ряд `← Сегодня →` в шапке календаря и был
- * самым шумным местом раздела.
- */
-export const paperQuietButton =
-  `inline-flex items-center justify-center gap-2 rounded-full px-3.5 py-2 text-[13px] text-tm-muted transition-colors hover:bg-tm-surface-2 hover:text-tm-ink disabled:cursor-not-allowed disabled:opacity-55 ${paperFocus}`;
+/** Тихое действие: навигация, переключение, всё, что нажимают часто. */
+export const paperQuietButton = `btn btn-text ${PAPER_DISABLED}`;
 
 /** Главное действие страницы. Ровно одно на экран. */
-export const paperPrimaryButton =
-  `inline-flex items-center justify-center gap-2 rounded-full bg-tm-accent px-5 py-2 text-[13px] font-medium text-tm-on-strong transition-colors hover:bg-tm-accent/90 disabled:cursor-not-allowed disabled:opacity-55 ${paperFocus}`;
+export const paperPrimaryButton = `btn btn-main ${PAPER_DISABLED}`;
 
-/**
- * Переключатель вида: утопленная дорожка и приподнятая на ней накладка.
- *
- * Активный сегмент был залит `#8a5b24` — тем же коричневым, которым в
- * приложении помечено главное действие. Выбор вида календаря главным
- * действием не является, и цвет обещал больше, чем нажатие делало. Теперь
- * активное состояние читается как приподнятая бумажка, а коричневый остался
- * там, где он что-то значит.
- */
-export const paperSegment = "inline-flex rounded-full bg-tm-surface-2 p-[3px]";
+/** Всплывающий лист: меню и короткие формы. Он в портале, поэтому шрифт задан явно. */
+export const paperPopover =
+  "w-auto rounded-[14px] border-0 bg-[var(--t-cloud)] p-[5px] font-[family-name:var(--t-sans)] text-[13px] text-[color:var(--t-ink)] shadow-[var(--t-glass-shadow)]";
+
+/** Переключатель вида: капсула и приподнятая на ней накладка, как `.tabs`. */
+export const paperSegment = "inline-flex gap-px rounded-[11px] bg-[var(--t-hover)] p-0.5";
 export const paperSegmentItem =
-  `rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors ${paperFocus}`;
+  `h-7 rounded-[9px] px-[11px] text-[13px] transition-colors ${paperFocus}`;
 export const paperSegmentActive =
-  "bg-tm-surface text-tm-ink shadow-[0_1px_2px_rgba(70,54,36,0.10)]";
-export const paperSegmentIdle = "text-tm-muted hover:text-tm-ink-2";
+  "bg-[var(--t-pill)] font-medium text-[color:var(--t-ink)] shadow-[var(--t-pill-sh)]";
+export const paperSegmentIdle = "text-[color:var(--t-muted)] hover:text-[color:var(--t-ink)]";
 
-/** Микроподпись: 10px, разрядка, приглушённый тон. */
-export const paperCaption =
-  "text-[10px] font-medium uppercase tracking-[0.16em] text-tm-faint";
+/** Подпись поля или блока. */
+export const paperCaption = "text-[12.5px] text-[color:var(--t-muted)]";
 
-/**
- * Числа набираются, а не выводятся.
- *
- * `font-serif` здесь — это Georgia, домашняя подпись помодоро. Вместе с
- * `tabular-nums` она отличает цифры программы от цифр любого дашборда.
- */
-export const paperNumber = "font-serif tabular-nums tracking-[-0.03em]";
-
-/**
- * Тон модуля на корешке: один оттенок (hue 30), меняется только яркость.
- *
- * Первый модуль самый тёмный, последний самый светлый — так полоса читается
- * как книга слева направо, а не как разноцветная легенда.
- */
-export function moduleTone(index: number, total: number): string {
-  if (total <= 1) return "hsl(30 40% 38%)";
-  const step = Math.min(Math.max(index / (total - 1), 0), 1);
-  const lightness = 34 + step * 30;
-  const saturation = 42 - step * 16;
-  return `hsl(30 ${saturation.toFixed(0)}% ${lightness.toFixed(0)}%)`;
-}
+/** Числа в колонке не должны прыгать. */
+export const paperNumber = "tabular-nums";

@@ -1,18 +1,16 @@
 "use client";
 
-// Оболочка панели справа: выезд, шапка, лента, поле.
+// Мини-окно внизу: быстрый запрос, ответ и дело.
 //
-// Панель работает в двух режимах — вопросы по книге и помощник по расписанию, —
-// и оболочка у них общая. Разъезжается только содержимое: плашка в шапке, лента
-// и поле. Копировать эти шестьдесят строк во второй компонент нельзя: здесь
-// сидят z-index'ы, `inert` и правила выезда, которые чинились по одному и
-// разъехались бы на первой же правке.
+// Закрытое оно капсула с двумя кнопками: написать и сказать голосом. Открытое стоит на
+// том же месте, поэтому страница под ним не двигается. Режимов два, вопросы по книге и
+// помощник по плану, а оболочка у них общая: здесь клавиши, фокус и правила закрытия.
 
 import { useEffect, useRef, type MutableRefObject, type ReactNode } from "react";
-import { PanelRightClose, Plus } from "lucide-react";
 
+import { Icon } from "@/components/shell/icons";
+import { useQuick } from "@/components/shell/quick/quick-context";
 import { useAskRail } from "@/contexts/ask-rail";
-import { RailResizer } from "./rail-resizer";
 
 export function RailShell({
   mode,
@@ -24,29 +22,28 @@ export function RailShell({
   children,
   footer,
 }: {
-  /** Вид панели: просьбу о фокусе забирает только панель своего вида. */
+  /** Вид окна: просьбу о фокусе забирает только окно своего вида. */
   mode: "book" | "schedule";
-  /** Как называть панель вслух: её подпись для скринридера. */
+  /** Как называть окно вслух: подпись для скринридера. */
   edgeLabel: string;
-  /** Левая часть шапки: выбор предмета или название режима. */
-  title: ReactNode;
-  /** Начать заново. Без него кнопки в шапке нет. */
+  /** Верхняя строка окна, например выбор расписания. */
+  title?: ReactNode;
+  /** Начать заново. Без него кнопки нет. */
   onNew?: () => void;
   newLabel?: string;
   feedRef?: MutableRefObject<HTMLDivElement | null>;
   children: ReactNode;
   footer: ReactNode;
 }) {
-  const { open, toggle, isMobile, width, dragging, focusRequest, consumeFocus } = useAskRail();
-  const asideRef = useRef<HTMLElement>(null);
+  const { open, toggle, openRail, focusRequest, consumeFocus } = useAskRail();
+  const quick = useQuick();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const winRef = useRef<HTMLDivElement>(null);
+  const state = quick.picking ? "picking" : open ? "open" : "closed";
 
-  // Открыли извне — фокус в поле ввода. Панель стоит в разметке после
-  // страницы, и без этого с клавиатуры до неё пришлось бы идти через всю
-  // страницу, а на телефоне фокус остался бы на кнопке под панелью.
-  //
-  // Поле может появиться не сразу: помощник по расписанию рисует его, только
-  // когда страница сообщит расписание. Поэтому ждём его до пары секунд, а
-  // потом просьбу снимаем — чтобы она не украла фокус через минуту.
+  // Открыли извне: фокус в поле ввода. Поле может появиться не сразу (помощник по плану
+  // рисует его, когда страница сообщит расписание), поэтому ждём его до двух с половиной
+  // секунд, потом просьбу снимаем, чтобы она не украла фокус через минуту.
   useEffect(() => {
     if (!open || !focusRequest) return;
     if (focusRequest.target !== "any" && focusRequest.target !== mode) return;
@@ -57,7 +54,7 @@ export function RailShell({
     }
     let frame = 0;
     const attempt = () => {
-      const field = asideRef.current?.querySelector<HTMLElement>(
+      const field = winRef.current?.querySelector<HTMLElement>(
         "textarea:not([disabled]), input:not([type=hidden]):not([disabled])",
       );
       if (field) {
@@ -75,105 +72,144 @@ export function RailShell({
     return () => window.cancelAnimationFrame(frame);
   }, [open, focusRequest, mode, consumeFocus]);
 
-  // На телефоне панель — лист поверх всего экрана: Escape его закрывает.
+  // Вернулись из указания курсором: снова в поле, там уже чип.
+  const wasPicking = useRef(false);
   useEffect(() => {
-    if (!open || !isMobile) return;
+    if (wasPicking.current && !quick.picking) {
+      winRef.current?.querySelector<HTMLElement>("textarea")?.focus();
+    }
+    wasPicking.current = quick.picking;
+  }, [quick.picking]);
+
+  const { picking, stopPick, attached, clearAttached } = quick;
+  useEffect(() => {
+    if (!open && attached.length) clearAttached();
+  }, [open, attached.length, clearAttached]);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") toggle();
+      if (event.key === "Escape") {
+        if (picking) stopPick();
+        else if (open) toggle();
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const typing = /INPUT|TEXTAREA|SELECT/.test(target?.tagName ?? "") || Boolean(target?.isContentEditable);
+      if (open || picking) return;
+      if ((event.key === "k" && (event.metaKey || event.ctrlKey)) || (event.key === "/" && !typing)) {
+        event.preventDefault();
+        openRail();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, isMobile, toggle]);
+  }, [open, picking, toggle, openRail, stopPick]);
+
+  // Нажатие мимо закрывает пустое окно. Если там текст или ответ, ничего не теряем.
+  // Нажатия на слайма и его плашку окно не закрывают. Путь события, а не closest: кнопка
+  // ответа к этому моменту уже могла исчезнуть из окна.
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-quick-open]")) {
+        if (!open) openRail();
+        return;
+      }
+      if (!open || !hostRef.current || event.composedPath().includes(hostRef.current)) return;
+      if (target instanceof Element && target.closest(".mascot, [data-radix-popper-content-wrapper]")) return;
+      const field = winRef.current?.querySelector<HTMLTextAreaElement>("textarea");
+      const hasAnswer = Boolean(feedRef?.current?.childElementCount);
+      if (!field?.value.trim() && !hasAnswer && !attached.length) toggle();
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [open, openRail, toggle, attached.length, feedRef]);
+
+  // Широко: окно ужимается, и справа хватает места слайму с плашкой. Узко: слайм садится
+  // на верхний край окна, над его правым концом.
+  useEffect(() => {
+    const host = hostRef.current;
+    const slime = document.querySelector<HTMLElement>("[data-mascot]");
+    if (!host || !slime) return;
+    const narrow = window.matchMedia("(max-width: 1079px)");
+    const perch = () => {
+      const win = winRef.current;
+      if (state !== "open" || !narrow.matches || !win) {
+        slime.style.removeProperty("bottom");
+        slime.style.removeProperty("right");
+        return;
+      }
+      const stack = host.getBoundingClientRect();
+      const box = win.getBoundingClientRect();
+      const width = slime.offsetWidth;
+      // По бокам рисунка запас в шестую часть ширины, земля на 196 из 220.
+      slime.style.right = `${Math.round(window.innerWidth - box.right + 14 - width / 6)}px`;
+      slime.style.bottom = `${Math.round(window.innerHeight - stack.top - slime.offsetHeight * (24 / 220))}px`;
+    };
+    perch();
+    const observer = new ResizeObserver(perch);
+    observer.observe(host);
+    window.addEventListener("resize", perch);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", perch);
+      slime.style.removeProperty("bottom");
+      slime.style.removeProperty("right");
+    };
+  }, [state]);
 
   return (
-    <>
-      {/* Закладки у края больше нет: панель открывает «Спросить» в рейле
-          слева и в нижней панели телефона. Безымянная стрелка 20×56 у правого
-          края на телефоне закрывала колонку оценок, а на компьютере ничего не
-          говорила о том, что за ней спрятано. */}
-
-      {/* ── Затемнение на узком экране ──────────────────────────────────── */}
-      {isMobile && open && (
-        <div
-          className="fixed inset-0 top-14 z-[110] bg-black/40 backdrop-blur-sm"
-          onClick={toggle}
-        />
-      )}
-
-      {/* ── Панель ──────────────────────────────────────────────────────── */}
-      <aside
-        ref={asideRef}
-        role={isMobile ? "dialog" : undefined}
-        aria-modal={isMobile && open ? true : undefined}
-        style={{ width: isMobile ? "100%" : width || undefined }}
-        className={`fixed bottom-0 right-0 top-14 z-[115] border-l border-tm-line ${
-          dragging ? "" : "transition-transform duration-300 ease-in-out"
-        } ${
-          // Тень слева: лист, приподнятый над страницей, а не приклеенный к
-          // ней встык. Закрытой она не нужна — панель за краем экрана.
-          open
-            ? "translate-x-0 shadow-[-18px_0_40px_-24px_rgba(67,57,45,0.25)]"
-            : "translate-x-full"
-        }`}
-        aria-label={edgeLabel}
-        aria-hidden={!open}
-        // Панель уезжает трансформацией и остаётся в DOM. Без этого её поле
-        // ввода ловило бы фокус по Tab со страницы, где панели не видно.
-        //
-        // Атрибут именно ОТСУТСТВУЕТ, когда панель открыта: `inert` булев по
-        // спецификации, и `inert="false"` браузер считает включённым.
-        inert={open ? undefined : true}
-      >
-        {open && !isMobile && <RailResizer />}
-        <div className="flex h-full min-h-0 flex-col bg-tm-bg text-tm-ink">
-          <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-tm-line bg-tm-surface px-3.5">
+    <div className={`quick${quick.listening ? " listening" : ""}`} data-state={state} ref={hostRef}>
+      <div className="q-suggest" aria-label="Подсказки" ref={quick.setSuggestSlot} />
+      <div className="q-win glass" role="dialog" aria-label={edgeLabel} ref={winRef}>
+        {title || onNew ? (
+          <div className="q-top">
             {title}
-            <div className="flex items-center gap-0.5 text-tm-faint">
-              {onNew ? (
-                <button
-                  type="button"
-                  onClick={onNew}
-                  aria-label={newLabel}
-                  title={newLabel}
-                  className="grid h-7 w-7 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label="Свернуть панель"
-                title="Свернуть панель"
-                className="grid h-7 w-7 place-items-center rounded-full text-tm-faint outline-none transition-colors hover:bg-tm-surface-2 hover:text-tm-ink active:scale-95 focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-              >
-                <PanelRightClose className="h-3.5 w-3.5" />
+            {onNew ? (
+              <button className="q-tool q-new" type="button" title={newLabel} onClick={onNew}>
+                <Icon name="plus" />
+                <span>{newLabel}</span>
               </button>
-            </div>
-          </header>
-
-          <div
-            ref={feedRef}
-            className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3"
-          >
-            {children}
+            ) : null}
           </div>
-
-          <div
-            className="shrink-0 px-3 pt-2"
-            style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
-          >
-            {footer}
-          </div>
+        ) : null}
+        <div className="q-answer" ref={feedRef} aria-live="polite">
+          {children}
         </div>
-      </aside>
-    </>
+        {footer}
+        <button className="q-close" type="button" aria-label="Закрыть" title="Закрыть" onClick={toggle}>
+          <Icon name="x" />
+        </button>
+      </div>
+      <div className="q-pickbar glass">
+        <Icon name="cursor" />
+        <span>Нажми на урок</span>
+        <button className="btn btn-text q-pick-cancel" type="button" onClick={quick.stopPick}>
+          Отмена
+        </button>
+      </div>
+      <div className="q-pill glass">
+        <button className="q-pill-btn q-open" type="button" title="Быстрый запрос" aria-label="Быстрый запрос" onClick={openRail}>
+          <Icon name="compose" />
+        </button>
+        {quick.voiceSupported ? (
+          <>
+            <span className="q-div" aria-hidden="true" />
+            <button
+              className="q-pill-btn q-voice"
+              type="button"
+              title="Сказать голосом"
+              aria-label="Сказать голосом"
+              onClick={() => {
+                openRail();
+                quick.listen();
+              }}
+            >
+              <Icon name="wave" />
+            </button>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
-
-/** Плашка в шапке — общий вид для обоих режимов. */
-export const railPillClass =
-  "flex min-w-0 flex-1 items-center gap-1 rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-[3px] text-[11px] font-medium text-tm-muted outline-none transition-colors";
-
-/** То же, но кликабельное: с подсветкой при наведении. */
-export const railPillButtonClass = `${railPillClass} hover:border-tm-line-strong hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30`;

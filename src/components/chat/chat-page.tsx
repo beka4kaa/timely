@@ -1,81 +1,244 @@
 "use client";
 
-// Страница «Тьютор»: разговор во весь экран.
+// Страница «Чат»: разговор с тьютором.
 //
-// Слева история, посередине читаемая колонка, справа — где в книге мы читаем.
-// Панель вопросов на этой странице не показывается (`config/rail-free-routes`):
-// чат внутри чата бессмыслен.
+// Список разговоров живёт в левой панели (порталом: движок у этой страницы), посередине
+// переписка и плавающее поле, справа источники, если у разговора есть книга. На телефоне
+// панели нет, и тот же список открывается нижним листом.
 //
-// Полноэкранного режима, как у доски, здесь нет намеренно. Доска ушла в
-// `fixed inset-0` и заплатила за это дублем шапки и рельса; `DashboardMain` уже
-// `fixed` и уже вычел 48 px шапки и 58 px рельса, так что странице хватает
-// `h-full`. Имя раздела печатает `SiteHeader` — своей шапки тоже не нужно.
-//
-// Разговор ведёт тот же движок, что и панель (`use-subject-chat`), реплики
-// рисует тот же `AskTurn`, поле — тот же `Composer`. Разница только в
-// раскладке и в размере шрифта.
+// Разговор ведёт тот же движок, что и мини-окно (`use-subject-chat`). Здесь раскладка,
+// режимы и всё, что связывает разговор с остальным приложением: адрес, слайм, план.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronDown } from "lucide-react";
-
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+
+import { Icon } from "@/components/shell/icons";
+import { mascot } from "@/components/shell/mascot/mascot";
+import { SubNav } from "@/components/shell/tab-bar";
+import { useAskRail } from "@/contexts/ask-rail";
+import { useDashboardShell } from "@/contexts/dashboard-shell";
+import { recordTarget, understandLocally } from "@/lib/understand";
+import { BACKEND_URL } from "@/lib/api-utils";
+import { authFetch } from "@/lib/auth-fetch";
+import type { FolderSubject } from "@/lib/chat-folders";
+import { buildSpines } from "@/lib/citation-spread";
 import {
   listDocuments,
   listGoals,
   type CurriculumDocument,
+  type LearningGoal,
 } from "@/lib/curriculum-api";
-import { buildSpines } from "@/lib/citation-spread";
 import { subjectTitle } from "@/lib/curriculum-catalog";
-import { EdgeTab } from "@/components/tutor-rail/edge-tab";
-import { FoldResizer } from "@/components/tutor-rail/fold-resizer";
+import { coverAuthor, coverTitle } from "@/lib/curriculum-cover";
+import { isTerminal } from "@/lib/curriculum-progress";
+import { invalidateResources, useResource, type ResourceState } from "@/lib/resource-cache";
+
+import { stageLabel, STOPPED_ERROR } from "./ask-stages";
 import { AskTurn } from "./ask-turn";
 import { ChatList } from "./chat-list";
-import { Composer } from "./composer";
+import {
+  DEFAULT_MODE,
+  formatDue,
+  goalDue,
+  goalQuestion,
+  goalTone,
+  hasSteps,
+  modeByKey,
+  nextMode,
+  selectPlanGoals,
+  stepsFromAnswer,
+  type ChatMode,
+  type ChatModeKey,
+  type PlanGoal,
+} from "./chat-modes";
+import { BookPicker, Composer, ModePicker, type ComposerHandle } from "./composer";
 import { SourcesPanel } from "./sources-panel";
-import { useFoldWidth } from "./use-fold-width";
 import { useSubjectChat } from "./use-subject-chat";
 import "katex/dist/katex.min.css";
+import "@/styles/timely/page-chat.css";
 
-interface Subject {
-  goalId: string;
-  title: string;
-  books: number;
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+interface Subject extends FolderSubject {
+  /** Подпись в выборе книги: автор или почему отвечать не по чему. */
+  note: string;
 }
 
-/** Тот же ключ, что у панели: «какой предмет открыт» — одно на приложение. */
+/** Строка «Режим: X» в идущем разговоре. Только на экране, в базу не пишется. */
+interface ModeMark {
+  /** После скольких реплик она стоит. */
+  at: number;
+  key: ChatModeKey;
+}
+
+/** Тот же ключ, что у мини-окна: «какая книга открыта» одно на приложение. */
 const SUBJECT_KEY = "timely.ask.subject";
 /** Значение ключа для разговора без книги. Пустая строка неотличима от «нет». */
 const NO_BOOK = "none";
+const MODE_KEY = "timely.chat.mode";
+const GOALS_KEY = "chat:goals";
 
-const MOBILE_BREAKPOINT = 768;
+const NEW_CHAT_TITLE = "Новый чат";
+/** Ближе к низу, чем на столько, значит ученик читает конец и лента едет за ответом. */
+const FOLLOW_GAP = 96;
 
-const SUGGESTIONS = ["Объясни проще", "Приведи пример", "С чего начать"];
+interface StarterPrompt {
+  label: string;
+  /** Что подставить в поле. Там ученик допишет своё. */
+  fill?: string;
+  /** Вопрос готов целиком: уходит сразу. */
+  send?: boolean;
+  mode?: ChatModeKey;
+}
+
+const PROMPTS: StarterPrompt[] = [
+  { label: "Объясни тему простыми словами", fill: "Объясни простыми словами: " },
+  { label: "Составь план на неделю", fill: "Составь план на неделю", mode: "plan" },
+  { label: "Помоги с задачей", fill: "Помоги с задачей: ", mode: "guide" },
+  { label: "Как перестать откладывать?", send: true },
+];
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Приватный режим без хранилища: просто не запомним выбор.
+  }
+}
+
+function booksWord(count: number): string {
+  const tens = count % 100;
+  const ones = count % 10;
+  if (tens >= 11 && tens <= 14) return "книг";
+  if (ones === 1) return "книга";
+  if (ones >= 2 && ones <= 4) return "книги";
+  return "книг";
+}
+
+function buildSubjects(goals: LearningGoal[], documents: CurriculumDocument[]): Subject[] {
+  return goals.map((goal) => {
+    const own = documents.filter((document) => document.goal === goal.id);
+    const ready = own.filter((document) => document.ingestion_status === "ready");
+    let note = "нет книги";
+    if (ready.length === 1) {
+      note = coverAuthor(ready[0].authors) || coverTitle(ready[0].title);
+    } else if (ready.length > 1) {
+      note = `${ready.length} ${booksWord(ready.length)}`;
+    } else if (own.some((document) => !isTerminal(document.ingestion_status))) {
+      note = "книга обрабатывается";
+    }
+    return { goalId: goal.id, title: subjectTitle(goal), books: ready.length, note };
+  });
+}
+
+/** Книга, выбранная в прошлый раз. Выбор «без книги» тоже считается выбором. */
+function rememberedSubject(list: Subject[]): string | null {
+  const value = readStored(SUBJECT_KEY);
+  return list.some((item) => item.goalId === value) ? value : null;
+}
+
+/** На телефоне поле не трогаем: клавиатура закрыла бы половину экрана. */
+function focusOnDesktop(composer: ComposerHandle | null) {
+  if (window.matchMedia("(hover: hover)").matches) composer?.focus();
+}
+
+async function fetchPlanGoals(): Promise<PlanGoal[]> {
+  const response = await authFetch(`${BACKEND_URL}/api/goals/`);
+  if (!response.ok) throw new Error(`Цели не загрузились (${response.status})`);
+  const body = (await response.json()) as PlanGoal[] | { results?: PlanGoal[] };
+  return selectPlanGoals(Array.isArray(body) ? body : body.results ?? []);
+}
+
+/** На телефоне переписка не прокручивается сама: её везёт вся колонка страницы. */
+function scrollerOf(log: HTMLElement | null): HTMLElement | null {
+  if (!log) return null;
+  return getComputedStyle(log).overflowY === "visible" ? log.closest<HTMLElement>(".main") : log;
+}
+
+function closeOnBackdrop(event: React.MouseEvent<HTMLDialogElement>) {
+  // Нажатие мимо листа попадает в сам <dialog>: его подложка часть элемента.
+  if (event.target === event.currentTarget) event.currentTarget.close();
+}
 
 export function ChatPage() {
+  const router = useRouter();
+  const { chatsSlot } = useDashboardShell();
+  const { prompt } = useAskRail();
+
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [documents, setDocuments] = useState<CurriculumDocument[]>([]);
   const [ready, setReady] = useState(false);
+  const [subjectsFailed, setSubjectsFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [listOpen, setListOpen] = useState(true);
-  const [sourcesOpen, setSourcesOpen] = useState(true);
-  const [narrow, setNarrow] = useState(false);
-  const [initialDraft, setInitialDraft] = useState("");
-  const feedRef = useRef<HTMLDivElement | null>(null);
 
-  // Вопрос с лендинга приходит как `?q=…`. Кладём его в поле, но не отправляем:
-  // сначала ученик может выбрать предмет с книгой. Параметр убираем из адреса,
-  // чтобы перезагрузка не вставляла вопрос заново.
+  const [modeKey, setModeKey] = useState<ChatModeKey>(DEFAULT_MODE);
+  const [marks, setMarks] = useState<ModeMark[]>([]);
+  /** Планирование: показать цели под идущим разговором. */
+  const [pickingGoal, setPickingGoal] = useState(false);
+  /** Цель, которую разложили на шаги: кнопка «Добавить в план» говорит о ней. */
+  const [planGoal, setPlanGoal] = useState<string | null>(null);
+
+  const [wantedChat, setWantedChat] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openFailed, setOpenFailed] = useState(false);
+  const [pickedPages, setPickedPages] = useState<Record<string, number>>({});
+  const [sourcesSheetOpen, setSourcesSheetOpen] = useState(false);
+
+  const composerRef = useRef<ComposerHandle>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const chatsSheet = useRef<HTMLDialogElement>(null);
+  const sourcesSheet = useRef<HTMLDialogElement>(null);
+  const follow = useRef(true);
+  const openingId = useRef<string | null>(null);
+  const thinking = useRef(false);
+
+  const chat = useSubjectChat({ goalId: selected, scope: "all" });
+  const { busy, stop, turns } = chat;
+  const mode = modeByKey(modeKey);
+  const planning = modeKey === "plan";
+  const goals = useResource(planning ? GOALS_KEY : null, fetchPlanGoals);
+
+  // Ученик мог только что поставить цель на соседней странице: кэш прошлого захода уже устарел.
+  useEffect(() => {
+    invalidateResources(GOALS_KEY);
+  }, []);
+
+  // Режим последнего раза. Эффектом: на сервере хранилища нет, и разметка разъехалась бы.
+  useEffect(() => {
+    setModeKey(modeByKey(readStored(MODE_KEY)).key);
+  }, []);
+
+  // Адрес: `?chat=` открывает разговор (кнопка в мини-окне), `?q=` подставляет вопрос в
+  // поле, но не отправляет: сначала ученик может выбрать книгу. Параметры сразу убираем,
+  // чтобы перезагрузка не делала это заново.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const question = params.get("q")?.trim();
-    if (!question) return;
-    setInitialDraft(question.slice(0, 2000));
+    const wanted = params.get("chat")?.trim();
+    if (!question && !wanted) return;
+    if (question) composerRef.current?.fill(question.slice(0, 2000));
+    if (wanted) setWantedChat(wanted);
     params.delete("q");
+    params.delete("chat");
     const rest = params.toString();
     window.history.replaceState(
       window.history.state,
@@ -84,56 +247,17 @@ export function ChatPage() {
     );
   }, []);
 
-  const chat = useSubjectChat({ goalId: selected, scope: "all" });
-  const fold = useFoldWidth({
-    storageKey: "timely.chat.sources.width",
-    initial: 320,
-    min: 240,
-    max: 460,
-    // Панель источников не должна съедать колонку чтения: она подпись, а не
-    // содержание.
-    maxShare: 0.34,
-  });
-
-  // На узком экране обе колонки становятся оверлеями и по умолчанию закрыты:
-  // 264 + 320 px от семисот не оставили бы ничего самому разговору.
-  useEffect(() => {
-    const check = () => {
-      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
-      setNarrow(mobile);
-      if (mobile) {
-        setListOpen(false);
-        setSourcesOpen(false);
-      }
-    };
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-
   useEffect(() => {
     let alive = true;
     Promise.all([listGoals(), listDocuments()])
-      .then(([goals, docs]) => {
+      .then(([goalRows, documentRows]) => {
         if (!alive) return;
-        const readyByGoal = new Map<string, number>();
-        for (const document of docs) {
-          if (!document.goal || document.ingestion_status !== "ready") continue;
-          readyByGoal.set(
-            document.goal,
-            (readyByGoal.get(document.goal) ?? 0) + 1,
-          );
-        }
-        setSubjects(
-          goals.map((goal) => ({
-            goalId: goal.id,
-            title: subjectTitle(goal),
-            books: readyByGoal.get(goal.id) ?? 0,
-          })),
-        );
-        setDocuments(docs);
+        setSubjects(buildSubjects(goalRows, documentRows));
+        setDocuments(documentRows);
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (alive) setSubjectsFailed(true);
+      })
       .finally(() => {
         if (alive) setReady(true);
       });
@@ -142,348 +266,558 @@ export function ChatPage() {
     };
   }, []);
 
-  // Предмет по умолчанию — тот, что выбран в панели: «какая книга открыта» не
-  // должно зависеть от того, с какого экрана ученик спрашивает. Явно выбранное
-  // «без книги» тоже запоминается, иначе оно слетало бы при каждом заходе.
+  const stopThinking = useCallback(() => {
+    if (!thinking.current) return;
+    thinking.current = false;
+    mascot.thinkEnd();
+  }, []);
+
+  const resetTalk = useCallback(() => {
+    stopThinking();
+    setMarks([]);
+    setPickingGoal(false);
+    setPlanGoal(null);
+    setOpenFailed(false);
+    setPickedPages({});
+    follow.current = true;
+  }, [stopThinking]);
+
+  const { openChat: engineOpen, startNew: engineNew, chats, chatId, loadingChats } = chat;
+
+  const openChat = useCallback(
+    async (id: string) => {
+      chatsSheet.current?.close();
+      // Уже открыт: перезагрузка только оборвала бы идущий ответ.
+      if (id === chatId) return;
+      resetTalk();
+      openingId.current = id;
+      setOpening(true);
+      // Разговор помнит свою книгу: продолжать физику, спрашивая по алгебре, нельзя.
+      const row = chats.find((item) => item.id === id);
+      if (row) setSelected(row.goal);
+      const loaded = await engineOpen(id);
+      if (openingId.current !== id) return;
+      openingId.current = null;
+      setOpening(false);
+      if (loaded) setSelected(loaded.goal);
+      else setOpenFailed(true);
+    },
+    [chatId, chats, engineOpen, resetTalk],
+  );
+
+  /** Закрывает текущий разговор. Открывающийся тоже: его ответ уже никому не нужен. */
+  const leaveTalk = useCallback(() => {
+    resetTalk();
+    openingId.current = null;
+    setOpening(false);
+    engineNew();
+  }, [engineNew, resetTalk]);
+
+  const startNew = useCallback(() => {
+    chatsSheet.current?.close();
+    leaveTalk();
+    setSelected(rememberedSubject(subjects));
+    composerRef.current?.focus();
+  }, [leaveTalk, subjects]);
+
+  // Сначала книга из прошлого раза, а чат из адреса уже поверх неё. Вопрос, заданный до
+  // загрузки предметов, остаётся в том разговоре, где его задали.
+  const askedEarly = useRef(false);
+  askedEarly.current = turns.length > 0;
   useEffect(() => {
-    if (!ready) return;
-    const remembered = window.localStorage.getItem(SUBJECT_KEY);
-    if (remembered === NO_BOOK) return;
-    const known = subjects.find((item) => item.goalId === remembered);
-    setSelected((known ?? subjects[0])?.goalId ?? null);
+    if (!ready || askedEarly.current) return;
+    setSelected(rememberedSubject(subjects));
   }, [ready, subjects]);
+
+  useEffect(() => {
+    if (!wantedChat || !ready || loadingChats) return;
+    setWantedChat(null);
+    void openChat(wantedChat);
+  }, [wantedChat, ready, loadingChats, openChat]);
+
+  const changeMode = useCallback(
+    (key: ChatModeKey, quiet = false) => {
+      if (key === modeKey) return;
+      setModeKey(key);
+      writeStored(MODE_KEY, key);
+      setPickingGoal(key === "plan" && turns.length > 0);
+      if (key !== "plan") setPlanGoal(null);
+      // В идущем разговоре видно, с какого места тьютор ведёт себя иначе. Строка на каждое
+      // место одна: листая режимы, ученик не должен оставлять за собой столбик.
+      if (!quiet && turns.length) {
+        setMarks((prev) => [...prev.filter((mark) => mark.at !== turns.length), { at: turns.length, key }]);
+      }
+    },
+    [modeKey, turns.length],
+  );
+
+  const pickMode = useCallback(
+    (key: ChatModeKey) => {
+      changeMode(key);
+      focusOnDesktop(composerRef.current);
+    },
+    [changeMode],
+  );
+
+  const send = useCallback(
+    (text: string) => {
+      follow.current = true;
+      setOpenFailed(false);
+      setPickingGoal(false);
+      void chat.ask(text, undefined, modeKey);
+    },
+    [chat, modeKey],
+  );
+
+  const askGoal = useCallback(
+    (goal: PlanGoal) => {
+      follow.current = true;
+      setOpenFailed(false);
+      setPlanGoal(goal.title);
+      setPickingGoal(false);
+      void chat.ask(goalQuestion(goal), undefined, "plan");
+    },
+    [chat],
+  );
+
+  const runPrompt = (item: StarterPrompt) => {
+    if (item.mode) changeMode(item.mode, true);
+    if (item.send) send(item.label);
+    else composerRef.current?.fill(item.fill ?? item.label);
+  };
 
   const pickSubject = useCallback(
     (goalId: string | null) => {
-      setPickerOpen(false);
       if (goalId === selected) return;
       setSelected(goalId);
-      window.localStorage.setItem(SUBJECT_KEY, goalId ?? NO_BOOK);
-      // Книга у разговора одна: она записана в чате и после создания не
-      // меняется — иначе в старых ответах остались бы цитаты из книги, которой
-      // в предмете нет. Поэтому смена книги начинает новый разговор, а прежний
-      // остаётся в истории слева.
-      if (chat.turns.length) chat.startNew();
+      writeStored(SUBJECT_KEY, goalId ?? NO_BOOK);
+      // Книга у разговора одна: она записана в чате и после создания не меняется, иначе в
+      // старых ответах остались бы цитаты из книги, которой в предмете нет. Поэтому смена
+      // книги начинает новый разговор, а прежний остаётся в списке.
+      if (turns.length || opening) leaveTalk();
+      focusOnDesktop(composerRef.current);
     },
-    [selected, chat],
+    [leaveTalk, opening, selected, turns.length],
   );
 
-  /** Новый разговор внутри папки: заодно делает её книгу текущей. */
-  const startChatIn = useCallback(
-    (goalId: string | null) => {
-      setSelected(goalId);
-      window.localStorage.setItem(SUBJECT_KEY, goalId ?? NO_BOOK);
-      chat.startNew();
-      if (narrow) setListOpen(false);
-    },
-    [chat, narrow],
-  );
+  const stopAnswer = useCallback(() => {
+    stopThinking();
+    stop();
+  }, [stop, stopThinking]);
 
-  const openChat = useCallback(
-    (id: string) => {
-      // Разговор помнит свой предмет: продолжать физику, спрашивая по алгебре,
-      // нельзя.
-      const row = chat.chats.find((item) => item.id === id);
-      if (row) setSelected(row.goal);
-      if (narrow) setListOpen(false);
-      void chat.openChat(id);
-    },
-    [chat, narrow],
-  );
-
+  // Слайм думает над вопросом. Ушли со страницы, значит и ответа ждать больше некому.
   useEffect(() => {
-    feedRef.current?.scrollTo({
-      top: feedRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [chat.turns]);
+    const last = turns[turns.length - 1];
+    if (busy && !thinking.current) {
+      thinking.current = true;
+      const question = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? "Вопрос";
+      mascot.thinkStart(question, () => {
+        thinking.current = false;
+        stop();
+      });
+    } else if (!busy && thinking.current) {
+      thinking.current = false;
+      mascot.thinkEnd(last?.content && !last.error ? "Готово" : undefined);
+    }
+  }, [busy, turns, stop]);
+  const lastTurn = turns[turns.length - 1];
+  const stage = lastTurn?.role === "assistant" ? lastTurn.stage ?? "" : "";
+  useEffect(() => {
+    if (thinking.current && stage) mascot.thought(stageLabel(stage, lastTurn?.found));
+  }, [stage, lastTurn?.found]);
+  useEffect(() => stopThinking, [stopThinking]);
+
+  // Лента едет за ответом, только пока ученик читает её конец: прокрутил выше, значит
+  // перечитывает, и дёргать его нельзя.
+  useEffect(() => {
+    const log = logRef.current;
+    if (!log) return;
+    const onScroll = () => {
+      const scroller = scrollerOf(log);
+      if (!scroller) return;
+      follow.current =
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < FOLLOW_GAP;
+    };
+    const main = log.closest<HTMLElement>(".main");
+    log.addEventListener("scroll", onScroll, { passive: true });
+    main?.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      log.removeEventListener("scroll", onScroll);
+      main?.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
+  useIsoLayoutEffect(() => {
+    if (!follow.current || !turns.length) return;
+    const scroller = scrollerOf(logRef.current);
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [turns, marks, pickingGoal, goals.data]);
+
+  // Новый вопрос снова показывает страницу из свежего ответа.
+  useEffect(() => {
+    setPickedPages({});
+  }, [turns.length]);
 
   const current = useMemo(
     () => subjects.find((item) => item.goalId === selected) ?? null,
     [subjects, selected],
   );
-
   const pageCounts = useMemo(
-    () => new Map(documents.map((doc) => [doc.id, doc.page_count])),
+    () => new Map(documents.map((document) => [document.id, document.page_count])),
     [documents],
   );
-  const authors = useMemo(
-    () => new Map(documents.map((doc) => [doc.id, doc.authors])),
-    [documents],
+  const spines = useMemo(() => buildSpines(turns, pageCounts), [turns, pageCounts]);
+  const shelf = useMemo(
+    () =>
+      selected
+        ? documents.filter(
+            (document) => document.goal === selected && document.ingestion_status === "ready",
+          )
+        : [],
+    [documents, selected],
   );
-  const spines = useMemo(
-    () => buildSpines(chat.turns, pageCounts),
-    [chat.turns, pageCounts],
-  );
+  const hasSources = shelf.length > 0 || spines.length > 0;
 
-  const jumpToTurn = useCallback((index: number) => {
-    const node = document.getElementById(`turn-${index}`);
-    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const showSource = useCallback((documentId: string, page: number) => {
+    setPickedPages((prev) => ({ ...prev, [documentId]: page }));
+    // На узком экране панели справа нет: те же страницы открываются нижним листом.
+    const panel = chatRef.current?.querySelector(".sources");
+    if (!panel || getComputedStyle(panel).display === "none") {
+      setSourcesSheetOpen(true);
+      sourcesSheet.current?.showModal();
+      sourcesSheet.current?.focus();
+    }
   }, []);
 
-  const empty = !chat.turns.length;
+  const jumpToTurn = useCallback((index: number) => {
+    sourcesSheet.current?.close();
+    follow.current = false;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document
+      .getElementById(`turn-${index}`)
+      ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+  }, []);
+
+  const { retryLast } = chat;
+  const retry = useCallback(() => {
+    follow.current = true;
+    void retryLast(modeKey);
+  }, [retryLast, modeKey]);
+
+  const addToPlan = () => {
+    if (!lastTurn) return;
+    const steps = stepsFromAnswer(lastTurn.content);
+    prompt({
+      target: "schedule",
+      text: planGoal ? `Добавь в план по цели «${planGoal}»: ${steps}` : `Добавь в план: ${steps}`,
+      send: true,
+    });
+    // На плане это идёт через предпросмотр: расписание меняет только сам ученик.
+    router.push("/dashboard/plan");
+  };
+
+  const empty = !turns.length && !opening;
+  const answered =
+    !busy && lastTurn?.role === "assistant" && Boolean(lastTurn.content) && !lastTurn.error;
+  // В вопросе цель, привычка или то, что изучил: предлагаем записать, а не только ответить.
+  // Только правила, без модели: ради кнопки лишний запрос не нужен. Режим плана ведёт к целям сам.
+  const recordOffer = useMemo(() => {
+    const question = turns[turns.length - 2];
+    if (planning || question?.role !== "user") return null;
+    return recordTarget(understandLocally(question.content).kind, question.content);
+  }, [turns, planning]);
+  const firstQuestion = turns.find((turn) => turn.role === "user")?.content;
+  const openRow = chats.find((row) => row.id === chatId);
+  const placeholder = modeKey === "plain" && current?.books ? "Спроси по книге" : mode.hint;
+
+  const list = (
+    <ChatList
+      chats={chats}
+      subjects={subjects}
+      activeId={chatId}
+      loading={loadingChats || !ready}
+      failed={chat.chatsFailed}
+      onRetry={chat.reloadChats}
+      onOpen={(id) => void openChat(id)}
+      onCreate={startNew}
+      onRename={(id, title) => void chat.renameChat(id, title)}
+      onDelete={(id) => {
+        if (id === chatId) resetTalk();
+        void chat.removeChat(id);
+      }}
+    />
+  );
+
+  const sources = hasSources ? (
+    <SourcesPanel
+      spines={spines}
+      shelf={shelf}
+      documents={documents}
+      subject={current?.title ?? ""}
+      turns={turns}
+      pickedPages={pickedPages}
+      onPickPage={(documentId, page) =>
+        setPickedPages((prev) => ({ ...prev, [documentId]: page }))
+      }
+      onJump={jumpToTurn}
+    />
+  ) : null;
 
   return (
-    <div className="relative flex h-full min-h-0 overflow-hidden bg-tm-bg">
-      {/* ── История ─────────────────────────────────────────────────────── */}
-      <aside
-        // Позиционирование целиком в одной ветке: `absolute` и `relative`
-        // рядом в одной строке классов спорят порядком в стилях Tailwind, а не
-        // порядком в строке, и на узком экране колонка осталась бы в потоке.
-        className={
-          narrow
-            ? `absolute inset-y-0 left-0 z-30 w-[280px] border-r border-tm-line bg-tm-surface shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
-                listOpen ? "translate-x-0" : "-translate-x-full"
-              }`
-            : `shrink-0 border-r border-tm-line bg-tm-surface ${
-                listOpen ? "w-[264px]" : "hidden"
-              }`
-        }
-        inert={narrow && !listOpen ? true : undefined}
+    <div className="content view">
+      <SubNav group="tutor" />
+      <div
+        ref={chatRef}
+        className={hasSources ? "chat has-sources" : "chat"}
+        data-kind={hasSources ? "book" : "general"}
       >
-        <ChatList
-          chats={chat.chats}
-          subjects={subjects}
-          activeId={chat.chatId}
-          activeGoalId={selected}
-          // Пока не приехали предметы, папок не построить: все разговоры
-          // свалились бы в «Без книги» и через миг разъехались обратно.
-          loading={chat.loadingChats || !ready}
-          onOpen={openChat}
-          onCreate={() => {
-            chat.startNew();
-            if (narrow) setListOpen(false);
-          }}
-          onCreateIn={startChatIn}
-          onRename={(id, title) => void chat.renameChat(id, title)}
-          onDelete={(id) => void chat.removeChat(id)}
-          onCollapse={() => setListOpen(false)}
-        />
-      </aside>
+        <div className="talk">
+          <div className="chat-bar">
+            <button
+              className="btn btn-line"
+              type="button"
+              onClick={() => {
+                chatsSheet.current?.showModal();
+                chatsSheet.current?.focus();
+              }}
+            >
+              <Icon name="chev-l" />
+              Чаты
+            </button>
+            <span className="chat-now">{openRow?.title || firstQuestion || NEW_CHAT_TITLE}</span>
+          </div>
 
-      {/* ── Разговор ────────────────────────────────────────────────────── */}
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* Закладки свёрнутых колонок — те же, что у панели вопросов, только
-            левая зеркальна. Стоят по центру своего края колонки разговора. */}
-        <EdgeTab
-          side="left"
-          hidden={listOpen}
-          label="История разговоров"
-          onClick={() => setListOpen(true)}
-          className="z-20"
-        />
-        <EdgeTab
-          side="right"
-          hidden={sourcesOpen}
-          label="Источники"
-          onClick={() => setSourcesOpen(true)}
-          className="z-20"
-        />
+          <div
+            ref={logRef}
+            className={empty ? "log log-new" : "log"}
+            tabIndex={empty ? undefined : 0}
+            role={empty ? undefined : "log"}
+            aria-label="Переписка"
+            aria-busy={busy}
+          >
+            {empty ? (
+              <EmptyTalk
+                mode={mode}
+                current={current}
+                openFailed={openFailed}
+                goals={goals}
+                onPrompt={runPrompt}
+                onGoal={askGoal}
+              />
+            ) : null}
 
-        {/* Точечная сетка бумаги — та же, что на доске. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(rgb(var(--tm-dot) / 0.06) 1px, transparent 1px)",
-            backgroundSize: "22px 22px",
-          }}
-        />
+            {opening ? <p className="m-think shine">Открываю разговор</p> : null}
 
-        {/* Лента и поле — в одной колонке. Поле НЕ переезжает между двумя
-            ветками разметки: это один и тот же узел, и меняется только то, что
-            стоит над ним. Два разных композера потеряли бы черновик и фокус
-            ровно в момент первой отправки. */}
-        <div
-          className={`relative flex min-h-0 flex-1 flex-col ${
-            empty ? "justify-center" : ""
-          }`}
-        >
-          {!empty && (
-            <div ref={feedRef} className="min-h-0 flex-1 overflow-y-auto">
-              <div className="mx-auto w-full max-w-[46rem] space-y-6 px-6 py-8">
-                {chat.turns.map((turn, index) => (
-                  <AskTurn
-                    key={index}
-                    id={`turn-${index}`}
-                    turn={turn}
-                    variant="page"
-                  />
+            {turns.map((turn, index) => (
+              <Fragment key={index}>
+                <AskTurn
+                  turn={turn}
+                  id={`turn-${index}`}
+                  onCite={showSource}
+                  onRetry={
+                    !busy &&
+                    index === turns.length - 1 &&
+                    turn.error &&
+                    turn.error !== STOPPED_ERROR
+                      ? retry
+                      : undefined
+                  }
+                />
+                {marks
+                  .filter((mark) => mark.at === index + 1)
+                  .map((mark) => (
+                    <p className="m-mode" key={mark.at}>
+                      Режим: {modeByKey(mark.key).name}
+                    </p>
+                  ))}
+              </Fragment>
+            ))}
+
+            {!busy && !empty && !opening && planning && pickingGoal ? (
+              <>
+                <p className="m-ai">К какой цели идём?</p>
+                <GoalChips goals={goals} onGoal={askGoal} />
+              </>
+            ) : null}
+
+            {answered && planning && !pickingGoal ? (
+              <div className="m-acts">
+                {planGoal || hasSteps(lastTurn.content) ? (
+                  <button className="btn btn-line" type="button" onClick={addToPlan}>
+                    Добавить в план
+                  </button>
+                ) : null}
+                <button className="btn btn-text" type="button" onClick={() => setPickingGoal(true)}>
+                  Другая цель
+                </button>
+              </div>
+            ) : null}
+
+            {answered && recordOffer ? (
+              <div className="m-acts">
+                <Link className="btn btn-line" href={recordOffer.href}>
+                  {recordOffer.label}
+                </Link>
+              </div>
+            ) : null}
+
+            {answered && !planning && mode.follow.length ? (
+              <div className="m-acts">
+                {mode.follow.map((question, index) => (
+                  <button
+                    key={question}
+                    className={index ? "btn btn-text" : "btn btn-line"}
+                    type="button"
+                    onClick={() => send(question)}
+                  >
+                    {question}
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {empty && (
-            <div className="px-6 pb-6 text-center">
-              <h1 className="font-serif text-[26px] font-semibold text-tm-ink">
-                Что разбираем?
-              </h1>
-              <p className="mt-2 text-[13px] text-tm-faint">
-                {current
-                  ? current.books
-                    ? `Отвечу по книге предмета «${current.title}» со ссылкой на страницу.`
-                    : `У предмета «${current.title}» пока нет обработанной книги — отвечу своими словами.`
-                  : "Разговор без книги: отвечу своими словами, без ссылок на учебник."}
-              </p>
-            </div>
-          )}
-
-          <div className="mx-auto w-full max-w-[46rem] shrink-0 px-6 pb-6">
-            <Composer
-              variant="page"
-              onSubmit={(text) => void chat.ask(text)}
-              onStop={chat.stop}
-              busy={chat.busy}
-              placeholder={current ? "Спросите по книге…" : "Спросите что угодно…"}
-              initialDraft={initialDraft}
-              suggestions={empty ? SUGGESTIONS : undefined}
-              left={
-                <SubjectPicker
-                  open={pickerOpen}
-                  onOpenChange={setPickerOpen}
-                  subjects={subjects}
-                  selected={selected}
-                  onSelect={pickSubject}
-                />
-              }
-            />
+            ) : null}
           </div>
+
+          <Composer
+            ref={composerRef}
+            onSubmit={send}
+            onStop={stopAnswer}
+            busy={busy}
+            disabled={opening}
+            placeholder={placeholder}
+            onCycleMode={() => changeMode(nextMode(modeKey).key)}
+            tools={
+              <>
+                <ModePicker mode={mode} onPick={pickMode} />
+                <BookPicker
+                  options={subjects}
+                  selected={selected}
+                  failed={subjectsFailed}
+                  onPick={pickSubject}
+                />
+              </>
+            }
+          />
         </div>
+
+        {sources}
       </div>
 
-      {/* ── Источники ───────────────────────────────────────────────────── */}
-      <aside
-        style={{ width: narrow ? undefined : fold.width }}
-        className={
-          narrow
-            ? `absolute inset-y-0 right-0 z-30 w-[300px] border-l border-tm-line bg-tm-surface shadow-[0_18px_60px_rgba(62,52,41,0.18)] transition-transform duration-200 ${
-                sourcesOpen ? "translate-x-0" : "translate-x-full"
-              }`
-            : `relative shrink-0 border-l border-tm-line bg-tm-surface ${
-                sourcesOpen ? "" : "hidden"
-              }`
-        }
-        inert={narrow && !sourcesOpen ? true : undefined}
-      >
-        {!narrow && sourcesOpen && (
-          <FoldResizer
-            width={fold.width}
-            dragging={fold.dragging}
-            setWidth={fold.setWidth}
-            setDragging={fold.setDragging}
-            nudgeWidth={fold.nudgeWidth}
-            resetWidth={fold.resetWidth}
-            bounds={fold.bounds}
-            label="Ширина источников"
-          />
-        )}
-        <SourcesPanel
-          spines={spines}
-          authors={authors}
-          hasLibrary={Boolean(current?.books)}
-          onJump={(index) => {
-            if (narrow) setSourcesOpen(false);
-            jumpToTurn(index);
-          }}
-          onCollapse={() => setSourcesOpen(false)}
-        />
-      </aside>
+      {chatsSlot ? createPortal(list, chatsSlot) : null}
 
-      {/* Затемнение под оверлеями на узком экране — тот же приём, что у
-          панели вопросов. */}
-      {narrow && (listOpen || sourcesOpen) && (
-        <div
-          className="absolute inset-0 z-20 bg-black/35 backdrop-blur-sm"
-          onClick={() => {
-            setListOpen(false);
-            setSourcesOpen(false);
-          }}
-        />
-      )}
+      <dialog
+        ref={chatsSheet}
+        className="sheet sheet-chats"
+        tabIndex={-1}
+        aria-label="Чаты"
+        onClick={closeOnBackdrop}
+      >
+        {list}
+      </dialog>
+
+      <dialog
+        ref={sourcesSheet}
+        className="sheet sheet-sources"
+        tabIndex={-1}
+        aria-label="Источники"
+        onClick={closeOnBackdrop}
+        onClose={() => setSourcesSheetOpen(false)}
+      >
+        {sourcesSheetOpen ? sources : null}
+      </dialog>
     </div>
   );
 }
 
-/**
- * Выбор книги — там, где у чат-ботов стоит выбор модели.
- *
- * Это честнее: ученик выбирает не модель, а то, по какой книге отвечать.
- */
-function SubjectPicker({
-  open,
-  onOpenChange,
-  subjects,
-  selected,
-  onSelect,
+function EmptyTalk({
+  mode,
+  current,
+  openFailed,
+  goals,
+  onPrompt,
+  onGoal,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  subjects: Subject[];
-  selected: string | null;
-  onSelect: (goalId: string | null) => void;
+  mode: ChatMode;
+  current: Subject | null;
+  openFailed: boolean;
+  goals: ResourceState<PlanGoal[]> & { reload: () => void };
+  onPrompt: (item: StarterPrompt) => void;
+  onGoal: (goal: PlanGoal) => void;
 }) {
-  const current = subjects.find((item) => item.goalId === selected);
+  const failedLine = openFailed ? <p>Этот чат открыть не получилось. Возможно, его уже удалили.</p> : null;
+
+  if (mode.key === "plan") {
+    return (
+      <>
+        {failedLine}
+        <h2>К какой цели идём?</h2>
+        <GoalChips goals={goals} onGoal={onGoal} />
+      </>
+    );
+  }
+
+  const line = current
+    ? current.books
+      ? `Отвечу по книге предмета «${current.title}» и покажу страницу.`
+      : `У предмета «${current.title}» пока нет книги, отвечу своими словами.`
+    : "Учёба, план, как собраться с мыслями. Можно и по книге.";
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          title="По какой книге отвечать. Смена книги начинает новый разговор"
-          className="flex max-w-[11rem] shrink-0 items-center gap-1 self-center rounded-full border border-tm-line bg-tm-surface-2 px-2.5 py-1 text-[11.5px] font-medium text-tm-muted outline-none transition-colors hover:border-tm-accent hover:text-tm-ink focus-visible:ring-2 focus-visible:ring-tm-accent/30"
-        >
-          <BookOpen className="h-3 w-3 shrink-0 text-tm-accent" />
-          <span className="truncate">{current?.title ?? "Без книги"}</span>
-          <ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        side="top"
-        className="w-64 border-tm-line bg-tm-surface p-1 text-tm-ink-2 shadow-[0_18px_60px_rgba(62,52,41,0.14)]"
-      >
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-tm-surface-2 ${
-            selected === null ? "font-medium text-tm-ink" : "text-tm-ink-2"
-          }`}
-        >
-          Без книги
-          <span className="text-[10px] text-tm-faint">общий вопрос</span>
-        </button>
+    <>
+      {failedLine}
+      <h2>О чём поговорим?</h2>
+      <p>{line}</p>
+      <div className="prompts">
+        {PROMPTS.map((item) => (
+          <button key={item.label} type="button" onClick={() => onPrompt(item)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
 
-        <div className="my-1 border-t border-tm-line" />
-
-        <div className="max-h-64 overflow-y-auto">
-          {subjects.map((subject) => (
-            <button
-              key={subject.goalId}
-              type="button"
-              onClick={() => onSelect(subject.goalId)}
-              className={`flex w-full items-center justify-between gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-tm-surface-2 ${
-                subject.goalId === selected
-                  ? "font-medium text-tm-ink"
-                  : "text-tm-ink-2"
-              }`}
-            >
-              <span className="min-w-0 truncate">{subject.title}</span>
-              {!subject.books && (
-                <span className="shrink-0 text-[10px] text-tm-faint">
-                  без книг
-                </span>
-              )}
-            </button>
-          ))}
-          {!subjects.length && (
-            <p className="px-2.5 py-2 text-[11.5px] text-tm-faint">
-              Предметов пока нет
-            </p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+/** Настоящие цели ученика. Без них обычный вопрос в режиме планирования всё равно работает. */
+function GoalChips({
+  goals,
+  onGoal,
+}: {
+  goals: ResourceState<PlanGoal[]> & { reload: () => void };
+  onGoal: (goal: PlanGoal) => void;
+}) {
+  if (!goals.data) {
+    return goals.error ? (
+      <p className="m-note">
+        Цели не загрузились.{" "}
+        <button className="link" type="button" onClick={goals.reload}>
+          Ещё раз
+        </button>
+      </p>
+    ) : (
+      <p className="m-think shine">Смотрю цели</p>
+    );
+  }
+  if (!goals.data.length) {
+    return (
+      <p className="m-note">
+        Целей пока нет.{" "}
+        <Link className="link" href="/dashboard/goals">
+          Поставить цель
+        </Link>
+      </p>
+    );
+  }
+  return (
+    <div className="m-goals">
+      {goals.data.map((goal) => {
+        const due = formatDue(goalDue(goal));
+        return (
+          <button key={goal.id} className={`m-goal ${goalTone(goal)}`} type="button" onClick={() => onGoal(goal)}>
+            <b>{goal.title}</b>
+            <small>{due ? `до ${due}` : "без срока"}</small>
+          </button>
+        );
+      })}
+    </div>
   );
 }

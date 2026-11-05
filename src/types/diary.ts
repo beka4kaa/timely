@@ -176,6 +176,12 @@ export interface DiaryLesson {
   grades: LessonGrades
   homework: string         // DOM-задание (пустая строка = нет)
   notes: string            // Заметки учителя / ученика
+  /**
+   * Ученик отметил задание сделанным. Лежит в том же JSON недели, что и всё
+   * остальное: бэкенд хранит `days` как есть. Записывается целой неделей
+   * (PUT /api/diary/week), отдельного поля в PATCH у него нет.
+   */
+  homeworkDone?: boolean
 }
 
 /**

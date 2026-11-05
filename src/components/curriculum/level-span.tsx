@@ -30,7 +30,7 @@ import {
   spanAnnouncement,
   spanCaption,
 } from "@/lib/curriculum-levels";
-import { paperCaption, paperFocus, paperStrip } from "./paper";
+import { paperFocus } from "./paper";
 
 const LAST_INDEX = LEVEL_ORDER.length - 1;
 
@@ -176,40 +176,38 @@ export function LevelSpan({
       >
         <span
           aria-hidden
-          className={`block h-3.5 w-3.5 rounded-full border-2 shadow-[0_2px_6px_rgba(0,0,0,0.25)] ${
-            which === "current" ? "border-tm-accent bg-tm-surface" : "border-tm-surface bg-tm-accent"
-          }`}
+          className={`wz-thumb ${which === "current" ? "is-from" : "is-to"}`}
         />
       </motion.div>
     );
   };
 
   return (
-    <div className={`${paperStrip} p-5`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <p className={paperCaption}>Уровень</p>
-        <p className="text-[11px] text-tm-faint">
-          {levelLabel(value.current)} → {levelLabel(value.target)}
+    <div className="wz-block">
+      <div className="wz-level-head">
+        <p className="wz-label">Уровень</p>
+        <p className="muted">
+          {levelLabel(value.current)}, цель: {levelLabel(value.target).toLowerCase()}
         </p>
       </div>
 
       <div
         ref={trackRef}
         onPointerDown={onTrackPointerDown}
-        className="relative mx-[15px] my-6 h-1.5 touch-none rounded-full bg-tm-surface-3"
+        className="wz-track relative mx-[15px] my-6 touch-none"
       >
         {LEVEL_ORDER.map((level) => (
           <span
             key={level}
             aria-hidden
-            className="absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-tm-line-strong"
+            className="wz-track-dot absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${fractionForLevel(level) * 100}%` }}
           />
         ))}
 
         <motion.span
           aria-hidden
-          className="absolute inset-y-0 rounded-full bg-tm-accent/40"
+          className="wz-track-fill absolute inset-y-0"
           initial={false}
           animate={{
             left: `${(currentIndex / LAST_INDEX) * 100}%`,
@@ -222,12 +220,12 @@ export function LevelSpan({
         {marker("target")}
       </div>
 
-      <div className="flex items-baseline justify-between text-[10px] text-tm-faint">
+      <div className="wz-track-ends muted">
         <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[0]]}</span>
         <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[LAST_INDEX]]}</span>
       </div>
 
-      <p className="mt-3 text-[12px] leading-5 text-tm-muted">{spanCaption(value)}</p>
+      <p className="wz-hint">{spanCaption(value)}</p>
 
       {/* Смысл контрола — пролёт целиком, и ни один слайдер сам по себе его
           объявить не может. */}

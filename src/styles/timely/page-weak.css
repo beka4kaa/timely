@@ -1,0 +1,90 @@
+/* Слабые темы: то, чего нет в прототипе, потому что там не было настоящих данных и правки. */
+
+.rv.is-solo { grid-template-columns: minmax(0, 1fr); }
+.rv.is-solo .rv-deck { margin-right: 0; }
+/* При «меньше движения» плавного ввода нет, а поле всё равно лежит в .ti-host */
+.rv-chart .rv-dot { fill: none; stroke: var(--t-ink); stroke-width: 5px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rv-chart .rv-dot.is-ring { stroke-width: 7.5px; }
+.rv-chart .rv-dot.is-hole { stroke: var(--t-card); stroke-width: 4.5px; }
+.rv-count { flex: none; color: var(--t-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.rv-card:focus { outline: none; }
+.rv-explain { padding: 0; background: none; cursor: pointer; }
+.rv-rates button:disabled { cursor: default; }
+.weak-loading { margin: auto 0; }
+.weak-error { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 18px; padding: 14px 16px; font-size: 14px; }
+
+.weak-note { display: flex; align-items: center; gap: 4px 10px; width: max-content; padding: 5px 14px; }
+.weak-note.has-action { padding: 5px 6px 5px 14px; }
+.weak-note.failed { color: var(--t-warn); }
+.weak-note .btn { flex: none; height: 28px; }
+
+/* Предпросмотр: у строки ещё выбор предмета и крестик */
+.weak-diff li { grid-template-columns: minmax(0, 1fr) auto 24px; align-items: center; }
+.weak-diff .icon-btn { width: 24px; height: 24px; }
+.weak-diff .icon-btn .i { width: 12px; height: 12px; }
+.weak-subject { max-width: 170px; padding: 2px 0; border: 0; border-bottom: 1px solid var(--t-line-strong); outline-offset: 2px; background: transparent; color: var(--t-ink); font: inherit; cursor: pointer; }
+.weak-subject option { background: var(--t-bg); color: var(--t-ink); }
+.weak-subject-input { width: 130px; padding: 2px 0; border: 0; border-bottom: 1px solid var(--t-line-strong); outline: none; background: transparent; color: var(--t-ink); font: inherit; }
+.weak-subject-input::placeholder { color: var(--t-muted); }
+.weak-subject-input:focus { border-bottom-color: var(--t-ink); }
+.weak-out-note { margin-top: 9px; }
+.weak-out-note.danger:hover { background: none; }
+
+/* Строка темы: кнопка, а действия рядом с ней, вложить одну кнопку в другую нельзя */
+.tp-row { position: relative; }
+.tp-row .tp { width: 100%; text-align: left; }
+/* Tailwind тоже знает класс .ring: без этого вокруг кольца появлялась синяя обводка */
+.tp-row .ring.xs { box-shadow: none; }
+.tp-name { min-width: 0; overflow-wrap: anywhere; }
+.tp .s { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tp.is-archived .tp-name { color: var(--t-muted); }
+.tp-more { position: absolute; right: 6px; top: 4px; opacity: 0; }
+.tp-more .i { width: 14px; height: 14px; }
+.tp-row:hover .tp-more, .tp-row:focus-within .tp-more, .tp-row.is-open .tp-more { opacity: 1; }
+.tp-row:hover .tp .w, .tp-row:focus-within .tp .w, .tp-row.is-open .tp .w { transform: translateX(-26px); }
+.tp-row.is-open .tp .w { color: var(--t-muted); }
+/* Пальцем навести нельзя: на телефоне «⋯» виден всегда, и срок сразу стоит рядом */
+@media (hover: none) {
+  .tp-more { opacity: 1; }
+  .tp-row .tp { padding-right: 36px; }
+  .tp-row:hover .tp .w, .tp-row:focus-within .tp .w, .tp-row.is-open .tp .w { transform: none; }
+}
+.tp-edit input { width: 100%; min-width: 0; padding: 0 0 1px; border: 0; border-bottom: 1px solid var(--t-ink); outline: none; background: transparent; color: var(--t-ink); font: inherit; }
+
+.tp-acts { display: grid; gap: 6px; padding: 2px 10px 10px 31px; }
+.tp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; }
+.tp-bar .small-note { flex: 1 1 100%; margin-bottom: 2px; padding-left: 9px; }
+.tp-bar .btn { height: 28px; font-size: 13px; }
+.tp-know { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; color: var(--t-muted); font-size: 13px; }
+.tp-know select { max-width: 130px; padding: 0; border: 0; outline-offset: 2px; background: transparent; color: var(--t-ink); font: inherit; cursor: pointer; }
+.tp-know select option { background: var(--t-bg); color: var(--t-ink); }
+.tp-subs { padding-left: 9px; font-size: 13px; }
+.tp-subs ul { display: grid; gap: 1px; margin-bottom: 4px; }
+.tp-subs li { display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; gap: 6px; min-height: 24px; }
+.tp-subs .icon-btn { width: 24px; height: 24px; }
+.tp-subs .icon-btn .i { width: 12px; height: 12px; }
+.tp-subs form { display: flex; align-items: center; gap: 6px; }
+.tp-subs input { flex: 1; min-width: 0; padding: 2px 0; border: 0; border-bottom: 1px solid var(--t-line); outline: none; background: transparent; color: var(--t-ink); font: inherit; }
+.tp-subs input::placeholder { color: var(--t-muted); }
+.tp-subs input:focus { border-bottom-color: var(--t-ink); }
+.tp-subs .btn { height: 28px; font-size: 13px; }
+
+.weak-archive summary { display: inline-block; margin-bottom: 8px; color: var(--t-muted); font-size: 13px; cursor: pointer; }
+.weak-archive summary:hover { color: var(--t-ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tp .w { transition: transform 160ms ease; }
+  .tp-more { transition: opacity 120ms ease, background 120ms ease; }
+}
+
+@container main (max-width: 620px) {
+  .tp-acts { padding-left: 28px; }
+  .tp-row .tp { padding-right: 36px; }
+  .weak-subject { max-width: 124px; }
+  .weak-subject-input { width: 108px; }
+}
+@media (max-width: 640px) {
+  .tp-bar .btn, .tp-subs .btn, .tp-know { height: 34px; }
+  /* Меньше 16 px iOS приближает страницу, стоит тронуть поле */
+  .weak-subject, .weak-subject-input, .tp-edit input, .tp-subs input, .tp-know select { font-size: 16px; }
+}

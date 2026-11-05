@@ -1,29 +1,34 @@
 "use client";
 
-import { Flame } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSession } from "next-auth/react";
+// Помодоро: циферблат по центру, стопка карточек сбоку и год снизу.
+// Таймер живёт в сторе, эта страница только показывает его и статистику с сервера.
 
-import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { TTL, blocksKey, fetchBlocks } from "@/components/now/now-resources";
+import { SubNav } from "@/components/shell/tab-bar";
+import { isOpenBlock, splitBlockTitle } from "@/lib/now-feed";
 import {
-  CHART_DAYS,
   EMPTY_SUMMARY,
   HEAT_WEEKS,
+  PRESETS,
   dayKey,
-  hm,
   streakLabel,
   type FocusSessionRow,
   type PomodoroSummary,
 } from "@/lib/pomodoro";
+import { clearDay, fetchSessions, fetchSummary } from "@/lib/pomodoro-api";
 import {
-  buildChartBars,
   buildHeatWeeks,
   buildHistoryRows,
   buildTodayStats,
   buildWeekBars,
-  sumSeconds,
+  clockTime,
 } from "@/lib/pomodoro.logic";
-import { clearDay, fetchSessions, fetchSummary } from "@/lib/pomodoro-api";
+import { readSessionName, readSessionNames, sessionNameOf, writeSessionName } from "@/lib/pomodoro-names";
+import { useResource } from "@/lib/resource-cache";
+import { formatMinutes, zonedDateKey, zonedMinutes } from "@/lib/studyplan-calendar";
+import { browserTimeZone, useNow } from "@/lib/use-now";
 import {
   selectElapsed,
   selectHasStarted,
@@ -32,34 +37,36 @@ import {
   usePomodoroStore,
 } from "@/stores/pomodoro-store";
 
-import { ActivityPanel } from "./activity-panel";
-import { MetricsStrip, type Metric } from "./metrics-strip";
-import { RhythmBar } from "./rhythm-bar";
-import { SessionHistory } from "./session-history";
+import { SessionsCard, TodayCard, WeekCard, sessionRowFrom, type SessionRow } from "./focus-side";
+import { SessionName, type PlanOption } from "./session-name";
 import { TimerDial } from "./timer-dial";
-import { TodayCard } from "./today-card";
-import { WeekChart } from "./week-chart";
+import { useFocusUser } from "./use-focus-user";
+import { YearHeat } from "./year-heat";
 
-// Сколько дней истории тянем для таблицы сессий: сегодня плюс запас на
+import "@/styles/timely/page-focus.css";
+
+// Сколько дней истории тянем для списка сессий: сегодня плюс запас на
 // расхождение часовых поясов клиента и сервера.
 const HISTORY_DAYS = 2;
 const SUMMARY_DAYS = HEAT_WEEKS * 7;
 
 export function PomodoroPage() {
-  const { data: authSession } = useSession();
-  const email = authSession?.user?.email ?? null;
+  const email = useFocusUser();
+  const now = useNow(60_000);
 
   const [summary, setSummary] = useState<PomodoroSummary>(EMPTY_SUMMARY);
   const [sessions, setSessions] = useState<FocusSessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [sessionName, setSessionName] = useState("");
 
   const presetIdx = usePomodoroStore((state) => state.presetIdx);
   const phase = usePomodoroStore((state) => state.phase);
   const running = usePomodoroStore((state) => state.running);
-  const cycles = usePomodoroStore((state) => state.cycles);
   const syncedAt = usePomodoroStore((state) => state.syncedAt);
+  const nowTs = usePomodoroStore((state) => state.nowTs);
+  const phaseStartedAt = usePomodoroStore((state) => state.phaseStartedAt);
   const remaining = usePomodoroStore(selectRemaining);
   const planned = usePomodoroStore(selectPlanned);
   const elapsed = usePomodoroStore(selectElapsed);
@@ -68,6 +75,16 @@ export function PomodoroPage() {
   const skip = usePomodoroStore((state) => state.skip);
   const reset = usePomodoroStore((state) => state.reset);
   const choosePreset = usePomodoroStore((state) => state.choosePreset);
+
+  // Название читается после монтирования: на сервере localStorage нет.
+  useEffect(() => {
+    setSessionName(readSessionName());
+  }, []);
+
+  const changeName = useCallback((name: string) => {
+    setSessionName(name);
+    writeSessionName(name);
+  }, []);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -83,9 +100,7 @@ export function PomodoroPage() {
         setError(null);
       } catch (cause) {
         if (signal?.aborted) return;
-        setError(
-          cause instanceof Error ? cause.message : "Не удалось загрузить статистику",
-        );
+        setError(cause instanceof Error ? cause.message : "Не удалось загрузить статистику");
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -94,28 +109,45 @@ export function PomodoroPage() {
   );
 
   useEffect(() => {
-    if (!email) {
-      setLoading(false);
-      return;
-    }
+    // Пока неизвестно, кто это, идёт загрузка, а не пустая статистика.
+    if (!email) return;
     const controller = new AbortController();
     load(controller.signal);
     return () => controller.abort();
     // syncedAt растёт после отправки завершённой сессии — тогда перезагружаем.
   }, [email, load, syncedAt]);
 
-  const today = useMemo(() => new Date(), []);
-  const todayKey = dayKey(today);
+  // Занятия из плана для выбора названия: тот же запрос и кэш, что у главной.
+  const timeZone = useMemo(browserTimeZone, []);
+  const zonedToday = now ? zonedDateKey(now, timeZone) : null;
+  const blocks = useResource(
+    zonedToday ? blocksKey(timeZone, zonedToday) : null,
+    () => fetchBlocks(timeZone, zonedToday ?? ""),
+    { ttl: TTL.day },
+  );
+  const planOptions = useMemo<PlanOption[]>(
+    () =>
+      (blocks.data ?? [])
+        .filter((block) => zonedDateKey(block.start_at, timeZone) === zonedToday && isOpenBlock(block))
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+        .map((block) => ({
+          id: block.id,
+          name: splitBlockTitle(block.title).topic,
+          time: formatMinutes(zonedMinutes(block.start_at, timeZone)),
+        })),
+    [blocks.data, timeZone, zonedToday],
+  );
+
+  const todayKey = now ? dayKey(now) : null;
+  // Пересчёт по дню, а не по минуте: год это 364 клетки.
+  const today = useMemo(() => (todayKey ? new Date(`${todayKey}T12:00:00`) : null), [todayKey]);
 
   // Незавершённый фокус показываем в статистике «на лету», чтобы цифры росли
   // вместе с таймером, а не только после конца фазы.
   const liveSeconds = phase === "focus" ? elapsed : 0;
 
   const todaySessions = useMemo(
-    () =>
-      sessions.filter(
-        (session) => dayKey(new Date(session.started_at)) === todayKey,
-      ),
+    () => sessions.filter((session) => dayKey(new Date(session.started_at)) === todayKey),
     [sessions, todayKey],
   );
 
@@ -125,123 +157,122 @@ export function PomodoroPage() {
   const liveMinuteSeconds = Math.floor(liveSeconds / 60) * 60;
 
   const dailyWithLive = useMemo(() => {
-    if (!liveMinuteSeconds) return summary.daily;
+    if (!liveMinuteSeconds || !todayKey) return summary.daily;
     return {
       ...summary.daily,
       [todayKey]: (summary.daily[todayKey] ?? 0) + liveMinuteSeconds,
     };
   }, [summary.daily, liveMinuteSeconds, todayKey]);
 
-  const todayStats = useMemo(
-    () => buildTodayStats(todaySessions, liveSeconds),
-    [todaySessions, liveSeconds],
-  );
-  const weekBars = useMemo(
-    () => buildWeekBars(dailyWithLive, today),
-    [dailyWithLive, today],
-  );
-  const heatWeeks = useMemo(
-    () => buildHeatWeeks(dailyWithLive, today),
-    [dailyWithLive, today],
-  );
-  const chartBars = useMemo(
-    () => buildChartBars(dailyWithLive, today, CHART_DAYS),
-    [dailyWithLive, today],
-  );
-  const historyRows = useMemo(
-    () => buildHistoryRows(todaySessions),
-    [todaySessions],
-  );
+  const todayStats = useMemo(() => buildTodayStats(todaySessions, liveSeconds), [todaySessions, liveSeconds]);
+  const weekBars = useMemo(() => (today ? buildWeekBars(dailyWithLive, today) : []), [dailyWithLive, today]);
+  const heatWeeks = useMemo(() => (today ? buildHeatWeeks(dailyWithLive, today) : []), [dailyWithLive, today]);
 
-  const weekSeconds = sumSeconds(weekBars);
+  const savedRows = useMemo(() => {
+    const names = readSessionNames();
+    return buildHistoryRows(todaySessions).map((row) => sessionRowFrom(row, sessionNameOf(names, row.startedAt)));
+  }, [todaySessions]);
 
-  const metrics: Metric[] = useMemo(() => {
-    const activeDays = summary.active_days;
-    const average = activeDays > 0 ? summary.total_seconds / activeDays : 0;
+  // Идущая сессия на сервере появится только в конце, но человек видит её уже сейчас.
+  const rows = useMemo<SessionRow[]>(() => {
+    if (phase !== "focus" || !hasStarted || !phaseStartedAt) return savedRows;
+    const minutes = Math.floor(elapsed / 60);
     return [
-      { key: "streak", value: String(summary.streak), label: "дней подряд" },
-      { key: "today", value: hm(todayStats.focusSeconds), label: "сегодня" },
-      { key: "week", value: hm(weekSeconds), label: "за неделю" },
-      { key: "active", value: String(activeDays), label: "активных дней" },
-      { key: "average", value: hm(average), label: "в среднем за день" },
+      {
+        key: "live",
+        time: clockTime(new Date(phaseStartedAt)),
+        name: sessionName.trim() || "Фокус",
+        duration: minutes > 0 ? `${minutes} мин` : "только что",
+        isFocus: true,
+        stoppedEarly: false,
+      },
+      ...savedRows,
     ];
-  }, [summary, todayStats.focusSeconds, weekSeconds]);
+  }, [savedRows, phase, hasStarted, phaseStartedAt, elapsed, sessionName]);
 
   const handleClearDay = useCallback(async () => {
-    if (!email) return;
+    if (!email || !todayKey) return;
     setClearing(true);
     try {
       await clearDay(todayKey);
       await load();
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Не удалось очистить день",
-      );
+      setError(cause instanceof Error ? cause.message : "Не удалось очистить день");
     } finally {
       setClearing(false);
     }
   }, [email, todayKey, load]);
 
   return (
-    <CoffeePageShell
-      actions={
-        <div className="flex items-center gap-2.5 rounded-[18px] border border-tm-line bg-tm-surface px-4 py-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)]">
-          <Flame className="h-4 w-4 text-tm-accent" />
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.14em] text-tm-faint">
-              Серия
-            </p>
-            <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-tm-ink">
-              {streakLabel(summary.streak)}
-            </p>
+    <div className="content view">
+      <SubNav group="study" />
+      <header className="head">
+        <h1 className="title">Помодоро</h1>
+        {summary.streak > 1 ? <span className="head-note">{streakLabel(summary.streak)} подряд</span> : null}
+      </header>
+
+      {error ? (
+        <div className="card fp-error" role="alert">
+          <p>{error}. Таймер работает, а сессии сохранятся, когда связь вернётся.</p>
+          <button className="btn btn-line" type="button" onClick={() => void load()}>
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
+      <div className="fp">
+        <div className="fp-main">
+          <TimerDial
+            phase={phase}
+            remaining={remaining}
+            planned={planned}
+            elapsed={elapsed}
+            running={running}
+            now={nowTs}
+          />
+          <SessionName value={sessionName} onChange={changeName} options={planOptions} />
+          <div className="fp-ctrl">
+            <button className="btn btn-main fp-start" type="button" onClick={toggle}>
+              {running ? "Пауза" : hasStarted ? "Продолжить" : "Начать"}
+            </button>
+            <button className="btn btn-text" type="button" title="Следующая фаза" onClick={skip}>
+              Дальше
+            </button>
+            <button className="btn btn-text" type="button" disabled={!hasStarted} onClick={reset}>
+              Сбросить
+            </button>
+          </div>
+          <div className="tabs fp-presets" role="group" aria-label="Ритм">
+            {PRESETS.map((preset, index) => (
+              <button
+                key={preset.note}
+                type="button"
+                title={preset.note}
+                aria-pressed={index === presetIdx}
+                onClick={() => choosePreset(index)}
+              >
+                {preset.focus} / {preset.brk}
+              </button>
+            ))}
           </div>
         </div>
-      }
-    >
-      {error && (
-        <div className="mb-5 rounded-[14px] border border-tm-danger-line bg-tm-danger-soft px-4 py-3 text-[12px] text-tm-danger">
-          {error}. Таймер продолжает работать, а сессии сохранятся, когда связь
-          восстановится.
-        </div>
-      )}
 
-      <RhythmBar presetIdx={presetIdx} onSelect={choosePreset} />
-
-      <div className="grid items-start gap-5 lg:grid-cols-[1.35fr_1fr]">
-        <TimerDial
-          phase={phase}
-          remaining={remaining}
-          planned={planned}
-          running={running}
-          hasStarted={hasStarted}
-          cycles={cycles}
-          presetIdx={presetIdx}
-          onToggle={toggle}
-          onSkip={skip}
-          onReset={reset}
-        />
-
-        <div className="flex flex-col gap-5">
-          <TodayCard stats={todayStats} />
-          {loading ? (
-            <div className="h-[188px] animate-pulse rounded-[20px] border border-tm-line bg-tm-surface-2" />
-          ) : (
-            <WeekChart bars={weekBars} />
-          )}
-        </div>
+        {now ? (
+          <aside className="fp-side">
+            <TodayCard stats={todayStats} />
+            <SessionsCard
+              rows={rows}
+              loading={loading}
+              clearing={clearing}
+              canClear={savedRows.length > 0}
+              onClearDay={() => void handleClearDay()}
+            />
+            <WeekCard bars={weekBars} loading={loading} />
+          </aside>
+        ) : null}
       </div>
 
-      <MetricsStrip metrics={metrics} />
-
-      <ActivityPanel weeks={heatWeeks} bars={chartBars} />
-
-      <SessionHistory
-        rows={historyRows}
-        weekSeconds={weekSeconds}
-        clearing={clearing}
-        onClearDay={handleClearDay}
-      />
-    </CoffeePageShell>
+      {now ? <YearHeat weeks={heatWeeks} loading={loading} /> : null}
+    </div>
   );
 }
-

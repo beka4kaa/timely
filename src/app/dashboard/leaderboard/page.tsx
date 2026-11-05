@@ -1,463 +1,389 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  Atom,
-  Code2,
-  Crown,
-  Globe2,
-  LayoutGrid,
-  List,
-  Search,
-  Sigma,
-  Trophy,
-  Users,
-} from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  CoffeePageShell,
-  coffeePanelClass,
-} from "@/components/dashboard/coffee-page-shell";
+// Рейтинг: тройка, таблица и всё, что рядом с твоим местом.
+//
+// Участники несовершеннолетние, поэтому строка показывает только имя пользователя и страну.
+// Город в таблицу и в фильтры не выходит: согласия на локальный рейтинг в модели пока нет.
+// Лиг, сезонов и истории баллов на бэкенде нет, поэтому нет зон, стрелок и «быстрее всех».
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
 import { PrivateLeaderboards } from "@/components/leaderboard/PrivateLeaderboards";
+import { initialsOf } from "@/components/shell/sidebar";
+import { SubNav } from "@/components/shell/tab-bar";
+import {
+  listGlobalLeaderboard,
+  listMySubmissions,
+  useMe,
+  type LeaderboardUser,
+} from "@/lib/contest-api";
+import { ownSubmissions, ru } from "@/lib/contest-view";
+import {
+  buildBoard,
+  countryIn,
+  countryName,
+  grouped,
+  neighboursOf,
+  shareToNext,
+  subjectsOf,
+  visibleLines,
+  weeklyGain,
+  type BoardRow,
+} from "@/lib/rating-view";
+import { useResource } from "@/lib/resource-cache";
+import { useNow } from "@/lib/use-now";
+import "@/styles/timely/page-compete.css";
 
-type DisciplineKey = "overall" | "math" | "physics" | "programming";
-type ViewMode = "list" | "tiers";
+const FIRST_ROWS = 10;
+const MORE_ROWS = 50;
 
-interface DisciplineTier {
-  discipline: DisciplineKey;
-  tier: string;
+/** Где смотреть: весь мир, моя страна или мои группы. */
+type Where = "world" | "groups" | { country: string };
+
+function profileHref(row: { id: number; me?: boolean }): string {
+  return row.me ? "/dashboard/profile" : `/dashboard/profile/${row.id}`;
 }
 
-interface LeaderboardEntry {
-  id: string;
-  username: string;
-  title: string;
-  points: number;
-  region: string;
-  tiers: DisciplineTier[];
+function nameOf(row: BoardRow): string {
+  return row.me ? "Ты" : row.name;
 }
 
-const DISCIPLINES: {
-  key: DisciplineKey;
-  label: string;
-  icon: typeof Trophy;
-}[] = [
-  { key: "overall", label: "Overall", icon: Trophy },
-  { key: "math", label: "Math", icon: Sigma },
-  { key: "physics", label: "Physics", icon: Atom },
-  { key: "programming", label: "Coding", icon: Code2 },
-];
-
-const LEADERBOARD: LeaderboardEntry[] = [
-  {
-    id: "1",
-    username: "ItzRealBekzhan",
-    title: "Grandmaster",
-    points: 330,
-    region: "CIS",
-    tiers: [
-      { discipline: "overall", tier: "HT3" },
-      { discipline: "math", tier: "HT1" },
-      { discipline: "physics", tier: "HT1" },
-      { discipline: "programming", tier: "HT1" },
-    ],
-  },
-  {
-    id: "2",
-    username: "coldified",
-    title: "Grandmaster",
-    points: 326,
-    region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "LT1" },
-      { discipline: "math", tier: "LT1" },
-      { discipline: "physics", tier: "LT3" },
-      { discipline: "programming", tier: "HT1" },
-    ],
-  },
-  {
-    id: "3",
-    username: "MathWizard",
-    title: "Grandmaster",
-    points: 290,
-    region: "NA",
-    tiers: [
-      { discipline: "overall", tier: "HT3" },
-      { discipline: "math", tier: "HT1" },
-      { discipline: "physics", tier: "HT1" },
-      { discipline: "programming", tier: "LT3" },
-    ],
-  },
-  {
-    id: "4",
-    username: "janekv",
-    title: "Master",
-    points: 260,
-    region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "LT3" },
-      { discipline: "math", tier: "HT4" },
-      { discipline: "physics", tier: "HT1" },
-      { discipline: "programming", tier: "HT2" },
-    ],
-  },
-  {
-    id: "5",
-    username: "BlvckPhysics",
-    title: "Expert",
-    points: 226,
-    region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "HT2" },
-      { discipline: "math", tier: "HT3" },
-      { discipline: "physics", tier: "HT1" },
-      { discipline: "programming", tier: "LT2" },
-    ],
-  },
-  {
-    id: "6",
-    username: "CodeKylaz",
-    title: "Expert",
-    points: 226,
-    region: "NA",
-    tiers: [
-      { discipline: "overall", tier: "HT3" },
-      { discipline: "math", tier: "LT3" },
-      { discipline: "physics", tier: "LT3" },
-      { discipline: "programming", tier: "HT1" },
-    ],
-  },
-  {
-    id: "7",
-    username: "ninorc15",
-    title: "Expert",
-    points: 211,
-    region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "HT1" },
-      { discipline: "math", tier: "LT3" },
-      { discipline: "physics", tier: "LT1" },
-      { discipline: "programming", tier: "LT2" },
-    ],
-  },
-  {
-    id: "8",
-    username: "quantum_leap",
-    title: "Specialist",
-    points: 186,
-    region: "CIS",
-    tiers: [
-      { discipline: "overall", tier: "LT3" },
-      { discipline: "math", tier: "LT4" },
-      { discipline: "physics", tier: "HT2" },
-      { discipline: "programming", tier: "HT3" },
-    ],
-  },
-  {
-    id: "9",
-    username: "yMiau",
-    title: "Specialist",
-    points: 170,
-    region: "EU",
-    tiers: [
-      { discipline: "overall", tier: "LT3" },
-      { discipline: "math", tier: "LT3" },
-      { discipline: "physics", tier: "LT2" },
-      { discipline: "programming", tier: "LT1" },
-    ],
-  },
-  {
-    id: "10",
-    username: "AlgoKing",
-    title: "Master",
-    points: 270,
-    region: "NA",
-    tiers: [
-      { discipline: "overall", tier: "HT2" },
-      { discipline: "math", tier: "HT2" },
-      { discipline: "physics", tier: "LT4" },
-      { discipline: "programming", tier: "HT1" },
-    ],
-  },
-];
-
-function tierClass(tier: string) {
-  if (tier === "HT1") return "border-tm-accent bg-tm-accent-soft text-tm-accent";
-  if (tier.startsWith("HT")) return "border-tm-accent-line bg-tm-accent-soft text-tm-accent";
-  if (tier === "LT1") return "border-[#b8cdd0] bg-[#e9f1f0] text-[#507074] dark:border-tm-line dark:bg-tm-sky dark:text-tm-ink-2";
-  return "border-tm-line bg-tm-surface-2 text-tm-muted";
+function initialsOfRow(row: BoardRow, myName: string): string {
+  return initialsOf(row.me ? myName : row.name);
 }
 
-function regionClass(region: string) {
-  if (region === "CIS") return "bg-[#e8f1ea] text-[#53705a] dark:bg-tm-mint dark:text-tm-ink-2";
-  if (region === "EU") return "bg-[#e9eef3] text-[#566a7c] dark:bg-tm-sky dark:text-tm-ink-2";
-  return "bg-tm-danger-soft text-tm-danger";
+function pointsWord(value: number, subject: string | null): string {
+  return subject ? ru(value, "очко", "очка", "очков") : ru(value, "балл", "балла", "баллов");
 }
 
-function rankClass(rank: number) {
-  if (rank === 1) return "border-tm-accent bg-tm-accent-soft text-tm-accent";
-  if (rank === 2) return "border-tm-line-strong bg-tm-surface-3 text-tm-ink-2";
-  if (rank === 3) return "border-[#d0aa88] bg-[#f3dfcf] text-[#815b42] dark:border-[#6b4a34] dark:bg-[#3a2a20] dark:text-[#e3b893]";
-  return "border-tm-line bg-tm-surface-2 text-tm-muted";
-}
-
-function TierBadge({ tier }: { tier: string }) {
+function Podium({ rows, myName }: { rows: readonly BoardRow[]; myName: string }) {
+  const first = rows.slice(0, 3);
+  if (!first.length) return null;
   return (
-    <span
-      className={`inline-flex min-w-[34px] items-center justify-center rounded-full border px-2 py-1 text-[9px] font-bold tracking-[0.06em] ${tierClass(tier)}`}
-    >
-      {tier}
-    </span>
-  );
-}
-
-function LeaderboardList({
-  entries,
-}: {
-  entries: LeaderboardEntry[];
-}) {
-  return (
-    <div className={`${coffeePanelClass} overflow-hidden`}>
-      <div className="hidden grid-cols-[58px_1fr_90px_1fr] items-center gap-3 border-b border-tm-line bg-tm-surface-2 px-5 py-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-tm-faint sm:grid">
-        <span className="text-center">#</span>
-        <span>Участник</span>
-        <span className="text-center">Регион</span>
-        <span className="text-center">Уровни</span>
-      </div>
-
-      <div className="divide-y divide-tm-line">
-        {entries.map((entry, index) => {
-          const rank = index + 1;
-          return (
-            <div
-              key={entry.id}
-              className="grid grid-cols-[46px_1fr_auto] items-center gap-3 px-4 py-3.5 transition-colors hover:bg-tm-surface-2 sm:grid-cols-[58px_1fr_90px_1fr] sm:px-5"
-            >
-              <div className="flex justify-center">
-                <span
-                  className={`grid h-9 w-9 place-items-center rounded-[11px] border text-[11px] font-bold tabular-nums ${rankClass(rank)}`}
-                >
-                  {rank === 1 ? <Crown className="h-3.5 w-3.5" /> : rank}
-                </span>
-              </div>
-
-              <div className="flex min-w-0 items-center gap-3">
-                <Avatar className="h-10 w-10 shrink-0 border border-tm-line">
-                  <AvatarFallback className="bg-tm-surface-2 text-[10px] font-semibold text-tm-muted">
-                    {entry.username.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <p className="truncate text-[12px] font-semibold text-tm-ink">
-                    {entry.username}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-tm-faint">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#68a079]" />
-                    {entry.title} · {entry.points} pts
-                  </p>
-                </div>
-              </div>
-
-              <div className="hidden justify-center sm:flex">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[9px] font-semibold ${regionClass(entry.region)}`}
-                >
-                  {entry.region}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap justify-end gap-1.5 sm:justify-center">
-                {entry.tiers.map((tier) => (
-                  <TierBadge
-                    key={`${entry.id}-${tier.discipline}`}
-                    tier={tier.tier}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TierColumns({
-  entries,
-  discipline,
-}: {
-  entries: LeaderboardEntry[];
-  discipline: DisciplineKey;
-}) {
-  const groups = useMemo(() => {
-    const result = new Map<string, LeaderboardEntry[]>();
-    entries.forEach((entry) => {
-      const tier =
-        entry.tiers.find((item) => item.discipline === discipline)?.tier ??
-        "—";
-      result.set(tier, [...(result.get(tier) ?? []), entry]);
-    });
-    return Array.from(result.entries()).sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-  }, [discipline, entries]);
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {groups.map(([tier, players]) => (
-        <section key={tier} className={`${coffeePanelClass} overflow-hidden`}>
-          <header className="flex items-center justify-between border-b border-tm-line bg-tm-surface-2 px-4 py-3">
-            <TierBadge tier={tier} />
-            <span className="text-[10px] text-tm-faint">
-              {players.length} участников
-            </span>
-          </header>
-          <div className="divide-y divide-tm-line p-1.5">
-            {players.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 hover:bg-tm-surface-2"
-              >
-                <Avatar className="h-8 w-8 border border-tm-line">
-                  <AvatarFallback className="bg-tm-surface-2 text-[9px] font-semibold text-tm-muted">
-                    {entry.username.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-tm-ink-2">
-                  {entry.username}
-                </span>
-                <span className="text-[10px] tabular-nums text-tm-accent">
-                  {entry.points}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+    <section className="podium" aria-label="Первые трое">
+      {first.map((row, index) => (
+        <Link key={row.id} className={`pod r${index + 1}`} href={profileHref(row)}>
+          <span className="pod-av" aria-hidden="true">
+            {initialsOfRow(row, myName)}
+          </span>
+          <span className="pod-name">{nameOf(row)}</span>
+          {countryName(row.countryCode) ? <span className="pod-where">{countryName(row.countryCode)}</span> : null}
+          <span className="pod-pts">{grouped(row.points)}</span>
+          <span className="pod-base" aria-hidden="true">
+            {row.place}
+          </span>
+        </Link>
       ))}
-    </div>
+    </section>
+  );
+}
+
+function Row({ row, myName }: { row: BoardRow; myName: string }) {
+  return (
+    <li>
+      <Link
+        className={row.me ? "lr rb-row is-me glass" : "lr rb-row"}
+        href={profileHref(row)}
+        aria-current={row.me ? "true" : undefined}
+      >
+        <span className="n">{grouped(row.place)}</span>
+        <span className="av" aria-hidden="true">
+          {initialsOfRow(row, myName)}
+        </span>
+        <span className="who">
+          <b>{nameOf(row)}</b>
+          {countryName(row.countryCode) ? <small>{countryName(row.countryCode)}</small> : null}
+        </span>
+        <span className="m tr">{row.tier ?? ""}</span>
+        <span className="p">{grouped(row.points)}</span>
+      </Link>
+    </li>
+  );
+}
+
+function MeCard({
+  rows,
+  me,
+  whereText,
+  subject,
+  gain,
+}: {
+  rows: readonly BoardRow[];
+  me: BoardRow;
+  whereText: string;
+  subject: string | null;
+  gain: number;
+}) {
+  const near = neighboursOf(rows, me);
+  const share = shareToNext(me, near);
+  const ahead = near.above ? near.above.points - me.points : 0;
+  const behind = near.below ? me.points - near.below.points : 0;
+  const unit = subject ? "рейтинга" : pointsWord(me.points, null);
+
+  return (
+    <>
+      <section className="me-card glass" aria-label="Твоё место">
+        <p className="me-place">
+          <b>#{grouped(me.place)}</b>
+          <span>{whereText}</span>
+        </p>
+        <p className="me-sub">
+          {grouped(me.points)} {unit}
+          {!subject && gain > 0 ? `, +${grouped(gain)} за неделю` : ""}
+        </p>
+        <p className="me-next">
+          {near.above
+            ? `До ${grouped(near.above.place)}-го места ${grouped(ahead)} ${pointsWord(ahead, subject)}`
+            : "Ты на первом месте"}
+        </p>
+        {share !== null ? (
+          <span className="tube rb-tube">
+            <i style={{ width: `${share}%` }} />
+          </span>
+        ) : null}
+        <Link className="btn btn-main" href="/dashboard/arena/solve">
+          К контестам
+        </Link>
+      </section>
+      {near.above || near.below ? (
+        <section className="rb-card card" aria-label="Рядом с тобой">
+          <h2>Рядом с тобой</h2>
+          <ul>
+            {near.above ? (
+              <li>
+                <Link href={profileHref(near.above)}>{near.above.name}</Link>
+                <span className="m">впереди на {grouped(ahead)}</span>
+              </li>
+            ) : null}
+            {near.below ? (
+              <li>
+                <Link href={profileHref(near.below)}>{near.below.name}</Link>
+                <span className="m">позади на {grouped(behind)}</span>
+              </li>
+            ) : null}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function Board({
+  users,
+  meId,
+  meLoading,
+  myUser,
+  myName,
+  where,
+  subject,
+  gain,
+  onSubject,
+}: {
+  users: readonly LeaderboardUser[];
+  meId: number | null;
+  meLoading: boolean;
+  myUser: LeaderboardUser | null;
+  myName: string;
+  where: Exclude<Where, "groups">;
+  subject: string | null;
+  gain: number;
+  onSubject: (subject: string | null) => void;
+}) {
+  const country = where === "world" ? null : where.country;
+  const rows = useMemo(() => buildBoard(users, { subject, country }, meId), [users, subject, country, meId]);
+  const [limit, setLimit] = useState(FIRST_ROWS);
+  useEffect(() => setLimit(FIRST_ROWS), [subject, country]);
+
+  const me = rows.find((row) => row.me) ?? null;
+  const lines = visibleLines(rows, limit);
+  const whereTitle = country ? countryName(country) : "Все ученики";
+  const whereText = country ? countryIn(country) : "среди всех";
+  const title = subject ? `${whereTitle}, ${subject.toLowerCase()}` : whereTitle;
+
+  return (
+    <>
+      {rows.length ? (
+        <Podium rows={rows} myName={myName} />
+      ) : (
+        <section className="ct-note card ct-gap">
+          <h2>В этой таблице пока никого</h2>
+          <p>Выбери другой предмет или посмотри всех учеников.</p>
+          <button className="btn btn-line" type="button" onClick={() => onSubject(null)}>
+            Все предметы
+          </button>
+        </section>
+      )}
+
+      <div className="lb">
+        <div className="lb-main">
+          {rows.length ? (
+            <>
+              <div className="lb-head">
+                <h2>{title}</h2>
+                <span>
+                  {grouped(rows.length)} {ru(rows.length, "участник", "участника", "участников")}
+                </span>
+              </div>
+              <ol>
+                {lines.map((line, index) =>
+                  line.type === "row" ? (
+                    <Row key={line.row.id} row={line.row} myName={myName} />
+                  ) : (
+                    <li key={`gap-${index}`} className="lr-gap">
+                      <button className="rb-gap" type="button" onClick={() => setLimit((value) => value + MORE_ROWS)}>
+                        ещё {grouped(line.count)} {ru(line.count, "человек", "человека", "человек")}
+                      </button>
+                    </li>
+                  ),
+                )}
+              </ol>
+            </>
+          ) : null}
+        </div>
+
+        <aside className="lb-side">
+          {me ? (
+            <MeCard rows={rows} me={me} whereText={whereText} subject={subject} gain={gain} />
+          ) : meLoading ? null : (
+            <section className="rb-card card" aria-label="Твоё место">
+              <h2>Твоего места здесь пока нет</h2>
+              <p className="rb-text">
+                {subject
+                  ? `По предмету «${subject}» у тебя ещё нет рейтинга.`
+                  : myUser
+                    ? "В этой таблице тебя нет."
+                    : "Твой аккаунт пока не участвует в рейтинге."}
+              </p>
+            </section>
+          )}
+          <section className="rb-card card quiet" aria-label="Откуда берутся баллы">
+            <h2>Откуда берутся баллы</h2>
+            <ul>
+              <li>
+                <span>Старт у всех</span>
+                <span className="m">{grouped(1200)}</span>
+              </li>
+              <li>
+                <span>Решение приняли</span>
+                <span className="m">+ баллы задачи</span>
+              </li>
+            </ul>
+          </section>
+          {myUser?.ratings.length ? (
+            <section className="rb-card card quiet" aria-label="Твой рейтинг по предметам">
+              <h2>Твой рейтинг по предметам</h2>
+              <ul className="subj-rate">
+                {myUser.ratings.map((rating) => (
+                  <li key={rating.discipline_name}>
+                    <button
+                      className="subj-l rb-subj"
+                      type="button"
+                      aria-pressed={subject === rating.discipline_name}
+                      onClick={() => onSubject(rating.discipline_name)}
+                    >
+                      <span>{rating.discipline_name}</span>
+                      <b>{grouped(rating.elo_score)}</b>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+    </>
   );
 }
 
 export default function LeaderboardPage() {
-  const [scope, setScope] = useState<"global" | "private">("global");
-  const [discipline, setDiscipline] = useState<DisciplineKey>("overall");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [search, setSearch] = useState("");
+  const { me, loading: meLoading } = useMe();
+  const board = useResource("compete:leaderboard", listGlobalLeaderboard, { ttl: 60_000 });
+  const submissions = useResource("compete:submissions", listMySubmissions, { ttl: 60_000 });
+  const now = useNow(60_000);
 
-  const filtered = useMemo(
-    () =>
-      LEADERBOARD.filter((entry) =>
-        entry.username.toLowerCase().includes(search.toLowerCase()),
-      ),
-    [search],
-  );
+  const [subject, setSubject] = useState<string | null>(null);
+  const [where, setWhere] = useState<Where>("world");
+
+  const users = board.data ?? null;
+  const meId = me?.id ?? null;
+  const myUser = users?.find((user) => user.id === meId) ?? null;
+  const myCountry = myUser?.country_code ?? null;
+  const subjects = useMemo(() => (users ? subjectsOf(users) : []), [users]);
+  const gain = now && submissions.data ? weeklyGain(ownSubmissions(submissions.data, meId), now) : 0;
+  const isGroups = where === "groups";
+  const isCountry = typeof where === "object";
 
   return (
-    <CoffeePageShell>
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex w-fit rounded-full border border-tm-line bg-tm-surface-2 p-1">
-          <button
-            type="button"
-            onClick={() => setScope("global")}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium ${
-              scope === "global"
-                ? "bg-tm-surface text-tm-accent shadow-sm"
-                : "text-tm-muted"
-            }`}
-          >
-            <Globe2 className="h-3.5 w-3.5" />
-            Глобальный
+    <div className="content view">
+      <SubNav group="compete" />
+      <header className="head">
+        <h1 className="title">Рейтинг</h1>
+      </header>
+
+      <div className="rb-filters">
+        {subjects.length && !isGroups ? (
+          <div className="tabs scroll" role="group" aria-label="Предмет">
+            <button type="button" aria-pressed={subject === null} onClick={() => setSubject(null)}>
+              Все
+            </button>
+            {subjects.map((name) => (
+              <button key={name} type="button" aria-pressed={subject === name} onClick={() => setSubject(name)}>
+                {name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="tabs scroll" role="group" aria-label="Где">
+          <button type="button" aria-pressed={where === "world"} onClick={() => setWhere("world")}>
+            Все ученики
           </button>
-          <button
-            type="button"
-            onClick={() => setScope("private")}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[11px] font-medium ${
-              scope === "private"
-                ? "bg-tm-surface text-tm-accent shadow-sm"
-                : "text-tm-muted"
-            }`}
-          >
-            <Users className="h-3.5 w-3.5" />
-            Приватные
+          {myCountry ? (
+            <button type="button" aria-pressed={isCountry} onClick={() => setWhere({ country: myCountry })}>
+              {countryName(myCountry)}
+            </button>
+          ) : null}
+          <button type="button" aria-pressed={isGroups} onClick={() => setWhere("groups")}>
+            Мои группы
           </button>
         </div>
-
-        {scope === "global" && (
-          <label className="flex h-10 w-full items-center gap-2 rounded-full border border-tm-line bg-tm-surface px-3.5 text-tm-muted shadow-sm lg:w-[260px]">
-            <Search className="h-3.5 w-3.5" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Найти участника…"
-              className="min-w-0 flex-1 bg-transparent text-[11px] text-tm-ink-2 outline-none placeholder:text-tm-faint"
-            />
-          </label>
-        )}
       </div>
 
-      {scope === "private" ? (
-        <section className={`${coffeePanelClass} p-5`}>
-          <PrivateLeaderboards />
+      {isGroups ? (
+        <PrivateLeaderboards meId={meId} noAccount={!meLoading && !me} />
+      ) : !users && board.error ? (
+        <section className="ct-note card" role="alert">
+          <h2>Рейтинг не загрузился</h2>
+          <p>Проверь связь и попробуй ещё раз.</p>
+          <button className="btn btn-line" type="button" onClick={board.reload}>
+            Повторить
+          </button>
+        </section>
+      ) : !users ? (
+        <p className="small-note" role="status">
+          Загружаю рейтинг…
+        </p>
+      ) : !users.length ? (
+        <section className="ct-note card">
+          <h2>В рейтинге пока никого</h2>
+          <p>Баллы появятся, когда проверят первое решение. Следи за контестами.</p>
+          <Link className="btn btn-line" href="/dashboard/arena/solve">
+            Контесты
+          </Link>
         </section>
       ) : (
-        <>
-          <div className="mb-5 flex flex-col gap-3 rounded-[18px] border border-tm-line bg-tm-surface p-2.5 shadow-[0_8px_28px_rgba(67,50,31,0.05)] sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-1">
-              {DISCIPLINES.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setDiscipline(item.key)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[10px] font-medium transition-colors ${
-                      discipline === item.key
-                        ? "bg-tm-accent-soft text-tm-accent"
-                        : "text-tm-muted hover:bg-tm-surface-2"
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex rounded-full border border-tm-line bg-tm-surface-2 p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("list")}
-                aria-label="Список"
-                className={`grid h-7 w-8 place-items-center rounded-full ${
-                  viewMode === "list"
-                    ? "bg-tm-surface text-tm-accent shadow-sm"
-                    : "text-tm-faint"
-                }`}
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("tiers")}
-                aria-label="По уровням"
-                className={`grid h-7 w-8 place-items-center rounded-full ${
-                  viewMode === "tiers"
-                    ? "bg-tm-surface text-tm-accent shadow-sm"
-                    : "text-tm-faint"
-                }`}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {viewMode === "list" ? (
-            <LeaderboardList entries={filtered} />
-          ) : (
-            <TierColumns entries={filtered} discipline={discipline} />
-          )}
-        </>
+        <Board
+          users={users}
+          meId={meId}
+          meLoading={meLoading}
+          myUser={myUser}
+          myName={me?.name ?? ""}
+          where={where}
+          subject={subject}
+          gain={gain}
+          onSubject={setSubject}
+        />
       )}
-    </CoffeePageShell>
+    </div>
   );
 }
