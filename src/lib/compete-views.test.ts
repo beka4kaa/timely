@@ -24,7 +24,7 @@ import {
   streaksOf,
   weekBars,
 } from "./profile-view";
-import { buildBoard, neighboursOf, shareToNext, subjectsOf, visibleLines, weeklyGain } from "./rating-view";
+import { buildBoard, collectBoard, neighboursOf, shareToNext, subjectsOf, visibleLines, weeklyGain } from "./rating-view";
 
 function contest(patch: Partial<Contest> = {}): Contest {
   return {
@@ -59,7 +59,7 @@ function submission(patch: Partial<Submission> = {}): Submission {
 }
 
 function user(id: number, elo: number, patch: Partial<LeaderboardUser> = {}): LeaderboardUser {
-  return { id, username: `u${id}`, country_code: null, city: null, overall_elo: elo, ratings: [], ...patch };
+  return { id, username: `u${id}`, country_code: null, overall_elo: elo, ratings: [], ...patch };
 }
 
 describe("контесты", () => {
@@ -162,6 +162,48 @@ describe("рейтинг", () => {
     user(3, 1500, { country_code: "KZ", ratings: [{ discipline_name: "Физика", elo_score: 1700, tier_level: "LT1" }] }),
     user(4, 1200, { country_code: "KZ", ratings: [{ discipline_name: "Химия", elo_score: 1100, tier_level: "LT4" }] }),
   ];
+
+  describe("страницы рейтинга", () => {
+    const page = (rows: LeaderboardUser[], next: string | null) => ({ count: 3, next, previous: null, results: rows });
+
+    it("собирает все страницы в один список, прося следующую по номеру", async () => {
+      const asked: number[] = [];
+      const rows = await collectBoard(async (number) => {
+        asked.push(number);
+        // Адрес из `next` за прокси бывает с http, поэтому верить можно только тому, что он есть.
+        return number === 1 ? page([user(1, 1500), user(2, 1400)], "http://internal/?page=2") : page([user(3, 1300)], null);
+      });
+      assert.deepEqual(asked, [1, 2]);
+      assert.deepEqual(rows.map((row) => row.id), [1, 2, 3]);
+    });
+
+    it("не считает дважды ученика, сдвинувшегося между запросами", async () => {
+      const rows = await collectBoard(async (number) =>
+        number === 1 ? page([user(1, 1500), user(2, 1400)], "next") : page([user(2, 1400), user(3, 1300)], null),
+      );
+      assert.deepEqual(rows.map((row) => row.id), [1, 2, 3]);
+    });
+
+    it("понимает сервер, который ещё отдаёт весь список сразу", async () => {
+      const asked: number[] = [];
+      const rows = await collectBoard(async (number) => {
+        asked.push(number);
+        return [user(1, 1500), user(2, 1400)];
+      });
+      assert.deepEqual(asked, [1]);
+      assert.equal(rows.length, 2);
+    });
+
+    it("падает, если страница не загрузилась, а не показывает часть таблицы", async () => {
+      await assert.rejects(
+        collectBoard(async (number) => {
+          if (number === 2) throw new Error("нет связи");
+          return page([user(1, 1500)], "next");
+        }),
+        /нет связи/,
+      );
+    });
+  });
 
   it("равные баллы делят место", () => {
     const rows = buildBoard(users, { subject: null, country: null }, 3);

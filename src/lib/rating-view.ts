@@ -1,7 +1,27 @@
 // Таблица рейтинга: кто на каком месте и что показать.
-// Сервер отдаёт всех сразу, поэтому фильтр и места считаются здесь, без React и сети.
+// Сервер отдаёт рейтинг страницами, а фильтр и места считаются здесь по всему списку,
+// без React и сети: `collectBoard` собирает страницы в один список.
 
-import type { LeaderboardUser } from "./contest-api";
+import type { LeaderboardPage, LeaderboardUser } from "./contest-api";
+
+/**
+ * Весь рейтинг одним списком. Следующую страницу просим по номеру, а не по адресу из `next`:
+ * за прокси в нём может оказаться http. Ученик, сдвинувшийся между запросами, встретится
+ * дважды, поэтому строки собираются по номеру ученика. Сервер старше постраничного отдаёт
+ * весь список сразу: так бывает, пока он выкатывается позже приложения.
+ */
+export async function collectBoard(
+  fetchPage: (page: number) => Promise<LeaderboardPage | LeaderboardUser[]>,
+): Promise<LeaderboardUser[]> {
+  const rows = new Map<number, LeaderboardUser>();
+  for (let page = 1; ; page += 1) {
+    const body = await fetchPage(page);
+    for (const row of Array.isArray(body) ? body : body.results) {
+      if (!rows.has(row.id)) rows.set(row.id, row);
+    }
+    if (Array.isArray(body) || !body.next) return Array.from(rows.values());
+  }
+}
 
 /** Коды стран из `CustomUser.COUNTRY_CHOICES`. Незнакомый код показываем как есть. */
 const COUNTRY_NAMES: Record<string, string> = { KZ: "Казахстан", RU: "Россия", US: "США" };

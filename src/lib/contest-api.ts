@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { authFetch } from "@/lib/auth-fetch"
 import { BACKEND_URL } from "@/lib/api-utils"
+import { collectBoard } from "@/lib/rating-view"
 
 export type Difficulty = "easy" | "medium" | "hard"
 export type SubmissionStatus = "pending" | "approved" | "rejected"
@@ -31,6 +32,8 @@ export interface Me {
   show_in_leaderboard: boolean
   /** Под этим именем ученика увидят другие. Адреса в нём нет. */
   public_username: string
+  /** Свой город. Другим он не виден: в рейтинге этого поля нет. */
+  city: string | null
   authenticated?: boolean
 }
 
@@ -75,9 +78,15 @@ export interface LeaderboardUser {
   id: number
   username: string
   country_code: string | null
-  city: string | null
   overall_elo: number
   ratings: { discipline_name: string; elo_score: number; tier_level: string }[]
+}
+
+export interface LeaderboardPage {
+  count: number
+  next: string | null
+  previous: string | null
+  results: LeaderboardUser[]
 }
 
 export interface PrivateBoard {
@@ -176,8 +185,8 @@ export const rejectSubmission = async (id: number): Promise<Submission> =>
   unwrap(await authFetch(url(`/api/submissions/${id}/reject/`), { method: "POST" }))
 
 // ── leaderboards ─────────────────────────────────────────────────────
-export const listGlobalLeaderboard = async (): Promise<LeaderboardUser[]> =>
-  unwrap(await authFetch(url("/api/leaderboard/")))
+export const listGlobalLeaderboard = (): Promise<LeaderboardUser[]> =>
+  collectBoard(async (page) => unwrap(await authFetch(url(`/api/leaderboard/?page=${page}`))))
 
 /** Строка одного ученика из рейтинга: всё, что о нём можно показать другим. */
 export const getLeaderboardUser = async (id: number): Promise<LeaderboardUser> =>

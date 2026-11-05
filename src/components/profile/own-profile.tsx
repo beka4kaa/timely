@@ -65,7 +65,7 @@ export function OwnProfile() {
 
   const users = data.board.data;
   const myUser = users?.find((user) => user.id === me?.id) ?? null;
-  const where = [myUser?.city, countryName(myUser?.country_code)].filter(Boolean).join(", ");
+  const where = [me?.city, countryName(myUser?.country_code)].filter(Boolean).join(", ");
 
   const activity = useMemo(
     () => mergeActivity(data.summary.data?.daily ?? {}, data.habits.data ?? []),
