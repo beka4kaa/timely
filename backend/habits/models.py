@@ -10,6 +10,10 @@ class Habit(models.Model):
     goal_text = models.CharField(max_length=120, blank=True, default='')
     # Forgiving streaks: how many gap days a streak can survive ("shields").
     freeze_budget = models.PositiveSmallIntegerField(default=2)
+    # К какой цели ведёт привычка. Удалили цель: привычка остаётся, уже без неё.
+    goal = models.ForeignKey(
+        'planner.Goal', null=True, blank=True, on_delete=models.SET_NULL, related_name='habits',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

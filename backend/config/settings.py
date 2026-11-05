@@ -349,6 +349,28 @@ CURRICULUM_EMBEDDINGS_ENABLED = os.getenv(
 if "test" in sys.argv:
     CURRICULUM_EMBEDDINGS_ENABLED = False
 
+# Основная текстовая модель. Роли (`curriculum/model_registry.py`) читают её из окружения,
+# поэтому умолчание кладём туда же: чтобы включить весь текстовый ИИ, в продакшене
+# достаточно одного OPENROUTER_API_KEY. Без ключа ничего не меняется: роли остаются
+# пустыми и отвечают честным «не настроено», а тесты в сеть не уходят.
+DEFAULT_TEXT_LLM_MODEL = "z-ai/glm-5.3"
+if "test" not in sys.argv and (os.getenv("OPENROUTER_API_KEY") or os.getenv("TEXT_LLM_API_KEY")):
+    os.environ.setdefault("TEXT_LLM_MODEL", DEFAULT_TEXT_LLM_MODEL)
+
+# Научная доска: дорогие проходы модели и картинки. Пока выключена в продакшене, вернуть
+# можно этой переменной и NEXT_PUBLIC_BOARD_ENABLED на фронтенде. Тесты проверяют её логику.
+BOARD_ENABLED = "test" in sys.argv or os.getenv("BOARD_ENABLED", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+# Разбор «что человек написал»: быстрый и дешёвый вызов, ученик ждёт его перед ответом.
+UNDERSTAND_MODEL = os.getenv("UNDERSTAND_MODEL", "z-ai/glm-5.3-flash")
+UNDERSTAND_TIMEOUT = int(os.getenv("UNDERSTAND_TIMEOUT", "4"))
+
+
 # Тот же рубильник для ролей планировщика курса — четвёртый по счёту и по той же
 # причине. `curriculum.model_registry.resolve_model` читает окружение НАПРЯМУЮ, а
 # не settings, поэтому выключателем служит снятие самих переменных: без
@@ -487,7 +509,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3540
 # ──────────────────────────────────────────────────────────────────────────────
 PLANNING_MODEL = os.getenv(
     "PLANNING_MODEL",
-    os.getenv("TEXT_LLM_MODEL", "deepseek/deepseek-v4-flash"),
+    os.getenv("TEXT_LLM_MODEL", DEFAULT_TEXT_LLM_MODEL),
 )
 PLANNING_ENABLED = os.getenv("PLANNING_ENABLED", "true").lower() in {
     "1",

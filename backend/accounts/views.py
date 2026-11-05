@@ -11,7 +11,7 @@ from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboar
 from .serializers import (
     LeaderboardSerializer,
     TaskSerializer, TaskSubmissionSerializer, ContestSerializer,
-    PrivateLeaderboardSerializer, MeSerializer, AdminUserSerializer,
+    PrivateLeaderboardSerializer, MeSerializer, MeUpdateSerializer, AdminUserSerializer,
     display_name, public_username,
 )
 
@@ -67,13 +67,30 @@ class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset
 
 class MeView(APIView):
-    """GET /api/me/ — current user + role flags (for frontend admin gating)."""
+    """GET /api/me/ — current user + role flags (for frontend admin gating).
+
+    PATCH /api/me/ {bio} — the student's own description. A signed-in account may
+    have no row here yet (sign-up doesn't create one), and saving a description
+    doesn't create it either: a new row would put them on the public leaderboard.
+    """
     permission_classes = [AllowAny]
 
     def get(self, request):
         user = current_user(request)
         if not user:
             return Response({'authenticated': False}, status=status.HTTP_200_OK)
+        return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
+
+    def patch(self, request):
+        user = current_user(request)
+        if not user:
+            return Response(
+                {'error': 'Профиль ещё не создан.', 'code': 'no_profile'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = MeUpdateSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
 
 

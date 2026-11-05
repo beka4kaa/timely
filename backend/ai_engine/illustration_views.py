@@ -17,6 +17,7 @@ import logging
 
 from rest_framework import status
 from rest_framework.response import Response
+from .board_gate import BoardRequiredMixin
 from rest_framework.views import APIView
 
 from .chat_views import error_response
@@ -31,7 +32,7 @@ from .vector_pipeline import try_build_vector_illustration
 logger = logging.getLogger(__name__)
 
 
-class ImageModelsView(APIView):
+class ImageModelsView(BoardRequiredMixin, APIView):
     """GET /api/ai/image-models/ — модели, доступные для выбора на доске.
 
     Фронтенд рисует селектор по этому списку и сверяет с ним значение из
@@ -43,7 +44,7 @@ class ImageModelsView(APIView):
         return Response(list_models_payload())
 
 
-class IllustrationView(APIView):
+class IllustrationView(BoardRequiredMixin, APIView):
     """
     Body: { command: {...image_with_labels...}, topic_hint?, style?, palette?,
             reference_image_url?, skip_grounding?, image_model?, image_quality? }

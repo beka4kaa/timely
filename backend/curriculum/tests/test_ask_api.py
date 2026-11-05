@@ -108,6 +108,14 @@ class AskStreamTests(TestCase):
         self.assertIn("content", names)
         self.assertIn("citations", names)
 
+    def test_цитата_приходит_вместе_со_ссылкой(self):
+        """Источник виден с самим фрагментом: за ним не нужно идти вторым поиском."""
+        _, events = self._ask("Импульс это произведение массы на скорость.")
+
+        items = dict(events)["citations"]["items"]
+        self.assertTrue(items)
+        self.assertIn("Импульс тела", items[0]["excerpt"])
+
     def test_заголовки_запрещают_буферизацию(self):
         """Без них прокси копит поток и отдаёт всё одним куском в конце.
 
@@ -282,3 +290,40 @@ class WithoutSubjectStreamTests(TestCase):
         response, _ = self._ask("ответ", goal_id=str(stranger.pk))
 
         self.assertEqual(response.status_code, 404)
+
+
+class AskModesTests(TestCase):
+    """Режим чата меняет то, что слышит модель, и больше ничего."""
+
+    def _system(self, **body):
+        seen: list[list[dict]] = []
+
+        def capture(self, messages, **kwargs):
+            seen.append(messages)
+            return iter(["ответ"])
+
+        with mock.patch("ai_engine.text_llm.TextModel.stream_content", capture):
+            response = self.client.post(
+                URL,
+                data=json.dumps({"message": "помоги с задачей", **body}),
+                content_type="application/json",
+                **_auth(OWNER),
+            )
+            self.assertEqual(response.status_code, 200)
+            _events(response)
+        return seen[0][0]["content"]
+
+    def test_в_любом_режиме_действуют_общие_правила(self):
+        for mode in ("plain", "plan", "guide", "ideas", "check"):
+            self.assertIn("Не решай задачу за ученика", self._system(mode=mode))
+
+    def test_наводящая_помощь_не_даёт_решение_сразу(self):
+        self.assertIn("Режим: наводящая помощь", self._system(mode="guide"))
+
+    def test_планирование_не_обещает_менять_расписание(self):
+        self.assertIn("Расписание ты не меняешь", self._system(mode="plan"))
+
+    def test_без_режима_и_с_незнакомым_обычный(self):
+        self.assertIn("Режим: обычный разговор", self._system())
+        self.assertIn("Режим: обычный разговор", self._system(mode="contest"))
+        self.assertIn("Режим: обычный разговор", self._system(mode=["plan"]))

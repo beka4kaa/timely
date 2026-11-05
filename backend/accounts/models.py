@@ -32,6 +32,8 @@ class CustomUser(AbstractUser):
         default='free',
         db_index=True,
     )
+    # «О себе» из профиля. Видит только сам ученик: в рейтинге и поиске этого поля нет.
+    bio = models.CharField(max_length=280, blank=True, default='')
 
 class Discipline(models.Model):
     name = models.CharField(max_length=255)

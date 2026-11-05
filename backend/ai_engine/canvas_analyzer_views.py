@@ -2,6 +2,7 @@ import logging
 
 from rest_framework import status
 from rest_framework.response import Response
+from .board_gate import BoardRequiredMixin
 from rest_framework.views import APIView
 
 from .canvas_analyzer import AnalyzerValidationError, analyze_canvas_with_glm
@@ -11,7 +12,7 @@ from .vector_renderer import VectorRenderer, svg_to_png_data_url
 logger = logging.getLogger(__name__)
 
 
-class CanvasAnalyzerView(APIView):
+class CanvasAnalyzerView(BoardRequiredMixin, APIView):
     """
     Smart Canvas Analyzer endpoint.
 

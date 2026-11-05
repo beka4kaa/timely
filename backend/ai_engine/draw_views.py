@@ -2,6 +2,7 @@ import json
 import re
 import logging
 
+from .board_gate import BoardRequiredMixin
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -546,7 +547,7 @@ def _sanitize_board_data(parsed):
     }
 
 
-class WhiteboardDrawView(APIView):
+class WhiteboardDrawView(BoardRequiredMixin, APIView):
     """
     POST /api/ai/draw/
     Body: { "message": "...", "history": [ {role, content}, ... ] }

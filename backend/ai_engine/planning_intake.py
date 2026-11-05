@@ -364,7 +364,7 @@ def _ask_model(
     asked_ids: list[str],
 ) -> tuple[dict[str, Any] | None, str]:
     model_name = str(
-        getattr(settings, "PLANNING_MODEL", "deepseek/deepseek-v4-flash")
+        getattr(settings, "PLANNING_MODEL", settings.DEFAULT_TEXT_LLM_MODEL)
     )
     timeout = max(3, min(int(getattr(settings, "PLANNING_TIMEOUT", 20)), 60))
     max_tokens = int(getattr(settings, "PLANNING_MAX_TOKENS", 700))
@@ -715,7 +715,7 @@ def confirm_planning_intake(data: Any) -> dict[str, Any]:
         "summary": _summary(answers),
         "plan": _build_lesson_plan(answers),
         "model": str(
-            getattr(settings, "PLANNING_MODEL", "deepseek/deepseek-v4-flash")
+            getattr(settings, "PLANNING_MODEL", settings.DEFAULT_TEXT_LLM_MODEL)
         ),
     }
 

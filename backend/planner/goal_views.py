@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
-from .models import Goal, GoalLink, has_parent_cycle
+from .models import Goal, GoalLink, has_parent_cycle, settle_main_goal
 from .serializers import GoalSerializer, GoalLinkSerializer
 
 
@@ -11,13 +11,14 @@ class GoalViewSet(viewsets.ModelViewSet):
     Full CRUD for goals. Supports:
       - filtering by year / month / status / type
       - dependency graph queries
-      - bulk sync from frontend Zustand store
+      - one main goal per student, kept here on every write
+      - bulk sync (a full replace: never use it for a single goal)
     """
     serializer_class = GoalSerializer
 
     def get_queryset(self):
         user_email = getattr(self.request, 'user_email', None)
-        qs = Goal.objects.select_related('parent').prefetch_related('children')
+        qs = Goal.objects.select_related('parent').prefetch_related('children', 'lessons')
         if not user_email:
             return qs.none()
         qs = qs.filter(user_email=user_email)
@@ -41,7 +42,24 @@ class GoalViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user_email = getattr(self.request, 'user_email', None)
-        serializer.save(user_email=user_email)
+        with transaction.atomic():
+            # `is_main` выставляет только `settle_main_goal`: иначе запись упрётся в
+            # ограничение раньше, чем прежняя главная успеет перестать быть главной.
+            goal = serializer.save(user_email=user_email, is_main=False)
+            settle_main_goal(user_email, prefer=goal if serializer.validated_data.get('is_main') else None)
+        goal.refresh_from_db()
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            goal = serializer.save(is_main=serializer.instance.is_main)
+            settle_main_goal(goal.user_email, prefer=goal if serializer.validated_data.get('is_main') else None)
+        goal.refresh_from_db()
+
+    def perform_destroy(self, instance):
+        user_email = instance.user_email
+        with transaction.atomic():
+            instance.delete()
+            settle_main_goal(user_email)
 
     # ── Dependency queries ────────────────────────────────────
 
@@ -90,14 +108,20 @@ class GoalViewSet(viewsets.ModelViewSet):
     def progress(self, request, pk=None):
         """PATCH /api/goals/{id}/progress/ — set manual progress."""
         goal = self.get_object()
-        value = request.data.get('progress')
-        if value is None or not (0 <= int(value) <= 100):
+        try:
+            value = int(request.data.get('progress'))
+        except (TypeError, ValueError):
+            value = -1
+        if not 0 <= value <= 100:
             return Response({'error': 'progress must be 0–100'}, status=status.HTTP_400_BAD_REQUEST)
-        goal.progress = int(value)
-        if int(value) == 100:
+        goal.progress = value
+        if value == 100:
             goal.status = 'done'
-        goal.save()
-        return Response(GoalSerializer(goal).data)
+        with transaction.atomic():
+            goal.save()
+            settle_main_goal(goal.user_email)
+        goal.refresh_from_db()
+        return Response(GoalSerializer(goal, context=self.get_serializer_context()).data)
 
     # ── Bulk sync from frontend ───────────────────────────────
 
@@ -161,6 +185,7 @@ class GoalViewSet(viewsets.ModelViewSet):
 
             # Soft-delete goals not in payload
             Goal.objects.filter(user_email=user_email).exclude(id__in=incoming_ids).update(status='archived')
+            settle_main_goal(user_email)
 
             # Replace all links for this user
             existing_goal_ids = set(Goal.objects.filter(user_email=user_email).values_list('id', flat=True))

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from config.ownership import OwnedRelationsMixin, request_email
+from curriculum.models import LearningGoal
 from .models import DayPlan, Block, Segment, Subtask, TimerState, ScheduleSlot, Goal, GoalLink, has_parent_cycle
 
 
@@ -25,6 +26,11 @@ class GoalSerializer(serializers.ModelSerializer):
     currentAmount   = serializers.DecimalField(source='current_amount', max_digits=15, decimal_places=2, required=False, allow_null=True)
     createdAt       = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt       = serializers.DateTimeField(source='updated_at', read_only=True)
+    progress        = serializers.IntegerField(min_value=0, max_value=100, required=False)
+    isMain          = serializers.BooleanField(source='is_main', required=False)
+    lessons         = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, queryset=LearningGoal.objects.all(), pk_field=serializers.UUIDField(),
+    )
 
     class Meta:
         model = Goal
@@ -34,9 +40,30 @@ class GoalSerializer(serializers.ModelSerializer):
             'year', 'month', 'startDate', 'endDate', 'dueDate',
             'progress', 'order', 'computed_progress', 'children_count',
             'targetAmount', 'currentAmount', 'currency',
+            'tone', 'scope', 'isMain', 'lessons',
             'createdAt', 'updatedAt',
         ]
         read_only_fields = ['user_email', 'computed_progress', 'children_count', 'createdAt', 'updatedAt']
+
+    def get_fields(self):
+        # Чужой предмет выглядит так же, как несуществующий: как у OwnedRelationsMixin,
+        # только тот не умеет связи «многие ко многим».
+        fields = super().get_fields()
+        email = request_email(self.context.get('request'))
+        fields['lessons'].child_relation.queryset = (
+            LearningGoal.objects.none() if email is None else LearningGoal.objects.filter(user_email=email)
+        )
+        return fields
+
+    def validate(self, attrs):
+        if attrs.get('is_main'):
+            probe = Goal(
+                type=attrs.get('type') or (self.instance.type if self.instance else ''),
+                status=attrs.get('status') or (self.instance.status if self.instance else 'not_started'),
+            )
+            if not probe.can_be_main():
+                raise serializers.ValidationError({'isMain': 'Главной может быть только незавершённая цель.'})
+        return attrs
 
     def validate_parentId(self, value):
         email = request_email(self.context.get('request'))

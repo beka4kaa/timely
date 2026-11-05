@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 from django.core.exceptions import ValidationError
 import uuid
 
@@ -55,6 +55,17 @@ class Goal(models.Model):
         ('day', 'Day'),
         ('multi_year', 'Multi-year'),
     ]
+    TONE_CHOICES = [
+        ('indigo', 'Индиго'),
+        ('rose', 'Розовый'),
+        ('teal', 'Бирюзовый'),
+        ('blue', 'Синий'),
+        ('amber', 'Янтарный'),
+    ]
+    SCOPE_CHOICES = [
+        ('study', 'Учёба'),
+        ('general', 'Общая'),
+    ]
 
     id             = models.CharField(primary_key=True, max_length=64, default=uuid.uuid4, editable=False)
     user_email     = models.EmailField(db_index=True)
@@ -87,11 +98,27 @@ class Goal(models.Model):
     current_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     currency       = models.CharField(max_length=3, default='USD')
 
+    # Цвет плашки. Пусто у целей, созданных до появления плашек: им цвет считает клиент.
+    tone   = models.CharField(max_length=10, choices=TONE_CHOICES, blank=True, default='')
+    # Учёба или что-то общее. Пусто у старых целей, клиент определяет по названию.
+    scope  = models.CharField(max_length=10, choices=SCOPE_CHOICES, blank=True, default='')
+    # Главная цель ученика. Держит `settle_main_goal`, база не даёт двух сразу.
+    is_main = models.BooleanField(default=False)
+    # Какие предметы (курсы по книгам) ведут к этой цели.
+    lessons = models.ManyToManyField('curriculum.LearningGoal', blank=True, related_name='life_goals')
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['parent_id', 'order_index', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user_email'],
+                condition=models.Q(is_main=True),
+                name='planner_goal_one_main_per_user',
+            ),
+        ]
 
     def __str__(self):
         return self.title
@@ -110,6 +137,51 @@ class Goal(models.Model):
             outgoing_links__target=self,
             outgoing_links__type='blocks',
         ).exclude(status__in=['done', 'archived'])
+
+    def can_be_main(self):
+        return self.type in MAIN_GOAL_TYPES and self.status not in FINISHED_GOAL_STATUSES
+
+
+# Задачи, вехи и подцели живут внутри цели и главными не бывают.
+MAIN_GOAL_TYPES = ('goal', 'global_goal', 'financial_goal')
+FINISHED_GOAL_STATUSES = ('done', 'archived')
+_PRIORITY_RANK = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+
+
+def _main_goal_rank(goal):
+    """Кто станет главной, если выбирать некому: важнее, потом ближе по сроку, потом старше."""
+    deadline = goal.due_date or goal.end_date
+    return (
+        _PRIORITY_RANK.get(goal.priority, 2),
+        deadline is None,
+        deadline.toordinal() if deadline else 0,
+        goal.created_at,
+    )
+
+
+def settle_main_goal(email, prefer=None):
+    """Оставляет ученику ровно одну главную цель, пока ему есть чем заняться.
+
+    Вызывается после каждой записи. `prefer` — цель, которую ученик только что выбрал
+    сам. Если выбора нет, главная остаётся прежней, а если её удалили или завершили,
+    главной становится следующая: без этого на странице целей пропала бы большая плашка
+    и выбирать пришлось бы заново.
+    """
+    with transaction.atomic():
+        rows = list(Goal.objects.select_for_update().filter(user_email=email))
+        candidates = [goal for goal in rows if goal.can_be_main()]
+        # Сравнение строками: у только что созданной цели pk ещё объект UUID.
+        chosen = next((goal for goal in candidates if prefer is not None and str(goal.pk) == str(prefer.pk)), None)
+        chosen = chosen or next((goal for goal in candidates if goal.is_main), None)
+        if chosen is None and candidates:
+            chosen = min(candidates, key=_main_goal_rank)
+
+        # Сначала снимаем: ограничение в базе не пропустит двух главных даже на миг.
+        stale = [goal.pk for goal in rows if goal.is_main and goal is not chosen]
+        if stale:
+            Goal.objects.filter(pk__in=stale).update(is_main=False)
+        if chosen is not None and not chosen.is_main:
+            Goal.objects.filter(pk=chosen.pk).update(is_main=True)
 
 
 class GoalLink(models.Model):

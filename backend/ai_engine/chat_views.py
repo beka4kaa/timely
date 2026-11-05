@@ -12,6 +12,7 @@ import logging
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.response import Response
+from .board_gate import BoardRequiredMixin, require_board
 from rest_framework.views import APIView
 
 from .llm_errors import llm_error_response
@@ -159,6 +160,9 @@ class BoardChatView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        # Интейк плана выше живёт и без доски, а всё дальше это её навыки.
+        require_board()
+
         user_message = (data.get("message") or "").strip()
 
         if not user_message:
@@ -274,7 +278,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-class BoardChatStreamView(APIView):
+class BoardChatStreamView(BoardRequiredMixin, APIView):
     """POST /api/ai/chat/stream/ — то же, что BoardChatView, но потоком.
 
     Отдаёт Server-Sent Events, чтобы фронтенд показывал живой ход мысли модели

@@ -97,6 +97,7 @@ class MeSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'email', 'username', 'name', 'overall_elo',
             'is_staff', 'is_moderator', 'is_admin', 'has_full_access', 'ai_plan',
+            'bio',
         )
 
     def get_name(self, obj):
@@ -108,6 +109,14 @@ class MeSerializer(serializers.ModelSerializer):
 
     def get_ai_plan(self, obj):
         return 'max' if obj.is_staff or obj.is_superuser else obj.ai_plan
+
+
+class MeUpdateSerializer(serializers.ModelSerializer):
+    """What a student may change about themselves. Roles and rating are not here on purpose."""
+
+    class Meta:
+        model = CustomUser
+        fields = ('bio',)
 
 
 class AdminUserSerializer(serializers.ModelSerializer):

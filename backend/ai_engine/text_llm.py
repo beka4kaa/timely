@@ -2,7 +2,7 @@
 Текстовая LLM для учебных программ, анализа прогресса и планирования.
 
 Было: google-generativeai (gemini-2.0-flash) напрямую по ключу GEMINI_API_KEY.
-Стало: deepseek/deepseek-v4-flash через OpenRouter — тот же провайдер, что и у
+Стало: z-ai/glm-5.3 через OpenRouter (раньше deepseek/deepseek-v4-flash) — тот же провайдер, что и у
 остального стека, и заметно дешевле ($0.14/M вход против прайса Gemini, а на
 повторяющихся системных промптах cache hit стоит $0.0028/M).
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 TEXT_LLM_BASE_URL = os.getenv("TEXT_LLM_BASE_URL", "https://openrouter.ai/api/v1")
 TEXT_LLM_API_KEY = os.getenv("TEXT_LLM_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
-TEXT_LLM_MODEL = os.getenv("TEXT_LLM_MODEL", "deepseek/deepseek-v4-flash")
+TEXT_LLM_MODEL = os.getenv("TEXT_LLM_MODEL", "z-ai/glm-5.3")
 TEXT_LLM_TIMEOUT = int(os.getenv("TEXT_LLM_TIMEOUT", "180"))
 # Учебная программа на 12 недель — это большой JSON. Лимит с запасом: при
 # обрезке ответа json.loads падает и вся генерация уходит впустую.
@@ -105,6 +105,7 @@ class TextModel:
         max_tokens: int = 1200,
         timeout: int = 90,
         feature: str = "text_stream",
+        reasoning_effort: str | None = None,
     ):
         """Отдаёт ответ по мере генерации. Генератор кусочков текста.
 
@@ -114,6 +115,10 @@ class TextModel:
         Отдельного клиента для стрима не заводим — тот же ключ, тот же адрес и
         та же модель, что у остальных текстовых вызовов. `BOARD_LLM_*` это
         доска, и её настройки сюда не относятся.
+
+        Рассуждение по умолчанию выключено. GLM думает, пока его не попросят об обратном,
+        а эти токены списываются из `max_tokens`: при лимите в 1200 модель могла потратить
+        его целиком и ответить пустотой, а ученик тем временем ждал бы молча.
         """
         if not TEXT_LLM_API_KEY:
             raise TextLLMNotConfigured(
@@ -125,6 +130,9 @@ class TextModel:
             api_key=TEXT_LLM_API_KEY, base_url=TEXT_LLM_BASE_URL, max_retries=0
         )
         logger.info("[text_llm] поток от %s (%s)", self.model, feature)
+        reasoning: dict[str, Any] = (
+            {"enabled": True, "effort": reasoning_effort} if reasoning_effort else {"enabled": False}
+        )
         stream = client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -136,6 +144,7 @@ class TextModel:
             # токенов для стримящего пути молча обнуляется — это уже было
             # пройдено в `skills/router.py`.
             stream_options={"include_usage": True},
+            extra_body={"reasoning": reasoning},
         )
 
         usage_chunk = None

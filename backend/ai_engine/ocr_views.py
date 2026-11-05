@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import logging
 from django.conf import settings
+from .board_gate import BoardRequiredMixin
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -81,7 +82,7 @@ def preprocess_and_encode(base64_str: str, *, binarize: bool | None = None) -> s
     return base64.b64encode(buf).decode('utf-8')
 
 
-class OCRView(APIView):
+class OCRView(BoardRequiredMixin, APIView):
     def post(self, request):
         try:
             data = request.data

@@ -1,81 +1,36 @@
 from datetime import date, timedelta
+
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+
 from .models import Habit, HabitLog
-from .serializers import HabitSerializer
-
-CALENDAR_DAYS = 119  # 17 weeks — GitHub-style heatmap window
+from .serializers import HabitSerializer, habit_payload, server_today
 
 
-def _compute_streak(logs: set, freeze_budget: int) -> tuple[int, int]:
+def _day_on_earth(raw) -> date | None:
+    """Дата из браузера ученика, если сейчас где-нибудь на Земле действительно этот день.
+
+    Сервер живёт в UTC, а день у ученика свой: в Алматы новые сутки начинаются на пять
+    часов раньше. Часового пояса у привычек нет, поэтому день называет браузер, а сервер
+    проверяет, что такой день сейчас возможен (пояса от UTC−12 до UTC+14). Вчерашнюю
+    отметку задним числом так не поставить, разве что в пределах этих суток.
     """
-    Forgiving streak: walking back from today (or yesterday), missing days are
-    bridged by 'shields' from freeze_budget. Only real completions count toward
-    the streak number; shields just keep the chain alive.
-
-    Returns (streak, shields_used).
-    """
-    if not logs:
-        return 0, 0
-    today = date.today()
-    if today in logs:
-        cursor = today
-    elif (today - timedelta(days=1)) in logs:
-        cursor = today - timedelta(days=1)
-    else:
-        return 0, 0
-
-    oldest = min(logs)
-    streak = 0
-    used = 0
-    while cursor >= oldest:
-        if cursor in logs:
-            streak += 1
-        elif used < freeze_budget and any(d < cursor for d in logs):
-            used += 1  # shield consumed to bridge the gap
-        else:
-            break
-        cursor -= timedelta(days=1)
-    return streak, used
-
-
-def _serialize(habit: Habit) -> dict:
-    today = date.today()
-    log_rows = list(habit.logs.all())
-    logs = {r.date for r in log_rows}
-    by_date = {r.date: r for r in log_rows}
-    streak, shields_used = _compute_streak(logs, habit.freeze_budget)
-    today_row = by_date.get(today)
-
-    calendar = []
-    for i in range(CALENDAR_DAYS - 1, -1, -1):
-        d = today - timedelta(days=i)
-        calendar.append({
-            'date': d.isoformat(),
-            'done': d in logs,
-            'minutes': by_date[d].minutes if d in by_date else 0,
-        })
-
-    return {
-        'id': habit.id,
-        'name': habit.name,
-        'emoji': habit.emoji,
-        'color': habit.color,
-        'goal_text': habit.goal_text,
-        'freeze_budget': habit.freeze_budget,
-        'created_at': habit.created_at.isoformat(),
-        'streak': streak,
-        'shields_used': shields_used,
-        'shields_left': max(0, habit.freeze_budget - shields_used),
-        'done_today': today in logs,
-        'total_done': len(logs),
-        'total_minutes': sum(r.minutes for r in log_rows),
-        'note_today': today_row.note if today_row else '',
-        'minutes_today': today_row.minutes if today_row else 0,
-        'has_photo_today': bool(today_row and today_row.photo),
-        'calendar': calendar,
-    }
+    if not raw:
+        return None
+    try:
+        day = parse_date(str(raw))
+    except ValueError:
+        return None
+    if day is None:
+        return None
+    now = timezone.now()
+    if (now - timedelta(hours=12)).date() <= day <= (now + timedelta(hours=14)).date():
+        return day
+    return None
 
 
 class HabitViewSet(viewsets.ModelViewSet):
@@ -85,33 +40,57 @@ class HabitViewSet(viewsets.ModelViewSet):
         user_email = getattr(self.request, 'user_email', None)
         if not user_email:
             return Habit.objects.none()
-        return Habit.objects.filter(user_email=user_email)
+        return Habit.objects.filter(user_email=user_email).select_related('goal')
 
     def perform_create(self, serializer):
         user_email = getattr(self.request, 'user_email', None)
         serializer.save(user_email=user_email)
 
+    def _viewed_day(self) -> date:
+        """Какой день считать сегодняшним для показа. Странная дата не повод падать."""
+        return _day_on_earth(self.request.query_params.get('today')) or server_today()
+
+    def _marked_day(self) -> date:
+        """Какой день отмечает запрос. Отметить можно только сегодня, поэтому чужая дата это ошибка."""
+        raw = self.request.data.get('date')
+        if raw in (None, ''):
+            return server_today()
+        day = _day_on_earth(raw)
+        if day is None:
+            raise ValidationError({'date': 'Отметить можно только сегодняшний день.'})
+        return day
+
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), 'today': self._viewed_day()}
+
     def list(self, request, *args, **kwargs):
-        return Response([_serialize(h) for h in self.get_queryset().prefetch_related('logs')])
+        today = self._viewed_day()
+        return Response([habit_payload(h, today) for h in self.get_queryset().prefetch_related('logs')])
 
     @action(detail=True, methods=['post'])
     def toggle(self, request, pk=None):
+        """Сегодняшняя отметка: `done` ставит или снимает её, без него она переключается."""
         habit = self.get_object()
-        today = date.today()
-        log, created = HabitLog.objects.get_or_create(habit=habit, date=today)
-        if not created and not (log.note or log.minutes or log.photo):
+        today = self._marked_day()
+        wanted = request.data.get('done')
+        if wanted is not None and not isinstance(wanted, bool):
+            raise ValidationError({'done': 'Нужно true или false.'})
+
+        log = HabitLog.objects.filter(habit=habit, date=today).first()
+        if wanted is None:
+            wanted = log is None
+        if wanted and log is None:
+            HabitLog.objects.get_or_create(habit=habit, date=today)
+        elif not wanted and log is not None and not (log.note or log.minutes or log.photo):
             # Only delete when there's no attached detail; otherwise keep the record.
             log.delete()
-        elif not created:
-            # Has detail — toggling "off" would lose it; keep done.
-            pass
-        return Response(_serialize(habit))
+        return Response(habit_payload(habit, today))
 
     @action(detail=True, methods=['post'])
     def log(self, request, pk=None):
         """Attach detail to today's entry (creates it = marks done)."""
         habit = self.get_object()
-        today = date.today()
+        today = self._marked_day()
         row, _ = HabitLog.objects.get_or_create(habit=habit, date=today)
 
         if 'note' in request.data:
@@ -123,7 +102,7 @@ class HabitViewSet(viewsets.ModelViewSet):
         if 'photo' in request.data:
             row.photo = request.data.get('photo') or ''
         row.save()
-        return Response(_serialize(habit))
+        return Response(habit_payload(habit, today))
 
     @action(detail=False, methods=['get'])
     def gallery(self, request):

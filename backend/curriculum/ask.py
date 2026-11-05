@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .ask_modes import DEFAULT_MODE, mode_instructions, normalize_mode
 from .models import Document, LearningGoal
 from .retrieval import Citation, RetrievalResult, wrap_as_data_section
 from .services import search as search_service
@@ -78,6 +79,8 @@ class AskContext:
     # Есть ли у разговора книга вообще. Отличается от `grounded`: там «нашлось
     # ли по этому вопросу», здесь «было ли где искать».
     has_library: bool = True
+    # Как тьютор ведёт разговор: см. `ask_modes.py`.
+    mode: str = DEFAULT_MODE
 
     @property
     def grounded(self) -> bool:
@@ -90,13 +93,16 @@ class AskContext:
 
     def messages(self) -> list[dict]:
         """Сообщения для провайдера в формате OpenAI."""
+        instructions = mode_instructions(self.mode)
         if not self.has_library:
-            messages = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
+            messages = [
+                {"role": "system", "content": f"{GENERAL_SYSTEM_PROMPT}\n\n{instructions}"}
+            ]
             messages.extend(self.history)
             messages.append({"role": "user", "content": self.question})
             return messages
 
-        system = SYSTEM_PROMPT.format(marker=OUTSIDE_MARKER)
+        system = f"{SYSTEM_PROMPT.format(marker=OUTSIDE_MARKER)}\n\n{instructions}"
         messages: list[dict] = [{"role": "system", "content": system}]
         messages.extend(self.history)
         if self.results:
@@ -124,6 +130,7 @@ def build_ask_context(
     goal: LearningGoal | None,
     question: str,
     history: list[dict] | None = None,
+    mode: str = DEFAULT_MODE,
 ) -> AskContext:
     """Ищет в книгах предмета то, на что можно опереться.
 
@@ -138,14 +145,16 @@ def build_ask_context(
     это правило можно нечаянно ослабить.
     """
     question = (question or "").strip()
+    mode = normalize_mode(mode)
     if not question:
-        return AskContext(question="", history=[], has_library=goal is not None)
+        return AskContext(question="", history=[], has_library=goal is not None, mode=mode)
 
     if goal is None:
         return AskContext(
             question=question,
             history=normalize_history(history),
             has_library=False,
+            mode=mode,
         )
 
     # Только обработанные книги: у документа в очереди фрагменты неполные, и
@@ -178,6 +187,7 @@ def build_ask_context(
         question=question,
         results=results,
         history=normalize_history(history),
+        mode=mode,
     )
 
 

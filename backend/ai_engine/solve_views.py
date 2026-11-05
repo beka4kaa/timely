@@ -2,6 +2,7 @@ import os
 import logging
 from openai import OpenAI
 from django.conf import settings
+from .board_gate import BoardRequiredMixin
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -71,7 +72,7 @@ SYSTEM_PROMPT = """Ты — опытный AI-тьютор и репетитор
 """
 
 
-class SolveTaskView(APIView):
+class SolveTaskView(BoardRequiredMixin, APIView):
     """
     POST /api/ai/solve/
     Body: { "message": "текст задачи", "history": [...],

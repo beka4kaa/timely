@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 
-# Текстовые задачи переехали с gemini-2.0-flash на deepseek-v4-flash через
+# Текстовые задачи переехали с gemini-2.0-flash на GLM через
 # OpenRouter. `get_text_model()` повторяет интерфейс genai.GenerativeModel,
 # поэтому промпты и разбор ответов ниже не изменились.
 from .text_llm import get_text_model, is_configured as _text_llm_configured

@@ -23,6 +23,7 @@ from ai_engine.draw_views import WhiteboardDrawView
 from ai_engine.chat_views import BoardChatStreamView, BoardChatView
 from ai_engine.illustration_views import IllustrationView, ImageModelsView
 from ai_engine.usage_views import AIUsageSummaryView
+from ai_engine.understand import UnderstandView
 from habits.views import HabitViewSet
 from pomodoro.views import FocusSessionViewSet
 from nutrition.views import (
@@ -184,6 +185,8 @@ urlpatterns = [
     # Allowlist image-моделей для селектора на доске.
     path('api/ai/image-models/', ImageModelsView.as_view(), name='ai-image-models'),
     path('api/ai/image-models', ImageModelsView.as_view(), name='ai-image-models-no-slash'),
+    path('api/ai/understand/', UnderstandView.as_view(), name='ai-understand'),
+    path('api/ai/understand', UnderstandView.as_view(), name='ai-understand-no-slash'),
     path('api/ai/usage/', AIUsageSummaryView.as_view(), name='ai-usage-summary'),
     path('api/ai/usage', AIUsageSummaryView.as_view(), name='ai-usage-summary-no-slash'),
 

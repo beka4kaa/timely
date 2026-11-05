@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 # Ответ в боковой панели — это несколько абзацев, а не конспект урока.
 ASK_MAX_TOKENS = 1200
 ASK_TIMEOUT_SECONDS = 90
+# Цитата на бумажке короче самого фрагмента, а хранится она вместе с разговором.
+ASK_EXCERPT_CHARS = 500
 
 
 def _sse(event: str, data: dict) -> str:
@@ -80,21 +82,28 @@ class SubjectAskStreamView(APIView):
         # Поиск делается ДО открытия потока: на нём ещё можно ответить честной
         # ошибкой с кодом, а после первого события заголовки уже отправлены.
         context = build_ask_context(
-            goal=goal, question=question, history=request.data.get("history")
+            goal=goal,
+            question=question,
+            history=request.data.get("history"),
+            mode=request.data.get("mode"),
         )
         citations = [
             {
-                "label": citation.render(),
-                # Название книги отдельным полем: панель показывает его ОДИН
+                "label": result.citation.render(),
+                # Название книги отдельным полем: панель показывает его один
                 # раз над списком, а не в каждой из восьми ссылок. С длинным
                 # именем файла восемь цитат занимали больше места, чем ответ.
-                "document_title": citation.document_title,
-                "document_id": citation.document_id,
-                "section_path": citation.section_path,
-                "page_start": citation.page_start,
-                "page_end": citation.page_end,
+                "document_title": result.citation.document_title,
+                "document_id": result.citation.document_id,
+                "section_path": result.citation.section_path,
+                "page_start": result.citation.page_start,
+                "page_end": result.citation.page_end,
+                # Сам фрагмент: источник виден вместе с местом в книге (§3.4), и
+                # за цитатой не нужно идти вторым поиском. Решения задач сюда не
+                # попадают: поиск идёт в режиме чтения ученика.
+                "excerpt": result.excerpt[:ASK_EXCERPT_CHARS],
             }
-            for citation in context.citations
+            for result in context.results
         ]
 
         def event_stream():
