@@ -14,7 +14,6 @@ import {
   CheckCheck,
   Lightbulb,
   Repeat2,
-  Shapes,
   Sigma,
   Target,
   type LucideIcon,
@@ -41,7 +40,6 @@ const CHIPS: Chip[] = [
 const MORE: Chip[] = [
   { icon: CheckCheck, label: "Проверить решение", prompt: "Проверь моё решение: " },
   { icon: Repeat2, label: "Повторить тему", prompt: "Давай повторим тему " },
-  { icon: Shapes, label: "Нарисовать схему", prompt: "Нарисуй схему к теме " },
 ];
 
 export function HeroPrompt() {

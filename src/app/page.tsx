@@ -18,7 +18,6 @@ import {
   MessageCircle,
   NotebookPen,
   PenLine,
-  PenTool,
   Scale,
   Sigma,
   Target,
@@ -29,7 +28,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appLink } from "@/components/landing/app-url";
-import { BoardSketch } from "@/components/landing/board-sketch";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { Faq } from "@/components/landing/faq";
 import { HeroPrompt } from "@/components/landing/hero-prompt";
@@ -45,7 +43,7 @@ import styles from "@/components/landing/landing.module.css";
 export const metadata: Metadata = {
   title: "TimelyPlan — AI-друг для учёбы",
   description:
-    "Дневник, план на день, научная доска и AI-тьютор, который объясняет по твоему учебнику.",
+    "Дневник, план на день и AI-тьютор, который объясняет по твоему учебнику.",
 };
 
 // Своя тёмная тема есть — без этого Chrome с «авто-тёмным режимом»
@@ -115,12 +113,14 @@ const WEAK_TOPICS: [string, number][] = [
   ["Past Simple", 72],
 ];
 
+const TUTOR_MODES = ["Обычный", "Планирование", "Наводящая помощь", "Брейншторм", "Проверь меня"];
+const ACTIVE_TUTOR_MODE = "Наводящая помощь";
+
 const FOOTER = [
   {
     title: "Учёба",
     links: [
       ["Тьютор", "/chat"],
-      ["Научная доска", "/whiteboard"],
       ["Курс по книге", "/curriculum"],
       ["План", "/plan"],
     ],
@@ -363,10 +363,10 @@ export default function HomePage() {
                   <PenLine size={22} strokeWidth={1.8} />
                 </span>
                 <div>
-                  <h3 className={styles.duoTitle}>Рукописный ввод на доске</h3>
+                  <h3 className={styles.duoTitle}>Напиши, что изучил</h3>
                   <p className={styles.duoText}>
-                    Пиши решение от руки или вставь картинку задачи — доска распознает текст
-                    и формулы.
+                    Своими словами, как другу. Timely сам заполнит темы и напомнит повторить,
+                    когда пора.
                   </p>
                 </div>
               </Reveal>
@@ -430,14 +430,20 @@ export default function HomePage() {
                 </article>
 
                 <article className={`${styles.bentoCard} ${styles.bentoDark} ${styles.areaD}`}>
-                  <BoardSketch tone="dark" className={styles.darkSketch} />
+                  <ul className={styles.darkModes} aria-hidden="true">
+                    {TUTOR_MODES.map((mode) => (
+                      <li key={mode} className={mode === ACTIVE_TUTOR_MODE ? styles.darkModeOn : undefined}>
+                        {mode}
+                      </li>
+                    ))}
+                  </ul>
                   <div className={styles.darkCaption}>
                     <p className={styles.darkTitle}>
-                      Схемы, графики и формулы строятся точно: AI описывает смысл, а координаты
-                      считает Timely.
+                      Тьютор не решает за тебя, пока ты сам не попросишь. Выбери, что нужно сейчас:
+                      подсказки, идеи или проверка.
                     </p>
                     <p className={styles.bentoFoot}>
-                      <PenTool size={16} /> Научная доска
+                      <MessageCircle size={16} /> Режимы тьютора
                     </p>
                   </div>
                 </article>

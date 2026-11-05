@@ -8,8 +8,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from "react";
-import { ArrowUp, CalendarDays, Check, Menu, MessageCircle, PenTool } from "lucide-react";
-import { BoardSketch } from "./board-sketch";
+import { ArrowUp, CalendarDays, Check, Menu, MessageCircle, Repeat2 } from "lucide-react";
 import { LogoMark } from "./logo-mark";
 import { watchScroll } from "./scroll-fx";
 import { Slime } from "./slime";
@@ -32,13 +31,13 @@ const CASES = [
     meta: "Ответ со ссылкой на страницу",
   },
   {
-    id: "board",
-    tab: "Научная доска",
-    icon: PenTool,
+    id: "review",
+    tab: "Повторение",
+    icon: Repeat2,
     tint: styles.pink,
-    title: "Нарисуй, чтобы понять",
-    text: "Тьютор строит схему, график или формулу прямо на доске. Пиши от руки — Timely распознает текст и формулы.",
-    meta: "Точная геометрия вместо кривых стрелок",
+    title: "Помни, что изучил",
+    text: "Напиши своими словами, что прошли на уроке. Timely сам заполнит темы и напомнит повторить, когда пора.",
+    meta: "Напоминает слайм и уведомления",
   },
   {
     id: "plan",
@@ -84,17 +83,30 @@ function PhoneVisual() {
   );
 }
 
-function BoardVisual() {
+const REVIEWS = [
+  { time: "сегодня", task: "Квадратные неравенства", state: "now" },
+  { time: "завтра", task: "Закон Ома", state: "next" },
+  { time: "чт", task: "Метод интервалов", state: "next" },
+  { time: "сб", task: "Законы Ньютона", state: "next" },
+] as const;
+
+function ReviewVisual() {
   return (
-    <div className={styles.board}>
-      <div className={styles.boardHead}>
-        <span>Второй закон Ньютона</span>
-        <span className={styles.boardTag}>Научная доска</span>
-      </div>
-      <BoardSketch className={styles.boardSketch} />
-      <p className={styles.boardFormula}>
-        ma = mg sin α − F<sub>тр</sub>
-      </p>
+    <div className={styles.plan}>
+      <p className={styles.planHead}>Пора повторить</p>
+      <ol className={styles.planList}>
+        {REVIEWS.map((row, index) => (
+          <li
+            key={row.task}
+            className={`${styles.planRow} ${styles.reviewRow}`}
+            data-state={row.state}
+            style={{ "--i": index } as CSSProperties}
+          >
+            <time>{row.time}</time>
+            <span className={styles.planTask}>{row.task}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -247,7 +259,7 @@ export function UseCases() {
             </div>
             <div key={`visual-${current.id}`} className={`${styles.visualInner} ${styles.swap}`}>
               {current.id === "tutor" && <PhoneVisual />}
-              {current.id === "board" && <BoardVisual />}
+              {current.id === "review" && <ReviewVisual />}
               {current.id === "plan" && <PlanVisual />}
             </div>
           </div>

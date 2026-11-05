@@ -8,7 +8,6 @@ import {
   Ellipsis,
   MessageCircle,
   PanelLeft,
-  PenTool,
   RefreshCw,
   Search,
   SquarePen,
@@ -108,9 +107,6 @@ export function ChatDemo() {
           <ul className={styles.nav}>
             <li className={styles.navActive}>
               <MessageCircle size={14} /> Тьютор
-            </li>
-            <li>
-              <PenTool size={14} /> Научная доска
             </li>
             <li>
               <BookOpen size={14} /> Курс по книге <span className={styles.count}>2</span>

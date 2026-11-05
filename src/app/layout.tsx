@@ -24,7 +24,7 @@ const sourceSerif = Source_Serif_4({
 
 const siteName = 'TimelyPlan'
 const siteUrl = new URL('https://timelyplan.me')
-const siteDescription = 'TimelyPlan — школьный дневник, планировщик, AI-доска и учебные инструменты в одном месте.'
+const siteDescription = 'TimelyPlan — школьный дневник, планировщик, AI-тьютор и учебные инструменты в одном месте.'
 
 export const viewport: Viewport = {
   themeColor: [
@@ -63,7 +63,7 @@ export const metadata: Metadata = {
     'планировщик',
     'цели',
     'учебный план',
-    'AI-доска',
+    'AI-тьютор',
   ],
   openGraph: {
     type: 'website',
