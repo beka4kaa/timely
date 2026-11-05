@@ -27,13 +27,12 @@ from rest_framework.views import APIView
 from ai_engine.usage import usage_scope
 
 from .ask import build_ask_context, split_outside_marker
+from .ask_models import ask_options, resolve_choice, usage_payload
 from .models import LearningGoal
 
 logger = logging.getLogger(__name__)
 
 # Ответ в боковой панели — это несколько абзацев, а не конспект урока.
-# Рассуждение у GLM обязательное, и его токены списываются из этого лимита: ответу должно хватить.
-ASK_MAX_TOKENS = 4000
 ASK_TIMEOUT_SECONDS = 90
 # Цитата на бумажке короче самого фрагмента, а хранится она вместе с разговором.
 ASK_EXCERPT_CHARS = 500
@@ -49,10 +48,17 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
+class AskOptionsView(APIView):
+    """GET /api/curriculum/ask/options — какие модели и уровни рассуждения можно выбрать."""
+
+    def get(self, request):
+        return Response(ask_options())
+
+
 class SubjectAskStreamView(APIView):
     """POST /api/curriculum/ask/stream — вопрос по книгам предмета.
 
-    События: `stage` → `content`* → `citations` → `done`, либо `error`.
+    События: `stage` → `content`* → `citations` → `usage` → `done`, либо `error`.
     """
 
     def post(self, request):
@@ -62,6 +68,7 @@ class SubjectAskStreamView(APIView):
                 {"error": "Пустой вопрос."}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        choice = resolve_choice(request.data.get("model"), request.data.get("reasoning"))
         goal_id = str(request.data.get("goal_id") or "").strip()
         user_email = getattr(request, "user_email", None)
 
@@ -128,11 +135,14 @@ class SubjectAskStreamView(APIView):
                     # разбор начала ответа только задержал бы первое слово.
                     marker_resolved = not context.has_library
                     grounded = context.grounded
-                    for delta in TextModel(temperature=0.3).stream_content(
+                    usage: list = []
+                    for delta in TextModel(choice.model.model_id, temperature=0.3).stream_content(
                         context.messages(),
-                        max_tokens=ASK_MAX_TOKENS,
+                        max_tokens=choice.reasoning.max_tokens,
                         timeout=ASK_TIMEOUT_SECONDS,
                         feature="subject_ask",
+                        reasoning_effort=choice.reasoning.key,
+                        on_usage=usage.append,
                     ):
                         if marker_resolved:
                             yield _sse("content", {"delta": delta})
@@ -171,6 +181,8 @@ class SubjectAskStreamView(APIView):
                             "items": citations if grounded else [],
                         },
                     )
+                    if usage:
+                        yield _sse("usage", usage_payload(choice, usage[-1]))
                     yield _sse(
                         "done", {"grounded": grounded, "library": context.has_library}
                     )

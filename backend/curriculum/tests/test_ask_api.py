@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from unittest import mock
 
 from django.test import TestCase
 
+from ai_engine.usage import UsageNumbers
 from curriculum.ask import OUTSIDE_MARKER
 from curriculum.models import Document, KnowledgeChunk, LearningGoal
 from config.testing import auth_headers
@@ -327,3 +329,92 @@ class AskModesTests(TestCase):
         self.assertIn("Режим: обычный разговор", self._system())
         self.assertIn("Режим: обычный разговор", self._system(mode="contest"))
         self.assertIn("Режим: обычный разговор", self._system(mode=["plan"]))
+
+
+class AskModelChoiceTests(TestCase):
+    """Модель и уровень рассуждения выбирают из списка, проверяет сервер."""
+
+    def _ask(self, usage=None, **body):
+        seen: dict = {}
+
+        def capture(model, messages, **kwargs):
+            seen["model"] = model.model
+            seen.update(kwargs)
+            if usage is not None:
+                kwargs["on_usage"](usage)
+            return iter(["ответ"])
+
+        with mock.patch("ai_engine.text_llm.TextModel.stream_content", capture):
+            response = self.client.post(
+                URL,
+                data=json.dumps({"message": "вопрос", **body}),
+                content_type="application/json",
+                **_auth(OWNER),
+            )
+            self.assertEqual(response.status_code, 200)
+            events = _events(response)
+        return seen, events
+
+    def test_по_умолчанию_основная_модель_и_низкий_уровень(self):
+        seen, _ = self._ask()
+        self.assertEqual(seen["model"], "z-ai/glm-5.3")
+        self.assertEqual(seen["reasoning_effort"], "low")
+
+    def test_выбранная_модель_и_уровень_доходят_до_провайдера(self):
+        seen, _ = self._ask(model="glm-5.3-flash", reasoning="high")
+        self.assertEqual(seen["model"], "z-ai/glm-5.3-flash")
+        self.assertEqual(seen["reasoning_effort"], "high")
+
+    def test_чем_выше_уровень_тем_больше_лимит(self):
+        low, _ = self._ask(reasoning="low")
+        high, _ = self._ask(reasoning="high")
+        self.assertGreater(high["max_tokens"], low["max_tokens"])
+
+    def test_чужую_модель_с_клиента_не_пропускаем(self):
+        seen, _ = self._ask(model="openai/gpt-5-pro", reasoning="turbo")
+        self.assertEqual(seen["model"], "z-ai/glm-5.3")
+        self.assertEqual(seen["reasoning_effort"], "low")
+
+    def test_расход_приходит_отдельным_событием(self):
+        numbers = UsageNumbers(
+            input_tokens=3000,
+            cached_input_tokens=1000,
+            output_tokens=500,
+            reasoning_tokens=200,
+            total_tokens=3500,
+            cost_usd=Decimal("0.0009"),
+        )
+        _, events = self._ask(usage=numbers, model="glm-5.3-flash", reasoning="high")
+
+        names = [name for name, _ in events]
+        self.assertEqual(names[-2:], ["usage", "done"])
+        usage = dict(events)["usage"]
+        self.assertEqual(usage["model_name"], "GLM 5.3 Flash")
+        self.assertEqual(usage["reasoning"], "high")
+        self.assertEqual(usage["input_tokens"], 3000)
+        self.assertEqual(usage["cached_input_tokens"], 1000)
+        self.assertEqual(usage["output_tokens"], 500)
+        self.assertEqual(usage["reasoning_tokens"], 200)
+        self.assertEqual(usage["context_window"], 1_048_576)
+        self.assertEqual(usage["cost_usd"], 0.0009)
+        self.assertFalse(usage["cost_estimated"])
+
+    def test_без_цены_от_провайдера_считаем_по_прайсу(self):
+        numbers = UsageNumbers(input_tokens=1_000_000, output_tokens=1_000_000, total_tokens=2_000_000)
+        _, events = self._ask(usage=numbers, model="glm-5.3")
+
+        usage = dict(events)["usage"]
+        self.assertAlmostEqual(usage["cost_usd"], 1.47)
+        self.assertTrue(usage["cost_estimated"])
+
+    def test_без_данных_о_расходе_события_нет(self):
+        _, events = self._ask()
+        self.assertNotIn("usage", [name for name, _ in events])
+
+    def test_список_вариантов_только_после_входа(self):
+        url = "/api/curriculum/ask/options/"
+        self.assertEqual(self.client.get(url).status_code, 401)
+        body = self.client.get(url, **_auth(OWNER)).json()
+        self.assertEqual([row["key"] for row in body["models"]], ["glm-5.3", "glm-5.3-flash"])
+        self.assertEqual([row["key"] for row in body["reasoning"]], ["low", "high", "max"])
+        self.assertNotIn("model_id", body["models"][0])

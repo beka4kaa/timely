@@ -760,6 +760,35 @@ export interface AskCitation {
   excerpt?: string;
 }
 
+export interface AskModelOption {
+  key: string;
+  name: string;
+  note: string;
+  context_window: number;
+  input_per_million: number;
+  output_per_million: number;
+}
+
+export interface AskReasoningOption {
+  key: string;
+  name: string;
+  note: string;
+}
+
+export interface AskOptions {
+  default_model: string;
+  default_reasoning: string;
+  models: AskModelOption[];
+  reasoning: AskReasoningOption[];
+}
+
+/** Из чего можно выбрать в поле чата. */
+export async function fetchAskOptions(): Promise<AskOptions> {
+  const response = await authFetch(`${BASE}/ask/options/`);
+  if (!response.ok) throw new Error(String(response.status));
+  return (await response.json()) as AskOptions;
+}
+
 export interface AskMessage {
   role: "user" | "assistant";
   content: string;
@@ -780,6 +809,10 @@ export async function askSubjectStream(
     history?: AskMessage[];
     /** Как тьютор ведёт разговор. Без него обычный режим. */
     mode?: string;
+    /** Какой моделью отвечать. Проверяет сервер: без него основная. */
+    model?: string;
+    /** Уровень рассуждения. Без него низкий. */
+    reasoning?: string;
   },
   signal?: AbortSignal,
 ): Promise<Response> {

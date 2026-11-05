@@ -35,6 +35,20 @@ class _Response:
         self.model = "vendor/model"
 
 
+class _UsageChunk:
+    """Последний чанк потока: только расход, без текста."""
+
+    choices = []
+    model = "z-ai/glm-5.3"
+    usage = {
+        "prompt_tokens": 120,
+        "completion_tokens": 40,
+        "total_tokens": 160,
+        "prompt_tokens_details": {"cached_tokens": 80},
+        "completion_tokens_details": {"reasoning_tokens": 25},
+    }
+
+
 class _RecordingClient:
     """Перехватывает аргументы `chat.completions.create`, не ходя в сеть."""
 
@@ -242,3 +256,25 @@ class MandatoryReasoningTests(SimpleTestCase):
         with _ClientFixture(client):
             TextModel("z-ai/glm-5.3").generate_content("привет")
         self.assertEqual(client.calls[0]["extra_body"]["reasoning"], {"effort": "low"})
+
+    def test_chat_stream_reports_what_the_answer_cost(self):
+        chunk = _UsageChunk()
+        seen = []
+
+        class Client:
+            chat = None
+            completions = None
+
+            def create(self, **request):
+                return iter((chunk,))
+
+        client = Client()
+        client.chat = client
+        client.completions = client
+        with _ClientFixture(_RecordingClient()):
+            with patch.object(text_llm, "OpenAI", return_value=client):
+                list(TextModel("z-ai/glm-5.3").stream_content([{"role": "user", "content": "x"}], on_usage=seen.append))
+        self.assertEqual(seen[0].input_tokens, 120)
+        self.assertEqual(seen[0].output_tokens, 40)
+        self.assertEqual(seen[0].reasoning_tokens, 25)
+        self.assertEqual(seen[0].cached_input_tokens, 80)

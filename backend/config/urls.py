@@ -43,7 +43,7 @@ from studyplan.views import (
     StudyScheduleViewSet,
     WeeklyScheduleTemplateViewSet,
 )
-from curriculum.ask_views import SubjectAskStreamView
+from curriculum.ask_views import AskOptionsView, SubjectAskStreamView
 from curriculum.views import (
     SubjectChatViewSet,
     CourseEnrollmentViewSet,
@@ -117,6 +117,8 @@ urlpatterns = [
     # Вопрос по книгам предмета — потоком. Оба варианта пути, как у чата доски:
     # фронтенд ходит в backend напрямую, и лишний редирект на слеше оборвал бы
     # POST с телом.
+    path('api/curriculum/ask/options/', AskOptionsView.as_view(), name='curriculum-ask-options'),
+    path('api/curriculum/ask/options', AskOptionsView.as_view(), name='curriculum-ask-options-no-slash'),
     path(
         'api/curriculum/ask/stream/',
         SubjectAskStreamView.as_view(),

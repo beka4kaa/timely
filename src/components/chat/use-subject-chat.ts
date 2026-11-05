@@ -25,11 +25,16 @@ import {
   type SubjectChat,
   type SubjectChatSummary,
 } from "@/lib/curriculum-api";
+import { chatPrefs } from "@/lib/chat-prefs";
 import { readSse } from "@/lib/sse";
+
+import type { AskUsage } from "./chat-usage";
 
 import { STOPPED_ERROR } from "./ask-stages";
 
 export interface Turn extends AskMessage {
+  /** Сколько стоил ответ. Показывается по настройке. */
+  usage?: AskUsage;
   citations?: AskCitation[];
   /** false — модель ответила от себя: в книге ответа не нашлось. */
   grounded?: boolean;
@@ -220,8 +225,17 @@ export function useSubjectChat({
       };
 
       try {
+        const prefs = chatPrefs();
         const response = await askSubjectStream(
-          { goal_id: goal, message: text, history, ...(mode ? { mode } : {}) },
+          {
+            goal_id: goal,
+            message: text,
+            history,
+            ...(mode ? { mode } : {}),
+            // Читается в момент вопроса: мини-окно отвечает той же моделью, что и чат.
+            ...(prefs.model ? { model: prefs.model } : {}),
+            ...(prefs.reasoning ? { reasoning: prefs.reasoning } : {}),
+          },
           controller.signal,
         );
         let answer = "";
@@ -241,6 +255,8 @@ export function useSubjectChat({
               grounded: Boolean(data.grounded),
               library: data.library !== false,
             });
+          } else if (event === "usage") {
+            patchLast({ usage: data as unknown as AskUsage });
           } else if (event === "done") {
             patchLast({ stage: "", durationMs: Date.now() - startedAt });
           } else if (event === "error") {

@@ -33,6 +33,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import type { FolderSubject } from "@/lib/chat-folders";
 import { buildSpines } from "@/lib/citation-spread";
 import {
+  fetchAskOptions,
   listDocuments,
   listGoals,
   type CurriculumDocument,
@@ -41,6 +42,7 @@ import {
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { coverAuthor, coverTitle } from "@/lib/curriculum-cover";
 import { isTerminal } from "@/lib/curriculum-progress";
+import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { invalidateResources, useResource, type ResourceState } from "@/lib/resource-cache";
 
 import { stageLabel, STOPPED_ERROR } from "./ask-stages";
@@ -61,7 +63,8 @@ import {
   type ChatModeKey,
   type PlanGoal,
 } from "./chat-modes";
-import { BookPicker, Composer, ModePicker, type ComposerHandle } from "./composer";
+import { BookPicker, Composer, ContextMeter, ModelPicker, ModePicker, type ComposerHandle } from "./composer";
+import { lastUsage } from "./chat-usage";
 import { SourcesPanel } from "./sources-panel";
 import { useSubjectChat } from "./use-subject-chat";
 import "katex/dist/katex.min.css";
@@ -189,6 +192,9 @@ export function ChatPage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   const [modeKey, setModeKey] = useState<ChatModeKey>(DEFAULT_MODE);
+  const prefs = useChatPrefs();
+  // Список моделей почти не меняется. Не загрузился: выбора просто нет, чат работает.
+  const askOptions = useResource("ask:options", fetchAskOptions, { ttl: 60 * 60_000 });
   const [marks, setMarks] = useState<ModeMark[]>([]);
   /** Планирование: показать цели под идущим разговором. */
   const [pickingGoal, setPickingGoal] = useState(false);
@@ -420,6 +426,7 @@ export function ChatPage() {
     }
   }, [busy, turns, stop]);
   const lastTurn = turns[turns.length - 1];
+  const usageNow = useMemo(() => lastUsage(turns), [turns]);
   const stage = lastTurn?.role === "assistant" ? lastTurn.stage ?? "" : "";
   useEffect(() => {
     if (thinking.current && stage) mascot.thought(stageLabel(stage, lastTurn?.found));
@@ -612,6 +619,7 @@ export function ChatPage() {
                 <AskTurn
                   turn={turn}
                   id={`turn-${index}`}
+                  showUsage={prefs.showUsage}
                   onCite={showSource}
                   onRetry={
                     !busy &&
@@ -684,6 +692,7 @@ export function ChatPage() {
             disabled={opening}
             placeholder={placeholder}
             onCycleMode={() => changeMode(nextMode(modeKey).key)}
+            status={prefs.showUsage && usageNow ? <ContextMeter usage={usageNow} /> : null}
             tools={
               <>
                 <ModePicker mode={mode} onPick={pickMode} />
@@ -693,6 +702,15 @@ export function ChatPage() {
                   failed={subjectsFailed}
                   onPick={pickSubject}
                 />
+                {prefs.showPicker && askOptions.data ? (
+                  <ModelPicker
+                    options={askOptions.data}
+                    model={prefs.model}
+                    reasoning={prefs.reasoning}
+                    onModel={(key) => setChatPrefs({ model: key })}
+                    onReasoning={(key) => setChatPrefs({ reasoning: key })}
+                  />
+                ) : null}
               </>
             }
           />

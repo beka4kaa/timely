@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
+import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { useMe } from "@/lib/contest-api";
 
 const THEMES = [
@@ -72,6 +73,39 @@ function Switch({
 }
 
 type Permission = NotificationPermission | "unsupported";
+
+/** Что показывать в чате. Сама модель выбирается в поле ввода, рядом с вопросом. */
+function ChatSection() {
+  const prefs = useChatPrefs();
+  return (
+    <section className="set">
+      <h2>Чат с тьютором</h2>
+      <div className="set-body">
+        <div className="set-line">
+          <div>
+            Выбор модели<small>В поле чата: GLM 5.3 или 5.3 Flash и уровень рассуждения</small>
+          </div>
+          <Switch
+            on={prefs.showPicker}
+            label="Показывать выбор модели"
+            onChange={(value) => setChatPrefs({ showPicker: value })}
+          />
+        </div>
+        <div className="set-line">
+          <div>
+            Контекст и токены
+            <small>Окно контекста в поле чата, токены и цена под ответами</small>
+          </div>
+          <Switch
+            on={prefs.showUsage}
+            label="Показывать контекст и токены"
+            onChange={(value) => setChatPrefs({ showUsage: value })}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function Reminders() {
   const router = useRouter();
@@ -200,6 +234,7 @@ export default function SettingsPage() {
 
       <div className="sets card">
         <Reminders />
+        <ChatSection />
 
         <section className="set">
           <h2>Кто меня видит</h2>

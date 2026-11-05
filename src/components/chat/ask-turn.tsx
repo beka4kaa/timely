@@ -9,6 +9,7 @@ import { bookLabel } from "@/lib/book-label";
 import type { AskCitation } from "@/lib/curriculum-api";
 
 import { askErrorText, placeLabel, stageLabel, STOPPED_ERROR } from "./ask-stages";
+import { usageLine } from "./chat-usage";
 import { MarkdownMessage } from "./markdown-message";
 import type { Turn } from "./use-subject-chat";
 
@@ -17,9 +18,12 @@ export const AskTurn = memo(function AskTurn({
   id,
   onCite,
   onRetry,
+  showUsage = false,
 }: {
   turn: Turn;
   id: string;
+  /** Показать модель, токены и цену под ответом. */
+  showUsage?: boolean;
   /** Нажали на ссылку на страницу: показать её в источниках. */
   onCite: (documentId: string, page: number) => void;
   /** Только у ответа, который не получился, и только если он последний. */
@@ -54,6 +58,8 @@ export const AskTurn = memo(function AskTurn({
           {turn.citations?.length ? <Citations items={turn.citations} onCite={onCite} /> : null}
         </div>
       ) : null}
+
+      {showUsage && turn.usage ? <p className="m-usage">{usageLine(turn.usage)}</p> : null}
 
       {turn.error ? <TurnError raw={turn.error} onRetry={onRetry} /> : null}
     </div>

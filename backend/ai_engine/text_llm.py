@@ -19,12 +19,12 @@ import functools
 import json
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from openai import OpenAI
 
-from .usage import provider_from_base_url, record_model_usage
+from .usage import UsageNumbers, extract_usage, provider_from_base_url, record_model_usage
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ class TextModel:
         timeout: int = 90,
         feature: str = "text_stream",
         reasoning_effort: str | None = None,
+        on_usage: Callable[[UsageNumbers], None] | None = None,
     ):
         """Отдаёт ответ по мере генерации. Генератор кусочков текста.
 
@@ -173,7 +174,8 @@ class TextModel:
             # токенов для стримящего пути молча обнуляется — это уже было
             # пройдено в `skills/router.py`.
             stream_options={"include_usage": True},
-            extra_body={"reasoning": reasoning},
+            # `usage.include` просит у OpenRouter ещё и цену этого запроса.
+            extra_body={"reasoning": reasoning, "usage": {"include": True}},
         )
 
         usage_chunk = None
@@ -197,6 +199,8 @@ class TextModel:
                 feature=feature,
                 input_payload=messages,
             )
+            if on_usage is not None:
+                on_usage(extract_usage(usage_chunk, input_payload=messages))
 
     def generate_json_content(
         self,

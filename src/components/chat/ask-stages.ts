@@ -10,7 +10,8 @@ export function stageLabel(stage: string, found?: number): string {
   if (stage === "found") {
     return found ? `Нашёл ${found} ${fragmentWord(found)}` : "В книге не нашлось";
   }
-  return "Отвечаю";
+  // Этап виден, только пока модель молчит: у GLM это её обязательное рассуждение.
+  return "Думаю";
 }
 
 export function fragmentWord(count: number): string {

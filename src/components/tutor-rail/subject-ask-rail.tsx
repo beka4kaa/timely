@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { askErrorText, stageLabel } from "@/components/chat/ask-stages";
+import { usageLine } from "@/components/chat/chat-usage";
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { useSubjectChat, type Turn } from "@/components/chat/use-subject-chat";
 import { Icon } from "@/components/shell/icons";
@@ -26,6 +27,7 @@ import { isScheduleRailRoute } from "@/config/schedule-rail-routes";
 import { useActiveSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import { bookLabel, citationSpot } from "@/lib/book-label";
+import { useChatPrefs } from "@/lib/chat-prefs";
 import {
   listDocuments,
   listGoals,
@@ -358,6 +360,7 @@ function LastAnswer({
   chatId: string | null;
   onNew: () => void;
 }) {
+  const { showUsage } = useChatPrefs();
   const answer = turns[turns.length - 1];
   const question = turns[turns.length - 2];
   if (!answer) return null;
@@ -375,6 +378,7 @@ function LastAnswer({
           <MarkdownMessage content={answer.content} variant="rail" />
         </div>
       ) : null}
+      {showUsage && answer.usage ? <p className="q-cite">{usageLine(answer.usage)}</p> : null}
       {spots.length ? (
         <p className="q-cite">
           {bookLabel(answer.citations?.[0]?.document_title ?? "")}: {spots.join(", ")}
