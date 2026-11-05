@@ -88,20 +88,25 @@ class PrivateLeaderboardSerializer(serializers.ModelSerializer):
 
 
 class MeSerializer(serializers.ModelSerializer):
-    name        = serializers.SerializerMethodField()
-    is_admin    = serializers.SerializerMethodField()
-    ai_plan     = serializers.SerializerMethodField()
+    name            = serializers.SerializerMethodField()
+    is_admin        = serializers.SerializerMethodField()
+    ai_plan         = serializers.SerializerMethodField()
+    public_username = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
         fields = (
             'id', 'email', 'username', 'name', 'overall_elo',
             'is_staff', 'is_moderator', 'is_admin', 'has_full_access', 'ai_plan',
-            'bio',
+            'bio', 'show_in_leaderboard', 'public_username',
         )
 
     def get_name(self, obj):
         return own_name(obj)
+
+    def get_public_username(self, obj):
+        # The name others would see, so the student can be told it before agreeing.
+        return public_username(obj)
 
     def get_is_admin(self, obj):
         # Single flag the frontend can gate on (admin OR moderator).
@@ -116,7 +121,7 @@ class MeUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ('bio',)
+        fields = ('bio', 'show_in_leaderboard')
 
 
 class AdminUserSerializer(serializers.ModelSerializer):

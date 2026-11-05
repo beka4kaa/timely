@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
@@ -17,12 +18,44 @@ from .serializers import (
 
 
 # ── Auth helpers (config.middleware sets request.user_email) ────────────────
+def _create_profile(email):
+    """A signed-in account's own row, made on its first request.
+
+    The token proves the session, not the address: password sign-up accepts anyone's.
+    So the address earns nothing here. The row has no roles, no password and no name,
+    stays off the public leaderboard until the student agrees, and a username holding
+    an address is only ever shown as «Ученик N» (see public_username).
+    """
+    # Sign-up doesn't check the format, and a username without «@» is shown to others as is.
+    if '@' not in email or len(email) > CustomUser._meta.get_field('username').max_length:
+        return None
+    # Stored exactly as it came: lookups compare this string, as every other app does.
+    # create_user would lower-case the domain, and the row would never be found again.
+    user = CustomUser(username=email, email=email)
+    user.set_unusable_password()
+    try:
+        with transaction.atomic():
+            user.save()
+    except IntegrityError:
+        # A page sends several requests at once, and the unique username lets only
+        # one of them insert. If the name belongs to a row with another address, that
+        # row stays out of reach and there is no profile.
+        return CustomUser.objects.filter(email=email).first()
+    return user
+
+
 def current_user(request):
-    """Resolve the CustomUser for the verified request.user_email."""
+    """The CustomUser for the verified request.user_email, made on first use."""
     email = getattr(request, 'user_email', None)
     if not email:
         return None
-    return CustomUser.objects.filter(email=email).first()
+    return CustomUser.objects.filter(email=email).first() or _create_profile(email)
+
+
+def on_public_board(viewer):
+    """Who this viewer may see on the leaderboard: those who agreed, and themselves."""
+    agreed = Q(show_in_leaderboard=True)
+    return agreed | Q(pk=viewer.pk) if viewer else agreed
 
 
 def is_admin_or_mod(user):
@@ -39,13 +72,17 @@ class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
     GET /api/leaderboard/?country_code=KZ  — фильтр по стране
     GET /api/leaderboard/?city=Almaty       — фильтр по городу
     GET /api/leaderboard/?discipline_name=Math — топ по конкретной дисциплине
+
+    Только те, кто согласился показываться, и сам ученик: своё место он видит всегда.
     """
     serializer_class = LeaderboardSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['country_code', 'city']
 
     def get_queryset(self):
-        queryset = CustomUser.objects.prefetch_related(
+        queryset = CustomUser.objects.filter(
+            on_public_board(current_user(self.request))
+        ).prefetch_related(
             'ratings__discipline'  # N+1 protection: related_name='ratings' in UserRating model
         )
 
@@ -69,9 +106,9 @@ class LeaderboardViewSet(viewsets.ReadOnlyModelViewSet):
 class MeView(APIView):
     """GET /api/me/ — current user + role flags (for frontend admin gating).
 
-    PATCH /api/me/ {bio} — the student's own description. A signed-in account may
-    have no row here yet (sign-up doesn't create one), and saving a description
-    doesn't create it either: a new row would put them on the public leaderboard.
+    PATCH /api/me/ {bio, show_in_leaderboard} — what the student decides about themselves.
+
+    Only an address a row can't be made for has no profile (see _create_profile).
     """
     permission_classes = [AllowAny]
 
@@ -85,7 +122,7 @@ class MeView(APIView):
         user = current_user(request)
         if not user:
             return Response(
-                {'error': 'Профиль ещё не создан.', 'code': 'no_profile'},
+                {'error': 'Для этого адреса профиль создать нельзя.', 'code': 'no_profile'},
                 status=status.HTTP_404_NOT_FOUND,
             )
         serializer = MeUpdateSerializer(user, data=request.data, partial=True)
@@ -99,6 +136,7 @@ class UserSearchView(APIView):
 
     Never by address: a student's address is never returned, and matching it
     would confirm a guess. Usernames that hold an address don't match either.
+    Those who haven't agreed to be on the leaderboard aren't found by anyone else.
     """
     permission_classes = [AllowAny]
 
@@ -112,7 +150,7 @@ class UserSearchView(APIView):
         )
         if q.isdigit():
             qs = qs | CustomUser.objects.filter(pk=int(q))
-        qs = qs.distinct().order_by('-overall_elo')[:20]
+        qs = qs.filter(on_public_board(current_user(request))).distinct().order_by('-overall_elo')[:20]
         data = [{
             'id': u.id,
             'name': display_name(u),
@@ -379,15 +417,18 @@ class PrivateLeaderboardViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Only the owner can add members.'}, status=status.HTTP_403_FORBIDDEN)
         uid = request.data.get('user_id')
         identifier = (request.data.get('identifier') or '').strip()
+        # The answer lists the members, so a student who hasn't agreed to be seen
+        # can't be reached here either, whatever number someone guesses.
+        candidates = CustomUser.objects.filter(on_public_board(user))
         target = None
         if uid:
-            target = CustomUser.objects.filter(pk=uid).first()
+            target = candidates.filter(pk=uid).first()
         if not target and identifier:
             # Not by address, here or through a username holding one: the answer
             # would confirm a guess about who has an account.
-            target = CustomUser.objects.filter(username__iexact=identifier).exclude(username__contains='@').first()
+            target = candidates.filter(username__iexact=identifier).exclude(username__contains='@').first()
             if not target and identifier.isdigit():
-                target = CustomUser.objects.filter(pk=int(identifier)).first()
+                target = candidates.filter(pk=int(identifier)).first()
         if not target:
             return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
         board.members.add(target)

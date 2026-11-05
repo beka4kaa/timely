@@ -52,8 +52,13 @@
 .pg-pick-who b, .pg-pick-who small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pg-pick-who b { font-size: 13.5px; font-weight: 500; }
 .pg-pick-who small { color: var(--t-muted); font-size: 12px; }
+.rb-invite .btn { width: 100%; margin: 10px 0 4px; }
 @container main (max-width: 980px) {
   .lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 56px; }
+}
+/* Приглашение сразу за своим местом, а не под всей таблицей */
+@container main (max-width: 860px) {
+  .rb-card.rb-invite { order: 1; grid-column: 1 / -1; }
 }
 @container main (max-width: 620px) {
   .lr.rb-row { grid-template-columns: 30px 30px minmax(0, 1fr) 48px; gap: 0 8px; }
@@ -69,7 +74,6 @@
 .pf-bio-host.ti textarea { color: transparent; }
 .pf-bio-host textarea::placeholder { color: var(--t-muted); }
 .pf-bio-note { margin-top: 12px; }
-.pf-no-row { margin: -10px 0 22px; }
 /* Счётчиков столько, сколько есть данных: ровный ряд без дыр */
 .pf-stats.pf-stats-auto { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
 .pf-stats-auto .pf-stat, .pf-stats-auto .pf-stat:nth-child(n + 4) { grid-column: auto; }
@@ -96,6 +100,8 @@
 
 /* ══════════════════ Настройки ══════════════════ */
 .switch:disabled { cursor: default; opacity: 0.5; }
+/* Длинная подпись переносится сама и не сбрасывает тумблер на новую строку */
+.set-line > div:first-child { flex: 1 1 200px; min-width: 0; }
 .set-admin { margin: 14px 0 0 22px; color: var(--t-muted); font-size: 12.5px; }
 .set-admin .link { color: var(--t-muted); }
 @container main (max-width: 620px) {

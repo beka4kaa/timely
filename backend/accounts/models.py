@@ -34,6 +34,9 @@ class CustomUser(AbstractUser):
     )
     # «О себе» из профиля. Видит только сам ученик: в рейтинге и поиске этого поля нет.
     bio = models.CharField(max_length=280, blank=True, default='')
+    # Согласие показываться другим в рейтинге и поиске. Ученики несовершеннолетние,
+    # поэтому новый аккаунт скрыт, пока сам не включит показ. Себя ученик видит всегда.
+    show_in_leaderboard = models.BooleanField(default=False)
 
 class Discipline(models.Model):
     name = models.CharField(max_length=255)

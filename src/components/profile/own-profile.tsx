@@ -227,10 +227,6 @@ export function OwnProfile() {
         </div>
       </header>
 
-      {!meLoading && !me ? (
-        <p className="small-note pf-no-row">Описание и место в рейтинге появятся, когда аккаунт подключат к рейтингу.</p>
-      ) : null}
-
       {stats.length ? (
         <>
           <div
@@ -260,7 +256,9 @@ export function OwnProfile() {
             {activeStat === "days" && streaks && now ? <DaysDetail activity={activity} streaks={streaks} now={now} /> : null}
             {activeStat === "hours" && now ? <HoursDetail summary={summary} now={now} /> : null}
             {activeStat === "tasks" ? <TasksDetail solved={solved} pending={pending} /> : null}
-            {activeStat === "place" && myUser ? <PlaceDetail points={myUser.overall_elo} lines={places} /> : null}
+            {activeStat === "place" && myUser ? (
+              <PlaceDetail points={myUser.overall_elo} lines={places} hidden={me?.show_in_leaderboard === false} />
+            ) : null}
           </section>
         </>
       ) : statsFailed ? null : firstLoad ? (

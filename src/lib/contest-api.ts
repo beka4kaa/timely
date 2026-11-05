@@ -27,6 +27,10 @@ export interface Me {
   ai_plan: "free" | "pro" | "max"
   /** «О себе». Видит только сам ученик: в рейтинге и поиске этого поля нет. */
   bio: string
+  /** Согласие показываться другим в рейтинге и поиске. Себя ученик видит всегда. */
+  show_in_leaderboard: boolean
+  /** Под этим именем ученика увидят другие. Адреса в нём нет. */
+  public_username: string
   authenticated?: boolean
 }
 
@@ -125,8 +129,8 @@ async function unwrap<T>(res: Response): Promise<T> {
 // ── current user / role ──────────────────────────────────────────────
 export const getMe = async (): Promise<Me> => unwrap(await authFetch(url("/api/me/")))
 
-/** Меняется только описание: роли и рейтинг сервер через этот адрес не принимает. */
-export const updateMe = async (data: { bio: string }): Promise<Me> =>
+/** Меняются только описание и показ в рейтинге: роли и баллы сервер через этот адрес не принимает. */
+export const updateMe = async (data: Partial<Pick<Me, "bio" | "show_in_leaderboard">>): Promise<Me> =>
   unwrap(await authFetch(url("/api/me/"), { method: "PATCH", body: JSON.stringify(data) }))
 
 // ── tasks ────────────────────────────────────────────────────────────

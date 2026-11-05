@@ -2,20 +2,21 @@
 
 // Настройки: только то, что на самом деле работает.
 //
-// Стиля помощи, длины занятия, «не беспокоить», тумблеров видимости, памяти тьютора,
-// родительского контура и удаления аккаунта на бэкенде пока нет, поэтому этих строк здесь нет.
+// Стиля помощи, длины занятия, «не беспокоить», памяти тьютора, родительского контура
+// и удаления аккаунта на бэкенде пока нет, поэтому этих строк здесь нет.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
 import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
-import { useMe } from "@/lib/contest-api";
+import { updateMe, useMe, type Me } from "@/lib/contest-api";
 
 const THEMES = [
   { key: "system", title: "Как в системе" },
@@ -197,9 +198,65 @@ function Reminders() {
   );
 }
 
+function ratingHint(me: Me | null, loading: boolean): string {
+  if (!me) return loading ? " " : "Не загрузилось. Обнови страницу";
+  const seen = `«${me.public_username}», страну, баллы и рейтинг по предметам`;
+  return me.show_in_leaderboard
+    ? `Другие ученики видят ${seen}`
+    : `Сейчас тебя видишь только ты. Если включишь, другие увидят ${seen}`;
+}
+
+/** Согласие хранит сервер, поэтому тумблер меняется только после его ответа. */
+function WhoSeesMe({ me, loading, setMe }: { me: Me | null; loading: boolean; setMe: (me: Me) => void }) {
+  const [saving, setSaving] = useState(false);
+
+  const toggle = async (next: boolean) => {
+    setSaving(true);
+    try {
+      setMe(await updateMe({ show_in_leaderboard: next }));
+    } catch {
+      toast.error("Не сохранилось. Попробуй ещё раз.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="set">
+      <h2>Кто меня видит</h2>
+      <div className="set-body">
+        <div className="set-line">
+          <div>
+            Показывать меня в рейтинге
+            <small>{ratingHint(me, loading)}</small>
+          </div>
+          {me ? (
+            <Switch
+              on={me.show_in_leaderboard}
+              label="Показывать меня в рейтинге"
+              disabled={saving}
+              onChange={(next) => void toggle(next)}
+            />
+          ) : null}
+        </div>
+        <div className="set-line">
+          <div>
+            Группы
+            <small>
+              Создатель группы может добавить тебя, пока показ в рейтинге включён. Таблицу видят только участники, и
+              выключение показа из группы не убирает
+            </small>
+          </div>
+        </div>
+        <p className="small-note">Почту, описание, дни и часы фокуса другие ученики не видят.</p>
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const { me, loading: meLoading } = useMe();
+  const { me, loading: meLoading, setMe } = useMe();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -208,7 +265,6 @@ export default function SettingsPage() {
   const name = known ?? (meLoading ? "\u00a0" : "Ученик");
   const email = session?.user?.email || me?.email || "";
   const isAdmin = Boolean(me?.is_admin || me?.is_staff);
-  const noAccount = !meLoading && !me;
 
   return (
     <div className="content view">
@@ -236,29 +292,7 @@ export default function SettingsPage() {
         <Reminders />
         <ChatSection />
 
-        <section className="set">
-          <h2>Кто меня видит</h2>
-          <div className="set-body">
-            <div className="set-line">
-              <div>
-                Рейтинг
-                <small>
-                  {noAccount
-                    ? "Тебя там пока нет, поэтому другим ничего не видно"
-                    : "Другие ученики видят имя пользователя, страну, баллы и рейтинг по предметам"}
-                </small>
-              </div>
-            </div>
-            {noAccount ? null : (
-              <div className="set-line">
-                <div>
-                  Группы<small>Создатель группы может добавить тебя по имени или номеру. Таблицу видят только участники</small>
-                </div>
-              </div>
-            )}
-            <p className="small-note">Почту, описание, дни и часы фокуса другие ученики не видят.</p>
-          </div>
-        </section>
+        <WhoSeesMe me={me} loading={meLoading} setMe={setMe} />
 
         <section className="set">
           <h2>Оформление</h2>

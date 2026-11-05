@@ -171,7 +171,7 @@ function CreateBoardDialog({
               })
             )}
           </div>
-          <p className="small-note">Тебя добавим в группу сами.</p>
+          <p className="small-note">Тебя добавим в группу сами. Найти можно тех, кто показывает себя в рейтинге.</p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -239,7 +239,7 @@ function BoardDetail({
 }
 
 /* ─────────────── Список групп ─────────────── */
-export function PrivateLeaderboards({ meId, noAccount }: { meId: number | null; noAccount: boolean }) {
+export function PrivateLeaderboards({ meId }: { meId: number | null }) {
   const [boards, setBoards] = useState<PrivateBoard[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
@@ -265,12 +265,10 @@ export function PrivateLeaderboards({ meId, noAccount }: { meId: number | null; 
     <section aria-label="Мои группы">
       <div className="rb-groups-head">
         <h2 className="sec">Мои группы</h2>
-        {!noAccount ? (
-          <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
-            <Icon name="plus" />
-            Новая группа
-          </button>
-        ) : null}
+        <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
+          <Icon name="plus" />
+          Новая группа
+        </button>
       </div>
 
       {loading ? (
@@ -288,11 +286,7 @@ export function PrivateLeaderboards({ meId, noAccount }: { meId: number | null; 
       ) : boards.length === 0 ? (
         <section className="ct-note card">
           <h2>Групп пока нет</h2>
-          <p>
-            {noAccount
-              ? "Группы появятся, когда аккаунт подключат к рейтингу."
-              : "Создай группу с друзьями или классом и соревнуйтесь только между собой."}
-          </p>
+          <p>Создай группу с друзьями или классом и соревнуйтесь только между собой.</p>
         </section>
       ) : (
         <ul className="rb-groups">

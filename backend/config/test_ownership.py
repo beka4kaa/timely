@@ -628,10 +628,10 @@ class AccountsTests(_Base):
         super().setUp()
         self.student = CustomUser.objects.create_user(username="student", email=STUDENT, password="x")
         self.other = CustomUser.objects.create_user(
-            username=OTHER, email=OTHER, password="x", first_name="", last_name=""
+            username=OTHER, email=OTHER, password="x", first_name="", last_name="", show_in_leaderboard=True
         )
         self.admin = CustomUser.objects.create_user(
-            username="admin", email="admin@example.com", password="x", is_staff=True
+            username="admin", email="admin@example.com", password="x", is_staff=True, show_in_leaderboard=True
         )
         self.task = Task.objects.create(author=self.other, title="their task", status="active")
         self.own_task = Task.objects.create(author=self.student, title="own task", status="active")
@@ -652,7 +652,9 @@ class AccountsTests(_Base):
         self.assertEqual(response.status_code, 200, response.content)
 
     def test_search_never_returns_an_address(self):
-        CustomUser.objects.create_user(username="findme", email="findme@example.com", password="x")
+        CustomUser.objects.create_user(
+            username="findme", email="findme@example.com", password="x", show_in_leaderboard=True
+        )
         response = self.client.get("/api/users/search/?q=findme")
         self.assertEqual([row["username"] for row in response.json()], ["findme"])
         self.assertNotIn("example.com", response.content.decode())

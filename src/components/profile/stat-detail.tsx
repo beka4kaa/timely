@@ -158,7 +158,16 @@ export interface PlaceLine {
   place: number;
 }
 
-export function PlaceDetail({ points, lines }: { points: number; lines: readonly PlaceLine[] }) {
+export function PlaceDetail({
+  points,
+  lines,
+  hidden,
+}: {
+  points: number;
+  lines: readonly PlaceLine[];
+  /** Ученик не показывает себя в рейтинге: другие этого места не видят. */
+  hidden: boolean;
+}) {
   return (
     <>
       <div className="pf-d-head">
@@ -176,6 +185,7 @@ export function PlaceDetail({ points, lines }: { points: number; lines: readonly
           </li>
         ))}
       </ul>
+      {hidden ? <p className="small-note pf-more">Это место видишь только ты. Показать себя другим можно в рейтинге.</p> : null}
       <p className="pf-more">
         <Link className="link" href="/dashboard/leaderboard">
           Открыть рейтинг
