@@ -33,7 +33,6 @@ import {
 } from "@/lib/rating-view";
 import { useResource } from "@/lib/resource-cache";
 import { useNow } from "@/lib/use-now";
-import "@/styles/timely/page-compete.css";
 
 const FIRST_ROWS = 10;
 const MORE_ROWS = 50;

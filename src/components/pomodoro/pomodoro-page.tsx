@@ -43,7 +43,6 @@ import { TimerDial } from "./timer-dial";
 import { useFocusUser } from "./use-focus-user";
 import { YearHeat } from "./year-heat";
 
-import "@/styles/timely/page-focus.css";
 
 // Сколько дней истории тянем для списка сессий: сегодня плюс запас на
 // расхождение часовых поясов клиента и сервера.

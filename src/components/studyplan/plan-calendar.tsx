@@ -60,7 +60,6 @@ import {
 } from "./plan-grid.logic";
 import type { CalendarEntry } from "./use-schedule";
 
-import "@/styles/timely/page-plan.css";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const DAY_MINUTES = 24 * 60;

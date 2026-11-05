@@ -57,7 +57,6 @@ import {
   type ProposedStudyWindows,
 } from "@/lib/studyplan-chat";
 import "katex/dist/katex.min.css";
-import "@/styles/timely/page-plan.css";
 import { RailShell } from "./rail-shell";
 
 /** Сколько последних реплик уходит в контекст. */

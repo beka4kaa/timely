@@ -14,7 +14,6 @@
 
 "use client";
 
-import "@/styles/timely/page-curriculum.css";
 
 import { useState } from "react";
 

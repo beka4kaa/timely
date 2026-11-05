@@ -59,7 +59,6 @@ import {
 } from "./schedule-targets";
 import { type CalendarEntry, useSchedule } from "./use-schedule";
 
-import "@/styles/timely/page-plan.css";
 
 type Mode = "week" | "day";
 type ScheduleApi = ReturnType<typeof useSchedule>;

@@ -11,7 +11,6 @@ import { usePageSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import { daySummary, longDateLabel } from "@/lib/now-feed";
 import { formatMinutes } from "@/lib/studyplan-calendar";
-import "@/styles/timely/page-now.css";
 
 import { DayFeed } from "./day-feed";
 import { NowCard, QuietCard, type QuietKind } from "./now-card";

@@ -15,7 +15,6 @@ import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
 import { useMe } from "@/lib/contest-api";
-import "@/styles/timely/page-compete.css";
 
 const THEMES = [
   { key: "system", title: "Как в системе" },

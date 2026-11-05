@@ -12,7 +12,6 @@ import { placeLabel } from "./ask-stages";
 import { useSourceQuote } from "./source-quote";
 import type { Turn } from "./use-subject-chat";
 // Цвета обложек описаны у библиотеки: книга здесь того же цвета, что и на полке.
-import "@/styles/timely/page-curriculum.css";
 
 function pagesWord(count: number): string {
   const tens = count % 100;

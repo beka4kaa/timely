@@ -263,7 +263,7 @@ function TopicRow({
 
       <button
         ref={moreRef}
-        className="icon-btn tp-more"
+        className="icon-btn tpw-more"
         type="button"
         aria-label={`Действия с темой «${topic.name}»`}
         aria-expanded={open}

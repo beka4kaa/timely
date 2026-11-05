@@ -21,7 +21,6 @@ import { plural } from "@/lib/now-feed"
 import { toast } from "sonner"
 import type { WeeklyTemplate, TemplateLessonSlot, DayOfWeek, BlockType } from "@/types/diary"
 import { DAYS_ORDER, DAY_OF_WEEK_LABELS, BLOCK_TYPE_META, PRESET_BLOCK_TYPES } from "@/types/diary"
-import "@/styles/timely/page-diary.css"
 
 // ── Custom preset persistence ──────────────────────────────────────
 const CUSTOM_KEY = 'schedule_custom_block_types'

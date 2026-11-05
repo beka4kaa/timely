@@ -24,8 +24,6 @@ import { coverClass } from "@/lib/curriculum-cover";
 import { RECORD_EVENT, parseGoal, takeRecordParam, type Understood } from "@/lib/understand";
 
 // Цвета обложек предметов лежат там же, где сами книги: физика везде одного цвета.
-import "@/styles/timely/page-curriculum.css";
-import "@/styles/timely/page-grow.css";
 
 import { GoalCard, GoalDone, GoalHero, RidgeArt } from "./goal-plaque";
 import { GoalLinks, GoalSheet, type GoalDraft } from "./goal-sheet";

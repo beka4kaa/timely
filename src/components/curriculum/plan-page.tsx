@@ -10,7 +10,6 @@
 
 "use client";
 
-import "@/styles/timely/page-curriculum.css";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";

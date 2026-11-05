@@ -27,7 +27,6 @@ import {
 } from "@/lib/contest-view";
 import { useResource } from "@/lib/resource-cache";
 import { useNow } from "@/lib/use-now";
-import "@/styles/timely/page-compete.css";
 
 const PAST_PAGE = 8;
 /** Больше бусин в строку не помещается: дальше число. */

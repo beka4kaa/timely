@@ -1,5 +1,18 @@
+/* Все стили приложения одним файлом и в этом порядке: добавки страниц идут после базы и
+   перебивают её при той же специфичности. Подключать page-*.css из компонентов нельзя:
+   в production-сборке Next раскладывает такие файлы в другом порядке, чем в разработке,
+   и правки молча проигрывают базе. Так сетка плана уже съезжала на восемь часов. */
 @import "./tokens.css";
 @import "./ui.css";
 @import "./pages.css";
 @import "./grow.css";
 @import "./mascot.css";
+@import "./page-chat.css";
+@import "./page-compete.css";
+@import "./page-curriculum.css";
+@import "./page-diary.css";
+@import "./page-focus.css";
+@import "./page-grow.css";
+@import "./page-now.css";
+@import "./page-plan.css";
+@import "./page-weak.css";

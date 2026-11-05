@@ -21,7 +21,6 @@ import { EMPTY_SUMMARY } from "@/lib/pomodoro";
 import { computeBadges, hoursStat, mergeActivity, solvedTasks, streaksOf } from "@/lib/profile-view";
 import { buildBoard, countryName, grouped } from "@/lib/rating-view";
 import { useNow } from "@/lib/use-now";
-import "@/styles/timely/page-curriculum.css";
 
 type StatKey = "days" | "hours" | "tasks" | "place";
 

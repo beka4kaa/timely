@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { PeerReviewRoom } from "@/components/arena/PeerReviewRoom";
-import "@/styles/timely/page-compete.css";
 
 export default function PeerReviewPage() {
   return (

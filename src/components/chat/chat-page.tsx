@@ -65,7 +65,6 @@ import { BookPicker, Composer, ModePicker, type ComposerHandle } from "./compose
 import { SourcesPanel } from "./sources-panel";
 import { useSubjectChat } from "./use-subject-chat";
 import "katex/dist/katex.min.css";
-import "@/styles/timely/page-chat.css";
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 

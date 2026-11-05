@@ -29,7 +29,6 @@ import { WeakLearned } from "./weak-learned";
 import { WeakList } from "./weak-list";
 import { WeakNoteView, useWeakNote } from "./weak-note";
 
-import "@/styles/timely/page-weak.css";
 
 /** Сколько подсвечена только что добавленная тема. */
 const FRESH_MS = 1500;

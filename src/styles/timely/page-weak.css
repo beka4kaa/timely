@@ -38,14 +38,14 @@
 .tp-name { min-width: 0; overflow-wrap: anywhere; }
 .tp .s { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .tp.is-archived .tp-name { color: var(--t-muted); }
-.tp-more { position: absolute; right: 6px; top: 4px; opacity: 0; }
-.tp-more .i { width: 14px; height: 14px; }
-.tp-row:hover .tp-more, .tp-row:focus-within .tp-more, .tp-row.is-open .tp-more { opacity: 1; }
+.tpw-more { position: absolute; right: 6px; top: 4px; opacity: 0; }
+.tpw-more .i { width: 14px; height: 14px; }
+.tp-row:hover .tpw-more, .tp-row:focus-within .tpw-more, .tp-row.is-open .tpw-more { opacity: 1; }
 .tp-row:hover .tp .w, .tp-row:focus-within .tp .w, .tp-row.is-open .tp .w { transform: translateX(-26px); }
 .tp-row.is-open .tp .w { color: var(--t-muted); }
 /* Пальцем навести нельзя: на телефоне «⋯» виден всегда, и срок сразу стоит рядом */
 @media (hover: none) {
-  .tp-more { opacity: 1; }
+  .tpw-more { opacity: 1; }
   .tp-row .tp { padding-right: 36px; }
   .tp-row:hover .tp .w, .tp-row:focus-within .tp .w, .tp-row.is-open .tp .w { transform: none; }
 }
@@ -74,7 +74,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .tp .w { transition: transform 160ms ease; }
-  .tp-more { transition: opacity 120ms ease, background 120ms ease; }
+  .tpw-more { transition: opacity 120ms ease, background 120ms ease; }
 }
 
 @container main (max-width: 620px) {

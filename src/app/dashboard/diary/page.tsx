@@ -29,7 +29,6 @@ import {
 import { dayMonthLabel, plural, weekdayLabel } from "@/lib/now-feed";
 import { shiftDateKey } from "@/lib/studyplan-calendar";
 import type { DiaryDay, DiaryLesson } from "@/types/diary";
-import "@/styles/timely/page-diary.css";
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);

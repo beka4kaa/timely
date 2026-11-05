@@ -16,7 +16,6 @@ import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { RECORD_EVENT, parseHabit, takeRecordParam } from "@/lib/understand";
 
-import "@/styles/timely/page-grow.css";
 
 import { AiLine, useUnderstand } from "./ai-line";
 import { HabitCard } from "./habit-card";

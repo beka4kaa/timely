@@ -8,7 +8,6 @@ import { useDiaryYearStats } from "@/hooks/use-diary-year-stats"
 import { calcMonthStats } from "@/lib/diary-grades"
 import { MONTH_SHORT } from "@/lib/diary-grades"
 import { plural } from "@/lib/now-feed"
-import "@/styles/timely/page-diary.css"
 
 // Учебный год: сентябрь–август
 const SCHOOL_MONTHS: number[] = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7]

@@ -12,7 +12,6 @@ import { getLeaderboardUser, listGlobalLeaderboard, useMe } from "@/lib/contest-
 import { ru } from "@/lib/contest-view";
 import { buildBoard, countryName, grouped } from "@/lib/rating-view";
 import { useResource } from "@/lib/resource-cache";
-import "@/styles/timely/page-compete.css";
 
 export default function PlayerProfilePage() {
   const params = useParams<{ id: string }>();
