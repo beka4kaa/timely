@@ -7,6 +7,7 @@ import {
   costLabel,
   countLabel,
   lastUsage,
+  renamedModelKey,
   shortCount,
   usageLine,
   type AskUsage,
@@ -29,6 +30,19 @@ const USAGE: AskUsage = {
 test("у ответа с инструментами окно занято последним кругом, а не суммой", () => {
   assert.equal(contextUsed({ ...USAGE, input_tokens: 9000, context_tokens: 4100 }), 4100);
   assert.equal(contextUsed(USAGE), 3214 + 412 - 96);
+});
+
+test("старый ключ модели из браузера становится новым", () => {
+  assert.equal(renamedModelKey("glm-5.3"), "smart");
+  assert.equal(renamedModelKey("glm-5.3-flash"), "fast");
+  assert.equal(renamedModelKey("fast"), "fast");
+  assert.equal(renamedModelKey(""), "");
+});
+
+test("старые записи в истории чата показывают новые подписи", () => {
+  assert.match(usageLine({ ...USAGE, model_name: "GLM 5.3 Flash" }), /^Быстрая, /);
+  assert.match(usageLine({ ...USAGE, model_name: "GLM 5.3" }), /^Умная, /);
+  assert.match(usageLine({ ...USAGE, model_name: "Быстрая" }), /^Быстрая, /);
 });
 
 test("числа читаются глазами", () => {
@@ -57,11 +71,11 @@ test("раздумья не занимают окно следующего за�
 test("строка под ответом: только то, что есть", () => {
   assert.equal(
     usageLine(USAGE),
-    "GLM 5.3, рассуждение низкое: вход 3 214, выход 412, из них рассуждение 96, из кэша 1 000, $0,0008",
+    "Умная, рассуждение низкое: вход 3 214, выход 412, из них рассуждение 96, из кэша 1 000, $0,0008",
   );
   assert.equal(
     usageLine({ ...USAGE, reasoning_tokens: 0, cached_input_tokens: 0, cost_estimated: true, reasoning: "max" }),
-    "GLM 5.3, рассуждение максимальное: вход 3 214, выход 412, примерно $0,0008",
+    "Умная, рассуждение максимальное: вход 3 214, выход 412, примерно $0,0008",
   );
 });
 

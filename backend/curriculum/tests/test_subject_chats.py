@@ -228,8 +228,10 @@ class TitleTests(TestCase):
         response = mock.Mock(text=json.dumps({"title": "Сила трения"}))
         with mock.patch(
             "ai_engine.text_llm.TextModel.generate_json_content", return_value=response
-        ):
+        ) as call:
             self.assertEqual(generate_chat_title(self.MESSAGES), "Сила трения")
+        # В заголовок уходит вопрос ученика: он идёт только туда, где его не хранят.
+        self.assertTrue(call.call_args.kwargs["private"])
 
     def test_отказ_модели_даёт_первый_вопрос(self):
         """Список из пяти «Новый чат» бесполезен: по нему не вернёшься к теме."""

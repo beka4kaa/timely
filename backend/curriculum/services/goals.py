@@ -124,6 +124,7 @@ class OpenRouterGoalNormalizationProvider:
                     max_tokens=self.binding.max_tokens,
                     reasoning_effort=self.binding.reasoning_effort,
                     feature="goal_normalization",
+                    private=True,
                 )
         data = _extract_json(response.text)
 

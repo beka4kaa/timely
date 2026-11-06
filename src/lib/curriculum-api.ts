@@ -19,6 +19,7 @@
 "use client";
 
 
+import { limitMessage } from "@/lib/ai-limit";
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch, backendAuthHeaders } from "@/lib/auth-fetch";
 import type { IngestionStatusCode } from "@/lib/curriculum-progress";
@@ -832,7 +833,10 @@ export async function askSubjectStream(
     let message = `Не удалось спросить (${response.status}).`;
     try {
       const failure = await response.json();
-      message = failure?.error || message;
+      message =
+        failure?.code === "ai_usage_limit_exceeded"
+          ? limitMessage(failure.reset_at)
+          : failure?.error || message;
     } catch {
       // Тела нет — оставляем сообщение по статусу.
     }

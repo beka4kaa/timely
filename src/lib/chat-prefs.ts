@@ -7,6 +7,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import { renamedModelKey } from "@/components/chat/chat-usage";
+
 export interface ChatPrefs {
   model: string;
   reasoning: string;
@@ -25,7 +27,9 @@ const listeners = new Set<() => void>();
 function load(): ChatPrefs {
   try {
     const raw = window.localStorage.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<ChatPrefs>) } : DEFAULTS;
+    if (!raw) return DEFAULTS;
+    const saved = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<ChatPrefs>) };
+    return { ...saved, model: renamedModelKey(saved.model) };
   } catch {
     // Закрытое хранилище или испорченная запись: работаем с умолчаниями.
     return DEFAULTS;

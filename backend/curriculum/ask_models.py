@@ -42,18 +42,18 @@ class ReasoningLevel:
 
 ASK_MODELS = (
     AskModel(
-        key="glm-5.3",
+        key="smart",
         model_id=os.getenv("ASK_MODEL_MAIN", "z-ai/glm-5.3"),
-        name="GLM 5.3",
+        name="Умная",
         note="Основная модель, сильнее в сложных задачах",
         context_window=1_048_576,
         input_per_million=Decimal("0.07"),
         output_per_million=Decimal("1.40"),
     ),
     AskModel(
-        key="glm-5.3-flash",
+        key="fast",
         model_id=os.getenv("ASK_MODEL_FLASH", "z-ai/glm-5.3-flash"),
-        name="GLM 5.3 Flash",
+        name="Быстрая",
         note="Быстрее, длинные ответы дешевле",
         context_window=1_048_576,
         input_per_million=Decimal("0.15"),
@@ -69,6 +69,8 @@ REASONING_LEVELS = (
 
 DEFAULT_MODEL = ASK_MODELS[0]
 DEFAULT_REASONING = REASONING_LEVELS[0]
+# Такие ключи ещё лежат в браузерах учеников и в открытых вкладках.
+_OLD_MODEL_KEYS = {"glm-5.3": "smart", "glm-5.3-flash": "fast"}
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,8 @@ class AskChoice:
 
 def resolve_choice(model: object = None, reasoning: object = None) -> AskChoice:
     """Выбор из запроса. Всё незнакомое становится вариантом по умолчанию."""
+    if isinstance(model, str):
+        model = _OLD_MODEL_KEYS.get(model, model)
     return AskChoice(
         model=next((row for row in ASK_MODELS if row.key == model), DEFAULT_MODEL),
         reasoning=next((row for row in REASONING_LEVELS if row.key == reasoning), DEFAULT_REASONING),

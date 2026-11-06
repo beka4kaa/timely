@@ -30,6 +30,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_engine.prompt_safety import IDENTITY_RULE, PUBLIC_MODEL_ERROR, scrub_vendor_names
 from ai_engine.usage import AIUsageLimitExceeded, provider_call_reservation, usage_scope
 from curriculum.assistant_tools import OPEN_ALL_TOOL, OWN_TOOLS, AssistantTools, is_proposal_tool
 from curriculum.model_registry import ROLE_SCHEDULE_PLANNING, resolve_model
@@ -173,7 +174,7 @@ def _history(raw) -> list[dict]:
 
 
 def _system_prompt(mode: str) -> str:
-    return f"{SYSTEM_PROMPT}\n\n{MODE_PROMPTS[mode]}"
+    return f"{IDENTITY_RULE}\n\n{SYSTEM_PROMPT}\n\n{MODE_PROMPTS[mode]}"
 
 
 class ScheduleChatStreamView(APIView):
@@ -266,7 +267,12 @@ class ScheduleChatStreamView(APIView):
         def event_stream():
             from openai import OpenAI
 
-            from ai_engine.text_llm import TEXT_LLM_API_KEY, TEXT_LLM_BASE_URL, default_reasoning_body
+            from ai_engine.text_llm import (
+                TEXT_LLM_API_KEY,
+                TEXT_LLM_BASE_URL,
+                default_reasoning_body,
+                private_provider_body,
+            )
             from ai_engine.usage import provider_from_base_url, record_model_usage
 
             client = OpenAI(
@@ -303,7 +309,7 @@ class ScheduleChatStreamView(APIView):
                                 timeout=CHAT_TIMEOUT_SECONDS,
                                 **(
                                     {"extra_body": extra_body}
-                                    if (extra_body := default_reasoning_body(binding.model))
+                                    if (extra_body := {**default_reasoning_body(binding.model), **private_provider_body()})
                                     else {}
                                 ),
                             )
@@ -432,7 +438,7 @@ class ScheduleChatStreamView(APIView):
                             "Не удалось подготовить изменение. "
                             "Попробуй сформулировать просьбу точнее."
                         )
-                    yield _sse("content", {"text": final_text})
+                    yield _sse("content", {"text": scrub_vendor_names(final_text)})
                     yield _sse("done", {"has_revision": revision is not None})
                 except AIUsageLimitExceeded as exc:
                     # Лимит мог закончиться между кругами. Это не поломка: ученик должен
@@ -440,9 +446,10 @@ class ScheduleChatStreamView(APIView):
                     yield _sse("error", exc.as_payload())
                 except Exception as exc:  # noqa: BLE001
                     # Заголовки уже отправлены — HTTP-код не поменять, поэтому
-                    # ошибка приезжает событием, и панель её показывает.
+                    # ошибка приезжает событием, и панель её показывает. Текст
+                    # исключения только в лог: там бывает идентификатор модели.
                     logger.error("Schedule chat error: %s", exc, exc_info=True)
-                    yield _sse("error", {"error": str(exc)})
+                    yield _sse("error", {"error": PUBLIC_MODEL_ERROR})
 
         response = StreamingHttpResponse(
             event_stream(), content_type="text/event-stream"

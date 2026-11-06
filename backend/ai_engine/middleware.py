@@ -37,7 +37,7 @@ def _is_metered_request(method: str, path: str) -> bool:
     if parts[:2] != ["api", "curriculum"]:
         return False
     tail = parts[2:]
-    if tail in (["search"], ["plans", "generate"]):
+    if tail in (["search"], ["plans", "generate"], ["ask", "stream"]):
         return True
     if len(tail) == 3 and tail[0] == "goals" and tail[2] == "normalize":
         return True
@@ -61,7 +61,13 @@ class AIUsageContextMiddleware:
                     ensure_usage_available(user_email)
                 return self.get_response(request)
             except AIUsageLimitExceeded as exc:
-                # A per-provider-call reservation can be denied after the
-                # cheap request-level precheck. It is still the same 429, not
-                # a provider failure or a generic 500.
                 return JsonResponse(exc.as_payload(), status=429)
+
+    def process_exception(self, request, exception):
+        # A per-provider-call reservation can be denied inside a view, after the
+        # cheap request-level precheck. Django turns view exceptions into
+        # responses before they reach `__call__`, so this is the only place to
+        # answer with the same 429 instead of a generic 500.
+        if isinstance(exception, AIUsageLimitExceeded):
+            return JsonResponse(exception.as_payload(), status=429)
+        return None

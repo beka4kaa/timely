@@ -262,6 +262,12 @@ class HelpPolicyTests(SimpleTestCase):
 class RouterModeCompositionTests(SimpleTestCase):
     """Промпт собирается в ОДНОМ месте и режим в него действительно попадает."""
 
+    def test_the_board_chat_is_told_who_it_is(self) -> None:
+        from ai_engine.prompt_safety import IDENTITY_RULE
+        from ai_engine.skills.chat import CHAT_SYSTEM_PROMPT
+
+        self.assertIn(IDENTITY_RULE, CHAT_SYSTEM_PROMPT)
+
     def test_system_prompt_layers_base_then_mode(self) -> None:
         from ai_engine.skills.chat import CHAT_SYSTEM_PROMPT
         from ai_engine.skills.router import build_router_messages

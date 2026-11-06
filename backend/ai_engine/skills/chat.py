@@ -14,9 +14,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..prompt_safety import IDENTITY_RULE
 from .base import Skill, SkillResult
 
-CHAT_SYSTEM_PROMPT = """Ты — AI-репетитор на цифровой доске. Отвечаешь ученику в чате.
+CHAT_SYSTEM_PROMPT = IDENTITY_RULE + """
+
+Ты — AI-репетитор на цифровой доске. Отвечаешь ученику в чате.
 
 Правила:
 1. Отвечай кратко и по делу, без воды и без markdown-заголовков.

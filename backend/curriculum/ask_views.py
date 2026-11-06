@@ -24,6 +24,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_engine.prompt_safety import PUBLIC_MODEL_ERROR, scrub_stream
 from ai_engine.usage import usage_scope
 
 from .ask import build_ask_context, split_outside_marker
@@ -149,15 +150,17 @@ class SubjectAskStreamView(APIView):
                     usage: list = []
                     looked_at_affairs = False
                     spoke = False
-                    for delta in TextModel(choice.model.model_id, temperature=0.3).stream_content(
-                        context.messages(),
-                        max_tokens=choice.reasoning.max_tokens,
-                        timeout=ASK_TIMEOUT_SECONDS,
-                        feature="subject_ask",
-                        reasoning_effort=choice.reasoning.key,
-                        on_usage=usage.append,
-                        tools=assistant.schemas if assistant else None,
-                        run_tool=assistant.run if assistant else None,
+                    for delta in scrub_stream(
+                        TextModel(choice.model.model_id, temperature=0.3).stream_content(
+                            context.messages(),
+                            max_tokens=choice.reasoning.max_tokens,
+                            timeout=ASK_TIMEOUT_SECONDS,
+                            feature="subject_ask",
+                            reasoning_effort=choice.reasoning.key,
+                            on_usage=usage.append,
+                            tools=assistant.schemas if assistant else None,
+                            run_tool=assistant.run if assistant else None,
+                        )
                     ):
                         if isinstance(delta, ToolCallEvent):
                             looked_at_affairs = True
@@ -217,9 +220,10 @@ class SubjectAskStreamView(APIView):
                     yield _sse("done", {"grounded": grounded, "library": has_library})
                 except Exception as exc:  # noqa: BLE001
                     # Заголовки уже отправлены — HTTP-код не поменять, поэтому
-                    # ошибка приезжает событием, и панель её показывает.
+                    # ошибка приезжает событием, и панель её показывает. Текст
+                    # исключения только в лог: там бывает идентификатор модели.
                     logger.error("Subject ask stream error: %s", exc, exc_info=True)
-                    yield _sse("error", {"error": str(exc)})
+                    yield _sse("error", {"error": PUBLIC_MODEL_ERROR})
 
         response = StreamingHttpResponse(
             event_stream(), content_type="text/event-stream"

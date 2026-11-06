@@ -164,6 +164,15 @@ class ProviderSelectionTests(TestCase):
         )
         self.assertEqual(provider.model, "vendor/model")
 
+    def test_текст_цели_идёт_только_на_хосты_без_хранения(self):
+        provider = goals_service.OpenRouterGoalNormalizationProvider(model="vendor/model")
+        answer = mock.Mock(text='{"subject": "Физика", "goal_type": "exam", "confidence": 0.9}')
+
+        with mock.patch("ai_engine.text_llm.TextModel.generate_json_content", return_value=answer) as generate:
+            provider.normalize("Сдать физику на 9")
+
+        self.assertIs(generate.call_args.kwargs["private"], True)
+
 
 class EnumNormalizationTests(TestCase):
     """Синонимы приводятся к контракту ДО валидатора."""

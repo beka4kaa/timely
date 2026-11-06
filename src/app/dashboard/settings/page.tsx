@@ -84,7 +84,7 @@ function ChatSection() {
       <div className="set-body">
         <div className="set-line">
           <div>
-            Выбор модели<small>В поле чата: GLM 5.3 или 5.3 Flash и уровень рассуждения</small>
+            Выбор модели<small>В поле чата: умная или быстрая и уровень рассуждения</small>
           </div>
           <Switch
             on={prefs.showPicker}

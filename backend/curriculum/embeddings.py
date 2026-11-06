@@ -115,6 +115,7 @@ class OpenAICompatibleEmbeddingProvider:
         api_key: str,
         dimensions: int = EMBEDDING_DIMENSIONS,
         timeout_seconds: int = 60,
+        private: bool = False,
     ) -> None:
         if not model:
             raise ValueError("Провайдер эмбеддингов требует непустое имя модели")
@@ -125,6 +126,7 @@ class OpenAICompatibleEmbeddingProvider:
         self.api_key = api_key
         self.dimensions = dimensions
         self.timeout_seconds = timeout_seconds
+        self.private = private
 
     def embed(self, texts: Sequence[str]) -> EmbeddingResult:
         if not texts:
@@ -134,6 +136,7 @@ class OpenAICompatibleEmbeddingProvider:
         # и без ключей.
         from openai import OpenAI
 
+        from ai_engine.text_llm import private_provider_body
         from ai_engine.usage import (
             AIUsageLimitExceeded,
             provider_call_reservation,
@@ -145,6 +148,7 @@ class OpenAICompatibleEmbeddingProvider:
         client = OpenAI(
             api_key=self.api_key, base_url=self.base_url, max_retries=0
         )
+        routing = private_provider_body(self.base_url) if self.private else {}
 
         last_error = ""
         for attempt in range(MAX_ATTEMPTS):
@@ -157,6 +161,7 @@ class OpenAICompatibleEmbeddingProvider:
                         model=self.model,
                         input=payload,
                         timeout=self.timeout_seconds,
+                        **({"extra_body": routing} if routing else {}),
                     )
                     record_model_usage(
                         response,
@@ -216,11 +221,14 @@ class OpenAICompatibleEmbeddingProvider:
         )
 
 
-def get_embedding_provider() -> EmbeddingProvider:
+def get_embedding_provider(*, private: bool = False) -> EmbeddingProvider:
     """Настроенный провайдер или `NullEmbeddingProvider`.
 
     Реальный провайдер требует ВСЕ ТРИ настройки: `EMBEDDING_MODEL`,
     `EMBEDDING_BASE_URL` и ключ.
+
+    `private` для текста ученика: вопрос идёт только на хостинги без хранения.
+    Текст книг идёт как раньше, поэтому индексация от этой настройки не зависит.
 
     Базовый URL не имеет умолчания намеренно: угадывать, куда слать платные
     запросы, — плохая идея, а разные провайдеры дают РАЗНУЮ размерность
@@ -247,6 +255,7 @@ def get_embedding_provider() -> EmbeddingProvider:
         base_url=EMBEDDING_BASE_URL,
         api_key=EMBEDDING_API_KEY,
         timeout_seconds=binding.timeout_seconds,
+        private=private,
     )
 
 

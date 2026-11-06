@@ -88,6 +88,7 @@ class UnderstandApiTests(TestCase):
         self.assertEqual(response.json(), {"kind": "habit", "name": "Читать 20 минут"})
         self.assertEqual(call.call_args.kwargs["payload"]["text"], "Хочу читать 20 минут каждый день")
         self.assertFalse(call.call_args.kwargs["reasoning_enabled"])
+        self.assertTrue(call.call_args.kwargs["private"])
 
     def test_a_broken_model_answer_falls_back_to_rules(self):
         with (

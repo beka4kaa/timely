@@ -15,6 +15,8 @@ from django.test import (
     skipUnlessDBFeature,
 )
 
+from django.conf import settings
+
 from .middleware import AIUsageContextMiddleware, _is_metered_request
 from .models import AIUsageEvent, AIUsageQuotaState
 
@@ -33,6 +35,7 @@ from .usage import (
     resolve_usage_plan,
     usage_reservation,
     usage_scope,
+    _plan_profile,
 )
 
 
@@ -412,6 +415,24 @@ class UsageReservationConcurrencyTests(TransactionTestCase):
                 release_usage_reservation(value)
 
 
+class FreePlanLimitsTests(SimpleTestCase):
+    """Большая просьба к тьютору стоит 30–50 тысяч токенов: лимита должно хватать на несколько."""
+
+    def test_free_plan_has_room_for_real_requests(self) -> None:
+        self.assertEqual(settings.AI_PLAN_LIMITS["free"]["five_hour"], 150000)
+        self.assertEqual(settings.AI_PLAN_LIMITS["free"]["weekly"], 500000)
+
+    @override_settings(AI_PLAN_LIMITS={})
+    def test_the_fallback_is_the_same_as_the_settings(self) -> None:
+        limits = _plan_profile("free")["limits"]
+        self.assertEqual((limits["five_hour"], limits["weekly"]), (150000, 500000))
+
+    def test_a_paid_plan_stays_above_the_free_one(self) -> None:
+        free, pro = settings.AI_PLAN_LIMITS["free"], settings.AI_PLAN_LIMITS["pro"]
+        self.assertGreater(pro["five_hour"], free["five_hour"])
+        self.assertGreater(pro["weekly"], free["weekly"])
+
+
 class CurriculumUsageMiddlewareTests(SimpleTestCase):
     def test_only_ai_backed_curriculum_actions_are_quota_guarded(self) -> None:
         metered = (
@@ -419,6 +440,8 @@ class CurriculumUsageMiddlewareTests(SimpleTestCase):
             "/api/curriculum/plans/generate/",
             "/api/curriculum/goals/abc/normalize/",
             "/api/curriculum/documents/abc/ingest/",
+            "/api/curriculum/ask/stream",
+            "/api/curriculum/ask/stream/",
         )
         free = (
             "/api/curriculum/documents/upload/",

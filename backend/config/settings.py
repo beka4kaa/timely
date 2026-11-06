@@ -630,14 +630,15 @@ AI_IMAGE_TOKEN_CHARGE = int(os.getenv("AI_IMAGE_TOKEN_CHARGE", "4000"))
 AI_CONTEXT_TOKEN_LIMIT = int(os.getenv("AI_CONTEXT_TOKEN_LIMIT", "128000"))
 AI_TOKEN_5H_LIMIT = int(os.getenv("AI_TOKEN_5H_LIMIT", "250000"))
 AI_TOKEN_WEEKLY_LIMIT = int(os.getenv("AI_TOKEN_WEEKLY_LIMIT", "1000000"))
-# Free is intentionally small. Pro preserves the previous global limits. Max
-# gets 20x the rolling allowance of Pro while still retaining a hard ceiling.
+# Free covers real work with the tutor: one big request costs 30-50k tokens, so
+# this is several of them per window. Pro preserves the previous global limits.
+# Max gets 20x the rolling allowance of Pro while still retaining a hard ceiling.
 AI_FREE_CONTEXT_TOKEN_LIMIT = int(
     os.getenv("AI_FREE_CONTEXT_TOKEN_LIMIT", "32000")
 )
-AI_FREE_TOKEN_5H_LIMIT = int(os.getenv("AI_FREE_TOKEN_5H_LIMIT", "25000"))
+AI_FREE_TOKEN_5H_LIMIT = int(os.getenv("AI_FREE_TOKEN_5H_LIMIT", "150000"))
 AI_FREE_TOKEN_WEEKLY_LIMIT = int(
-    os.getenv("AI_FREE_TOKEN_WEEKLY_LIMIT", "100000")
+    os.getenv("AI_FREE_TOKEN_WEEKLY_LIMIT", "500000")
 )
 AI_MAX_CONTEXT_TOKEN_LIMIT = int(
     os.getenv("AI_MAX_CONTEXT_TOKEN_LIMIT", "256000")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from django.test import TestCase
 
+from ai_engine.prompt_safety import IDENTITY_RULE
 from curriculum.ask import (
     OUTSIDE_MARKER,
     build_ask_context,
@@ -159,6 +160,27 @@ class ContextTests(TestCase):
         context = build_ask_context(goal=self.goal, question="импульс")
 
         self.assertFalse(context.grounded)
+
+
+class IdentityTests(TestCase):
+    def test_с_книгой_модель_знает_кто_она(self):
+        subject = goal()
+        chunk(document(subject), "Импульс тела равен произведению массы на скорость")
+
+        context = build_ask_context(goal=subject, question="что такое импульс")
+
+        self.assertIn(IDENTITY_RULE, context.messages()[0]["content"])
+
+    def test_без_книги_тоже(self):
+        context = build_ask_context(goal=None, question="привет")
+
+        self.assertIn(IDENTITY_RULE, context.messages()[0]["content"])
+
+    def test_раздел_назван_как_в_меню(self):
+        system = build_ask_context(goal=None, question="привет").messages()[0]["content"]
+
+        self.assertNotIn("«Предметы»", system)
+        self.assertIn("«Курсы и книги»", system)
 
 
 class HistoryTests(TestCase):

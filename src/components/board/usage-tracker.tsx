@@ -82,8 +82,8 @@ export interface ContextUsageOverride {
 }
 
 const FALLBACK_CONTEXT_LIMIT = 32_000;
-const FALLBACK_FIVE_HOUR_LIMIT = 25_000;
-const FALLBACK_WEEKLY_LIMIT = 100_000;
+const FALLBACK_FIVE_HOUR_LIMIT = 150_000;
+const FALLBACK_WEEKLY_LIMIT = 500_000;
 
 const chartConfig = {
   tokens: {

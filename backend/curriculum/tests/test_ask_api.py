@@ -10,11 +10,14 @@ import json
 from decimal import Decimal
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
+from ai_engine.models import AIUsageEvent
+from ai_engine.prompt_safety import PUBLIC_MODEL_ERROR
 from ai_engine.text_llm import ToolCallEvent
-from ai_engine.usage import UsageNumbers
+from ai_engine.usage import AIUsageLimitExceeded, UsageNumbers
 from curriculum.ask import OUTSIDE_MARKER
+from curriculum.ask_models import ask_options, resolve_choice
 from curriculum.models import Document, KnowledgeChunk, LearningGoal
 from config.testing import auth_headers
 from habits.models import Habit
@@ -188,7 +191,7 @@ class AskStreamTests(TestCase):
         """Заголовки уже отправлены — HTTP-код не поменять."""
 
         def boom(self, messages, **kwargs):
-            raise RuntimeError("провайдер лёг")
+            raise RuntimeError("404 z-ai/glm-5.3 no endpoints")
             yield  # pragma: no cover — делает функцию генератором
 
         with mock.patch("ai_engine.text_llm.TextModel.stream_content", boom):
@@ -197,7 +200,18 @@ class AskStreamTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         by_name = dict(events)
-        self.assertIn("провайдер лёг", by_name["error"]["error"])
+        # Текст исключения остаётся в логе: там бывает идентификатор модели.
+        self.assertEqual(by_name["error"]["error"], PUBLIC_MODEL_ERROR)
+
+    def test_название_модели_не_доходит_и_в_ответе_по_книге(self):
+        with _stream(f"{OUTSIDE_MARKER}\n", "Я GLM-", "5.3 от Zhipu, а импульс это масса на скорость"):
+            events = _events(self._post())
+
+        text = "".join(d["delta"] for n, d in events if n == "content")
+        self.assertNotIn("GLM-5", text)
+        self.assertNotIn("Zhipu", text)
+        self.assertNotIn(OUTSIDE_MARKER, text)
+        self.assertIn("масса на скорость", text)
 
     def test_предмет_без_готовых_книг_отвечает_вне_книги(self):
         empty_goal = LearningGoal.objects.create(
@@ -252,6 +266,14 @@ class WithoutSubjectStreamTests(TestCase):
             )
             events = _events(response) if response.status_code == 200 else []
         return response, events
+
+    def test_название_модели_не_доходит_до_ученика(self):
+        _, events = self._ask("Я GLM-", "5.3 от Zh", "ipu, а интеграл это площадь")
+
+        text = "".join(d["delta"] for n, d in events if n == "content")
+        self.assertNotIn("GLM-5", text)
+        self.assertNotIn("Zhipu", text)
+        self.assertTrue(text.endswith("а интеграл это площадь"))
 
     def test_ответ_приходит_без_предмета(self):
         response, events = self._ask("Интеграл — это ", "площадь под кривой.")
@@ -391,7 +413,7 @@ class AskModelChoiceTests(TestCase):
         names = [name for name, _ in events]
         self.assertEqual(names[-2:], ["usage", "done"])
         usage = dict(events)["usage"]
-        self.assertEqual(usage["model_name"], "GLM 5.3 Flash")
+        self.assertEqual(usage["model_name"], "Быстрая")
         self.assertEqual(usage["reasoning"], "high")
         self.assertEqual(usage["input_tokens"], 3000)
         self.assertEqual(usage["cached_input_tokens"], 1000)
@@ -417,9 +439,86 @@ class AskModelChoiceTests(TestCase):
         url = "/api/curriculum/ask/options/"
         self.assertEqual(self.client.get(url).status_code, 401)
         body = self.client.get(url, **_auth(OWNER)).json()
-        self.assertEqual([row["key"] for row in body["models"]], ["glm-5.3", "glm-5.3-flash"])
+        self.assertEqual([row["key"] for row in body["models"]], ["smart", "fast"])
         self.assertEqual([row["key"] for row in body["reasoning"]], ["low", "high", "max"])
         self.assertNotIn("model_id", body["models"][0])
+
+
+class AskLimitTests(TestCase):
+    """Лимит действует и в чате: иначе расход тьютора ничем не ограничен."""
+
+    def _spend(self, tokens: int) -> None:
+        AIUsageEvent.objects.create(
+            user_email=OWNER,
+            provider="openrouter",
+            model_name="test-model",
+            feature="subject_ask",
+            total_tokens=tokens,
+            billable_tokens=tokens,
+        )
+
+    def _ask(self):
+        return self.client.post(
+            URL, {"message": "привет"}, content_type="application/json", **_auth(OWNER)
+        )
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True)
+    def test_исчерпанный_лимит_даёт_понятный_отказ(self):
+        self._spend(150000)
+
+        def must_not_run(self, messages, **kwargs):
+            raise AssertionError("после лимита модель не вызывается")
+
+        with mock.patch("ai_engine.text_llm.TextModel.stream_content", must_not_run):
+            response = self._ask()
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["code"], "ai_usage_limit_exceeded")
+        # По этому коду клиент показывает понятный текст о лимите.
+        self.assertIn("Лимит", response.json()["error"])
+        self.assertEqual(response.json()["window"], "five_hour")
+        self.assertTrue(response.json()["reset_at"])
+
+    def test_отказ_при_поиске_по_книге_тоже_понятный(self):
+        # Сам запрос прошёл проверку, а на векторе вопроса токены кончились. Это уже внутри вью.
+        self.client.raise_request_exception = False
+        denied = AIUsageLimitExceeded(window="five_hour", reset_at="2026-08-09T12:00:00Z")
+
+        with mock.patch("curriculum.ask_views.build_ask_context", side_effect=denied):
+            response = self._ask()
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["code"], "ai_usage_limit_exceeded")
+        self.assertEqual(response.json()["reset_at"], "2026-08-09T12:00:00Z")
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True)
+    def test_пока_лимит_не_кончился_вопрос_проходит(self):
+        self._spend(149000)
+
+        with _stream("Ответ"):
+            response = self._ask()
+            events = _events(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("done", [name for name, _ in events])
+
+
+class ModelLabelsTests(TestCase):
+    """Ученик выбирает «Умная» или «Быстрая»: что это за модель, ему не показываем."""
+
+    def test_старые_ключи_из_браузера_работают(self):
+        self.assertEqual(resolve_choice("glm-5.3").model.key, "smart")
+        self.assertEqual(resolve_choice("glm-5.3-flash").model.key, "fast")
+
+    def test_новые_ключи_и_подписи(self):
+        self.assertEqual(resolve_choice("smart").model.name, "Умная")
+        self.assertEqual(resolve_choice("fast").model.name, "Быстрая")
+
+    def test_незнакомый_ключ_даёт_значение_по_умолчанию(self):
+        self.assertEqual(resolve_choice("gpt").model.key, "smart")
+
+    def test_варианты_не_называют_модель(self):
+        self.assertNotRegex(json.dumps(ask_options(), ensure_ascii=False), "(?i)glm|z-ai")
 
 
 class AssistantInStreamTests(TestCase):

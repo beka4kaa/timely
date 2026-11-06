@@ -314,6 +314,80 @@ def _bad_request():
     return BadRequestError("нельзя", response=response, body=None)
 
 
+class PrivateRoutingTests(SimpleTestCase):
+    """Запросы с данными ученика идут только туда, где их не хранят."""
+
+    def test_stream_goes_only_to_hosts_that_keep_nothing(self):
+        client = _ScriptedClient([_delta_chunk(content="ответ")])
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "k"):
+            list(TextModel("z-ai/glm-5.3").stream_content([{"role": "user", "content": "привет"}]))
+
+        extra = client.calls[0]["extra_body"]
+        self.assertEqual(extra["provider"], {"zdr": True})
+        self.assertIn("reasoning", extra)
+
+    def test_generate_content_too(self):
+        with _ClientFixture(_RecordingClient()) as client:
+            TextModel("vendor/model").generate_content("вопрос")
+
+        self.assertEqual(client.calls[0]["extra_body"]["provider"], {"zdr": True})
+
+    def test_generate_content_keeps_mandatory_reasoning(self):
+        with _ClientFixture(_RecordingClient()) as client:
+            TextModel("z-ai/glm-5.3").generate_content("вопрос")
+
+        extra = client.calls[0]["extra_body"]
+        self.assertEqual(extra["provider"], {"zdr": True})
+        self.assertIn("reasoning", extra)
+
+    def test_json_only_when_asked(self):
+        with _ClientFixture(_RecordingClient()) as client:
+            TextModel("vendor/model").generate_json_content(system_prompt="s", payload={}, timeout=5, max_tokens=100)
+            TextModel("vendor/model").generate_json_content(
+                system_prompt="s", payload={}, timeout=5, max_tokens=100, private=True
+            )
+
+        self.assertNotIn("provider", client.calls[0]["extra_body"])
+        self.assertEqual(client.calls[1]["extra_body"]["provider"], {"zdr": True})
+
+    def test_json_keeps_the_chosen_providers(self):
+        with _ClientFixture(_RecordingClient()) as client:
+            TextModel("vendor/model").generate_json_content(
+                system_prompt="s", payload={}, timeout=5, max_tokens=100, providers=("a",), private=True
+            )
+
+        self.assertEqual(
+            client.calls[0]["extra_body"]["provider"], {"only": ["a"], "sort": "throughput", "zdr": True}
+        )
+
+    def test_the_retry_without_tools_stays_private(self):
+        # Хост не принял инструменты: второй запрос не должен уйти куда попало.
+        client = _ScriptedClient(_bad_request(), [_delta_chunk(content="ответ")])
+        tools = [{"type": "function", "function": {"name": "list_habits", "parameters": {}}}]
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "k"):
+            list(
+                TextModel("z-ai/glm-5.3").stream_content(
+                    [{"role": "user", "content": "привет"}], tools=tools, run_tool=lambda *_: {}
+                )
+            )
+
+        self.assertNotIn("tools", client.calls[1])
+        self.assertEqual(client.calls[1]["extra_body"]["provider"], {"zdr": True})
+
+    def test_off_by_setting(self):
+        with patch.object(text_llm, "AI_TEXT_ZDR", False):
+            self.assertEqual(text_llm.private_provider_body(), {})
+
+    def test_off_outside_openrouter(self):
+        with patch.object(text_llm, "TEXT_LLM_BASE_URL", "http://127.0.0.1:8200/v1"):
+            self.assertEqual(text_llm.private_provider_body(), {})
+
+    def test_another_address_is_judged_by_itself(self):
+        with patch.object(text_llm, "TEXT_LLM_BASE_URL", "http://127.0.0.1:8200/v1"):
+            self.assertEqual(text_llm.private_provider_body("https://openrouter.ai/api/v1"), {"provider": {"zdr": True}})
+        self.assertEqual(text_llm.private_provider_body("https://example.test/v1"), {})
+
+
 class ToolLoopTests(SimpleTestCase):
     """Модель зовёт инструменты, результат возвращается к ней, в поток идут текст и подписи."""
 

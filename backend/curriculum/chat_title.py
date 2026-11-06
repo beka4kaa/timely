@@ -82,6 +82,7 @@ def generate_chat_title(messages: list) -> str:
             # Само имя короткое, но рассуждение у GLM обязательное и идёт из этого же лимита.
             max_tokens=1500,
             feature="chat_title",
+            private=True,
         )
         data = json.loads(response.text)
         title = str(data.get("title") or "").strip() if isinstance(data, dict) else ""

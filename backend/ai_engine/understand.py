@@ -115,6 +115,7 @@ class UnderstandView(APIView):
                     max_tokens=1500,
                     reasoning_enabled=False,
                     feature="understand",
+                    private=True,
                 )
             parsed = validate(json.loads(answer.text))
         except Exception as exc:  # noqa: BLE001 — любой сбой значит «разбери правилами»

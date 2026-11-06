@@ -101,11 +101,13 @@
 .ctx + .send { margin-left: 0; }
 .ctx .ring.xs { width: 16px; height: 16px; }
 .m-usage { margin-top: 8px; color: var(--t-faint); font-size: 12px; line-height: 1.4; font-variant-numeric: tabular-nums; }
-.model-short { display: none; }
 @container main (max-width: 620px) {
   .ctx { margin-right: 6px; }
-  .ctx-text, .model-full { display: none; }
-  .model-short { display: inline; }
+  .ctx-text { display: none; }
+}
+/* На телефоне режиму хватает значка: иначе с длинным названием режима выбор книги сжимается до стрелки */
+@container main (max-width: 440px) {
+  .mode-pick:not(.model-pick) > span { display: none; }
 }
 
 /* Что тьютор предлагает поменять: одна и та же карточка в чате и в мини-окне. */

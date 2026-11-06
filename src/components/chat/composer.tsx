@@ -215,6 +215,7 @@ export function ModePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={menu.open}
+        aria-label={`Режим: ${mode.name}`}
         title="Режим, Shift+Tab переключает"
         onClick={menu.toggle}
       >
@@ -277,9 +278,7 @@ export function ModelPicker({
         title={`${currentModel.name}, рассуждение: ${currentLevel.name.toLowerCase()}`}
         onClick={menu.toggle}
       >
-        <span className="model-full">{currentModel.name}</span>
-        {/* На телефоне в строке инструментов тесно: от имени остаётся то, чем модели различаются. */}
-        <span className="model-short">{currentModel.name.replace(/^GLM\s+(5\.3\s+)?/, "")}</span>
+        <span>{currentModel.name}</span>
         <Icon name="chev-d" className="chev" />
       </button>
       {menu.open ? (

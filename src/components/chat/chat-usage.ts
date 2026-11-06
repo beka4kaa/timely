@@ -27,6 +27,19 @@ const LEVEL_NAMES: Record<string, string> = {
   max: "максимальное",
 };
 
+/** Такие ключи ещё лежат в браузерах учеников. */
+const OLD_MODEL_KEYS: Record<string, string> = { "glm-5.3": "smart", "glm-5.3-flash": "fast" };
+
+export function renamedModelKey(key: string): string {
+  return OLD_MODEL_KEYS[key] ?? key;
+}
+
+/** В истории чатов лежат записи со старыми названиями: показываем их новыми словами. */
+function modelLabel(name: string): string {
+  if (!/^GLM/i.test(name)) return name;
+  return /flash/i.test(name) ? "Быстрая" : "Умная";
+}
+
 /** 3214 → «3 214». Неразрывный пробел: число не должно переноситься. */
 export function countLabel(value: number): string {
   return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -70,7 +83,7 @@ export function usageLine(usage: AskUsage): string {
   if (usage.cached_input_tokens) parts.push(`из кэша ${countLabel(usage.cached_input_tokens)}`);
   parts.push(`${usage.cost_estimated ? "примерно " : ""}${costLabel(usage.cost_usd)}`);
   const level = LEVEL_NAMES[usage.reasoning] ?? usage.reasoning;
-  return `${usage.model_name}, рассуждение ${level}: ${parts.join(", ")}`;
+  return `${modelLabel(usage.model_name)}, рассуждение ${level}: ${parts.join(", ")}`;
 }
 
 /** Последний ответ, у которого есть расход: по нему показывается окно. */

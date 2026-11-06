@@ -6,6 +6,8 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from ai_engine.prompt_safety import IDENTITY_RULE, PUBLIC_MODEL_ERROR
+from ai_engine.usage import AIUsageLimitExceeded
 from habits.models import Habit
 from studyplan.models import ScheduleRevision, StudySchedule
 from studyplan.services import generate_schedule
@@ -190,6 +192,36 @@ class ConversationTests(ChatFixture):
         # В режиме оценки менять нечего: ни расписание, ни остальные дела.
         self.assertFalse([name for name in names if name.startswith("propose_")])
         self.assertNotIn("add_course_to_schedule", names)
+
+    def test_the_model_is_told_who_it_is(self):
+        _, _, client = self.run_chat([_Message(content="Привет")])
+
+        self.assertIn(IDENTITY_RULE, client.completions.calls[0]["messages"][0]["content"])
+
+    def test_requests_go_only_to_hosts_that_keep_nothing(self):
+        _, _, client = self.run_chat([_Message(content="Привет")])
+
+        self.assertEqual(client.completions.calls[0]["extra_body"]["provider"], {"zdr": True})
+
+    def test_vendor_name_does_not_reach_the_student(self):
+        _, events, _ = self.run_chat([_Message(content="Я GLM-5.3 от Zhipu")])
+
+        self.assertNotRegex(events[0][1]["text"], "GLM-5|Zhipu")
+
+    def test_provider_failure_text_stays_in_the_log(self):
+        with mock.patch.object(_FakeCompletions, "create", side_effect=RuntimeError("404 z-ai/glm-5.3")):
+            _, events, _ = self.run_chat([_Message(content="Привет")])
+
+        self.assertEqual(dict(events)["error"]["error"], PUBLIC_MODEL_ERROR)
+
+    def test_the_limit_is_said_in_plain_words(self):
+        denied = AIUsageLimitExceeded(window="five_hour", reset_at="2026-08-09T12:00:00Z")
+        with mock.patch.object(_FakeCompletions, "create", side_effect=denied):
+            _, events, _ = self.run_chat([_Message(content="Привет")])
+
+        error = dict(events)["error"]
+        self.assertEqual(error["code"], "ai_usage_limit_exceeded")
+        self.assertIn("Лимит", error["error"])
 
     def test_other_affairs_are_a_card_and_nothing_is_written(self):
         rounds = [

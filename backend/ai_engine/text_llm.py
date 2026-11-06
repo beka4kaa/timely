@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 TEXT_LLM_BASE_URL = os.getenv("TEXT_LLM_BASE_URL", "https://openrouter.ai/api/v1")
 TEXT_LLM_API_KEY = os.getenv("TEXT_LLM_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
+AI_TEXT_ZDR = os.getenv("AI_TEXT_ZDR", "true").lower() in {"1", "true", "yes"}
 TEXT_LLM_MODEL = os.getenv("TEXT_LLM_MODEL", "z-ai/glm-5.3")
 TEXT_LLM_TIMEOUT = int(os.getenv("TEXT_LLM_TIMEOUT", "180"))
 # Учебная программа на 12 недель — это большой JSON. Лимит с запасом: при
@@ -83,6 +84,18 @@ def reasoning_options(model: str, *, enabled: bool = True, effort: str | None = 
 def default_reasoning_body(model: str) -> dict[str, Any]:
     """`extra_body` для вызова, который уровень сам не выбирает. У обычных моделей ничего не меняет."""
     return {"reasoning": reasoning_options(model)} if has_mandatory_reasoning(model) else {}
+
+
+def private_provider_body(base_url: str | None = None) -> dict[str, Any]:
+    """Запрос с данными ученика идёт только туда, где их не хранят и на них не учатся.
+
+    Запасного пути нет намеренно: лучше «Тьютор сейчас не отвечает», чем данные ребёнка на
+    чужом хостинге. Выключается только настройкой `AI_TEXT_ZDR`. `base_url` нужен тем, кто
+    ходит не через общий адрес текстовых моделей, например эмбеддингам.
+    """
+    if not AI_TEXT_ZDR or provider_from_base_url(base_url or TEXT_LLM_BASE_URL) != "openrouter":
+        return {}
+    return {"provider": {"zdr": True}}
 
 
 class TextLLMNotConfigured(RuntimeError):
@@ -164,7 +177,11 @@ class TextModel:
             max_tokens=TEXT_LLM_MAX_TOKENS,
             temperature=self.temperature,
             timeout=TEXT_LLM_TIMEOUT,
-            **({"extra_body": extra_body} if (extra_body := default_reasoning_body(self.model)) else {}),
+            **(
+                {"extra_body": extra_body}
+                if (extra_body := {**default_reasoning_body(self.model), **private_provider_body()})
+                else {}
+            ),
         )
         record_model_usage(
             response,
@@ -236,7 +253,7 @@ class TextModel:
                 # пройдено в `skills/router.py`.
                 stream_options={"include_usage": True},
                 # `usage.include` просит у OpenRouter ещё и цену этого запроса.
-                extra_body={"reasoning": reasoning, "usage": {"include": True}},
+                extra_body={"reasoning": reasoning, "usage": {"include": True}, **private_provider_body()},
                 **tool_options,
             )
 
@@ -356,6 +373,7 @@ class TextModel:
         json_schema: dict[str, Any] | None = None,
         schema_name: str = "response",
         providers: Sequence[str] | None = None,
+        private: bool = False,
     ) -> _TextResponse:
         """Request a compact JSON object through the existing OpenRouter client.
 
@@ -419,11 +437,14 @@ class TextModel:
             response_format = {"type": "json_object"}
 
         extra_body: dict[str, Any] = {"reasoning": reasoning}
+        routing: dict[str, Any] = {}
         if providers:
-            extra_body["provider"] = {
-                "only": list(providers),
-                "sort": "throughput",
-            }
+            routing.update(only=list(providers), sort="throughput")
+        if private:
+            # По просьбе, а не всегда: разбор книг идёт моделями, у которых таких хостингов может не быть.
+            routing.update(private_provider_body().get("provider", {}))
+        if routing:
+            extra_body["provider"] = routing
 
         logger.info("[text_llm] JSON-запрос к %s (%s)", self.model, feature)
         # Контекст копируется явно: `ThreadPoolExecutor` создаёт тред с ПУСТЫМ

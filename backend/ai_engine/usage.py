@@ -370,8 +370,8 @@ def _plan_profile(
         "free": {
             "label": "Free",
             "context": 32_000,
-            "five_hour": 25_000,
-            "weekly": 100_000,
+            "five_hour": 150_000,
+            "weekly": 500_000,
             "price_usd": 0.0,
             "usage_multiplier": 1,
         },

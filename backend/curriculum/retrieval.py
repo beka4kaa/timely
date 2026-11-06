@@ -494,7 +494,7 @@ class PgVectorDenseRetriever:
     def _embed_query(self, query: str) -> tuple[list[float], str] | None:
         from .embeddings import get_embedding_provider
 
-        provider = self._provider or get_embedding_provider()
+        provider = self._provider or get_embedding_provider(private=True)
         if provider.name == "null-embedding":
             return None
         result = provider.embed([query])

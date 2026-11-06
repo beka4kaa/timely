@@ -186,6 +186,50 @@ class EmbeddingProviderTests(TestCase):
         self.assertEqual(state.reservations, {})
 
 
+@override_settings(CURRICULUM_EMBEDDINGS_ENABLED=True)
+@mock.patch.dict("os.environ", {"EMBEDDING_MODEL": "openai/text-embedding-3-small"})
+@mock.patch("curriculum.embeddings.EMBEDDING_API_KEY", "key")
+@mock.patch("curriculum.embeddings.EMBEDDING_BASE_URL", "https://openrouter.ai/api/v1")
+class PrivateQueryTests(TestCase):
+    """Вопрос ученика идёт только туда, где его не хранят. Разбор книги остаётся как был."""
+
+    def _one_vector(self, openai):
+        create = openai.return_value.embeddings.create
+        create.return_value = SimpleNamespace(
+            data=[SimpleNamespace(index=0, embedding=[0.0] * EMBEDDING_DIMENSIONS)]
+        )
+        return create
+
+    @mock.patch("ai_engine.usage.record_model_usage")
+    @mock.patch("openai.OpenAI")
+    def test_вектор_вопроса_идёт_только_на_хост_без_хранения(self, openai, _record):
+        create = self._one_vector(openai)
+
+        embedded = PgVectorDenseRetriever()._embed_query("как решать уравнения")
+
+        self.assertIsNotNone(embedded)
+        self.assertEqual(create.call_args.kwargs["extra_body"], {"provider": {"zdr": True}})
+
+    @mock.patch("ai_engine.usage.record_model_usage")
+    @mock.patch("openai.OpenAI")
+    def test_текст_книги_идёт_как_раньше(self, openai, _record):
+        create = self._one_vector(openai)
+
+        get_embedding_provider().embed(["глава из книги"])
+
+        self.assertNotIn("extra_body", create.call_args.kwargs)
+
+    @mock.patch("ai_engine.usage.record_model_usage")
+    @mock.patch("openai.OpenAI")
+    def test_вне_openrouter_настройки_нет(self, openai, _record):
+        create = self._one_vector(openai)
+
+        with mock.patch("curriculum.embeddings.EMBEDDING_BASE_URL", "https://example.test/v1"):
+            PgVectorDenseRetriever()._embed_query("как решать уравнения")
+
+        self.assertNotIn("extra_body", create.call_args.kwargs)
+
+
 class EmbeddingKillSwitchTests(TestCase):
     def test_под_тест_раннером_провайдер_всегда_заглушка(self):
         # Настройки уже выставлены `config/settings.py` при запуске тестов:

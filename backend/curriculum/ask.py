@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ai_engine.prompt_safety import IDENTITY_RULE
+
 from .ask_modes import DEFAULT_MODE, mode_instructions, normalize_mode
 from .models import Document, LearningGoal
 from .retrieval import Citation, RetrievalResult, wrap_as_data_section
@@ -64,7 +66,7 @@ GENERAL_SYSTEM_PROMPT = """Ты наставник, который помога�
 
 Учебника у этого разговора нет: отвечай своими знаниями. Если вопрос требует
 конкретного учебника или программы школы, так и скажи и предложи загрузить
-книгу в раздел «Предметы».
+книгу в раздел «Курсы и книги».
 
 Не выдумывай ссылки на страницы и параграфы: сверять их ученику будет не с чем."""
 
@@ -100,13 +102,13 @@ class AskContext:
             instructions = f"{instructions}\n\n{self.assistant_rules}"
         if not self.has_library:
             messages = [
-                {"role": "system", "content": f"{GENERAL_SYSTEM_PROMPT}\n\n{instructions}"}
+                {"role": "system", "content": f"{IDENTITY_RULE}\n\n{GENERAL_SYSTEM_PROMPT}\n\n{instructions}"}
             ]
             messages.extend(self.history)
             messages.append({"role": "user", "content": self.question})
             return messages
 
-        system = f"{SYSTEM_PROMPT.format(marker=OUTSIDE_MARKER)}\n\n{instructions}"
+        system = f"{IDENTITY_RULE}\n\n{SYSTEM_PROMPT.format(marker=OUTSIDE_MARKER)}\n\n{instructions}"
         messages: list[dict] = [{"role": "system", "content": system}]
         messages.extend(self.history)
         if self.results:
