@@ -8,6 +8,8 @@ import type { ScheduleRevision } from "@/lib/studyplan-api";
 import type { ParsedCommitment, ParsedStudyWindow } from "@/lib/studyplan-chat";
 import type { DayOfWeek } from "@/types/diary";
 
+import { scheduleLabel, scheduleOf, type SchedulePatch } from "../habits/habit-schedule";
+
 export type ProposalState = "applied" | "dismissed" | "undone" | "stale";
 
 /** Что созданное нужно убрать, чтобы вернуть как было. */
@@ -34,7 +36,8 @@ interface ProposalBase {
 
 export type AssistantProposal = ProposalBase &
   (
-    | { kind: "new_habit"; name: string; goal_id: string | null; goal_title: string | null }
+    | ({ kind: "new_habit"; name: string; goal_id: string | null; goal_title: string | null } & Partial<SchedulePatch>)
+    | ({ kind: "habit_schedule"; habit_id: number; name: string; before: SchedulePatch } & SchedulePatch)
     | { kind: "mark_habit"; habit_id: number; name: string; done: boolean }
     | { kind: "new_goal"; title: string; scope: "study" | "general"; deadline: string | null; habits: string[] }
     | { kind: "goal_progress"; goal_id: string; title: string; before: number; progress: number }
@@ -70,11 +73,21 @@ const dayLabel = (iso: string) => {
   return new Date(year, month - 1, day).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 };
 
+const howOften = (raw: Partial<SchedulePatch>) => scheduleLabel(scheduleOf(raw)).toLowerCase();
+
+function newHabitNote(proposal: Extract<AssistantProposal, { kind: "new_habit" }>): string {
+  const goal = proposal.goal_title ? `к цели «${proposal.goal_title}»` : "";
+  if (!goal) return howOften(proposal);
+  return scheduleOf(proposal).frequency === "daily" ? goal : `${howOften(proposal)}, ${goal}`;
+}
+
 /** Строка над списком изменений. */
 export function proposalHeading(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
       return "Добавлю привычку:";
+    case "habit_schedule":
+      return "Поменяю, как часто:";
     case "mark_habit":
       return proposal.done ? "Отмечу за сегодня:" : "Сниму отметку за сегодня:";
     case "new_goal":
@@ -94,7 +107,9 @@ export function proposalHeading(proposal: AssistantProposal): string {
 export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
   switch (proposal.kind) {
     case "new_habit":
-      return [{ name: proposal.name, note: proposal.goal_title ? `к цели «${proposal.goal_title}»` : "каждый день" }];
+      return [{ name: proposal.name, note: newHabitNote(proposal) }];
+    case "habit_schedule":
+      return [{ name: proposal.name, note: `${howOften(proposal.before)} → ${howOften(proposal)}` }];
     case "mark_habit":
       return [{ name: proposal.name, note: "" }];
     case "new_goal":
@@ -121,6 +136,8 @@ export function proposalDoneText(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
       return `Привычка «${proposal.name}» добавлена.`;
+    case "habit_schedule":
+      return `«${proposal.name}» теперь ${howOften(proposal)}.`;
     case "mark_habit":
       return proposal.done ? `«${proposal.name}» отмечено за сегодня.` : `Отметка с «${proposal.name}» снята.`;
     case "new_goal":
@@ -149,7 +166,9 @@ export function canUndoProposal(proposal: AssistantProposal): boolean {
 export function proposalSummary(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
-      return `новая привычка «${proposal.name}»`;
+      return `новая привычка «${proposal.name}», ${howOften(proposal)}`;
+    case "habit_schedule":
+      return `«${proposal.name}» ${howOften(proposal)} вместо «${howOften(proposal.before)}»`;
     case "mark_habit":
       return proposal.done ? `отметить «${proposal.name}» за сегодня` : `снять отметку с «${proposal.name}»`;
     case "new_goal":

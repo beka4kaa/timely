@@ -106,6 +106,7 @@ const STAGE_LABELS: Record<string, string> = {
   list_review_topics: "Смотрю темы",
   get_focus_stats: "Смотрю помодоро",
   propose_new_habit: "Готовлю предложение",
+  propose_habit_schedule: "Готовлю предложение",
   propose_mark_habit: "Готовлю предложение",
   propose_new_goal: "Готовлю предложение",
   propose_goal_progress: "Готовлю предложение",

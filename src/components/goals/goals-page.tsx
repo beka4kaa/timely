@@ -15,6 +15,7 @@ import { AiLine, useUnderstand } from "@/components/habits/ai-line";
 import { CardMenu } from "@/components/habits/card-menu";
 import { localDay, nextHabitColor, plural } from "@/components/habits/habit-days";
 import { AiOffer, AiThinking, HabitOffer } from "@/components/habits/habit-offer";
+import { EVERY_DAY, schedulePatch, type HabitSchedule } from "@/components/habits/habit-schedule";
 import { createHabit, listHabits, updateHabit, type Habit } from "@/components/habits/lib";
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
@@ -57,7 +58,7 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
 ];
 
 type Offer =
-  | { kind: "habit"; text: string; name: string; goalId: string | null }
+  | { kind: "habit"; text: string; name: string; goalId: string | null; schedule: HabitSchedule }
   | { kind: "topics"; text: string };
 
 function motionOk(): boolean {
@@ -350,6 +351,7 @@ export function GoalsPage() {
           text,
           name: result.name,
           goalId: suggestGoalFor(result.name, latest.current.goals.filter(isOpenGoal))?.id ?? null,
+          schedule: result.schedule ?? EVERY_DAY,
         });
       } else if (result.kind === "question") {
         // Вопрос или просьба об уже записанном: это дело помощника, и второго нажатия тут не надо.
@@ -363,11 +365,11 @@ export function GoalsPage() {
   useDataChanged("goals", () => void refresh());
   useDataChanged("habits", () => void refreshHabits());
 
-  const addHabit = async (name: string, goalId: string | null) => {
+  const addHabit = async (name: string, goalId: string | null, schedule: HabitSchedule) => {
     setAdding(true);
     try {
       const color = nextHabitColor(habits.map((habit) => habit.color));
-      const created = await createHabit({ name, color, goal: goalId }, localDay());
+      const created = await createHabit({ name, color, goal: goalId, ...schedulePatch(schedule) }, localDay());
       setOffer(null);
       mascot.hop(0.7);
       router.push(`/dashboard/habits#h${created.id}`);
@@ -494,9 +496,11 @@ export function GoalsPage() {
           name={offer.name}
           goalId={offer.goalId}
           goals={goalOptions}
+          schedule={offer.schedule}
           onGoal={(goalId) => setOffer({ ...offer, goalId })}
+          onSchedule={(schedule) => setOffer({ ...offer, schedule })}
           actions={[
-            { label: adding ? "Добавляю…" : "Добавить привычку", main: true, disabled: adding, run: () => void addHabit(offer.name, offer.goalId) },
+            { label: adding ? "Добавляю…" : "Добавить привычку", main: true, disabled: adding, run: () => void addHabit(offer.name, offer.goalId, offer.schedule) },
             {
               label: "Всё равно цель",
               run: () => {

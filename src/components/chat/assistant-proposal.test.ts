@@ -38,6 +38,33 @@ test("карточка говорит, что именно изменится", 
   );
 });
 
+test("новая привычка показывает, как часто", () => {
+  const weekly = { ...HABIT, frequency: "weekdays", weekdays: [0, 2], interval_days: 2 } as AssistantProposal;
+  assert.deepEqual(proposalRows(weekly), [{ name: "Зарядка", note: "пн, ср" }]);
+  assert.deepEqual(proposalRows({ ...weekly, goal_title: "Форма" } as AssistantProposal), [
+    { name: "Зарядка", note: "пн, ср, к цели «Форма»" },
+  ]);
+  assert.match(proposalSummary(weekly), /пн, ср/);
+});
+
+test("смена частоты показывает, что было и что станет, и её можно вернуть", () => {
+  const change: AssistantProposal = {
+    id: "s",
+    kind: "habit_schedule",
+    habit_id: 1,
+    name: "Зарядка",
+    frequency: "interval",
+    weekdays: [],
+    interval_days: 2,
+    before: { frequency: "daily", weekdays: [], interval_days: 2 },
+  };
+  assert.equal(proposalHeading(change), "Поменяю, как часто:");
+  assert.deepEqual(proposalRows(change), [{ name: "Зарядка", note: "каждый день → через день" }]);
+  assert.equal(proposalDoneText(change), "«Зарядка» теперь через день.");
+  assert.equal(canUndoProposal(change), true);
+  assert.match(proposalSummary(change), /через день/);
+});
+
 test("отметка и снятие отметки называются по-разному", () => {
   const mark: AssistantProposal = { id: "d", kind: "mark_habit", habit_id: 1, name: "Зарядка", done: true };
   const unmark: AssistantProposal = { ...mark, done: false } as AssistantProposal;

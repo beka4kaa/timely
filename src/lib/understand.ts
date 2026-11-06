@@ -5,6 +5,8 @@
 // неё. Сам разбор ничего не сохраняет: сначала человек видит, что получилось, и
 // подтверждает (CLAUDE.md §3.3).
 
+import type { HabitSchedule } from "../components/habits/habit-schedule";
+
 import { authFetch } from "./auth-fetch";
 
 export interface UnderstoodTopic {
@@ -15,7 +17,12 @@ export interface UnderstoodTopic {
 
 export type Understood =
   | { kind: "topics"; topics: UnderstoodTopic[] }
-  | { kind: "habit"; name: string }
+  | {
+      kind: "habit";
+      name: string;
+      /** Как часто, если сказано. `null`: каждый день. */
+      schedule: HabitSchedule | null;
+    }
   | {
       kind: "goal";
       title: string;
@@ -94,7 +101,8 @@ function namedSubjectOf(text: string): string {
 
 const STUDIED =
   /(^|\s)(изучил[аи]?|изучали|прош[её]л|прошла|прошли|разобрал[аи]?|разбирали|выучил[аи]?|учил[аи]?|повторил[аи]?)(\s|$)/;
-const HABIT = /кажд(ый|ое|ую|ые)|ежедневно|привычк|по утрам|по вечерам|раза? в неделю/;
+const HABIT =
+  /кажд(ый|ое|ую|ые)|ежедневно|привычк|по утрам|по вечерам|раза? в (неделю|месяц|пару|несколько|две|два|три|четыре|пять|шесть|семь|\d)|(дважды|трижды) в неделю|через день|по будням|по выходным|по (понедельникам|вторникам|средам|четвергам|пятницам|субботам|воскресеньям)/;
 const GOAL = /(^|\s)(хочу|цель|сдать|поступить|выиграть|победить|достичь|добиться)(\s|$)/;
 const COMMAND = /перен[её]с|сдвин|подвин|короч|таймер|помодоро|задал|контест|рейтинг|дальше|отмет|сними|удали|убери|поменяй|измени/;
 /** Похоже на вопрос, даже если в нём есть «хочу» или «цель»: такое идёт к тьютору. */
@@ -115,14 +123,103 @@ function parseTopics(text: string): UnderstoodTopic[] {
     .map((part) => ({ title: capital(part), subject: subjectOf(part) || namedSubjectOf(text) }));
 }
 
+// ── Как часто ──
+
+const every = (intervalDays: number): HabitSchedule => ({ frequency: "interval", weekdays: [], intervalDays });
+const onDays = (weekdays: number[]): HabitSchedule => ({ frequency: "weekdays", weekdays, intervalDays: 2 });
+
+const NUMBER_WORDS: Record<string, number> = { два: 2, две: 2, дважды: 2, три: 3, трижды: 3, четыре: 4, пять: 5, шесть: 6, семь: 7 };
+const ORDINALS: Record<string, number> = { второй: 2, третий: 3, четвёртый: 4, четвертый: 4, пятый: 5 };
+const numberOf = (raw: string) => NUMBER_WORDS[raw.toLowerCase()] ?? Number(raw);
+
+/** Столько раз в неделю: дни с просветами. Перед добавлением их всё равно видно и можно поменять. */
+const TIMES_A_WEEK: Record<number, number[]> = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] };
+
+// Границы слова вручную: `\b` не знает кириллицу, а просмотр назад ломает старые браузеры.
+const START = "(^|[^а-яё])";
+const END = "(?![а-яё])";
+const phrase = (source: string) => new RegExp(`${START}(${source})${END}`, "i");
+const COUNT = "\\d{1,2}|два|две|три|четыре|пять|шесть|семь";
+
+/** Порядок важен: «пять раз в неделю» не должно стать «раз в неделю». `null` значит каждый день. */
+const SCHEDULE_PHRASES: ReadonlyArray<readonly [RegExp, (match: RegExpMatchArray) => HabitSchedule | null]> = [
+  [phrase("кажд(?:ый|ое)\\s+день|ежедневно|изо\\s+дня\\s+в\\s+день"), () => null],
+  [phrase("через\\s+день"), () => every(2)],
+  [phrase("кажд(?:ый|ое)\\s+(второй|третий|четв[её]ртый|пятый)\\s+день"), (match) => every(ORDINALS[match[3].toLowerCase()])],
+  [
+    phrase(`(?:раз\\s+в|кажд(?:ые|ый))\\s+(${COUNT})\\s+(?:день|дня|дней)`),
+    (match) => (numberOf(match[3]) < 2 ? null : every(Math.min(30, numberOf(match[3])))),
+  ],
+  [phrase("раз\\s+в\\s+пару\\s+дней"), () => every(2)],
+  [phrase("раз\\s+в\\s+несколько\\s+дней"), () => every(3)],
+  [phrase("(?:раз\\s+в|каждые)\\s+(?:две|2)\\s+недели"), () => every(14)],
+  [phrase("раз\\s+в\\s+месяц|каждый\\s+месяц"), () => every(30)],
+  [
+    phrase("(2|3|4|5|6|два|три|четыре|пять|шесть|дважды|трижды)\\s*(?:раза?\\s+)?в\\s+неделю"),
+    (match) => onDays(TIMES_A_WEEK[numberOf(match[3])]),
+  ],
+  [phrase("(?:(?:один|1)\\s+)?раз\\s+в\\s+неделю|каждую\\s+неделю"), () => every(7)],
+  [phrase("с\\s+понедельника\\s+по\\s+пятницу|пн\\s*[-–—]\\s*пт|по\\s+будням|в\\s+будни(?:е\\s+дни)?"), () => onDays([0, 1, 2, 3, 4])],
+  [phrase("по\\s+выходным|в\\s+выходные(?:\\s+дни)?"), () => onDays([5, 6])],
+];
+
+const DAY_FORMS = [
+  "понедельник(?:а|ам|и)?|пн",
+  "вторник(?:а|ам|и)?|вт",
+  "сред(?:а|у|е|ы|ам)|ср",
+  "четверг(?:а|ам|и)?|чт",
+  "пятниц(?:а|у|е|ы|ам)|пт",
+  "суббот(?:а|у|е|ы|ам)|сб",
+  "воскресень(?:е|я|ям)|вс",
+];
+const DAY_WORD = `(?:${DAY_FORMS.join("|")})${END}`;
+const DAY_LEAD = "кажд(?:ый|ую|ое)\\s+|по\\s+|во?\\s+";
+const DAY_LIST = new RegExp(
+  `${START}((${DAY_LEAD})?${DAY_WORD}(?:(?:\\s*[,/]\\s*|\\s+и\\s+|\\s+)(?:${DAY_LEAD})?${DAY_WORD})*)`,
+  "gi",
+);
+const DAY_PATTERNS = DAY_FORMS.map((form) => new RegExp(`${START}(?:${form})${END}`, "i"));
+const SHORT_DAY = new RegExp(`${START}(?:пн|вт|ср|чт|пт|сб|вс)${END}`, "i");
+
+function findSchedule(text: string): { schedule: HabitSchedule | null; start: number; end: number } | null {
+  for (const [pattern, make] of SCHEDULE_PHRASES) {
+    const match = text.match(pattern);
+    if (match?.index !== undefined) {
+      return { schedule: make(match), start: match.index + match[1].length, end: match.index + match[0].length };
+    }
+  }
+  for (const match of Array.from(text.matchAll(DAY_LIST))) {
+    const list = match[2];
+    const weekdays = DAY_PATTERNS.flatMap((pattern, day) => (pattern.test(list) ? [day] : []));
+    // Одно слово без предлога может быть и не днём: «окружающая среда».
+    if (match[3] || weekdays.length > 1 || SHORT_DAY.test(list)) {
+      const start = (match.index ?? 0) + match[1].length;
+      return { schedule: weekdays.length === 7 ? null : onDays(weekdays), start, end: start + list.length };
+    }
+  }
+  return null;
+}
+
+/** Как часто по словам ученика. `null`: не сказано или каждый день. */
+export function parseSchedule(text: string): HabitSchedule | null {
+  return findSchedule(text)?.schedule ?? null;
+}
+
 export function parseHabit(text: string): string {
-  const name = text
+  const found = findSchedule(text);
+  const name = (found ? `${text.slice(0, found.start)} ${text.slice(found.end)}` : text)
     .replace(/^\s*(хочу|буду|надо|нужно|хотел бы|хотела бы)\s+/i, "")
     .replace(/\s*(каждый день|ежедневно|по утрам|по вечерам)\s*/i, " ")
-    .trim()
-    .replace(/[.!]+$/, "");
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,:;–—-]+|[\s,:;.!–—-]+$/g, "");
   return capital(name || text.trim());
 }
+
+const habitFrom = (named: string, said: string): Understood => ({
+  kind: "habit",
+  name: parseHabit(named),
+  schedule: parseSchedule(said),
+});
 
 export function parseGoal(text: string): Extract<Understood, { kind: "goal" }> {
   const lower = text.toLowerCase();
@@ -146,10 +243,10 @@ export function understandLocally(text: string, expect?: UnderstoodKind): Unders
   const lower = text.toLowerCase();
   if (COMMAND.test(lower) || QUESTION.test(lower.trim())) return { kind: "question" };
   if (STUDIED.test(lower)) return { kind: "topics", topics: parseTopics(text) };
-  if (HABIT.test(lower)) return { kind: "habit", name: parseHabit(text) };
+  if (HABIT.test(lower)) return habitFrom(text, text);
   if (GOAL.test(lower)) return parseGoal(text);
   if (expect === "topics") return { kind: "topics", topics: parseTopics(text) };
-  if (expect === "habit") return { kind: "habit", name: parseHabit(text) };
+  if (expect === "habit") return habitFrom(text, text);
   if (expect === "goal") return parseGoal(text);
   return { kind: "question" };
 }
@@ -167,7 +264,7 @@ function normalize(data: unknown): Understood | null {
     return topics.length ? { kind: "topics", topics } : null;
   }
   if (row.kind === "habit" && typeof row.name === "string" && row.name.trim()) {
-    return { kind: "habit", name: row.name.trim() };
+    return { kind: "habit", name: row.name.trim(), schedule: null };
   }
   if (row.kind === "goal" && typeof row.title === "string" && row.title.trim()) {
     return {
@@ -198,7 +295,8 @@ export async function understand(text: string, expect?: UnderstoodKind): Promise
     });
     if (response.ok) {
       const parsed = normalize(await response.json());
-      if (parsed) return parsed;
+      // Смысл определила модель, а частоту правила знают точно: она могла оставить её в названии.
+      if (parsed) return parsed.kind === "habit" ? habitFrom(parsed.name, text) : parsed;
     }
   } catch {
     // Сеть или таймаут: разбираем правилами.

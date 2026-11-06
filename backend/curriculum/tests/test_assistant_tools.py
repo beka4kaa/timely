@@ -48,7 +48,23 @@ class ReadToolsTests(TestCase):
         self.assertEqual([row["name"] for row in rows], ["Зарядка"])
         self.assertTrue(rows[0]["done_today"])
         self.assertEqual(rows[0]["done_last_7_days"], 2)
-        self.assertEqual(rows[0]["streak_days"], 2)
+        self.assertEqual(rows[0]["streak"], 2)
+        self.assertEqual(rows[0]["how_often"], "каждый день")
+        self.assertTrue(rows[0]["due_today"])
+
+    def test_habits_say_how_often_and_whether_today_counts(self):
+        tools = _tools()
+        today = tools.context.today
+        Habit.objects.create(
+            user_email=OWNER, name="Плавание", frequency=Habit.WEEKDAYS, weekdays=[(today.weekday() + 1) % 7],
+        )
+        Habit.objects.create(user_email=OWNER, name="Уборка", frequency=Habit.INTERVAL, interval_days=3)
+
+        rows = {row["name"]: row for row in tools.run("list_habits", {})["habits"]}
+
+        self.assertFalse(rows["Плавание"]["due_today"])
+        self.assertTrue(rows["Уборка"]["due_today"])
+        self.assertEqual(rows["Уборка"]["how_often"], "раз в 3 дн.")
 
     def test_goals_leave_out_archived_and_foreign(self):
         tools = _tools()
@@ -145,6 +161,60 @@ class ProposalTests(TestCase):
         self.assertEqual(proposal["name"], "Зарядка")
         self.assertEqual(proposal["goal_title"], "Форма")
         self.assertTrue(proposal["id"])
+
+    def test_new_habit_carries_how_often(self):
+        tools = _tools()
+
+        tools.run("propose_new_habit", {"name": "Зарядка", "weekdays": [4, 0, 4]})
+        tools.run("propose_new_habit", {"name": "Уборка", "frequency": "interval", "interval_days": 3})
+        tools.run("propose_new_habit", {"name": "Чтение"})
+
+        rows = {row["name"]: row for row in tools.proposals}
+        self.assertEqual((rows["Зарядка"]["frequency"], rows["Зарядка"]["weekdays"]), ("weekdays", [0, 4]))
+        self.assertEqual((rows["Уборка"]["frequency"], rows["Уборка"]["interval_days"]), ("interval", 3))
+        self.assertEqual(rows["Чтение"]["frequency"], "daily")
+
+    def test_crooked_how_often_is_refused_before_a_card(self):
+        tools = _tools()
+
+        for args in (
+            {"frequency": "weekdays", "weekdays": []},
+            {"frequency": "weekdays", "weekdays": [9]},
+            {"frequency": "weekdays", "weekdays": ["пн"]},
+            {"frequency": "interval", "interval_days": 1},
+            {"frequency": "interval"},
+            {"frequency": "иногда"},
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(tools.run("propose_new_habit", {"name": "Бег", **args})["error"], "invalid_arguments")
+        self.assertEqual(tools.proposals, [])
+
+    def test_changing_how_often_only_proposes_and_remembers_the_old_one(self):
+        tools = _tools()
+        habit = Habit.objects.create(user_email=OWNER, name="Зарядка")
+
+        answer = tools.run("propose_habit_schedule", {"habit_id": habit.pk, "frequency": "interval", "interval_days": 2})
+
+        self.assertTrue(answer["ok"])
+        habit.refresh_from_db()
+        self.assertEqual(habit.frequency, Habit.DAILY)
+        proposal = tools.proposals[0]
+        self.assertEqual(proposal["kind"], "habit_schedule")
+        self.assertEqual((proposal["frequency"], proposal["interval_days"]), ("interval", 2))
+        self.assertEqual(proposal["before"], {"frequency": "daily", "weekdays": [], "interval_days": 2})
+
+    def test_changing_how_often_checks_owner_and_state(self):
+        tools = _tools()
+        theirs = Habit.objects.create(user_email=INTRUDER, name="Чужая")
+        mine = Habit.objects.create(user_email=OWNER, name="Своя", frequency=Habit.WEEKDAYS, weekdays=[0, 2])
+
+        self.assertEqual(
+            tools.run("propose_habit_schedule", {"habit_id": theirs.pk, "frequency": "daily"})["error"], "not_found",
+        )
+        self.assertEqual(
+            tools.run("propose_habit_schedule", {"habit_id": mine.pk, "weekdays": [2, 0]})["error"], "already",
+        )
+        self.assertEqual(tools.proposals, [])
 
     def test_foreign_goal_is_not_found(self):
         tools = _tools()

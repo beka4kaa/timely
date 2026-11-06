@@ -7,7 +7,8 @@ import { markHomeworkDone } from "@/components/diary/use-diary-week";
 import { TONES, isOpenGoal } from "@/components/goals/goal-logic";
 import { createGoal, listGoals, moveGoalProgress, updateGoal } from "@/components/goals/goals-api";
 import { localDay, nextHabitColor } from "@/components/habits/habit-days";
-import { createHabit, deleteHabit, listHabits, markHabit } from "@/components/habits/lib";
+import { schedulePatch, scheduleOf } from "@/components/habits/habit-schedule";
+import { createHabit, deleteHabit, listHabits, markHabit, updateHabit } from "@/components/habits/lib";
 import { invalidatePlan } from "@/components/now/now-resources";
 import { dataChanged } from "@/lib/data-changed";
 import { closedByRejecting } from "@/lib/now-feed";
@@ -46,12 +47,16 @@ export async function applyProposal(proposal: AssistantProposal): Promise<Propos
     case "new_habit": {
       const taken = (await listHabits(today)).map((row) => row.color);
       const created = await createHabit(
-        { name: proposal.name, color: nextHabitColor(taken), goal: proposal.goal_id },
+        { name: proposal.name, color: nextHabitColor(taken), goal: proposal.goal_id, ...schedulePatch(scheduleOf(proposal)) },
         today,
       );
       dataChanged("habits");
       return { habitIds: [created.id] };
     }
+    case "habit_schedule":
+      await updateHabit(proposal.habit_id, schedulePatch(scheduleOf(proposal)), today);
+      dataChanged("habits");
+      return {};
     case "mark_habit":
       await markHabit(proposal.habit_id, proposal.done, today);
       dataChanged("habits");
@@ -165,6 +170,10 @@ export async function undoProposal(proposal: AssistantProposal): Promise<void> {
   switch (proposal.kind) {
     case "new_habit":
       await Promise.all((undo.habitIds ?? []).map((id) => deleteHabit(id)));
+      dataChanged("habits");
+      return;
+    case "habit_schedule":
+      await updateHabit(proposal.habit_id, proposal.before, today);
       dataChanged("habits");
       return;
     case "mark_habit":

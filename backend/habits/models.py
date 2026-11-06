@@ -2,6 +2,15 @@ from django.db import models
 
 
 class Habit(models.Model):
+    DAILY = 'daily'
+    WEEKDAYS = 'weekdays'
+    INTERVAL = 'interval'
+    FREQUENCIES = [
+        (DAILY, 'Каждый день'),
+        (WEEKDAYS, 'По дням недели'),
+        (INTERVAL, 'Раз в несколько дней'),
+    ]
+
     user_email = models.EmailField(db_index=True)
     name = models.CharField(max_length=255)
     emoji = models.CharField(max_length=10, default='✨')
@@ -10,6 +19,11 @@ class Habit(models.Model):
     goal_text = models.CharField(max_length=120, blank=True, default='')
     # Forgiving streaks: how many gap days a streak can survive ("shields").
     freeze_budget = models.PositiveSmallIntegerField(default=2)
+    # Как часто. `weekdays` нужны только дням недели (0 это понедельник), `interval_days` только
+    # интервалу: он идёт от последней отметки, поэтому сделанное позже сдвигает следующий раз.
+    frequency = models.CharField(max_length=10, choices=FREQUENCIES, default=DAILY)
+    weekdays = models.JSONField(default=list, blank=True)
+    interval_days = models.PositiveSmallIntegerField(default=2)
     # К какой цели ведёт привычка. Удалили цель: привычка остаётся, уже без неё.
     goal = models.ForeignKey(
         'planner.Goal', null=True, blank=True, on_delete=models.SET_NULL, related_name='habits',

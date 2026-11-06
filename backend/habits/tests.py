@@ -184,6 +184,245 @@ class CardShapeTests(_Base):
         self.assertEqual(response.data['total_done'], 1)
 
 
+class HowOftenTests(_Base):
+    """Как часто. `ALMATY_DAY`, 5 ноября 2026, это четверг: день недели 3."""
+
+    def add_days(self, *offsets, habit=None):
+        for offset in offsets:
+            HabitLog.objects.create(habit=habit or self.habit, date=ALMATY_DAY - timedelta(days=offset))
+
+    def row(self):
+        return self.client.get(f'/api/habits/?today={ALMATY_DAY}').data[0]
+
+    def set_weekdays(self, *days, freeze_budget=0):
+        Habit.objects.filter(pk=self.habit.pk).update(
+            frequency=Habit.WEEKDAYS, weekdays=list(days), freeze_budget=freeze_budget,
+        )
+
+    def set_interval(self, days, freeze_budget=0):
+        Habit.objects.filter(pk=self.habit.pk).update(
+            frequency=Habit.INTERVAL, interval_days=days, freeze_budget=freeze_budget,
+        )
+
+    def test_an_old_habit_is_every_day_and_nothing_about_it_changes(self):
+        row = self.row()
+
+        self.assertEqual((row['frequency'], row['weekdays'], row['interval_days']), ('daily', [], 2))
+        self.assertTrue(row['due_today'])
+        self.assertEqual(row['next_due'], ALMATY_DAY.isoformat())
+        self.assertFalse(any('off' in day for day in row['calendar']))
+
+    def test_creates_with_weekdays_tidied_up(self):
+        response = self.client.post(
+            '/api/habits/', {'name': 'Плавание', 'frequency': 'weekdays', 'weekdays': [4, 0, 4]}, format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['weekdays'], [0, 4])
+        self.assertEqual(Habit.objects.get(pk=response.data['id']).weekdays, [0, 4])
+
+    def test_all_seven_days_are_just_every_day(self):
+        response = self.client.post(
+            '/api/habits/', {'name': 'Вода', 'frequency': 'weekdays', 'weekdays': list(range(7))}, format='json',
+        )
+
+        self.assertEqual(response.data['frequency'], 'daily')
+        self.assertEqual(response.data['weekdays'], [])
+
+    def test_crooked_values_are_refused(self):
+        for body in (
+            {'frequency': 'weekdays'},
+            {'frequency': 'weekdays', 'weekdays': []},
+            {'frequency': 'weekdays', 'weekdays': [7]},
+            {'frequency': 'weekdays', 'weekdays': [-1]},
+            {'frequency': 'weekdays', 'weekdays': ['пн']},
+            {'frequency': 'weekdays', 'weekdays': [True]},
+            {'frequency': 'weekdays', 'weekdays': 3},
+            {'frequency': 'interval', 'interval_days': 1},
+            {'frequency': 'interval', 'interval_days': 31},
+            {'frequency': 'иногда'},
+        ):
+            with self.subTest(body=body):
+                response = self.client.patch(f'/api/habits/{self.habit.id}/', body, format='json')
+                self.assertEqual(response.status_code, 400)
+        self.habit.refresh_from_db()
+        self.assertEqual(self.habit.frequency, Habit.DAILY)
+
+    def test_one_field_of_a_patch_keeps_the_rest(self):
+        self.client.patch(f'/api/habits/{self.habit.id}/', {'frequency': 'interval', 'interval_days': 5}, format='json')
+
+        response = self.client.patch(f'/api/habits/{self.habit.id}/', {'interval_days': 3}, format='json')
+
+        self.assertEqual((response.data['frequency'], response.data['interval_days']), ('interval', 3))
+
+    def test_renaming_leaves_how_often_alone(self):
+        self.set_weekdays(0, 3)
+
+        response = self.client.patch(f'/api/habits/{self.habit.id}/', {'name': 'Новое имя'}, format='json')
+
+        self.assertEqual((response.data['frequency'], response.data['weekdays']), ('weekdays', [0, 3]))
+
+    def test_going_back_to_every_day_forgets_the_days(self):
+        self.set_weekdays(0, 3)
+
+        response = self.client.patch(f'/api/habits/{self.habit.id}/', {'frequency': 'daily'}, format='json')
+
+        self.assertEqual((response.data['frequency'], response.data['weekdays']), ('daily', []))
+
+    def test_weekdays_say_which_days_count(self):
+        self.set_weekdays(0, 3)  # понедельник и четверг
+        row = self.row()
+
+        self.assertTrue(row['due_today'])
+        self.assertEqual(row['next_due'], ALMATY_DAY.isoformat())
+        by_date = {day['date']: day for day in row['calendar']}
+        self.assertNotIn('off', by_date[ALMATY_DAY.isoformat()])
+        self.assertTrue(by_date[(ALMATY_DAY - timedelta(days=1)).isoformat()]['off'])
+        self.assertNotIn('off', by_date[(ALMATY_DAY - timedelta(days=3)).isoformat()])
+
+    def test_a_day_off_can_still_be_marked_and_says_when_next(self):
+        self.set_weekdays(0)  # только понедельник
+
+        row = self.row()
+        self.assertFalse(row['due_today'])
+        self.assertEqual(row['next_due'], date(2026, 11, 9).isoformat())
+
+        response = self.toggle({'date': ALMATY_DAY.isoformat()})
+        self.assertTrue(response.data['done_today'])
+        self.assertFalse(response.data['due_today'])
+        self.assertEqual(response.data['streak'], 1)
+
+    def test_days_off_do_not_break_a_weekday_streak(self):
+        self.set_weekdays(0, 3)
+        # Понедельник 2 ноября, четверг 29 октября, понедельник 26 октября.
+        self.add_days(3, 7, 10)
+
+        # Сегодня четверг: день ещё не кончился, и серия цела.
+        self.assertEqual(self.row()['streak'], 3)
+        # Отметка делает её длиннее.
+        self.assertEqual(self.toggle({'date': ALMATY_DAY.isoformat()}).data['streak'], 4)
+
+    def test_on_a_day_off_the_streak_is_still_alive(self):
+        self.set_weekdays(0, 2)  # понедельник и среда
+        self.add_days(1, 3)  # среда и понедельник
+
+        self.assertEqual(self.row()['streak'], 2)
+
+    def test_a_missed_scheduled_day_breaks_a_weekday_streak(self):
+        self.set_weekdays(0, 2)
+        self.add_days(3)  # понедельник есть, а среда пропущена
+
+        self.assertEqual(self.row()['streak'], 0)
+
+    def test_a_shield_bridges_a_missed_scheduled_day_only(self):
+        self.set_weekdays(0, 2, freeze_budget=1)
+        self.add_days(3, 8)  # понедельник 2 ноября и среда 28 октября
+
+        # Сегодня четверг, среда 4-го пропущена: без отметки сегодня цепочки нет.
+        self.assertEqual(self.row()['streak'], 0)
+
+        response = self.toggle({'date': ALMATY_DAY.isoformat()})
+        # Щит закрыл только среду. На пятницу 30-го и другие дни отдыха он не тратится.
+        self.assertEqual(response.data['streak'], 3)
+        self.assertEqual(response.data['shields_used'], 1)
+
+    def test_a_mark_on_a_day_off_counts_toward_the_streak(self):
+        self.set_weekdays(0)
+        self.add_days(3, 2)  # понедельник и вторник сверх плана
+
+        self.assertEqual(self.row()['streak'], 2)
+
+    def test_changing_how_often_recounts_the_streak(self):
+        self.add_days(3, 6)  # понедельник и пятница: ежедневной привычке этого мало
+
+        self.assertEqual(self.row()['streak'], 0)
+
+        response = self.client.patch(
+            f'/api/habits/{self.habit.id}/?today={ALMATY_DAY}',
+            {'frequency': 'weekdays', 'weekdays': [0, 4]},
+            format='json',
+        )
+        self.assertEqual(response.data['streak'], 2)
+
+    def test_an_interval_is_due_until_it_is_done(self):
+        self.set_interval(3)
+
+        self.assertTrue(self.row()['due_today'], 'ещё ни разу не делали')
+
+        self.add_days(5)
+        row = self.row()
+        self.assertTrue(row['due_today'], 'прошло больше трёх дней, и она всё ещё ждёт')
+        self.assertEqual(row['next_due'], ALMATY_DAY.isoformat())
+
+    def test_an_interval_counts_from_the_last_mark(self):
+        self.set_interval(3)
+        self.add_days(1)
+        row = self.row()
+
+        self.assertFalse(row['due_today'])
+        self.assertEqual(row['next_due'], (ALMATY_DAY + timedelta(days=2)).isoformat())
+
+        response = self.toggle({'date': ALMATY_DAY.isoformat()})
+        self.assertEqual(response.data['next_due'], (ALMATY_DAY + timedelta(days=3)).isoformat())
+
+    def test_days_between_marks_are_days_off(self):
+        self.set_interval(3)
+        self.add_days(3)
+        by_date = {day['date']: day for day in self.row()['calendar']}
+
+        self.assertTrue(by_date[(ALMATY_DAY - timedelta(days=2)).isoformat()]['off'])
+        self.assertTrue(by_date[(ALMATY_DAY - timedelta(days=1)).isoformat()]['off'])
+        self.assertNotIn('off', by_date[ALMATY_DAY.isoformat()], 'три дня прошли, сегодня пора')
+
+    def test_an_interval_streak_lives_on_gaps_inside_the_interval(self):
+        self.set_interval(3)
+        self.add_days(2, 5, 8)
+
+        self.assertEqual(self.row()['streak'], 3)
+
+    def test_an_interval_streak_breaks_when_the_day_passes(self):
+        self.set_interval(3)
+        self.add_days(4, 7)  # после 1 ноября пора было 4-го, а сегодня уже 5-е
+
+        self.assertEqual(self.row()['streak'], 0)
+        self.assertEqual(self.toggle({'date': ALMATY_DAY.isoformat()}).data['streak'], 1)
+
+    def test_a_shield_covers_one_late_day_of_an_interval(self):
+        self.set_interval(3, freeze_budget=1)
+        self.add_days(4, 7)
+
+        response = self.toggle({'date': ALMATY_DAY.isoformat()})
+
+        self.assertEqual(response.data['streak'], 3)
+        self.assertEqual(response.data['shields_used'], 1)
+
+    def test_taking_a_mark_back_restores_the_old_day(self):
+        self.set_interval(3)
+        self.add_days(3)
+
+        self.assertEqual(self.toggle({'date': ALMATY_DAY.isoformat(), 'done': True}).data['streak'], 2)
+        response = self.toggle({'date': ALMATY_DAY.isoformat(), 'done': False})
+
+        self.assertEqual(response.data['streak'], 1)
+        self.assertTrue(response.data['due_today'])
+        self.assertEqual(response.data['next_due'], ALMATY_DAY.isoformat())
+
+    def test_every_day_keeps_its_old_streak_rules(self):
+        Habit.objects.filter(pk=self.habit.pk).update(freeze_budget=2)
+        self.add_days(2, 3, 4)  # вчера пропуск, раньше три дня подряд
+
+        self.assertEqual(self.row()['streak'], 0, 'без сегодняшней отметки цепочки нет')
+        self.assertEqual(self.toggle({'date': ALMATY_DAY.isoformat()}).data['streak'], 4)
+
+    def test_a_habit_with_no_days_left_does_not_fall_over(self):
+        self.set_weekdays()
+
+        row = self.row()
+
+        self.assertFalse(row['due_today'])
+        self.assertIsNone(row['next_due'])
+
+
 class GoalLinkTests(_Base):
     def setUp(self):
         super().setUp()

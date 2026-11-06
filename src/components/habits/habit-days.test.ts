@@ -110,6 +110,56 @@ test("без щитов пропуск рвёт серию", () => {
   assert.equal(markToday(before, 0, 0, true).streak, 1);
 });
 
+test("у привычки не каждый день подряд идут разы", () => {
+  assert.equal(streakWord(1, false), "раз подряд");
+  assert.equal(streakWord(3, false), "раза подряд");
+  assert.equal(streakWord(5, false), "раз подряд");
+  assert.equal(streakWord(5, true), "дней подряд");
+});
+
+/** Календарь, где `off` задаёт дни отдыха: те же сдвиги от сегодня, что и у `doneOffsets`. */
+function withOff(today: string, count: number, doneOffsets: number[], offOffsets: number[]): CalDay[] {
+  return calendar(today, count, doneOffsets).map((day, index) => {
+    const offset = count - 1 - index;
+    return offOffsets.includes(offset) ? { ...day, off: true } : day;
+  });
+}
+
+test("день отдыха виден на карточке, а сделанный уже не отдых", () => {
+  const cells = weekCells(withOff("2026-11-08", 14, [1], [1, 2]));
+  const byOffset = (offset: number) => cells.filter((cell) => cell.real).at(-1 - offset);
+  assert.equal(byOffset(1)?.off, false);
+  assert.equal(byOffset(1)?.done, true);
+  assert.equal(byOffset(2)?.off, true);
+  assert.equal(byOffset(0)?.off, false);
+});
+
+test("дни отдыха не рвут серию и не тратят щиты", () => {
+  // Сегодня пора, вчера и позавчера отдых, раньше отметка: как среда после понедельника.
+  const before = withOff("2026-11-05", 10, [3, 6], [1, 2, 4, 5]);
+  assert.equal(markToday(before, 2, 0, true).streak, 3);
+});
+
+test("пропуск дня по расписанию рвёт серию так же, как на сервере", () => {
+  // Вчера пора было, но пропуск, а щитов нет. Позавчера отдых, раньше отметка.
+  const before = withOff("2026-11-05", 10, [2], [0, 3]);
+  const next = markToday(before, 0, 0, true);
+  assert.equal(next.streak, 1);
+});
+
+test("щит закрывает только день по расписанию", () => {
+  // То же самое, но со щитом: он уходит на вчера, и отметка позавчера снова в цепочке.
+  const before = withOff("2026-11-05", 10, [2], [0, 3]);
+  assert.equal(markToday(before, 0, 1, true).streak, 2);
+});
+
+test("отметка в день отдыха добавляет один раз, снятие его забирает", () => {
+  const before = withOff("2026-11-05", 10, [2], [0, 1]);
+  const marked = markToday(before, 1, 0, true);
+  assert.equal(marked.streak, 2);
+  assert.equal(markToday(marked.calendar, 2, 0, false).streak, 1);
+});
+
 test("значок подбирается по названию, иначе эмодзи", () => {
   assert.equal(habitIcon("Читать 20 минут"), "book");
   assert.equal(habitIcon("Решать 3 задачи"), "sigma");

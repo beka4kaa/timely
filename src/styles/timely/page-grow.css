@@ -2,6 +2,7 @@
    чем картинка: меню на карточке, пустые страницы, ошибки, своя дата в окне цели. */
 
 .ai-out .q-diff .chg { min-width: 0; overflow-wrap: anywhere; }
+.gr-offer-when { max-width: 340px; margin-top: 10px; }
 .gr-offer-goals { margin-top: 10px; }
 .gr-offer-goals .gs-chip > span { max-width: 230px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
@@ -37,10 +38,37 @@
 .gm-range input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--t-card); box-shadow: 0 0 0 0.5px var(--t-line-strong), 0 1px 3px rgba(0, 0, 0, 0.28); }
 .gm-range input::-moz-range-thumb { width: 20px; height: 20px; border: 0; border-radius: 50%; background: var(--t-card); box-shadow: 0 0 0 0.5px var(--t-line-strong), 0 1px 3px rgba(0, 0, 0, 0.28); }
 .gm-range input::-moz-range-track { background: transparent; }
+/* Семь кружков дней шире обычного меню */
+.gm-pop:has(.hs) { width: 288px; }
+
+/* ══════════════════ Как часто ══════════════════ */
+.hs { display: grid; gap: 8px; }
+.hs .tabs { display: flex; flex-wrap: nowrap; }
+.hs .tabs button { flex: 1 1 auto; padding: 0 7px; font-size: 12.5px; }
+.hs-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.hs-day { justify-content: center; min-height: 0; aspect-ratio: 1; padding: 0; border-radius: 50%; }
+.hs-more { display: flex; gap: 12px; padding-left: 2px; }
+.hs-more button { color: var(--t-muted); font-size: 12.5px; transition: color 120ms ease; }
+.hs-more button:hover { color: var(--t-ink); }
+.hs-step { display: flex; align-items: center; gap: 8px; min-height: 34px; padding-left: 2px; font-size: 13.5px; }
+.hs-step button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--t-hover); font-size: 16px; line-height: 1; transition: background 120ms ease, transform 140ms ease; }
+.hs-step button:hover:not(:disabled) { background: var(--t-fill); }
+.hs-step button:active:not(:disabled) { transform: scale(0.93); }
+.hs-step button:disabled { color: var(--t-faint); cursor: not-allowed; }
+.hs-step b { min-width: 2ch; font-size: 16px; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; text-align: center; }
 
 /* ══════════════════ Привычки ══════════════════ */
 .hb { -webkit-user-select: none; user-select: none; }
 .hb-bits { display: contents; }
+.hb-when { display: block; margin-top: 1px; color: var(--t-muted); font-size: 12.5px; font-weight: 400; letter-spacing: normal; }
+.hb.is-done .hb-when { color: rgba(255, 255, 255, 0.84); }
+/* Сегодня отдых: карточка тише, но нажимается как обычно */
+.hb.is-rest .hb-ic { opacity: 0.55; }
+.hb.is-rest .hb-name { color: var(--t-ink-2); }
+/* Подпись делает карточку выше, а квадратики соседних всё равно стоят вровень */
+.hb-days { margin-top: auto; }
+.hb-days i.off { background: color-mix(in srgb, var(--t-ink) 3%, transparent); }
+.hb.is-done .hb-days i.off { background: rgba(255, 255, 255, 0.07); }
 /* Строка под названием: чья это привычка и меню. Меню тихое: видно, когда карточка под курсором */
 .hb-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 19px; margin: 7px -5px 10px 48px; }
 .hb-line .hb-goal { min-width: 0; margin: 0; }

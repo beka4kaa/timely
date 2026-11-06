@@ -5,8 +5,9 @@ import { BACKEND_URL } from '@/lib/api-utils'
 import { authFetch } from '@/lib/auth-fetch'
 
 import type { CalDay } from './habit-days'
+import { scheduleOf, type HabitSchedule, type SchedulePatch } from './habit-schedule'
 
-export interface Habit {
+export interface Habit extends HabitSchedule {
   id: number
   name: string
   emoji: string
@@ -18,12 +19,17 @@ export interface Habit {
   today: string
   streak: number
   doneToday: boolean
+  /** Стоит ли сегодня по расписанию. Отметить можно и в день отдыха. */
+  dueToday: boolean
+  /** Ближайший день по расписанию: сегодня, если привычка ещё ждёт. */
+  nextDue: string | null
   calendar: CalDay[]
 }
 
 function mapHabit(raw: any): Habit {
-  const calendar: CalDay[] = (raw.calendar ?? []).map((day: CalDay) => ({ date: day.date, done: day.done }))
+  const calendar: CalDay[] = (raw.calendar ?? []).map((day: CalDay) => ({ date: day.date, done: day.done, off: day.off }))
   return {
+    ...scheduleOf(raw),
     id: raw.id,
     name: raw.name,
     emoji: raw.emoji ?? '',
@@ -34,6 +40,8 @@ function mapHabit(raw: any): Habit {
     today: raw.today ?? calendar[calendar.length - 1]?.date ?? '',
     streak: raw.streak ?? 0,
     doneToday: raw.done_today ?? false,
+    dueToday: raw.due_today ?? true,
+    nextDue: raw.next_due ?? null,
     calendar,
   }
 }
@@ -56,7 +64,7 @@ export async function listHabits(today: string): Promise<Habit[]> {
 }
 
 export async function createHabit(
-  fields: { name: string; color: string; goal?: string | null },
+  fields: { name: string; color: string; goal?: string | null } & Partial<SchedulePatch>,
   today: string,
 ): Promise<Habit> {
   return readHabit(await api(`/?today=${today}`, { method: 'POST', body: JSON.stringify(fields) }))
@@ -64,7 +72,7 @@ export async function createHabit(
 
 export async function updateHabit(
   id: number,
-  patch: { name?: string; goal?: string | null },
+  patch: { name?: string; goal?: string | null } & Partial<SchedulePatch>,
   today: string,
 ): Promise<Habit> {
   return readHabit(await api(`/${id}/?today=${today}`, { method: 'PATCH', body: JSON.stringify(patch) }))

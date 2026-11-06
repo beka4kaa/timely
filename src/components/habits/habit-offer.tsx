@@ -4,6 +4,9 @@
 
 import type { ReactNode } from "react";
 
+import { scheduleLabel, type HabitSchedule } from "./habit-schedule";
+import { SchedulePicker } from "./schedule-picker";
+
 export interface OfferAction {
   label: string;
   main?: boolean;
@@ -41,19 +44,23 @@ export function AiThinking() {
   );
 }
 
-/** Предпросмотр новой привычки: как она будет называться и к какой цели поведёт. */
+/** Предпросмотр новой привычки: как она будет называться, как часто и к какой цели поведёт. */
 export function HabitOffer({
   name,
   goalId,
   goals,
+  schedule,
   actions,
   onGoal,
+  onSchedule,
 }: {
   name: string;
   goalId: string | null;
   goals: ReadonlyArray<{ id: string; title: string }>;
+  schedule: HabitSchedule;
   actions: OfferAction[];
   onGoal: (goalId: string | null) => void;
+  onSchedule: (schedule: HabitSchedule) => void;
 }) {
   const goal = goals.find((row) => row.id === goalId);
   return (
@@ -62,7 +69,7 @@ export function HabitOffer({
         <li>
           <span className="nm">{name}</span>
           <span className="chg">
-            каждый день
+            {scheduleLabel(schedule).toLowerCase()}
             {goal ? (
               <>
                 {" → "}
@@ -72,6 +79,9 @@ export function HabitOffer({
           </span>
         </li>
       </ul>
+      <div className="gr-offer-when">
+        <SchedulePicker value={schedule} onChange={onSchedule} />
+      </div>
       {goals.length > 0 ? (
         <div className="gs-chips gr-offer-goals" role="group" aria-label="К какой цели ведёт привычка">
           {goals.map((row) => (

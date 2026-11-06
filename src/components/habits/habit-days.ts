@@ -6,6 +6,8 @@ import type { IconName } from "@/components/shell/icons";
 export interface CalDay {
   date: string;
   done: boolean;
+  /** День отдыха по расписанию: его можно пропустить без потерь. */
+  off?: boolean;
 }
 
 export function plural(n: number, one: string, few: string, many: string): string {
@@ -16,8 +18,9 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return b >= 2 && b <= 4 ? few : many;
 }
 
-export function streakWord(n: number): string {
-  return `${plural(n, "день", "дня", "дней")} подряд`;
+/** Если привычка не каждый день, то подряд идут не дни, а разы. */
+export function streakWord(n: number, daily = true): string {
+  return `${daily ? plural(n, "день", "дня", "дней") : plural(n, "раз", "раза", "раз")} подряд`;
 }
 
 /** Сегодняшний день там, где сейчас ученик. `toISOString` дал бы день по UTC. */
@@ -27,7 +30,7 @@ export function localDay(now: Date = new Date()): string {
 }
 
 /** Понедельник это 0: неделя на карточке идёт сверху вниз с понедельника. */
-function weekdayOf(iso: string): number {
+export function weekdayOf(iso: string): number {
   const [year, month, day] = iso.split("-").map(Number);
   return (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
 }
@@ -38,6 +41,8 @@ export interface DayCell {
   real: boolean;
   done: boolean;
   today: boolean;
+  /** Отдых по расписанию. Сделанный день отдыхом уже не считается. */
+  off: boolean;
 }
 
 /**
@@ -53,33 +58,44 @@ export function weekCells(calendar: readonly CalDay[]): DayCell[] {
   const lastIndex = days.length - 1;
   const cells: DayCell[] = [];
   for (let blank = weekdayOf(days[0].date); blank > 0; blank -= 1) {
-    cells.push({ key: `before-${blank}`, real: false, done: false, today: false });
+    cells.push({ key: `before-${blank}`, real: false, done: false, today: false, off: false });
   }
   days.forEach((day, index) => {
-    cells.push({ key: day.date, real: true, done: day.done, today: index === lastIndex });
+    cells.push({
+      key: day.date,
+      real: true,
+      done: day.done,
+      today: index === lastIndex,
+      off: Boolean(day.off) && !day.done,
+    });
   });
   for (let rest = 6 - weekdayOf(days[lastIndex].date); rest > 0; rest -= 1) {
-    cells.push({ key: `after-${rest}`, real: false, done: false, today: false });
+    cells.push({ key: `after-${rest}`, real: false, done: false, today: false, off: false });
   }
   return cells;
 }
 
 /**
- * Серия так же, как считает сервер: идём назад от сегодня или вчера, а пропуски
- * закрывают «щиты» из `freezeBudget`. Нужна, чтобы число перекатилось сразу после
- * нажатия, не дожидаясь ответа.
+ * Серия так же, как считает сервер: идём назад от сегодня или от последнего дня по
+ * расписанию, пропуски закрывают «щиты» из `freezeBudget`, а дни отдыха не считаются
+ * вовсе. Нужна, чтобы число перекатилось сразу после нажатия, не дожидаясь ответа.
  */
 function chainOf(calendar: readonly CalDay[], freezeBudget: number): number {
   let cursor = calendar.length - 1;
-  if (cursor >= 0 && !calendar[cursor].done) cursor -= 1;
+  if (cursor >= 0 && !calendar[cursor].done) {
+    cursor -= 1;
+    while (cursor >= 0 && !calendar[cursor].done && calendar[cursor].off) cursor -= 1;
+  }
   if (cursor < 0 || !calendar[cursor].done) return 0;
   const oldest = calendar.findIndex((day) => day.done);
   let streak = 0;
   let shields = 0;
   while (cursor >= oldest) {
     if (calendar[cursor].done) streak += 1;
-    else if (shields < freezeBudget) shields += 1;
-    else break;
+    else if (!calendar[cursor].off) {
+      if (shields >= freezeBudget) break;
+      shields += 1;
+    }
     cursor -= 1;
   }
   return streak;

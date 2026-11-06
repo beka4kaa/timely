@@ -13,7 +13,9 @@ import { Icon } from "@/components/shell/icons";
 
 import { CardMenu } from "./card-menu";
 import { habitColors, habitIcon, plural, streakWord, weekCells } from "./habit-days";
+import { habitWhen, sameSchedule, type HabitSchedule } from "./habit-schedule";
 import type { Habit } from "./lib";
+import { SchedulePicker } from "./schedule-picker";
 
 function motionOk(): boolean {
   return window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
@@ -109,6 +111,7 @@ export function HabitCard({
   fresh,
   onToggle,
   onRename,
+  onSchedule,
   onLink,
   onDelete,
 }: {
@@ -119,6 +122,7 @@ export function HabitCard({
   /** Переключает сегодня и говорит, что получилось. `null`: нажатие ничего не изменило. */
   onToggle: (habit: Habit) => { done: boolean; streak: number } | null;
   onRename: (habit: Habit, name: string) => void;
+  onSchedule: (habit: Habit, schedule: HabitSchedule) => void;
   onLink: (habit: Habit, goalId: string | null) => void;
   onDelete: (habit: Habit) => void;
 }) {
@@ -127,8 +131,10 @@ export function HabitCard({
   const { h1, h2 } = habitColors(habit.color, habit.id);
   const cells = useMemo(() => weekCells(habit.calendar), [habit.calendar]);
   const weeks = Math.ceil(cells.length / 7);
+  const when = habitWhen(habit);
+  const resting = !habit.dueToday && !habit.doneToday;
 
-  const press = (event: MouseEvent<HTMLElement>) => {
+  const press =(event: MouseEvent<HTMLElement>) => {
     const element = card.current;
     if (!element || (event.target as HTMLElement).closest("a")) return;
     const box = element.getBoundingClientRect();
@@ -155,7 +161,7 @@ export function HabitCard({
     <article
       ref={card}
       id={`h${habit.id}`}
-      className={`hb${habit.doneToday ? " is-done" : ""}${fresh ? " fresh" : ""}`}
+      className={`hb${habit.doneToday ? " is-done" : ""}${resting ? " is-rest" : ""}${fresh ? " fresh" : ""}`}
       style={{ "--h1": h1, "--h2": h2 } as CSSProperties}
       data-attach={`Привычка: ${habit.name}`}
       onClick={press}
@@ -163,15 +169,23 @@ export function HabitCard({
       <span className="hb-bg" aria-hidden="true">
         <span className="hb-fill" />
       </span>
-      <button className="hb-tap" type="button" aria-pressed={habit.doneToday} aria-label={`${habit.name}, сегодня`}>
+      <button
+        className="hb-tap"
+        type="button"
+        aria-pressed={habit.doneToday}
+        aria-label={`${habit.name}, сегодня${when ? `. ${when}` : ""}`}
+      >
         <span className="hb-ic">
           <HabitGlyph name={habit.name} emoji={habit.emoji} />
           <Icon name="check" className="hb-ok" />
         </span>
-        <span className="hb-name">{habit.name}</span>
+        <span className="hb-name">
+          {habit.name}
+          {when ? <span className="hb-when">{when}</span> : null}
+        </span>
         <span className="hb-n">
           <StreakRoll value={habit.streak} />
-          <small>{streakWord(habit.streak)}</small>
+          <small>{streakWord(habit.streak, habit.frequency === "daily")}</small>
         </span>
       </button>
       <div className="hb-line">
@@ -184,7 +198,15 @@ export function HabitCard({
         )}
         <CardMenu label={`Меню привычки: ${habit.name}`}>
           {(close) => (
-            <HabitMenu habit={habit} goals={goals} close={close} onRename={onRename} onLink={onLink} onDelete={onDelete} />
+            <HabitMenu
+              habit={habit}
+              goals={goals}
+              close={close}
+              onRename={onRename}
+              onSchedule={onSchedule}
+              onLink={onLink}
+              onDelete={onDelete}
+            />
           )}
         </CardMenu>
       </div>
@@ -198,7 +220,7 @@ export function HabitCard({
             <i
               key={cell.key}
               data-day={cell.key}
-              className={[cell.done ? "on" : "", cell.today ? "today" : ""].filter(Boolean).join(" ") || undefined}
+              className={[cell.done ? "on" : "", cell.off ? "off" : "", cell.today ? "today" : ""].filter(Boolean).join(" ") || undefined}
             />
           ) : (
             <i key={cell.key} className="future" />
@@ -216,6 +238,7 @@ function HabitMenu({
   goals,
   close,
   onRename,
+  onSchedule,
   onLink,
   onDelete,
 }: {
@@ -223,11 +246,13 @@ function HabitMenu({
   goals: readonly GoalOption[];
   close: () => void;
   onRename: (habit: Habit, name: string) => void;
+  onSchedule: (habit: Habit, schedule: HabitSchedule) => void;
   onLink: (habit: Habit, goalId: string | null) => void;
   onDelete: (habit: Habit) => void;
 }) {
-  const [page, setPage] = useState<"root" | "rename" | "goal">("root");
+  const [page, setPage] = useState<"root" | "rename" | "schedule" | "goal">("root");
   const [name, setName] = useState(habit.name);
+  const [schedule, setSchedule] = useState<HabitSchedule>(habit);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -258,6 +283,31 @@ function HabitMenu({
             aria-label="Новое название привычки"
             autoComplete="off"
           />
+          <div className="gm-acts">
+            <button className="btn btn-main" type="submit">
+              Сохранить
+            </button>
+            <button className="btn btn-text" type="button" onClick={close}>
+              Отмена
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  if (page === "schedule") {
+    return (
+      <div ref={box}>
+        <form
+          className="gm-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!sameSchedule(schedule, habit)) onSchedule(habit, schedule);
+            close();
+          }}
+        >
+          <SchedulePicker value={schedule} onChange={setSchedule} />
           <div className="gm-acts">
             <button className="btn btn-main" type="submit">
               Сохранить
@@ -302,6 +352,10 @@ function HabitMenu({
       <button className="gm-item" type="button" onClick={() => setPage("rename")}>
         <Icon name="pencil" />
         <span className="gm-text">Переименовать</span>
+      </button>
+      <button className="gm-item" type="button" onClick={() => setPage("schedule")}>
+        <Icon name="plan" />
+        <span className="gm-text">Как часто</span>
       </button>
       <button className="gm-item" type="button" onClick={() => setPage("goal")}>
         <Icon name="mountain" />

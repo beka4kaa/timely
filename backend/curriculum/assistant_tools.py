@@ -30,7 +30,7 @@ from django.utils import timezone as django_timezone
 
 from diary.models import DiaryWeek
 from habits.models import Habit
-from habits.serializers import habit_payload
+from habits.serializers import clean_schedule, habit_payload
 from mind.models import Topic
 from planner.models import Goal
 from pomodoro.models import FocusSession
@@ -171,6 +171,14 @@ def _get_diary(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     }
 
 
+def _how_often(habit: Habit) -> str:
+    if habit.frequency == Habit.WEEKDAYS:
+        return ", ".join(_WEEKDAYS[day] for day in habit.weekdays)
+    if habit.frequency == Habit.INTERVAL:
+        return f"раз в {habit.interval_days} дн."
+    return "каждый день"
+
+
 def _list_habits(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     rows = (
         Habit.objects.filter(user_email=ctx.user_email)
@@ -184,8 +192,10 @@ def _list_habits(args: dict, ctx: AssistantContext) -> dict[str, Any]:
         habits.append({
             "id": payload["id"],
             "name": payload["name"],
+            "how_often": _how_often(habit),
+            "due_today": payload["due_today"],
             "done_today": payload["done_today"],
-            "streak_days": payload["streak"],
+            "streak": payload["streak"],
             "done_last_7_days": sum(1 for day in payload["calendar"] if day["done"] and day["date"] >= week_ago),
             "goal": payload["goal_title"] or None,
         })
@@ -268,10 +278,22 @@ def _get_focus_stats(args: dict, ctx: AssistantContext) -> dict[str, Any]:
 # ──────────────────────────── Предложения ─────────────────────────────
 
 
+def _schedule_from(args: dict) -> dict[str, Any]:
+    """Частота от модели теми же проверками, что у страницы. Кривая значит `ValueError`."""
+    frequency = args.get("frequency") or (
+        Habit.WEEKDAYS if args.get("weekdays") else Habit.INTERVAL if args.get("interval_days") else Habit.DAILY
+    )
+    return clean_schedule(frequency, args.get("weekdays") or [], args.get("interval_days"))
+
+
 def _propose_new_habit(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     name = _clean(args.get("name"), 120)
     if not name:
         return _fail("invalid_arguments", "Нужно название привычки.")
+    try:
+        schedule = _schedule_from(args)
+    except ValueError as error:
+        return _fail("invalid_arguments", str(error))
     # Сравнение здесь, а не в запросе: SQLite не знает регистра кириллицы, а привычек единицы.
     known = Habit.objects.filter(user_email=ctx.user_email).values_list("name", flat=True)
     if name.casefold() in {row.casefold() for row in known}:
@@ -286,7 +308,22 @@ def _propose_new_habit(args: dict, ctx: AssistantContext) -> dict[str, Any]:
         name=name,
         goal_id=str(goal.pk) if goal else None,
         goal_title=goal.title if goal else None,
+        **schedule,
     )
+
+
+def _propose_habit_schedule(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    habit = Habit.objects.filter(pk=_int(args.get("habit_id")), user_email=ctx.user_email).first()
+    if habit is None:
+        return _fail("not_found", "Такой привычки нет.")
+    try:
+        schedule = _schedule_from(args)
+    except ValueError as error:
+        return _fail("invalid_arguments", str(error))
+    before = {"frequency": habit.frequency, "weekdays": habit.weekdays, "interval_days": habit.interval_days}
+    if schedule == before:
+        return _fail("already", "У неё уже такая частота.")
+    return ctx.propose("habit_schedule", habit_id=habit.pk, name=habit.name, before=before, **schedule)
 
 
 def _propose_mark_habit(args: dict, ctx: AssistantContext) -> dict[str, Any]:
@@ -437,6 +474,11 @@ class AssistantTool:
 
 
 _NO_ARGS: dict[str, Any] = {"type": "object", "properties": {}}
+_HOW_OFTEN_ARGS: dict[str, Any] = {
+    "frequency": {"type": "string", "enum": ["daily", "weekdays", "interval"], "description": "По умолчанию daily."},
+    "weekdays": {"type": "array", "items": {"type": "integer"}, "description": "Для weekdays: 0 это понедельник."},
+    "interval_days": {"type": "integer", "description": "Для interval: раз в сколько дней, от 2 до 30."},
+}
 
 OWN_TOOLS = {
     tool.name: tool
@@ -457,7 +499,7 @@ OWN_TOOLS = {
         AssistantTool(
             "list_habits",
             "Смотрю привычки",
-            "Привычки ученика: отмечена ли сегодня, серия дней, сколько раз за неделю.",
+            "Привычки ученика: как часто, нужна ли сегодня по расписанию, отмечена ли, серия, сколько раз за неделю.",
             _NO_ARGS,
             _list_habits,
         ),
@@ -500,10 +542,25 @@ OWN_TOOLS = {
                 "properties": {
                     "name": {"type": "string", "description": "Короткое название: «Зарядка», «Читать 20 минут»."},
                     "goal_id": {"type": "string", "description": "Цель из list_goals, к которой она ведёт."},
+                    **_HOW_OFTEN_ARGS,
                 },
                 "required": ["name"],
             },
             _propose_new_habit,
+        ),
+        AssistantTool(
+            "propose_habit_schedule",
+            "Готовлю предложение",
+            "Предложить поменять, как часто делать привычку.",
+            {
+                "type": "object",
+                "properties": {
+                    "habit_id": {"type": "integer", "description": "Идентификатор из list_habits."},
+                    **_HOW_OFTEN_ARGS,
+                },
+                "required": ["habit_id"],
+            },
+            _propose_habit_schedule,
         ),
         AssistantTool(
             "propose_mark_habit",
@@ -633,7 +690,7 @@ _OPEN_ALL_SCHEMA = {
 
 # О чём речь. Лишнее совпадение стоит немного токенов, поэтому основы широкие.
 _AREA_WORDS = {
-    "habits": re.compile(r"привычк|отмет|зарядк|стрик|подряд"),
+    "habits": re.compile(r"привычк|отмет|зарядк|стрик|подряд|как часто|через день|раз в |по будням"),
     "goals": re.compile(r"цел[ьиея]|прогресс"),
     "topics": re.compile(r"повтор|тем[уыа]\b|тем\b|изучил|выучил|прош[её]л|прошла|прошли"),
     "diary": re.compile(r"дневник|домашк|домашн|задани|задал|оценк|урок|контрольн|\bсор\b|\bсоч\b"),
@@ -654,7 +711,7 @@ _ACTION_WORDS = re.compile(
 )
 
 _AREA_TOOLS = {
-    "habits": ("list_habits", "propose_new_habit", "propose_mark_habit"),
+    "habits": ("list_habits", "propose_new_habit", "propose_habit_schedule", "propose_mark_habit"),
     "goals": ("list_goals", "propose_new_goal", "propose_goal_progress"),
     "topics": ("list_review_topics", "propose_new_topics"),
     "diary": ("get_diary", "propose_mark_homework"),
