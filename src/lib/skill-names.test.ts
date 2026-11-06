@@ -5,7 +5,8 @@ import { SCHEDULE_SKILLS, isSkillName, skillLabel } from "./skill-names.ts";
 
 test("имена инструментов опознаются", () => {
   assert.equal(isSkillName("list_courses"), true);
-  assert.equal(isSkillName("add_course_to_schedule"), true);
+  assert.equal(isSkillName("propose_study_plan"), true);
+  assert.equal(isSkillName("add_course_to_schedule"), false);
   assert.equal(isSkillName("propose_move_blocks"), true);
 });
 

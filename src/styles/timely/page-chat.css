@@ -114,6 +114,10 @@
 .a-props { display: grid; gap: 10px; margin-top: 10px; }
 .a-prop { display: grid; gap: 2px; }
 .a-prop .q-diff { margin-top: 4px; }
+/* Длинная подпись занятий переносится, а не наезжает на название */
+.a-prop .q-diff li { grid-template-columns: auto minmax(0, 1fr); }
+.a-batch { gap: 6px; }
+.a-batch .q-diff { margin-top: 0; }
 .m-turn .a-prop { padding: 12px 14px; border: 0.5px solid var(--t-line-strong); border-radius: 16px; background: var(--t-card); }
 .q-open { position: relative; }
 .q-open[data-unseen]::after { content: ""; position: absolute; top: 7px; right: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--t-accent); }

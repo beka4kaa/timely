@@ -329,6 +329,12 @@ class StudySchedule(TimestampedModel):
         return not self.conflict_report
 
     @property
+    def partial_by_period(self) -> bool:
+        """Расписание на период короче программы: всё пройденное в нём ещё не вся программа."""
+        snapshot = self.pacing_snapshot if isinstance(self.pacing_snapshot, dict) else {}
+        return bool(snapshot.get("partial_by_period"))
+
+    @property
     def setup_restartable(self) -> bool:
         """An unconfirmed /start proposal may be replaced by another /start."""
         snapshot = self.pacing_snapshot if isinstance(self.pacing_snapshot, dict) else {}
@@ -472,6 +478,24 @@ class LearningBlock(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.start_at:%Y-%m-%d %H:%M} {self.title[:40]}"
+
+
+class AppliedQuickPlan(models.Model):
+    """Карточка тьютора, которую уже применили.
+
+    Ответ на «Применить» мог потеряться: ученик нажмёт снова, а занятия уже записаны. Повтор
+    возвращает то же самое и ту же отмену, а вторая вкладка дождётся первой.
+    """
+
+    user_email = models.EmailField()
+    key = models.CharField(max_length=64)
+    result = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user_email", "key"], name="unique_applied_quick_plan"),
+        ]
 
 
 class ScheduleRevision(TimestampedModel):

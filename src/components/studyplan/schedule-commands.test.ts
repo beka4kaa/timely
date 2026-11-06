@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  defaultScheduleMode,
+  DEFAULT_SCHEDULE_MODE,
   matchingScheduleCommands,
   moveCommandSelection,
   parseScheduleCommand,
@@ -20,24 +20,20 @@ test("slash menu открывается только для первого то�
 
 test("autocomplete находит основную команду и alias без учёта регистра", () => {
   assert.deepEqual(
-    matchingScheduleCommands("/START-P", false).map((item) => item.id),
+    matchingScheduleCommands("/START-P").map((item) => item.id),
     ["start"],
   );
   assert.deepEqual(
-    matchingScheduleCommands("/p", true).map((item) => item.id),
+    matchingScheduleCommands("/p").map((item) => item.id),
     ["plan"],
   );
 });
 
-test("/start и /advice доступны всегда, а /plan — после появления расписания", () => {
-  const empty = scheduleCommands(false);
-  assert.equal(empty.find((item) => item.id === "start")?.available, true);
-  assert.equal(empty.find((item) => item.id === "advice")?.available, true);
-  assert.equal(empty.find((item) => item.id === "plan")?.available, false);
-
-  const existing = scheduleCommands(true);
-  assert.equal(existing.find((item) => item.id === "start")?.available, true);
-  assert.equal(existing.find((item) => item.id === "plan")?.available, true);
+test("все команды есть и без расписания: первое создаёт сам помощник", () => {
+  assert.deepEqual(
+    scheduleCommands().map((item) => item.id),
+    ["start", "plan", "advice"],
+  );
 });
 
 test("parser отделяет slash-команду от аргумента и не ловит похожие слова", () => {
@@ -65,71 +61,68 @@ test("клавиатурная навигация циклична", () => {
 
 test("slash-токен не попадает в сообщение модели", () => {
   assert.deepEqual(
-    resolveScheduleSubmission("/plan разгрузи среду", "advice", true),
+    resolveScheduleSubmission("/plan разгрузи среду", "advice"),
     { kind: "message", message: "разгрузи среду", mode: "plan" },
   );
-  assert.deepEqual(resolveScheduleSubmission("/plan", "advice", true), {
+  assert.deepEqual(resolveScheduleSubmission("/plan", "advice"), {
     kind: "arm_plan",
   });
   assert.deepEqual(
-    resolveScheduleSubmission("оцени неделю", "advice", true),
+    resolveScheduleSubmission("оцени неделю", "advice"),
     { kind: "message", message: "оцени неделю", mode: "advice" },
   );
 });
 
-test("недоступная и неизвестная команда остаются локальными ошибками", () => {
-  assert.equal(
-    resolveScheduleSubmission("/plan перенеси", "advice", false).kind,
-    "error",
-  );
-  assert.equal(
-    resolveScheduleSubmission("/start", "advice", true).kind,
-    "start",
-  );
-  assert.equal(
-    resolveScheduleSubmission("/unknown", "advice", true).kind,
-    "error",
-  );
+test("неизвестная команда остаётся локальной ошибкой", () => {
+  assert.equal(resolveScheduleSubmission("/start", "advice").kind, "start");
+  assert.equal(resolveScheduleSubmission("/unknown", "advice").kind, "error");
 });
 
 test("/start может перестроить ещё не подтверждённый setup-черновик", () => {
   assert.deepEqual(
-    resolveScheduleSubmission("/start", "advice", true),
+    resolveScheduleSubmission("/start", "advice"),
     { kind: "start" },
   );
 });
 
-test("при наличии расписания обычное сообщение готовит изменение, совет только по команде", () => {
-  assert.equal(defaultScheduleMode(true), "plan");
-  assert.equal(defaultScheduleMode(false), "advice");
+test("обычное сообщение готовит изменение, совет только по команде", () => {
+  assert.equal(DEFAULT_SCHEDULE_MODE, "plan");
   assert.deepEqual(
-    resolveScheduleSubmission("перенеси физику", defaultScheduleMode(true), true),
+    resolveScheduleSubmission("перенеси физику", DEFAULT_SCHEDULE_MODE),
     { kind: "message", message: "перенеси физику", mode: "plan" },
   );
-  assert.deepEqual(resolveScheduleSubmission("/advice оцени неделю", "plan", true), {
+  assert.deepEqual(resolveScheduleSubmission("/advice оцени неделю", "plan"), {
     kind: "message",
     message: "оцени неделю",
     mode: "advice",
   });
-  assert.deepEqual(resolveScheduleSubmission("/advice", "plan", true), {
+  assert.deepEqual(resolveScheduleSubmission("/advice", "plan"), {
     kind: "arm_advice",
   });
-  assert.equal(resolveScheduleSubmission("/совет", "plan", true).kind, "arm_advice");
+  assert.equal(resolveScheduleSubmission("/совет", "plan").kind, "arm_advice");
   assert.deepEqual(
-    matchingScheduleCommands("/ad", true).map((item) => item.id),
+    matchingScheduleCommands("/ad").map((item) => item.id),
     ["advice"],
   );
 });
 
+test("пустой календарь не мешает: /plan с просьбой идёт в модель", () => {
+  assert.deepEqual(resolveScheduleSubmission("/plan добавь русский", "advice"), {
+    kind: "message",
+    message: "добавь русский",
+    mode: "plan",
+  });
+});
+
 test("выбранный /plan действует только на следующее сообщение", () => {
-  const armed = resolveScheduleSubmission("перенеси урок", "plan", true);
+  const armed = resolveScheduleSubmission("перенеси урок", "plan");
   assert.deepEqual(armed, {
     kind: "message",
     message: "перенеси урок",
     mode: "plan",
   });
   // После отправки composer сбрасывает pendingMode в advice.
-  const next = resolveScheduleSubmission("а нагрузка нормальная?", "advice", true);
+  const next = resolveScheduleSubmission("а нагрузка нормальная?", "advice");
   assert.equal(next.kind, "message");
   if (next.kind === "message") assert.equal(next.mode, "advice");
 });

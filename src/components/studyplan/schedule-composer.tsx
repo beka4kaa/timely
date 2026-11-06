@@ -19,7 +19,7 @@ import { useQuick, withAttached } from "@/components/shell/quick/quick-context";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 
 import {
-  defaultScheduleMode,
+  DEFAULT_SCHEDULE_MODE,
   matchingScheduleCommands,
   moveCommandSelection,
   resolveScheduleSubmission,
@@ -76,7 +76,7 @@ export function ScheduleComposer({
   useSmoothInput(fieldRef);
 
   const query = slashQuery(draft);
-  const matches = useMemo(() => matchingScheduleCommands(draft, hasSchedule), [draft, hasSchedule]);
+  const matches = useMemo(() => matchingScheduleCommands(draft), [draft]);
   const menuOpen = query !== null && !menuDismissed && !busy && !disabled;
   const selected = activeIndex >= 0 ? matches[activeIndex] : undefined;
 
@@ -93,8 +93,7 @@ export function ScheduleComposer({
   }, []);
 
   useEffect(() => {
-    const firstAvailable = matches.findIndex((item) => item.available);
-    setActiveIndex(firstAvailable >= 0 ? firstAvailable : matches.length ? 0 : -1);
+    setActiveIndex(matches.length ? 0 : -1);
   }, [draft, matches]);
 
   useEffect(() => {
@@ -126,8 +125,8 @@ export function ScheduleComposer({
   const execute = useCallback(
     (value: string) => {
       if (busy || disabled) return;
-      const mode = adviceArmed ? "advice" : defaultScheduleMode(hasSchedule);
-      const result = resolveScheduleSubmission(value, mode, hasSchedule);
+      const mode = adviceArmed ? "advice" : DEFAULT_SCHEDULE_MODE;
+      const result = resolveScheduleSubmission(value, mode);
       if (result.kind === "empty") return;
       if (result.kind === "error") {
         setError(result.message);
@@ -153,7 +152,7 @@ export function ScheduleComposer({
       onSubmit(withAttached(result.message, attached), result.mode);
       clearAttached();
     },
-    [adviceArmed, attached, busy, clearAttached, disabled, focusField, hasSchedule, onStart, onSubmit],
+    [adviceArmed, attached, busy, clearAttached, disabled, focusField, onStart, onSubmit],
   );
 
   const chooseCommand = (item: ScheduleCommand) => execute(item.command);
@@ -170,7 +169,7 @@ export function ScheduleComposer({
   const showSuggest = showSuggestions && hasSchedule && !draft.trim() && !busy && !disabled && !listening;
 
   let placeholder = "Что поменять?";
-  if (!hasSchedule) placeholder = "Спроси или напиши /start";
+  if (!hasSchedule) placeholder = "Что поставить в план?";
   if (adviceArmed) placeholder = "О чём совет?";
   if (listening) placeholder = "Слушаю…";
 
@@ -204,12 +203,11 @@ export function ScheduleComposer({
                 type="button"
                 role="option"
                 aria-selected={index === activeIndex}
-                aria-disabled={!item.available}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => chooseCommand(item)}
               >
                 <b>{item.command}</b>
-                <span>{item.available ? item.description : item.unavailableReason}</span>
+                <span>{item.description}</span>
               </button>
             ))
           ) : (

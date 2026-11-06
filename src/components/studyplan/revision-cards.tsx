@@ -41,11 +41,14 @@ export function RevisionCard({
   revision,
   timeZone,
   busy,
+  hideActions = false,
   onDecide,
 }: {
   revision: ScheduleRevision;
   timeZone: string;
   busy: boolean;
+  /** Внутри общей карточки: кнопка там одна на всех. */
+  hideActions?: boolean;
   onDecide: (revision: ScheduleRevision, accept: boolean) => void;
 }) {
   const rows = useMemo(
@@ -57,11 +60,13 @@ export function RevisionCard({
     return (
       <>
         <p className="q-status">Помощник ничего не переносит.</p>
-        <div className="q-acts">
-          <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
-            Закрыть
-          </button>
-        </div>
+        {hideActions ? null : (
+          <div className="q-acts">
+            <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
+              Закрыть
+            </button>
+          </div>
+        )}
       </>
     );
   }
@@ -84,14 +89,16 @@ export function RevisionCard({
           </li>
         ) : null}
       </ul>
-      <div className="q-acts">
-        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onDecide(revision, true)}>
-          Применить
-        </button>
-        <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
-          Не надо
-        </button>
-      </div>
+      {hideActions ? null : (
+        <div className="q-acts">
+          <button className="btn btn-main" type="button" disabled={busy} onClick={() => onDecide(revision, true)}>
+            Применить
+          </button>
+          <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
+            Не надо
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -99,11 +106,14 @@ export function RevisionCard({
 export function CommitmentsCard({
   items,
   busy,
+  hideActions = false,
   onAccept,
   onDismiss,
 }: {
   items: ParsedCommitment[];
   busy: boolean;
+  /** Внутри общей карточки: кнопка там одна на всех. */
+  hideActions?: boolean;
   onAccept: (items: ParsedCommitment[]) => void;
   onDismiss: () => void;
 }) {
@@ -124,14 +134,16 @@ export function CommitmentsCard({
           </li>
         ))}
       </ul>
-      <div className="q-acts">
-        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(items)}>
-          Записать
-        </button>
-        <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
-          Не надо
-        </button>
-      </div>
+      {hideActions ? null : (
+        <div className="q-acts">
+          <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(items)}>
+            Записать
+          </button>
+          <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
+            Не надо
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -147,11 +159,14 @@ export function CommitmentsCard({
 export function StudyWindowsCard({
   proposal,
   busy,
+  hideActions = false,
   onAccept,
   onDismiss,
 }: {
   proposal: ProposedStudyWindows;
   busy: boolean;
+  /** Внутри общей карточки: кнопка там одна на всех. */
+  hideActions?: boolean;
   onAccept: (proposal: ProposedStudyWindows) => void;
   onDismiss: () => void;
 }) {
@@ -171,14 +186,16 @@ export function StudyWindowsCard({
         <p className="q-cite">Прежнее время уберу: {groupWindows(proposal.current).join("; ")}.</p>
       ) : null}
       <p className="q-cite">Занятия смогут вставать только в это время, а уже расставленные придётся переразложить.</p>
-      <div className="q-acts">
-        <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(proposal)}>
-          {proposal.replace ? "Заменить" : "Добавить"}
-        </button>
-        <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
-          Не надо
-        </button>
-      </div>
+      {hideActions ? null : (
+        <div className="q-acts">
+          <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(proposal)}>
+            {proposal.replace ? "Заменить" : "Добавить"}
+          </button>
+          <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
+            Не надо
+          </button>
+        </div>
+      )}
     </>
   );
 }

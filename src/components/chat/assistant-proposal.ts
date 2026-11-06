@@ -8,6 +8,7 @@ import type { ScheduleRevision } from "@/lib/studyplan-api";
 import type { ParsedCommitment, ParsedStudyWindow } from "@/lib/studyplan-chat";
 import type { DayOfWeek } from "@/types/diary";
 
+import { plural } from "../habits/habit-days";
 import { scheduleLabel, scheduleOf, type SchedulePatch } from "../habits/habit-schedule";
 
 export type ProposalState = "applied" | "dismissed" | "undone" | "stale";
@@ -19,6 +20,8 @@ export interface ProposalUndo {
   topicIds?: string[];
   subjectIds?: string[];
   commitmentIds?: string[];
+  /** Что вернуть сервер решил сам: клиент хранит это, не разбирая. */
+  quickPlan?: Record<string, unknown>;
 }
 
 export interface LessonSlotRef {
@@ -61,6 +64,26 @@ export type AssistantProposal = ProposalBase &
         current: ParsedStudyWindow[];
         template_id: string;
       }
+    | {
+        kind: "study_plan";
+        subject: string;
+        /** Пусто: предмета ещё нет. */
+        goal_id: string | null;
+        is_new: boolean;
+        path: "subject_only" | "new_sessions" | "book_topics" | "extra_sessions";
+        /** Только у добавленных занятий: к какому расписанию. */
+        schedule_id?: string | null;
+        weekdays: number[];
+        start_time: string | null;
+        end_time: string | null;
+        minutes: number;
+        from_date: string | null;
+        to_date: string | null;
+        timezone: string;
+        sessions: number;
+        left_topics: number;
+        approves_plan: boolean;
+      }
   );
 
 export interface ProposalRow {
@@ -81,6 +104,38 @@ function newHabitNote(proposal: Extract<AssistantProposal, { kind: "new_habit" }
   return scheduleOf(proposal).frequency === "daily" ? goal : `${howOften(proposal)}, ${goal}`;
 }
 
+type StudyPlanProposal = Extract<AssistantProposal, { kind: "study_plan" }>;
+
+const sessionsLabel = (count: number) => `${count} ${plural(count, "занятие", "занятия", "занятий")}`;
+
+function periodLabel(from: string, to: string): string {
+  if (from === to) return dayLabel(from);
+  return from.slice(0, 7) === to.slice(0, 7)
+    ? `${Number(from.slice(8))}–${dayLabel(to)}`
+    : `${dayLabel(from)} – ${dayLabel(to)}`;
+}
+
+/** Когда занятия, одной строкой. У разового занятия дни недели только мешают. */
+function studyPlanWhen(proposal: StudyPlanProposal): string {
+  const from = proposal.from_date ?? "";
+  const to = proposal.to_date ?? "";
+  return [
+    ...(from === to ? [] : [howOften({ frequency: "weekdays", weekdays: proposal.weekdays })]),
+    `${proposal.start_time}–${proposal.end_time}`,
+    periodLabel(from, to),
+    sessionsLabel(proposal.sessions),
+  ].join(", ");
+}
+
+function studyPlanRows(proposal: StudyPlanProposal): ProposalRow[] {
+  const note = proposal.is_new ? "новый предмет" : proposal.path === "extra_sessions" ? "к тому, что уже есть" : "";
+  const rows = [{ name: proposal.subject, note }];
+  if (proposal.sessions) rows.push({ name: "Занятия", note: studyPlanWhen(proposal) });
+  if (proposal.left_topics) rows.push({ name: "Остальные темы", note: `ещё ${proposal.left_topics} можно поставить потом` });
+  if (proposal.approves_plan) rows.push({ name: "Программа", note: "подтвержу" });
+  return rows;
+}
+
 /** Строка над списком изменений. */
 export function proposalHeading(proposal: AssistantProposal): string {
   switch (proposal.kind) {
@@ -98,6 +153,8 @@ export function proposalHeading(proposal: AssistantProposal): string {
       return "Запишу в повторение, первое завтра:";
     case "mark_homework":
       return proposal.done ? "Отмечу задание сделанным:" : "Сниму отметку с задания:";
+    case "study_plan":
+      return proposal.path === "extra_sessions" ? "Добавлю занятия:" : "Настрою предмет:";
     default:
       return "";
   }
@@ -126,8 +183,28 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
       return proposal.topics.map((topic) => ({ name: topic.title, note: topic.subject }));
     case "mark_homework":
       return [{ name: proposal.subject, note: proposal.homework }];
+    case "study_plan":
+      return studyPlanRows(proposal);
     default:
       return [];
+  }
+}
+
+/** Строки для общей карточки: заголовка своего вида там нет, и каждая говорит сама за себя. */
+export function batchRows(proposal: AssistantProposal): ProposalRow[] {
+  switch (proposal.kind) {
+    case "new_habit":
+      return [{ name: `Привычка «${proposal.name}»`, note: newHabitNote(proposal) }];
+    case "new_goal":
+      return proposalRows(proposal).map((row, index) =>
+        index ? row : { name: `Цель «${proposal.title}»`, note: proposal.deadline ? `срок ${dayLabel(proposal.deadline)}` : row.note },
+      );
+    case "new_topics":
+      return proposal.topics.map((topic) => ({ name: topic.title, note: `в повторение, ${topic.subject}` }));
+    default: {
+      const heading = proposalHeading(proposal).replace(/:$/, "").toLowerCase();
+      return proposalRows(proposal).map((row) => (row.note ? row : { ...row, note: heading }));
+    }
   }
 }
 
@@ -154,6 +231,10 @@ export function proposalDoneText(proposal: AssistantProposal): string {
       return "Занятое время записано.";
     case "study_windows":
       return "Время занятий обновлено.";
+    case "study_plan":
+      return proposal.sessions
+        ? `«${proposal.subject}»: ${sessionsLabel(proposal.sessions)} в календаре.`
+        : `Предмет «${proposal.subject}» добавлен.`;
   }
 }
 
@@ -185,6 +266,10 @@ export function proposalSummary(proposal: AssistantProposal): string {
       return `занятое время: ${proposal.items.map((item) => item.title).join(", ")}`;
     case "study_windows":
       return "новое время занятий";
+    case "study_plan": {
+      const name = `${proposal.is_new ? "новый предмет" : "предмет"} «${proposal.subject}»`;
+      return proposal.sessions ? `${name}, ${studyPlanWhen(proposal)}` : name;
+    }
   }
 }
 

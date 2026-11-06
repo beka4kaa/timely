@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from curriculum.models import CoursePlan, CourseTopic, LearningGoal, StudyMaterial
 from curriculum.services import materials as materials_service
+from curriculum.services import plans as plans_service
 from config.testing import auth_headers
 
 OWNER = "owner@example.com"
@@ -173,6 +174,14 @@ class MaterialPlanTests(TestCase):
         first.refresh_from_db()
         self.assertEqual(first.status, CoursePlan.Status.ARCHIVED)
         self.assertEqual(second.status, CoursePlan.Status.AWAITING_APPROVAL)
+
+    def test_a_plan_without_a_book_can_be_approved(self):
+        plan = materials_service.build_plan(_material(_goal()))
+
+        plans_service.approve_plan(plan, user_email=OWNER)
+
+        plan.refresh_from_db()
+        self.assertEqual(plan.status, CoursePlan.Status.ACTIVE)
 
     def test_material_without_units_is_not_plannable(self):
         material = _material(_goal(), total_units=0)

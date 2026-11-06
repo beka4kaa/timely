@@ -781,12 +781,17 @@ def _first_fixed_commitment_collision(
 
 
 @transaction.atomic
-def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
+def confirm_schedule(
+    schedule: StudySchedule, *, keep_active_rhythm: bool = False
+) -> StudySchedule:
     """Ученик принял предложенный календарь: он становится активным.
 
     Прочие активные расписания той же программы уходят в архив. Двух активных
     календарей по одному курсу быть не может — иначе экран «Сейчас» не сможет
     ответить, какое занятие следующее.
+
+    `keep_active_rhythm`: занятия по одному предмету не перехватывают уже
+    принятый ритм ученика, у них просто свои окна.
     """
     # /start-confirmation берёт блокировки в том же порядке: сначала программа,
     # затем расписания. Единый порядок не даёт двум вкладкам поймать deadlock.
@@ -837,7 +842,16 @@ def confirm_schedule(schedule: StudySchedule) -> StudySchedule:
 
     # До этого момента подтверждение могло завершиться ошибкой и не имело
     # права менять текущий ритм. Теперь пользователь явно выбрал вариант.
-    _activate_selected_rhythm(schedule)
+    rhythm_taken = (
+        keep_active_rhythm
+        and WeeklyScheduleTemplate.objects.filter(
+            user_email=schedule.user_email, active=True
+        )
+        .exclude(pk=schedule.template_id)
+        .exists()
+    )
+    if not rhythm_taken:
+        _activate_selected_rhythm(schedule)
 
     StudySchedule.objects.filter(
         course_plan=schedule.course_plan,

@@ -27,7 +27,7 @@ from ..models import (
     CourseTopic,
     StudyMaterial,
 )
-from .plans import _apply_forecast
+from .plans import _apply_forecast, _snapshot_version
 
 #: К какой длине занятия стремимся, раскладывая единицы по блокам.
 #: Точный темп потом уточнит прогноз (`_apply_forecast`) — это лишь то, по
@@ -166,4 +166,6 @@ def build_plan(
     )
 
     _apply_forecast(plan, goal, start_date=start_date)
+    # Запись на курс ссылается на версию: без неё программу нельзя подтвердить.
+    _snapshot_version(plan, None, reason="Программа по источнику без файла")
     return plan

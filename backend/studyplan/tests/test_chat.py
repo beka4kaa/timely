@@ -6,9 +6,13 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from django.utils import timezone
+
 from ai_engine.prompt_safety import IDENTITY_RULE, PUBLIC_MODEL_ERROR
 from ai_engine.usage import AIUsageLimitExceeded
+from curriculum.models import LearningGoal
 from habits.models import Habit
+from studyplan.chat_views import MAX_TOOL_ROUNDS
 from studyplan.models import ScheduleRevision, StudySchedule
 from studyplan.services import generate_schedule
 
@@ -155,6 +159,11 @@ class GuardTests(ChatFixture):
 
 
 class ConversationTests(ChatFixture):
+    def schedule_free_monday(self):
+        """Понедельник далеко впереди: там точно нет занятий фикстуры."""
+        today = timezone.localdate()
+        return today + timedelta(days=(7 - today.weekday()) + 364)
+
     def run_chat(
         self, rounds, message="как выглядит моя неделя?", mode=None, **extra
     ):
@@ -198,6 +207,15 @@ class ConversationTests(ChatFixture):
 
         self.assertIn(IDENTITY_RULE, client.completions.calls[0]["messages"][0]["content"])
 
+    def test_the_helper_sees_the_account(self):
+        Habit.objects.create(user_email=OWNER, name="Зарядка")
+
+        _, _, client = self.run_chat([_Message(content="Привет")])
+
+        system = client.completions.calls[0]["messages"][0]["content"]
+        self.assertIn("<account>", system)
+        self.assertIn("Зарядка", system)
+
     def test_requests_go_only_to_hosts_that_keep_nothing(self):
         _, _, client = self.run_chat([_Message(content="Привет")])
 
@@ -234,6 +252,73 @@ class ConversationTests(ChatFixture):
         self.assertEqual(cards[0]["name"], "Растяжка")
         self.assertFalse(Habit.objects.exists())
         self.assertIn("propose_new_habit", [tool["function"]["name"] for tool in client.completions.calls[0]["tools"]])
+
+    def test_a_new_subject_is_a_card_and_nothing_is_written(self):
+        day = (self.schedule_free_monday()).isoformat()
+        rounds = [
+            _Message(
+                tool_calls=[
+                    _ToolCall(
+                        1,
+                        "propose_study_plan",
+                        {"subject": "Русский язык", "weekdays": [0], "start_time": "16:00", "from_date": day, "to_date": day},
+                    )
+                ]
+            ),
+            _Message(content="Предлагаю один урок русского."),
+        ]
+        _, events, _ = self.run_chat(rounds, message="добавь русский", mode="plan")
+
+        cards = [data for name, data in events if name == "proposal"]
+        self.assertEqual((cards[0]["kind"], cards[0]["sessions"]), ("study_plan", 1))
+        self.assertFalse(LearningGoal.objects.filter(user_email=OWNER, normalized_subject="Русский язык").exists())
+
+    def test_every_call_of_a_round_counts(self):
+        rounds = [
+            _Message(
+                tool_calls=[
+                    _ToolCall(1, "propose_new_habit", {"name": "Растяжка"}),
+                    _ToolCall(2, "propose_new_habit", {"name": "Чтение"}),
+                    _ToolCall(3, "propose_new_goal", {"title": "Сдать физику", "scope": "study"}),
+                ]
+            ),
+            _Message(content="Предлагаю всё сразу."),
+        ]
+        _, events, client = self.run_chat(rounds, message="добавь всё", mode="plan")
+
+        cards = [data["kind"] for name, data in events if name == "proposal"]
+        self.assertEqual(cards, ["new_habit", "new_habit", "new_goal"])
+        answered = [row for row in client.completions.calls[1]["messages"] if row["role"] == "tool"]
+        self.assertEqual([row["tool_call_id"] for row in answered], ["call-1", "call-2", "call-3"])
+        self.assertEqual(len(client.completions.calls[1]["messages"][-4]["tool_calls"]), 3)
+
+    def test_the_last_round_must_answer_in_words(self):
+        rounds = [_Message(tool_calls=[_ToolCall(index, "get_schedule", {})]) for index in range(MAX_TOOL_ROUNDS - 1)]
+        rounds.append(_Message(content="Вот что вижу."))
+        _, events, client = self.run_chat(rounds, mode="plan")
+
+        self.assertEqual(client.completions.calls[-1].get("tool_choice"), "none")
+        self.assertNotIn("tool_choice", client.completions.calls[0])
+        self.assertEqual(dict(events)["content"]["text"], "Вот что вижу.")
+
+    def test_the_helper_never_says_done_on_its_own(self):
+        # Ученик ещё ничего не нажал: слово «Готово» здесь было бы неправдой.
+        rounds = [
+            _Message(
+                tool_calls=[
+                    _ToolCall(
+                        1,
+                        "propose_fixed_commitments",
+                        {"items": [{"title": "Репетитор", "kind": "tutor", "weekday": 2, "start_time": "18:00", "duration_minutes": 60}]},
+                    )
+                ]
+            ),
+            _Message(content=""),
+        ]
+        _, events, _ = self.run_chat(rounds, message="по средам репетитор", mode="plan")
+
+        self.assertIn("commitments", dict(events))
+        self.assertEqual(dict(events)["content"]["text"], "Вот что предлагаю:")
 
     def test_read_only_mode_refuses_a_proposal_for_other_affairs(self):
         rounds = [
@@ -296,13 +381,10 @@ class ConversationTests(ChatFixture):
             "Режим: взаимодействие с планом",
             client.completions.calls[0]["messages"][0]["content"],
         )
-        self.assertIn(
-            "add_course_to_schedule",
-            [
-                tool["function"]["name"]
-                for tool in client.completions.calls[0]["tools"]
-            ],
-        )
+        names = [tool["function"]["name"] for tool in client.completions.calls[0]["tools"]]
+        self.assertIn("propose_study_plan", names)
+        self.assertNotIn("add_course_to_schedule", names)
+        self.assertNotIn("add_course_to_schedule", client.completions.calls[0]["messages"][0]["content"])
 
     def test_commitments_arrive_as_a_separate_event(self):
         rounds = [
@@ -342,7 +424,7 @@ class ConversationTests(ChatFixture):
         # каждый круг — отдельный оплаченный запрос.
         rounds = [_Message(tool_calls=[_ToolCall(0, "get_schedule", {})])]
         _, events, client = self.run_chat(rounds)
-        self.assertLessEqual(len(client.completions.calls), 4)
+        self.assertLessEqual(len(client.completions.calls), MAX_TOOL_ROUNDS)
         self.assertEqual(events[-1][0], "done")
         content = next(data["text"] for name, data in events if name == "content")
         self.assertIn("оценк", content.lower())

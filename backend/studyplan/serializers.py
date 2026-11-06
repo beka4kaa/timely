@@ -253,6 +253,7 @@ class OpenScheduleRevisionSerializer(ScheduleRevisionSerializer):
 class StudyScheduleSerializer(serializers.ModelSerializer):
     feasible = serializers.BooleanField(read_only=True)
     setup_restartable = serializers.BooleanField(read_only=True)
+    partial_by_period = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = StudySchedule
@@ -272,6 +273,7 @@ class StudyScheduleSerializer(serializers.ModelSerializer):
             "warnings",
             "feasible",
             "setup_restartable",
+            "partial_by_period",
             "confirmed_at",
             "created_at",
             "updated_at",
@@ -284,6 +286,7 @@ class StudyScheduleListSerializer(serializers.ModelSerializer):
 
     feasible = serializers.BooleanField(read_only=True)
     setup_restartable = serializers.BooleanField(read_only=True)
+    partial_by_period = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = StudySchedule
@@ -300,6 +303,7 @@ class StudyScheduleListSerializer(serializers.ModelSerializer):
             "warnings",
             "feasible",
             "setup_restartable",
+            "partial_by_period",
             "created_at",
             "updated_at",
         ]
@@ -322,3 +326,21 @@ class GenerateScheduleSerializer(serializers.Serializer):
         if start and end and end <= start:
             raise serializers.ValidationError("Конец горизонта должен быть позже начала.")
         return attrs
+
+
+class QuickPlanSerializer(serializers.Serializer):
+    """Только типы. Смысл просьбы проверяет `quick_plan`."""
+
+    subject = serializers.CharField(required=False, allow_blank=True, default="", max_length=400)
+    goal_id = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=64)
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6), required=False, default=list, max_length=7
+    )
+    start_time = serializers.TimeField(required=False, allow_null=True, input_formats=["%H:%M"])
+    minutes = serializers.IntegerField(required=False, default=60)
+    from_date = serializers.DateField(required=False, allow_null=True)
+    to_date = serializers.DateField(required=False, allow_null=True)
+    timezone = serializers.CharField(required=False, default="UTC", max_length=64)
+    expected_sessions = serializers.IntegerField(required=False, allow_null=True)
+    expected_path = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=32)
+    key = serializers.CharField(required=False, allow_blank=True, default="", max_length=64)

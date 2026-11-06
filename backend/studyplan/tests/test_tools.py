@@ -393,40 +393,13 @@ class CourseToolTests(ToolFixture):
         titles = {item["title"] for item in self.call("list_courses")["courses"]}
         self.assertNotIn("Чужая программа", titles)
 
-    def test_adding_a_course_twice_is_refused(self):
-        result = self.call("add_course_to_schedule", course_plan_id=str(self.plan.id))
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "already_scheduled")
+    def test_courses_name_their_subject(self):
+        course = self.call("list_courses")["courses"][0]
+        self.assertEqual(course["goal_id"], str(self.plan.goal_id))
 
-    def test_foreign_course_is_indistinguishable_from_a_missing_one(self):
-        # Подсказывать «программа есть, но не твоя» нельзя: это утечка.
-        foreign = self.make_foreign_plan()
-        result = self.call("add_course_to_schedule", course_plan_id=str(foreign.id))
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "plan_not_found")
-
-    def test_course_without_an_id_is_refused(self):
-        # Пропущенный аргумент отсекает общая проверка схемы, пустая строка —
-        # уже сам обработчик. Оба пути должны отказывать, а не падать.
-        self.assertEqual(self.call("add_course_to_schedule")["error"], "invalid_arguments")
-        self.assertEqual(
-            self.call("add_course_to_schedule", course_plan_id="  ")["error"],
-            "course_required",
-        )
-
-    def test_new_course_lands_as_a_proposal(self):
-        # Программа фикстуры уже в календаре, поэтому сначала убираем её в
-        # архив: так проверяется настоящий путь «программа с темами → календарь».
-        self.schedule.status = StudySchedule.Status.ARCHIVED
-        self.schedule.save(update_fields=["status"])
-
-        result = self.call("add_course_to_schedule", course_plan_id=str(self.plan.id))
-        self.assertTrue(result["ok"], result)
-        self.assertGreater(result["blocks_created"], 0)
-        created = StudySchedule.objects.get(pk=result["schedule_id"])
-        # Помощник предлагает, применяет ученик — статус тот же, что у кнопки.
-        self.assertEqual(created.status, StudySchedule.Status.PROPOSED)
-        self.assertEqual(created.user_email, OWNER)
+    def test_adding_a_course_behind_the_students_back_is_gone(self):
+        # Он писал расписание ещё до нажатия и отвечал «Готово». Его заменил propose_study_plan.
+        self.assertNotIn("add_course_to_schedule", ALL_TOOL_NAMES)
 
 
 class StudyWindowsTests(ToolFixture):

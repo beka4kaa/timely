@@ -556,17 +556,22 @@ def validate_plan(
 
 
 def topological_order(plan: CoursePlanningResult) -> list[str]:
-    """Порядок изучения с учётом prerequisites (для проверки ordering)."""
+    """Порядок изучения с учётом prerequisites (для проверки ordering).
+
+    На каждом шаге берётся первая по порядку программы тема, все зависимости которой
+    уже пройдены: иначе `t10` шла бы раньше `t2`, а темы дальних модулей обгоняли бы
+    ближние.
+    """
     topics = plan.all_topics()
     known = {t.external_id for t in topics}
-    edges = {t.external_id: set(t.prerequisites) & known for t in topics}
+    pending = {t.external_id: set(t.prerequisites) & known for t in topics}
     resolved: list[str] = []
-    pending = dict(edges)
+    passed: set[str] = set()
     while pending:
-        ready = sorted(k for k, deps in pending.items() if not (deps - set(resolved)))
-        if not ready:
+        ready = next((key for key, deps in pending.items() if deps <= passed), None)
+        if ready is None:
             break  # остаток закольцован — это уже поймал validate_plan
-        resolved.extend(ready)
-        for key in ready:
-            pending.pop(key)
+        resolved.append(ready)
+        passed.add(ready)
+        pending.pop(ready)
     return resolved

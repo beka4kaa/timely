@@ -110,6 +110,8 @@ export interface StudySchedule {
   warnings: string[];
   feasible: boolean;
   setup_restartable: boolean;
+  /** Расписание на период короче программы: остальные темы ещё впереди. */
+  partial_by_period?: boolean;
   confirmed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -346,6 +348,52 @@ export async function confirmSchedule(id: string): Promise<StudySchedule> {
     method: "POST",
   });
   return unwrap<StudySchedule>(response);
+}
+
+export interface QuickPlanFields {
+  subject: string;
+  goal_id?: string | null;
+  /** 0 это понедельник. Пусто: только предмет, без занятий. */
+  weekdays?: number[];
+  /** «ЧЧ:ММ». */
+  start_time?: string | null;
+  minutes?: number;
+  from_date?: string | null;
+  to_date?: string | null;
+  timezone: string;
+  /** Что показала карточка: если получится иначе, сервер откажет. */
+  expected_sessions?: number;
+  expected_path?: string;
+  /** Номер карточки: второе нажатие не запишет во второй раз. */
+  key?: string;
+}
+
+export interface QuickPlanApplied {
+  path: "subject_only" | "new_sessions" | "book_topics" | "extra_sessions";
+  goal_id: string;
+  schedule_id: string | null;
+  sessions: number;
+  /** Что вернуть, если ученик передумает. Клиент хранит это, не разбирая. */
+  undo: Record<string, unknown>;
+}
+
+/** Предмет и занятия одним действием: то, что применяет карточка тьютора. */
+export async function applyQuickPlan(fields: QuickPlanFields): Promise<QuickPlanApplied> {
+  const response = await authFetch(`${BASE}/study-schedules/quick-plan/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  return unwrap<QuickPlanApplied>(response);
+}
+
+export async function undoQuickPlan(undo: Record<string, unknown>): Promise<void> {
+  const response = await authFetch(`${BASE}/study-schedules/quick-plan/undo/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ undo }),
+  });
+  await unwrap<null>(response);
 }
 
 /**

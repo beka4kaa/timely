@@ -102,7 +102,7 @@ export function usePlanPageData(planId: string) {
                 .then((items) => items.find((item) => item.id === plan.material) ?? null)
                 .catch(() => null)
             : null,
-          loadPlanProgress(planId).catch(() => "failed" as const),
+          loadPlanProgress(planId, plan).catch(() => "failed" as const),
           listPlans().catch(() => [] as CoursePlanSummary[]),
         ]);
         if (cancelled) return;

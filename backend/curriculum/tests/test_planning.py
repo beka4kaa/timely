@@ -13,7 +13,10 @@ from curriculum.benchmark import (
 from curriculum.planning.contracts import (
     BookMetadata,
     CoursePlanningRequest,
+    CoursePlanningResult,
     PlanningConstraints,
+    ProposedModule,
+    ProposedTopic,
     TocEntry,
 )
 from curriculum.planning.enrichment import (
@@ -538,6 +541,50 @@ class ValidationTests(SimpleTestCase):
         plan = self._plan_from(self._valid_payload())
         order = topological_order(plan)
         self.assertLess(order.index("t1"), order.index("t2"))
+
+
+def _plan_of(*modules) -> CoursePlanningResult:
+    """Программа из модулей, где тема задана парой `(id, зависимости)`."""
+    return CoursePlanningResult(
+        title="План",
+        objective="",
+        modules=[
+            ProposedModule(
+                external_id=f"m{index}",
+                title=f"Модуль {index}",
+                objective="",
+                topics=[
+                    ProposedTopic(
+                        external_id=topic,
+                        title=topic,
+                        objective="",
+                        estimated_minutes=30,
+                        prerequisites=list(needs),
+                    )
+                    for topic, needs in module
+                ],
+            )
+            for index, module in enumerate(modules, 1)
+        ],
+    )
+
+
+class StudyOrderTests(SimpleTestCase):
+    def test_topics_keep_their_order_past_ten(self):
+        plan = _plan_of([(f"t{index}", ()) for index in range(1, 13)])
+        self.assertEqual(topological_order(plan), [f"t{index}" for index in range(1, 13)])
+
+    def test_a_later_module_does_not_jump_ahead_of_an_earlier_one(self):
+        plan = _plan_of([("t1", ()), ("t2", ("t1",))], [("t3", ())])
+        self.assertEqual(topological_order(plan), ["t1", "t2", "t3"])
+
+    def test_a_prerequisite_still_comes_first(self):
+        plan = _plan_of([("t1", ("t2",)), ("t2", ())])
+        self.assertEqual(topological_order(plan)[:2], ["t2", "t1"])
+
+    def test_a_loop_is_dropped_and_the_rest_stays(self):
+        plan = _plan_of([("t1", ("t2",)), ("t2", ("t1",)), ("t3", ())])
+        self.assertEqual(topological_order(plan), ["t3"])
 
 
 class BenchmarkTests(SimpleTestCase):

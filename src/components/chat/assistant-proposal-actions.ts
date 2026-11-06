@@ -13,6 +13,7 @@ import { invalidatePlan } from "@/components/now/now-resources";
 import { dataChanged } from "@/lib/data-changed";
 import { closedByRejecting } from "@/lib/now-feed";
 import {
+  applyQuickPlan,
   applyStudyWindows,
   confirmRevision,
   createCommitment,
@@ -20,6 +21,7 @@ import {
   listTemplates,
   rejectRevision,
   StudyplanApiError,
+  undoQuickPlan,
   undoRevision,
 } from "@/lib/studyplan-api";
 import { findSubject, firstReviewFields, type WeakSubject, type WeakTopic } from "@/lib/weak-topics";
@@ -38,6 +40,11 @@ import type { AssistantProposal, ProposalUndo } from "./assistant-proposal";
 /** Предложение опоздало: расписание уже поменялось или на него уже ответили. */
 export function isStaleProposalError(error: unknown): boolean {
   return error instanceof StudyplanApiError && (error.isStale || error.isClosed);
+}
+
+/** Сервер объяснил отказ словами: показываем их, а не общую фразу. */
+export function proposalFailureText(error: unknown, fallback: string): string {
+  return error instanceof StudyplanApiError && error.status === 400 && error.code ? error.message : fallback;
 }
 
 /** Записывает. Возвращает то, что нужно для «Вернуть как было». */
@@ -153,6 +160,24 @@ export async function applyProposal(proposal: AssistantProposal): Promise<Propos
       invalidatePlan();
       return {};
     }
+    case "study_plan": {
+      const applied = await applyQuickPlan({
+        subject: proposal.subject,
+        goal_id: proposal.goal_id,
+        weekdays: proposal.weekdays,
+        start_time: proposal.start_time,
+        minutes: proposal.minutes,
+        from_date: proposal.from_date,
+        to_date: proposal.to_date,
+        timezone: proposal.timezone,
+        expected_sessions: proposal.sessions,
+        expected_path: proposal.path,
+        key: proposal.id,
+      });
+      invalidatePlan();
+      dataChanged("subjects");
+      return { quickPlan: applied.undo };
+    }
   }
 }
 
@@ -212,6 +237,11 @@ export async function undoProposal(proposal: AssistantProposal): Promise<void> {
       invalidatePlan();
       return;
     case "study_windows":
+      return;
+    case "study_plan":
+      await undoQuickPlan(undo.quickPlan ?? {});
+      invalidatePlan();
+      dataChanged("subjects");
       return;
   }
 }

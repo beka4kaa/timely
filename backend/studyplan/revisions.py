@@ -261,12 +261,24 @@ def _week_key(day: date) -> tuple[int, int]:
     return iso[0], iso[1]
 
 
+def _minutes_by_week(daily: dict[date, int]) -> dict[tuple[int, int], int]:
+    weekly: dict[tuple[int, int], int] = {}
+    for day, minutes in daily.items():
+        key = _week_key(day)
+        weekly[key] = weekly.get(key, 0) + minutes
+    return weekly
+
+
 def _check_load_limits(
     schedule: StudySchedule,
     blocks: dict[str, LearningBlock],
     planned: dict[str, tuple[LearningBlock, dict]],
 ) -> None:
-    """Дневной/недельный потолок относится ко всем курсам пользователя."""
+    """Дневной/недельный потолок относится ко всем курсам пользователя.
+
+    Другой предмет мог уже занять день сверх потолка. Отказывает только перенос, который сам
+    добавляет нагрузку: иначе занятие нельзя было бы сдвинуть даже на полчаса.
+    """
     max_day = schedule.template.max_minutes_per_day
     max_week = schedule.template.max_minutes_per_week
     if not max_day and not max_week:
@@ -279,33 +291,40 @@ def _check_load_limits(
     affected_days = set(affected)
     affected_weeks = {_week_key(day) for day in affected_days}
 
-    intervals = [
-        _resulting_interval(block, planned)
-        for block in blocks.values()
-        if block.status not in _RELEASED_STATUSES
-    ]
-    intervals.extend(
+    own = [block for block in blocks.values() if block.status not in _RELEASED_STATUSES]
+    others = [
         (block.start_at, block.end_at)
         for block in calendar_learning_blocks(
             schedule.user_email,
             exclude_course_plan_id=str(schedule.course_plan_id),
             include_released=False,
         )
+    ]
+    daily = _split_minutes_by_day(
+        [*(_resulting_interval(block, planned) for block in own), *others],
+        schedule.timezone,
     )
-    daily = _split_minutes_by_day(intervals, schedule.timezone)
+    before = _split_minutes_by_day(
+        [*((block.start_at, block.end_at) for block in own), *others],
+        schedule.timezone,
+    )
 
     if max_day:
-        overloaded = [day for day in affected_days if daily.get(day, 0) > max_day]
+        overloaded = [
+            day
+            for day in affected_days
+            if daily.get(day, 0) > max_day and daily.get(day, 0) > before.get(day, 0)
+        ]
         if overloaded:
             raise RevisionRejected(
                 "Перенос превысил бы дневной лимит учебной нагрузки."
             )
     if max_week:
-        weekly: dict[tuple[int, int], int] = {}
-        for day, minutes in daily.items():
-            key = _week_key(day)
-            weekly[key] = weekly.get(key, 0) + minutes
-        if any(weekly.get(key, 0) > max_week for key in affected_weeks):
+        weekly, weekly_before = _minutes_by_week(daily), _minutes_by_week(before)
+        if any(
+            weekly.get(key, 0) > max_week and weekly.get(key, 0) > weekly_before.get(key, 0)
+            for key in affected_weeks
+        ):
             raise RevisionRejected(
                 "Перенос превысил бы недельный лимит учебной нагрузки."
             )

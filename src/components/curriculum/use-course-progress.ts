@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type CourseProgress,
   pickProgressSchedule,
+  programMinutesOf,
   summarizeProgress,
 } from "@/lib/curriculum-course-progress";
 import { type StudySchedule, listBlocks, listSchedules } from "@/lib/studyplan-api";
@@ -22,10 +23,13 @@ export interface PlanProgress {
 }
 
 /** Прогресс одной программы. `null`: расписания у неё ещё нет. */
-export async function loadPlanProgress(planId: string): Promise<PlanProgress | null> {
+export async function loadPlanProgress(
+  planId: string,
+  plan?: { estimated_total_minutes: number } | null,
+): Promise<PlanProgress | null> {
   const schedule = pickProgressSchedule(await listSchedules(planId));
   if (!schedule) return null;
-  return { schedule, progress: summarizeProgress(await listBlocks(schedule.id)) };
+  return { schedule, progress: summarizeProgress(await listBlocks(schedule.id), programMinutesOf(schedule, plan)) };
 }
 
 export interface CatalogProgress {
@@ -37,12 +41,20 @@ export interface CatalogProgress {
 
 const EMPTY: CatalogProgress = { byPlan: new Map(), loaded: false };
 
-export function useCatalogProgress(planIds: readonly string[]): CatalogProgress {
-  const key = useMemo(() => [...planIds].sort().join(","), [planIds]);
+export function useCatalogProgress(plans: readonly { id: string; estimated_total_minutes: number }[]): CatalogProgress {
+  const key = useMemo(
+    () => plans.map((plan) => `${plan.id}:${plan.estimated_total_minutes}`).sort().join(","),
+    [plans],
+  );
   const [state, setState] = useState<CatalogProgress>(EMPTY);
 
   useEffect(() => {
-    const wanted = key ? key.split(",") : [];
+    const wanted = key
+      ? key.split(",").map((row) => {
+          const [id, minutes] = row.split(":");
+          return { id, estimated_total_minutes: Number(minutes) };
+        })
+      : [];
     if (wanted.length === 0) {
       setState({ byPlan: new Map(), loaded: true });
       return;
@@ -53,14 +65,16 @@ export function useCatalogProgress(planIds: readonly string[]): CatalogProgress 
       try {
         const schedules = await listSchedules();
         const entries = await Promise.all(
-          wanted.map(async (planId) => {
+          wanted.map(async (plan) => {
             const schedule = pickProgressSchedule(
-              schedules.filter((item) => item.course_plan === planId),
+              schedules.filter((item) => item.course_plan === plan.id),
             );
             if (!schedule) return null;
             // Один упавший курс не должен гасить проценты у остальных.
             const blocks = await listBlocks(schedule.id).catch(() => null);
-            return blocks ? ([planId, summarizeProgress(blocks)] as const) : null;
+            return blocks
+              ? ([plan.id, summarizeProgress(blocks, programMinutesOf(schedule, plan))] as const)
+              : null;
           }),
         );
         if (cancelled) return;

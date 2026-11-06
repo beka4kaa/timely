@@ -91,7 +91,6 @@ export const initialAssistantState: AssistantState = {
 const STAGE_LABELS: Record<string, string> = {
   get_schedule: "Смотрю расписание",
   list_courses: "Смотрю программы",
-  add_course_to_schedule: "Ставлю программу в календарь",
   find_free_slots: "Ищу свободные окна",
   explain_schedule: "Разбираю день",
   propose_move_blocks: "Готовлю перенос",
@@ -99,6 +98,7 @@ const STAGE_LABELS: Record<string, string> = {
   propose_recovery_plan: "Собираю план догона",
   propose_fixed_commitments: "Записываю занятость",
   propose_study_windows: "Подбираю время занятий",
+  propose_study_plan: "Готовлю предмет и занятия",
   open_my_affairs: "Смотрю твои дела",
   get_diary: "Смотрю дневник",
   list_habits: "Смотрю привычки",

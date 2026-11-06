@@ -94,6 +94,7 @@ export function ScheduleRail() {
   const [unseen, setUnseen] = useState(false);
   const pendingTargetRef = useRef<string | null>(null);
   const keepConversationFor = useRef<string | null>(null);
+  const keepNextSchedule = useRef(false);
   const keepDraftFor = useRef<string | null>(null);
   const decidedRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -143,6 +144,10 @@ export function ScheduleRail() {
   useEffect(() => {
     if (keepConversationFor.current && keepConversationFor.current === scheduleId) {
       keepConversationFor.current = null;
+      return;
+    }
+    if (keepNextSchedule.current) {
+      keepNextSchedule.current = false;
       return;
     }
     invalidateRequest();
@@ -252,8 +257,6 @@ export function ScheduleRail() {
         if (final.answer) {
           setTurns((current) => [...current, { role: "assistant", content: final.answer }]);
         }
-        // Новая программа появляется предложением отдельного расписания.
-        if (final.stages.includes("add_course_to_schedule")) notifyApplied();
         // На главной новое предложение должно ждать сразу, а не через две минуты.
         if (final.revision) invalidatePlan();
       } catch (error) {
@@ -263,7 +266,7 @@ export function ScheduleRail() {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [invalidateRequest, notifyApplied, ready, resetAnswer, scheduleId, selectingTarget, thinking, turns],
+    [invalidateRequest, ready, resetAnswer, scheduleId, selectingTarget, thinking, turns],
   );
 
   const startSetup = useCallback(() => {
@@ -306,12 +309,11 @@ export function ScheduleRail() {
       setPrefill({ text: pending.text, nonce: pending.id });
       return;
     }
-    const request = resolveScheduleSubmission(pending.text, hasSchedule ? "plan" : "advice", hasSchedule);
+    const request = resolveScheduleSubmission(pending.text, "plan");
     if (request.kind === "start") startSetup();
     else if (request.kind === "message") void send(request.message, request.mode);
   }, [
     consumePrompt,
-    hasSchedule,
     pending,
     ready,
     scheduleId,
@@ -510,7 +512,21 @@ export function ScheduleRail() {
         item.id === id ? ({ ...item, ...patch } as (typeof current.proposals)[number]) : item,
       ),
     }));
-  }, []);
+    if (patch.state !== "applied" && patch.state !== "undone") return;
+    // Новый предмет и занятия: календарь под панелью показывает их сразу. Разговор остаётся,
+    // даже если сменится расписание: на карточке ещё нужна кнопка «Вернуть как было».
+    const quickPlan = (patch.undo ?? state.proposals.find((item) => item.id === id)?.undo)?.quickPlan;
+    const touched = typeof quickPlan?.schedule_id === "string" ? quickPlan.schedule_id : null;
+    if (patch.state === "applied" && touched) {
+      keepConversationFor.current = touched;
+      void notifyApplied(touched).then((available) => {
+        if (available) selectSchedule(touched);
+      });
+      return;
+    }
+    if (patch.state === "undone" && touched && touched === scheduleId) keepNextSchedule.current = true;
+    void notifyApplied();
+  }, [notifyApplied, scheduleId, selectSchedule, state.proposals]);
   const showExchange = !setupOpen && !hidden;
   // Дело сделано: остаётся только итог, а не «осталось нажать «Применить»».
   const finished = Boolean(applied || note);

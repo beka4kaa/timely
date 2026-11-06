@@ -21,7 +21,7 @@ export const SCHEDULE_SKILLS = [
   "propose_recovery_plan",
   "propose_fixed_commitments",
   "list_courses",
-  "add_course_to_schedule",
+  "propose_study_plan",
 ] as const;
 
 const SKILLS = new Set<string>(SCHEDULE_SKILLS);
@@ -36,7 +36,7 @@ const SKILL_LABELS: Record<string, string> = {
   propose_recovery_plan: "собираю план догона",
   propose_fixed_commitments: "записываю занятость",
   list_courses: "смотрю программы",
-  add_course_to_schedule: "ставлю программу",
+  propose_study_plan: "настраиваю предмет",
 };
 
 /**

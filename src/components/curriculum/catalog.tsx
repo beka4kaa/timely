@@ -45,6 +45,7 @@ import {
 import { dayMonth } from "@/lib/curriculum-forecast";
 import { ingestionErrorMessage } from "@/lib/curriculum-progress";
 import { cleanDocumentTitle } from "@/lib/curriculum-title";
+import { useDataChanged } from "@/lib/data-changed";
 
 import { AddSourceForm } from "./add-source";
 import { kindLabel } from "./add-source.logic";
@@ -119,6 +120,7 @@ export function CurriculumCatalog({
   useEffect(() => {
     void load();
   }, [load]);
+  useDataChanged("subjects", () => void load());
 
   // Пока хоть одна книга обрабатывается, каталог обновляется сам: обработка идёт минутами,
   // и заставлять человека обновлять страницу, чтобы узнать исход, незачем.
@@ -131,15 +133,15 @@ export function CurriculumCatalog({
     return () => clearInterval(timer);
   }, [waiting, load]);
 
-  const planIds = useMemo(
+  const shownPlans = useMemo(
     () =>
       (subjects ?? []).flatMap((subject) => [
-        ...subject.sources.flatMap((source) => source.plans.map((plan) => plan.id)),
-        ...subject.orphanPlans.map((plan) => plan.id),
+        ...subject.sources.flatMap((source) => source.plans),
+        ...subject.orphanPlans,
       ]),
     [subjects],
   );
-  const progress = useCatalogProgress(planIds);
+  const progress = useCatalogProgress(shownPlans);
 
   const head = (
     <header className="head">

@@ -4,8 +4,10 @@ import { test } from "node:test";
 import {
   courseFinishLine,
   locateInCourse,
+  isCourseDone,
   percentOf,
   pickProgressSchedule,
+  programMinutesOf,
   summarizeProgress,
 } from "./curriculum-course-progress.ts";
 
@@ -18,6 +20,36 @@ function block(
 ) {
   return { status, duration_minutes: minutes, module, topic, activity_type };
 }
+
+test("расписание на часть программы не значит, что пройдена вся программа", () => {
+  const blocks = [block("completed", 60), block("completed", 60, "m1", "t2")];
+  const progress = summarizeProgress(blocks, 600);
+  assert.equal(progress.percent, 20);
+  assert.equal(progress.finished, false);
+  assert.equal(summarizeProgress(blocks, 120).finished, true);
+  // Занятий бывает больше программы: добавленные тоже считаются.
+  assert.equal(summarizeProgress(blocks, 60).totalMinutes, 120);
+});
+
+test("вся программа считается только у расписания на её часть", () => {
+  const plan = { estimated_total_minutes: 600 };
+  assert.equal(programMinutesOf({ partial_by_period: true }, plan), 600);
+  assert.equal(programMinutesOf({ partial_by_period: false }, plan), 0);
+  assert.equal(programMinutesOf({}, plan), 0);
+  assert.equal(programMinutesOf({ partial_by_period: true }, null), 0);
+});
+
+test("курс пройден, только когда пройдены все темы и не осталось занятий", () => {
+  const blocks = [block("completed", 60), block("scheduled", 60, null, null)];
+  const modules = [{ id: "m1", minutes: 60, topics: [{ id: "t1" }] }];
+  const progress = summarizeProgress(blocks);
+  assert.equal(locateInCourse(modules, progress).currentTopicId, null);
+  assert.equal(isCourseDone(1, locateInCourse(modules, progress), progress), false);
+
+  const finished = summarizeProgress([block("completed", 60)]);
+  assert.equal(isCourseDone(1, locateInCourse(modules, finished), finished), true);
+  assert.equal(isCourseDone(0, locateInCourse([], finished), finished), false);
+});
 
 test("прогресс считается по минутам пройденных занятий", () => {
   const progress = summarizeProgress([block("completed", 30), block("scheduled", 90, "m1", "t2")]);

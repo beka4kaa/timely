@@ -61,7 +61,11 @@ function add(map: Map<string, [number, number]>, key: string | null, done: numbe
   map.set(key, [current[0] + done, current[1] + total]);
 }
 
-export function summarizeProgress(blocks: readonly ProgressBlock[]): CourseProgress {
+/**
+ * `programMinutes`: сколько идёт вся программа, если расписание покрывает только её часть.
+ * Иначе пять пройденных тем из тридцати выглядели бы как законченный курс.
+ */
+export function summarizeProgress(blocks: readonly ProgressBlock[], programMinutes = 0): CourseProgress {
   let done = 0;
   let total = 0;
   const modules = new Map<string, [number, number]>();
@@ -83,7 +87,15 @@ export function summarizeProgress(blocks: readonly ProgressBlock[]): CourseProgr
     return result;
   };
 
-  return { ...part(done, total), modules: parts(modules), topics: parts(topics) };
+  return { ...part(done, Math.max(total, programMinutes)), modules: parts(modules), topics: parts(topics) };
+}
+
+/** Сколько минут программы учитывать: только у расписания, которое покрывает её часть. */
+export function programMinutesOf(
+  schedule: { partial_by_period?: boolean },
+  plan: { estimated_total_minutes: number } | null | undefined,
+): number {
+  return schedule.partial_by_period ? (plan?.estimated_total_minutes ?? 0) : 0;
 }
 
 export interface ProgressModule {
@@ -148,6 +160,15 @@ export function locateInCourse(
     });
   }
   return states;
+}
+
+/** Курс пройден, только когда пройдены все темы и не осталось занятий: добавленные тоже считаются. */
+export function isCourseDone(
+  topicCount: number,
+  states: CourseStates,
+  progress: CourseProgress | null,
+): boolean {
+  return topicCount > 0 && states.currentTopicId === null && progress?.finished !== false;
 }
 
 // ─────────────────────────── Какое расписание считать ────────────────────────

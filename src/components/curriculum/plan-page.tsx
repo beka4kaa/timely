@@ -19,7 +19,7 @@ import { usePageSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import type { CoursePlan } from "@/lib/curriculum-api";
 import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
-import { locateInCourse } from "@/lib/curriculum-course-progress";
+import { isCourseDone, locateInCourse } from "@/lib/curriculum-course-progress";
 import {
   courseLede,
   dayMonth,
@@ -174,7 +174,7 @@ function PlanPageBody({
   const sourceDeleted = !plan.document && !plan.material;
 
   // Все темы пройдены: прогноз больше ничего не значит.
-  const courseDone = allTopicsCount > 0 && states.currentTopicId === null;
+  const courseDone = isCourseDone(allTopicsCount, states, progress?.progress ?? null);
   const lede = courseDone
     ? "Курс пройден."
     : courseLede(forecast, {

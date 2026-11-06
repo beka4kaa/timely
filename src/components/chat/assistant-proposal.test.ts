@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { answerPreview } from "./answer-preview.ts";
 import {
+  batchRows,
   canUndoProposal,
   historyContent,
   proposalDoneText,
@@ -21,6 +22,90 @@ const GOAL: AssistantProposal = {
   deadline: "2026-12-20",
   habits: ["Решать задачи"],
 };
+
+const STUDY_PLAN: AssistantProposal = {
+  id: "s",
+  kind: "study_plan",
+  subject: "Русский язык",
+  goal_id: null,
+  is_new: true,
+  path: "new_sessions",
+  weekdays: [0, 1, 2, 3, 4],
+  start_time: "16:00",
+  end_time: "17:00",
+  minutes: 60,
+  from_date: "2026-11-09",
+  to_date: "2026-11-13",
+  timezone: "Asia/Almaty",
+  sessions: 5,
+  left_topics: 0,
+  approves_plan: false,
+};
+
+test("карточка предмета говорит, что появится и когда", () => {
+  assert.equal(proposalHeading(STUDY_PLAN), "Настрою предмет:");
+  assert.deepEqual(proposalRows(STUDY_PLAN), [
+    { name: "Русский язык", note: "новый предмет" },
+    { name: "Занятия", note: "по будням, 16:00–17:00, 9–13 ноября, 5 занятий" },
+  ]);
+  assert.equal(canUndoProposal(STUDY_PLAN), true);
+  assert.equal(proposalDoneText(STUDY_PLAN), "«Русский язык»: 5 занятий в календаре.");
+  assert.equal(proposalSummary(STUDY_PLAN), "новый предмет «Русский язык», по будням, 16:00–17:00, 9–13 ноября, 5 занятий");
+});
+
+test("в общей карточке понятно, что именно появится", () => {
+  assert.deepEqual(batchRows(STUDY_PLAN), proposalRows(STUDY_PLAN));
+  assert.deepEqual(batchRows(HABIT), [{ name: "Привычка «Зарядка»", note: "каждый день" }]);
+  assert.deepEqual(batchRows(GOAL), [
+    { name: "Цель «Сдать физику на 9»", note: "срок 20 декабря" },
+    { name: "Решать задачи", note: "привычка" },
+  ]);
+  assert.deepEqual(batchRows({ id: "m", kind: "mark_habit", habit_id: 1, name: "Зарядка", done: true }), [
+    { name: "Зарядка", note: "отмечу за сегодня" },
+  ]);
+  assert.deepEqual(batchRows({ id: "t", kind: "new_topics", topics: [{ title: "Закон Ома", subject: "Физика" }] }), [
+    { name: "Закон Ома", note: "в повторение, Физика" },
+  ]);
+});
+
+test("предмет без занятий это одна строка", () => {
+  const alone = { ...STUDY_PLAN, path: "subject_only", weekdays: [], start_time: null, end_time: null, from_date: null, to_date: null, sessions: 0 } as AssistantProposal;
+  assert.deepEqual(proposalRows(alone), [{ name: "Русский язык", note: "новый предмет" }]);
+  assert.equal(proposalDoneText(alone), "Предмет «Русский язык» добавлен.");
+  assert.equal(proposalSummary(alone), "новый предмет «Русский язык»");
+});
+
+test("книга говорит про остальные темы и про подтверждение программы", () => {
+  const book = { ...STUDY_PLAN, path: "book_topics", is_new: false, left_topics: 25, approves_plan: true } as AssistantProposal;
+  assert.deepEqual(proposalRows(book), [
+    { name: "Русский язык", note: "" },
+    { name: "Занятия", note: "по будням, 16:00–17:00, 9–13 ноября, 5 занятий" },
+    { name: "Остальные темы", note: "ещё 25 можно поставить потом" },
+    { name: "Программа", note: "подтвержу" },
+  ]);
+});
+
+test("добавленные занятия и разовое занятие называются своими словами", () => {
+  const extra = {
+    ...STUDY_PLAN,
+    path: "extra_sessions",
+    is_new: false,
+    weekdays: [3],
+    from_date: "2026-11-19",
+    to_date: "2026-11-19",
+    sessions: 1,
+  } as AssistantProposal;
+  assert.equal(proposalHeading(extra), "Добавлю занятия:");
+  assert.deepEqual(proposalRows(extra), [
+    { name: "Русский язык", note: "к тому, что уже есть" },
+    { name: "Занятия", note: "16:00–17:00, 19 ноября, 1 занятие" },
+  ]);
+});
+
+test("период через границу месяца и редкие дни", () => {
+  const span = { ...STUDY_PLAN, weekdays: [0, 2], from_date: "2026-11-30", to_date: "2026-12-04", sessions: 2 } as AssistantProposal;
+  assert.equal(proposalRows(span)[1].note, "пн, ср, 16:00–17:00, 30 ноября – 4 декабря, 2 занятия");
+});
 
 test("карточка говорит, что именно изменится", () => {
   assert.equal(proposalHeading(HABIT), "Добавлю привычку:");

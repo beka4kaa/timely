@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from curriculum.models import CoursePlan
 
+from . import quick_plan as quick_plan_service
 from . import revisions as revisions_service
 from . import services
 from . import setup as setup_service
@@ -37,6 +38,7 @@ from .serializers import (
     LearningBlockSerializer,
     OpenScheduleRevisionSerializer,
     ProposeMovesSerializer,
+    QuickPlanSerializer,
     ScheduleRevisionSerializer,
     StudyScheduleListSerializer,
     StudyScheduleSerializer,
@@ -325,6 +327,61 @@ class StudyScheduleViewSet(viewsets.ReadOnlyModelViewSet):
             return _error(str(exc), code="not_confirmable")
         schedule.refresh_from_db()
         return Response(StudyScheduleSerializer(schedule).data)
+
+    @action(detail=False, methods=["post"], url_path="quick-plan")
+    def quick_plan(self, request):
+        """Предмет и занятия одним действием: то, что применяет карточка тьютора."""
+        email = self._user_email()
+        if not email:
+            return _no_user()
+        payload = QuickPlanSerializer(data=request.data)
+        if not payload.is_valid():
+            return _error("Не получилось разобрать просьбу.", code="bad_request")
+        data = payload.validated_data
+        try:
+            result = quick_plan_service.apply_quick_plan(
+                quick_plan_service.QuickPlanRequest(
+                    user_email=email,
+                    subject=data["subject"],
+                    timezone=data["timezone"],
+                    goal_id=data.get("goal_id") or None,
+                    weekdays=tuple(data["weekdays"]),
+                    start_time=data.get("start_time"),
+                    minutes=data["minutes"],
+                    from_date=data.get("from_date"),
+                    to_date=data.get("to_date"),
+                    expected_sessions=data.get("expected_sessions"),
+                    expected_path=data.get("expected_path") or None,
+                    key=data["key"],
+                )
+            )
+        except quick_plan_service.QuickPlanRejected as exc:
+            return _error(str(exc), code=exc.code)
+        return Response(
+            {
+                "path": result.path,
+                "goal_id": result.goal_id,
+                "schedule_id": result.schedule_id,
+                "sessions": result.sessions,
+                "undo": result.undo,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"], url_path="quick-plan/undo")
+    def quick_plan_undo(self, request):
+        """Вернуть как было. Работает только с данными этого ученика."""
+        email = self._user_email()
+        if not email:
+            return _no_user()
+        undo = request.data.get("undo") if isinstance(request.data, dict) else None
+        if not isinstance(undo, dict):
+            return _error("Нечего возвращать.", code="bad_request")
+        try:
+            quick_plan_service.undo_quick_plan(undo, user_email=email)
+        except quick_plan_service.QuickPlanRejected as exc:
+            return _error(str(exc), code=exc.code)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"])
     def blocks(self, request, pk=None):

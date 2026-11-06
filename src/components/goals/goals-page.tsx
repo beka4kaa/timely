@@ -363,6 +363,7 @@ export function GoalsPage() {
   };
 
   useDataChanged("goals", () => void refresh());
+  useDataChanged("subjects", () => void refreshLessons());
   useDataChanged("habits", () => void refreshHabits());
 
   const addHabit = async (name: string, goalId: string | null, schedule: HabitSchedule) => {

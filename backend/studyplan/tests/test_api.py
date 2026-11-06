@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import time, timedelta
 from unittest import mock
+
+from django.test import TestCase
 
 from curriculum.models import CoursePlan
 from studyplan import revisions as revisions_service
@@ -986,3 +988,111 @@ class PinBlocksTests(ApiFixture):
         response = self.pin(True, ids=[])
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "ids_required")
+
+
+QUICK_PLAN_URL = "/api/study-schedules/quick-plan/"
+QUICK_PLAN = {
+    "subject": "Русский язык",
+    "weekdays": [0, 1, 2, 3, 4],
+    "start_time": "16:00",
+    "minutes": 60,
+    "from_date": "2030-01-07",
+    "to_date": "2030-01-11",
+    "timezone": "Asia/Almaty",
+}
+
+
+class QuickPlanApiTests(TestCase):
+    def post(self, url=QUICK_PLAN_URL, body=None, email=OWNER):
+        return self.client.post(
+            url,
+            data=json.dumps(QUICK_PLAN if body is None else body),
+            content_type="application/json",
+            **headers(email),
+        )
+
+    def test_quick_plan_creates_and_undo_removes(self):
+        response = self.post()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["sessions"], 5)
+        self.assertEqual(LearningBlock.objects.filter(user_email=OWNER).count(), 5)
+
+        gone = self.post(f"{QUICK_PLAN_URL}undo/", {"undo": response.json()["undo"]})
+
+        self.assertEqual(gone.status_code, 204)
+        self.assertFalse(StudySchedule.objects.filter(user_email=OWNER).exists())
+
+    def test_a_subject_without_days(self):
+        response = self.post(body={"subject": "Русский язык", "timezone": "Asia/Almaty"})
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.json()["schedule_id"])
+        self.assertEqual(response.json()["sessions"], 0)
+
+    def test_busy_is_a_readable_refusal(self):
+        FixedCommitment.objects.create(
+            user_email=OWNER, title="Репетитор", weekday=2, start_time=time(15, 30), duration_minutes=90
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "busy")
+        self.assertIn("9 января", response.json()["error"])
+        self.assertIn("Репетитор", response.json()["error"])
+
+    def test_the_card_is_checked_and_applied_once(self):
+        changed = self.post(body={**QUICK_PLAN, "expected_sessions": 4, "expected_path": "new_sessions"})
+        self.assertEqual((changed.status_code, changed.json()["code"]), (400, "changed"))
+
+        body = {**QUICK_PLAN, "expected_sessions": 5, "expected_path": "new_sessions", "key": "card-1"}
+        first = self.post(body=body)
+        second = self.post(body=body)
+
+        self.assertEqual((first.status_code, second.status_code), (201, 201))
+        self.assertEqual(first.json()["undo"], second.json()["undo"])
+        self.assertEqual(LearningBlock.objects.filter(user_email=OWNER).count(), 5)
+
+    def test_wrong_types_are_refused(self):
+        for broken in ({"weekdays": ["пн"]}, {"start_time": "когда-нибудь"}, {"from_date": "завтра"}, {"minutes": "час"}):
+            with self.subTest(broken=broken):
+                response = self.post(body={**QUICK_PLAN, **broken})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["code"], "bad_request")
+        self.assertFalse(LearningBlock.objects.filter(user_email=OWNER).exists())
+
+    def test_the_email_comes_only_from_the_request(self):
+        self.post(body={**QUICK_PLAN, "user_email": STRANGER})
+
+        self.assertFalse(StudySchedule.objects.filter(user_email=STRANGER).exists())
+        self.assertTrue(StudySchedule.objects.filter(user_email=OWNER).exists())
+
+    def test_someone_elses_undo_changes_nothing(self):
+        undo = self.post().json()["undo"]
+
+        response = self.post(f"{QUICK_PLAN_URL}undo/", {"undo": undo}, email=STRANGER)
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(LearningBlock.objects.filter(user_email=OWNER).count(), 5)
+
+    def test_undo_after_progress_is_a_readable_refusal(self):
+        undo = self.post().json()["undo"]
+        LearningBlock.objects.filter(user_email=OWNER).update(status=LearningBlock.Status.COMPLETED)
+
+        response = self.post(f"{QUICK_PLAN_URL}undo/", {"undo": undo})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["code"], "undo_stale")
+        self.assertEqual(LearningBlock.objects.filter(user_email=OWNER).count(), 5)
+
+    def test_undo_needs_something_to_undo(self):
+        response = self.post(f"{QUICK_PLAN_URL}undo/", {"undo": "мусор"})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_without_a_user_nothing_happens(self):
+        response = self.client.post(QUICK_PLAN_URL, data=json.dumps(QUICK_PLAN), content_type="application/json")
+
+        self.assertIn(response.status_code, (400, 401))
+        self.assertFalse(LearningBlock.objects.exists())

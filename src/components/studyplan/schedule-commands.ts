@@ -16,8 +16,6 @@ export interface ScheduleCommand {
   aliases: readonly string[];
   title: string;
   description: string;
-  available: boolean;
-  unavailableReason?: string;
 }
 
 export interface ParsedScheduleCommand {
@@ -58,23 +56,14 @@ const COMMAND_DEFINITIONS = [
   },
 ] as const;
 
-/** Обычное сообщение без команды: есть расписание, значит его и меняем. */
-export function defaultScheduleMode(hasSchedule: boolean): ScheduleAssistantMode {
-  return hasSchedule ? "plan" : "advice";
-}
+/** Обычное сообщение без команды готовит изменение. Пустой календарь не исключение: первое расписание создаёт сам помощник. */
+export const DEFAULT_SCHEDULE_MODE: ScheduleAssistantMode = "plan";
 
-export function scheduleCommands(
-  hasSchedule: boolean,
-): ScheduleCommand[] {
-  return COMMAND_DEFINITIONS.map((definition) => {
-    const available = definition.id !== "plan" || hasSchedule;
-    return {
-      ...definition,
-      aliases: [...definition.aliases],
-      available,
-      unavailableReason: "Сначала создай расписание через /start",
-    };
-  });
+export function scheduleCommands(): ScheduleCommand[] {
+  return COMMAND_DEFINITIONS.map((definition) => ({
+    ...definition,
+    aliases: [...definition.aliases],
+  }));
 }
 
 /** Меню открывается только во время набора самого первого slash-токена. */
@@ -84,14 +73,11 @@ export function slashQuery(value: string): string | null {
   return trimmedStart.toLocaleLowerCase("ru-RU");
 }
 
-export function matchingScheduleCommands(
-  value: string,
-  hasSchedule: boolean,
-): ScheduleCommand[] {
+export function matchingScheduleCommands(value: string): ScheduleCommand[] {
   const query = slashQuery(value);
   if (query === null) return [];
 
-  return scheduleCommands(hasSchedule).filter((item) =>
+  return scheduleCommands().filter((item) =>
     [item.command, ...item.aliases].some((token) => token.startsWith(query)),
   );
 }
@@ -134,7 +120,6 @@ export function moveCommandSelection(
 export function resolveScheduleSubmission(
   value: string,
   pendingMode: ScheduleAssistantMode,
-  hasSchedule: boolean,
 ): ScheduleSubmission {
   const message = value.trim();
   if (!message) return { kind: "empty" };
@@ -144,12 +129,6 @@ export function resolveScheduleSubmission(
     return { kind: "start" };
   }
   if (parsed?.id === "plan") {
-    if (!hasSchedule) {
-      return {
-        kind: "error",
-        message: "Сначала создай расписание через /start.",
-      };
-    }
     return parsed.argument
       ? { kind: "message", message: parsed.argument, mode: "plan" }
       : { kind: "arm_plan" };

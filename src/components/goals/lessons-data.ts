@@ -13,7 +13,7 @@ import {
   listPlans,
 } from "@/lib/curriculum-api";
 import { subjectTitle } from "@/lib/curriculum-catalog";
-import { percentOf, pickProgressSchedule, summarizeProgress } from "@/lib/curriculum-course-progress";
+import { percentOf, pickProgressSchedule, programMinutesOf, summarizeProgress } from "@/lib/curriculum-course-progress";
 import { type LearningBlock, listBlocks, listSchedules } from "@/lib/studyplan-api";
 
 export interface Lesson {
@@ -96,7 +96,7 @@ export async function loadLessons(): Promise<Lesson[]> {
       // Один упавший курс не должен гасить проценты у остальных.
       const blocks = schedule ? await listBlocks(schedule.id).catch(() => null) : null;
       const percent = blocks
-        ? summarizeProgress(blocks).percent
+        ? summarizeProgress(blocks, schedule ? programMinutesOf(schedule, plan) : 0).percent
         : materialPercent(goal.id, materials);
       const next = blocks ? nextBlock(blocks, now) : null;
       const direction = goal.normalized_direction?.trim();

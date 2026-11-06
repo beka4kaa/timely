@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from "react";
 
-export type DataArea = "habits" | "goals" | "diary";
+export type DataArea = "habits" | "goals" | "diary" | "subjects";
 
 const EVENT = "timely:data-changed";
 
