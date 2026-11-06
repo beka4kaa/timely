@@ -31,6 +31,7 @@ import { readSse } from "@/lib/sse";
 import type { AskUsage } from "./chat-usage";
 
 import { STOPPED_ERROR } from "./ask-stages";
+import { historyContent, type AssistantProposal } from "./assistant-proposal";
 
 export interface Turn extends AskMessage {
   /** Сколько стоил ответ. Показывается по настройке. */
@@ -43,6 +44,10 @@ export interface Turn extends AskMessage {
   error?: string;
   /** Этап, на котором находится ответ. Пусто — работа окончена. */
   stage?: string;
+  /** Что сейчас смотрит тьютор: подпись от сервера, пока идёт этап `tool`. */
+  toolLabel?: string;
+  /** Что он предлагает поменять в делах ученика. */
+  proposals?: AssistantProposal[];
   /** Сколько фрагментов нашлось. */
   found?: number;
   /** Длительность работы, мс. */
@@ -68,6 +73,8 @@ export interface UseSubjectChatOptions {
   scope?: "subject" | "all";
   /** Пока `false`, ничего не грузится: панель закрыта — запросов быть не должно. */
   enabled?: boolean;
+  /** Страница, с которой спрашивают: на привычках «добавь чтение» это привычка. */
+  page?: string;
   /**
    * Разовый перенос разговора, накопленного в браузере до появления чатов.
    *
@@ -93,6 +100,8 @@ export interface SubjectChatEngine {
   retryLast: (mode?: string) => Promise<void>;
   stop: () => void;
   startNew: () => void;
+  /** Решение ученика по карточке. Хранится вместе с ответом. */
+  updateProposal: (id: string, patch: Partial<AssistantProposal>) => void;
   /** Открывает разговор. `null` — открыть не вышло: удалён или нет связи. */
   openChat: (id: string) => Promise<SubjectChat | null>;
   removeChat: (id: string) => Promise<void>;
@@ -112,6 +121,7 @@ export function useSubjectChat({
   goalId,
   scope = "subject",
   enabled = true,
+  page,
   migrateLegacy = false,
 }: UseSubjectChatOptions): SubjectChatEngine {
   const [chats, setChats] = useState<SubjectChatSummary[]>([]);
@@ -201,7 +211,7 @@ export function useSubjectChat({
 
       const history = (historySource ?? turns)
         .filter((turn) => !turn.error && turn.content)
-        .map(({ role, content }) => ({ role, content }));
+        .map((turn) => ({ role: turn.role, content: historyContent(turn) }));
 
       setBusy(true);
       const startedAt = Date.now();
@@ -235,37 +245,45 @@ export function useSubjectChat({
             // Читается в момент вопроса: мини-окно отвечает той же моделью, что и чат.
             ...(prefs.model ? { model: prefs.model } : {}),
             ...(prefs.reasoning ? { reasoning: prefs.reasoning } : {}),
+            // «Завтра» у ученика, а не на сервере.
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ...(page ? { page } : {}),
           },
           controller.signal,
         );
         let answer = "";
         let failed = false;
+        const proposals: AssistantProposal[] = [];
         for await (const { event, data } of readSse(response)) {
           if (event === "stage") {
             patchLast({
               stage: String(data.stage ?? ""),
+              toolLabel: typeof data.label === "string" ? data.label : undefined,
               ...(typeof data.found === "number" ? { found: data.found } : {}),
             });
           } else if (event === "content") {
             answer += String(data.delta ?? "");
-            patchLast({ content: answer, stage: "answering" });
+            patchLast({ content: answer, stage: "answering", toolLabel: undefined });
           } else if (event === "citations") {
             patchLast({
               citations: (data.items as AskCitation[]) ?? [],
               grounded: Boolean(data.grounded),
               library: data.library !== false,
             });
+          } else if (event === "proposal") {
+            proposals.push(data as unknown as AssistantProposal);
+            patchLast({ proposals: [...proposals] });
           } else if (event === "usage") {
             patchLast({ usage: data as unknown as AskUsage });
           } else if (event === "done") {
-            patchLast({ stage: "", durationMs: Date.now() - startedAt });
+            patchLast({ stage: "", toolLabel: undefined, durationMs: Date.now() - startedAt });
           } else if (event === "error") {
             failed = true;
-            patchLast({ stage: "", error: String(data.error ?? "Ошибка") });
+            patchLast({ stage: "", toolLabel: undefined, error: String(data.error ?? "Ошибка") });
           }
         }
         if (!answer && !failed) {
-          patchLast({ stage: "", error: "Пустой ответ." });
+          patchLast({ stage: "", toolLabel: undefined, error: "Пустой ответ." });
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -282,7 +300,7 @@ export function useSubjectChat({
         }
       }
     },
-    [busy, turns],
+    [busy, turns, page],
   );
 
   const retryLast = useCallback(
@@ -346,6 +364,21 @@ export function useSubjectChat({
   /** Чистое состояние. Строка в базе появится с первым вопросом. */
   const startNew = useCallback(() => switchTo(null), [switchTo]);
 
+  const updateProposal = useCallback((id: string, patch: Partial<AssistantProposal>) => {
+    setTurns((prev) =>
+      prev.map((turn) =>
+        turn.proposals?.some((item) => item.id === id)
+          ? {
+              ...turn,
+              proposals: turn.proposals.map((item) =>
+                item.id === id ? ({ ...item, ...patch } as AssistantProposal) : item,
+              ),
+            }
+          : turn,
+      ),
+    );
+  }, []);
+
   const openChat = useCallback(
     async (id: string) => {
       switchTo(id);
@@ -404,6 +437,7 @@ export function useSubjectChat({
     retryLast,
     stop,
     startNew,
+    updateProposal,
     openChat,
     removeChat,
     renameChat,

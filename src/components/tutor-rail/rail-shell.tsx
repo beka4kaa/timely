@@ -19,6 +19,7 @@ export function RailShell({
   onNew,
   newLabel = "Новый чат",
   feedRef,
+  unseen = false,
   children,
   footer,
 }: {
@@ -32,6 +33,8 @@ export function RailShell({
   onNew?: () => void;
   newLabel?: string;
   feedRef?: MutableRefObject<HTMLDivElement | null>;
+  /** В закрытом окне лежит ответ, которого ученик ещё не видел. */
+  unseen?: boolean;
   children: ReactNode;
   footer: ReactNode;
 }) {
@@ -189,7 +192,14 @@ export function RailShell({
         </button>
       </div>
       <div className="q-pill glass">
-        <button className="q-pill-btn q-open" type="button" title="Быстрый запрос" aria-label="Быстрый запрос" onClick={openRail}>
+        <button
+          className="q-pill-btn q-open"
+          type="button"
+          title={unseen ? "Есть ответ" : "Быстрый запрос"}
+          aria-label={unseen ? "Есть ответ, открыть" : "Быстрый запрос"}
+          data-unseen={unseen || undefined}
+          onClick={openRail}
+        >
           <Icon name="compose" />
         </button>
         {quick.voiceSupported ? (

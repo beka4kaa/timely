@@ -14,7 +14,8 @@ import { isOpenGoal, suggestGoalFor, type Goal } from "@/components/goals/goal-l
 import { mascot } from "@/components/shell/mascot/mascot";
 import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
-import { RECORD_EVENT, parseHabit, takeRecordParam } from "@/lib/understand";
+import { useDataChanged } from "@/lib/data-changed";
+import { parseHabit } from "@/lib/understand";
 
 
 import { AiLine, useUnderstand } from "./ai-line";
@@ -28,7 +29,7 @@ const UNDO_MS = 6000;
 
 type Offer =
   | { kind: "habit"; name: string; goalId: string | null }
-  | { kind: "goal" | "topics" | "question"; text: string };
+  | { kind: "goal" | "topics"; text: string };
 
 interface PendingDelete {
   timer: number;
@@ -256,26 +257,13 @@ export function HabitsPage() {
     setOffer(null);
     void ask(text, (result) => {
       if (result.kind === "habit") offerHabit(result.name);
+      // Вопрос или просьба об уже записанном: это дело помощника, и второго нажатия тут не надо.
+      else if (result.kind === "question") prompt({ target: "book", text, send: true });
       else setOffer({ kind: result.kind, text });
     });
   };
 
-  // Запись пришла из мини-окна или чата: дальше как будто её набрали здесь.
-  const onAskRef = useRef(onAsk);
-  onAskRef.current = onAsk;
-  useEffect(() => {
-    const incoming = (event: Event) => onAskRef.current(String((event as CustomEvent).detail));
-    window.addEventListener(RECORD_EVENT, incoming);
-    // Через таймер: в разработке React запускает эффект дважды, а параметр уже будет убран.
-    const timer = window.setTimeout(() => {
-      const text = takeRecordParam("new");
-      if (text) onAskRef.current(text);
-    }, 0);
-    return () => {
-      window.removeEventListener(RECORD_EVENT, incoming);
-      window.clearTimeout(timer);
-    };
-  }, []);
+  useDataChanged("habits", () => void load());
 
   const goalOptions = useMemo(() => goals.map((goal) => ({ id: goal.id, title: goal.title })), [goals]);
   const doneCount = habits?.filter((habit) => habit.doneToday).length ?? 0;
@@ -327,22 +315,6 @@ export function HabitsPage() {
           say="Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах."
           actions={[
             { label: "Открыть слабые темы", main: true, run: () => router.push("/dashboard/weaknesses") },
-            { label: "Всё равно привычка", run: () => offerHabit(parseHabit(offer.text)) },
-          ]}
-        />
-      ) : null}
-      {offer?.kind === "question" ? (
-        <AiOffer
-          say="Это больше похоже на вопрос."
-          actions={[
-            {
-              label: "Спросить тьютора",
-              main: true,
-              run: () => {
-                setOffer(null);
-                prompt({ target: "book", text: offer.text, send: true });
-              },
-            },
             { label: "Всё равно привычка", run: () => offerHabit(parseHabit(offer.text)) },
           ]}
         />

@@ -23,11 +23,9 @@ import {
 import { createPortal } from "react-dom";
 
 import { Icon } from "@/components/shell/icons";
-import { mascot } from "@/components/shell/mascot/mascot";
 import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { useDashboardShell } from "@/contexts/dashboard-shell";
-import { recordTarget, understandLocally } from "@/lib/understand";
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch } from "@/lib/auth-fetch";
 import type { FolderSubject } from "@/lib/chat-folders";
@@ -45,7 +43,7 @@ import { isTerminal } from "@/lib/curriculum-progress";
 import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { invalidateResources, useResource, type ResourceState } from "@/lib/resource-cache";
 
-import { stageLabel, STOPPED_ERROR } from "./ask-stages";
+import { STOPPED_ERROR } from "./ask-stages";
 import { AskTurn } from "./ask-turn";
 import { ChatList } from "./chat-list";
 import {
@@ -214,10 +212,9 @@ export function ChatPage() {
   const sourcesSheet = useRef<HTMLDialogElement>(null);
   const follow = useRef(true);
   const openingId = useRef<string | null>(null);
-  const thinking = useRef(false);
 
   const chat = useSubjectChat({ goalId: selected, scope: "all" });
-  const { busy, stop, turns } = chat;
+  const { busy, stop, turns, updateProposal } = chat;
   const mode = modeByKey(modeKey);
   const planning = modeKey === "plan";
   const goals = useResource(planning ? GOALS_KEY : null, fetchPlanGoals);
@@ -271,21 +268,14 @@ export function ChatPage() {
     };
   }, []);
 
-  const stopThinking = useCallback(() => {
-    if (!thinking.current) return;
-    thinking.current = false;
-    mascot.thinkEnd();
-  }, []);
-
   const resetTalk = useCallback(() => {
-    stopThinking();
     setMarks([]);
     setPickingGoal(false);
     setPlanGoal(null);
     setOpenFailed(false);
     setPickedPages({});
     follow.current = true;
-  }, [stopThinking]);
+  }, []);
 
   const { openChat: engineOpen, startNew: engineNew, chats, chatId, loadingChats } = chat;
 
@@ -405,33 +395,8 @@ export function ChatPage() {
     [leaveTalk, opening, selected, turns.length],
   );
 
-  const stopAnswer = useCallback(() => {
-    stopThinking();
-    stop();
-  }, [stop, stopThinking]);
-
-  // Слайм думает над вопросом. Ушли со страницы, значит и ответа ждать больше некому.
-  useEffect(() => {
-    const last = turns[turns.length - 1];
-    if (busy && !thinking.current) {
-      thinking.current = true;
-      const question = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? "Вопрос";
-      mascot.thinkStart(question, () => {
-        thinking.current = false;
-        stop();
-      });
-    } else if (!busy && thinking.current) {
-      thinking.current = false;
-      mascot.thinkEnd(last?.content && !last.error ? "Готово" : undefined);
-    }
-  }, [busy, turns, stop]);
   const lastTurn = turns[turns.length - 1];
   const usageNow = useMemo(() => lastUsage(turns), [turns]);
-  const stage = lastTurn?.role === "assistant" ? lastTurn.stage ?? "" : "";
-  useEffect(() => {
-    if (thinking.current && stage) mascot.thought(stageLabel(stage, lastTurn?.found));
-  }, [stage, lastTurn?.found]);
-  useEffect(() => stopThinking, [stopThinking]);
 
   // Лента едет за ответом, только пока ученик читает её конец: прокрутил выше, значит
   // перечитывает, и дёргать его нельзя.
@@ -525,13 +490,6 @@ export function ChatPage() {
   const empty = !turns.length && !opening;
   const answered =
     !busy && lastTurn?.role === "assistant" && Boolean(lastTurn.content) && !lastTurn.error;
-  // В вопросе цель, привычка или то, что изучил: предлагаем записать, а не только ответить.
-  // Только правила, без модели: ради кнопки лишний запрос не нужен. Режим плана ведёт к целям сам.
-  const recordOffer = useMemo(() => {
-    const question = turns[turns.length - 2];
-    if (planning || question?.role !== "user") return null;
-    return recordTarget(understandLocally(question.content).kind, question.content);
-  }, [turns, planning]);
   const firstQuestion = turns.find((turn) => turn.role === "user")?.content;
   const openRow = chats.find((row) => row.id === chatId);
   const placeholder = modeKey === "plain" && current?.books ? "Спроси по книге" : mode.hint;
@@ -578,18 +536,18 @@ export function ChatPage() {
         data-kind={hasSources ? "book" : "general"}
       >
         <div className="talk">
+          <button
+            className="chats-fab glass"
+            type="button"
+            aria-label="Чаты"
+            onClick={() => {
+              chatsSheet.current?.showModal();
+              chatsSheet.current?.focus();
+            }}
+          >
+            <Icon name="chats" />
+          </button>
           <div className="chat-bar">
-            <button
-              className="btn btn-line"
-              type="button"
-              onClick={() => {
-                chatsSheet.current?.showModal();
-                chatsSheet.current?.focus();
-              }}
-            >
-              <Icon name="chev-l" />
-              Чаты
-            </button>
             <span className="chat-now">{openRow?.title || firstQuestion || NEW_CHAT_TITLE}</span>
           </div>
 
@@ -621,6 +579,7 @@ export function ChatPage() {
                   id={`turn-${index}`}
                   showUsage={prefs.showUsage}
                   onCite={showSource}
+                  onProposal={updateProposal}
                   onRetry={
                     !busy &&
                     index === turns.length - 1 &&
@@ -660,15 +619,7 @@ export function ChatPage() {
               </div>
             ) : null}
 
-            {answered && recordOffer ? (
-              <div className="m-acts">
-                <Link className="btn btn-line" href={recordOffer.href}>
-                  {recordOffer.label}
-                </Link>
-              </div>
-            ) : null}
-
-            {answered && !planning && mode.follow.length ? (
+            {answered && !planning && mode.follow.length && !lastTurn.proposals?.length ? (
               <div className="m-acts">
                 {mode.follow.map((question, index) => (
                   <button
@@ -687,7 +638,7 @@ export function ChatPage() {
           <Composer
             ref={composerRef}
             onSubmit={send}
-            onStop={stopAnswer}
+            onStop={stop}
             busy={busy}
             disabled={opening}
             placeholder={placeholder}

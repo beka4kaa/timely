@@ -28,6 +28,7 @@ from ai_engine.usage import usage_scope
 
 from .ask import build_ask_context, split_outside_marker
 from .ask_models import ask_options, resolve_choice, usage_payload
+from .assistant_tools import AssistantTools, tool_label
 from .models import LearningGoal
 
 logger = logging.getLogger(__name__)
@@ -36,15 +37,17 @@ logger = logging.getLogger(__name__)
 ASK_TIMEOUT_SECONDS = 90
 # Цитата на бумажке короче самого фрагмента, а хранится она вместе с разговором.
 ASK_EXCERPT_CHARS = 500
+# Модель предложила и промолчала, а без текста клиент считает ответ пустым.
+PROPOSAL_FALLBACK_TEXT = "Вот что предлагаю:"
 
 
 def _sse(event: str, data: dict) -> str:
     """Одно Server-Sent Event.
 
     `ensure_ascii=False` — иначе кириллица раздувается в \\uXXXX и поток
-    становится втрое тяжелее.
+    становится втрое тяжелее. `default=str` — сериализаторы отдают `UUID` объектами.
     """
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
     return f"event: {event}\ndata: {payload}\n\n"
 
 
@@ -58,7 +61,9 @@ class AskOptionsView(APIView):
 class SubjectAskStreamView(APIView):
     """POST /api/curriculum/ask/stream — вопрос по книгам предмета.
 
-    События: `stage` → `content`* → `citations` → `usage` → `done`, либо `error`.
+    События: `stage` → `content`* → `citations` → `proposal`* → `usage` → `done`, либо `error`.
+    `stage` с подписью значит, что модель смотрит данные ученика, `proposal` это карточка
+    с кнопкой «Применить» (см. `assistant_tools.py`).
     """
 
     def post(self, request):
@@ -95,6 +100,12 @@ class SubjectAskStreamView(APIView):
             history=request.data.get("history"),
             mode=request.data.get("mode"),
         )
+        # Инструменты работают от имени того, кто спрашивает, и только от него.
+        assistant = AssistantTools(user_email, request.data.get("timezone")) if user_email else None
+        if assistant is not None:
+            previous = next((row["content"] for row in reversed(context.history) if row["role"] == "user"), "")
+            assistant.choose(question, previous, request.data.get("page"), context.mode)
+            context.assistant_rules = assistant.system_note()
         citations = [
             {
                 "label": result.citation.render(),
@@ -115,7 +126,7 @@ class SubjectAskStreamView(APIView):
         ]
 
         def event_stream():
-            from ai_engine.text_llm import TextModel
+            from ai_engine.text_llm import TextModel, ToolCallEvent
 
             with usage_scope(user_email=user_email, feature="subject_ask"):
                 # Три события, а не одно: ученик видит, ЧТО происходит, пока
@@ -136,6 +147,8 @@ class SubjectAskStreamView(APIView):
                     marker_resolved = not context.has_library
                     grounded = context.grounded
                     usage: list = []
+                    looked_at_affairs = False
+                    spoke = False
                     for delta in TextModel(choice.model.model_id, temperature=0.3).stream_content(
                         context.messages(),
                         max_tokens=choice.reasoning.max_tokens,
@@ -143,7 +156,14 @@ class SubjectAskStreamView(APIView):
                         feature="subject_ask",
                         reasoning_effort=choice.reasoning.key,
                         on_usage=usage.append,
+                        tools=assistant.schemas if assistant else None,
+                        run_tool=assistant.run if assistant else None,
                     ):
+                        if isinstance(delta, ToolCallEvent):
+                            looked_at_affairs = True
+                            yield _sse("stage", {"stage": "tool", "label": tool_label(delta.name)})
+                            continue
+                        spoke = True
                         if marker_resolved:
                             yield _sse("content", {"delta": delta})
                             continue
@@ -165,6 +185,15 @@ class SubjectAskStreamView(APIView):
                         if cleaned:
                             yield _sse("content", {"delta": cleaned})
 
+                    proposals = assistant.proposals if assistant else []
+                    if proposals and not spoke:
+                        yield _sse("content", {"delta": PROPOSAL_FALLBACK_TEXT})
+
+                    # Смотрел дела ученика: ответ о них, а не о книге, и ни ссылка,
+                    # ни пометка «в книге этого нет» здесь ничего не значат.
+                    has_library = context.has_library and not looked_at_affairs
+                    grounded = grounded and not looked_at_affairs
+
                     # Цитаты показываются, только если ответ действительно по
                     # книге: ссылка под ответом «от себя» выглядела бы
                     # подтверждением, которого нет.
@@ -177,15 +206,15 @@ class SubjectAskStreamView(APIView):
                         "citations",
                         {
                             "grounded": grounded,
-                            "library": context.has_library,
+                            "library": has_library,
                             "items": citations if grounded else [],
                         },
                     )
+                    for proposal in proposals:
+                        yield _sse("proposal", proposal)
                     if usage:
-                        yield _sse("usage", usage_payload(choice, usage[-1]))
-                    yield _sse(
-                        "done", {"grounded": grounded, "library": context.has_library}
-                    )
+                        yield _sse("usage", usage_payload(choice, usage))
+                    yield _sse("done", {"grounded": grounded, "library": has_library})
                 except Exception as exc:  # noqa: BLE001
                     # Заголовки уже отправлены — HTTP-код не поменять, поэтому
                     # ошибка приезжает событием, и панель её показывает.

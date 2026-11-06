@@ -14,6 +14,8 @@ export interface AskUsage {
   reasoning_tokens: number;
   total_tokens: number;
   context_window: number;
+  /** Сколько окна занято. У ответа с инструментами это последний круг, а не сумма всех. */
+  context_tokens?: number;
   cost_usd: number;
   /** Провайдер цену не прислал, она посчитана по прайсу. */
   cost_estimated: boolean;
@@ -53,7 +55,7 @@ export function costLabel(value: number): string {
  * Раздумья в следующий запрос не попадают, поэтому они не считаются.
  */
 export function contextUsed(usage: AskUsage): number {
-  return usage.input_tokens + Math.max(0, usage.output_tokens - usage.reasoning_tokens);
+  return usage.context_tokens ?? usage.input_tokens + Math.max(0, usage.output_tokens - usage.reasoning_tokens);
 }
 
 export function contextPercent(usage: AskUsage): number {

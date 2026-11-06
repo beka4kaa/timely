@@ -17,6 +17,8 @@ import os
 from dataclasses import dataclass
 from decimal import Decimal
 
+from ai_engine.usage import UsageNumbers
+
 
 @dataclass(frozen=True)
 class AskModel:
@@ -103,8 +105,21 @@ def ask_options() -> dict:
     }
 
 
-def usage_payload(choice: AskChoice, numbers) -> dict:
-    """Расход одного ответа для клиента. Цена от провайдера, а если он её не прислал, по прайсу."""
+def usage_payload(choice: AskChoice, rounds: list) -> dict:
+    """Расход одного ответа для клиента. Цена от провайдера, а если он её не прислал, по прайсу.
+
+    Круг с инструментами это отдельный запрос к модели, поэтому токены и цена складываются. А окно
+    занимает только последний: в него уже входит всё, что было на прошлых кругах.
+    """
+    last = rounds[-1]
+    numbers = UsageNumbers(
+        input_tokens=sum(row.input_tokens for row in rounds),
+        cached_input_tokens=sum(row.cached_input_tokens for row in rounds),
+        output_tokens=sum(row.output_tokens for row in rounds),
+        reasoning_tokens=sum(row.reasoning_tokens for row in rounds),
+        total_tokens=sum(row.total_tokens for row in rounds),
+        cost_usd=None if any(row.cost_usd is None for row in rounds) else sum(row.cost_usd for row in rounds),
+    )
     cost = numbers.cost_usd
     estimated = cost is None
     if estimated:
@@ -122,6 +137,8 @@ def usage_payload(choice: AskChoice, numbers) -> dict:
         "reasoning_tokens": numbers.reasoning_tokens,
         "total_tokens": numbers.total_tokens,
         "context_window": choice.model.context_window,
+        # Раздумья в следующий запрос не попадают, поэтому в окне их нет.
+        "context_tokens": last.input_tokens + max(0, last.output_tokens - last.reasoning_tokens),
         "cost_usd": float(cost),
         "cost_estimated": estimated,
     }

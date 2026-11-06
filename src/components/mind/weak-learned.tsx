@@ -10,7 +10,7 @@ import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 import { plural } from "@/lib/mind-srs";
-import { RECORD_EVENT, takeRecordParam, understand, type Understood } from "@/lib/understand";
+import { understand, type Understood } from "@/lib/understand";
 import {
   buildDrafts,
   draftHasSubject,
@@ -109,14 +109,12 @@ function SubjectPick({
 export function WeakLearned({
   subjects,
   topics,
-  ready,
   onAdded,
   onAsk,
 }: {
   subjects: WeakSubject[];
   topics: WeakTopic[];
   /** Темы и предметы уже загружены. */
-  ready: boolean;
   onAdded: (ids: string[]) => void;
   onAsk: (text: string) => void;
 }) {
@@ -166,13 +164,19 @@ export function WeakLearned({
         return;
       }
       mascot.thinkEnd();
+      // Вопрос или просьба об уже записанном: это дело помощника, и второго нажатия тут не надо.
+      if (understood.kind === "question") {
+        setPhase({ kind: "idle" });
+        onAsk(text);
+        return;
+      }
       setPhase({
         kind: "other",
         understood: understood.kind === "topics" ? { kind: "question" } : understood,
         text,
       });
     },
-    [subjects, topics],
+    [subjects, topics, onAsk],
   );
 
   const submit = useCallback(
@@ -183,25 +187,6 @@ export function WeakLearned({
     },
     [value, take],
   );
-
-  // Запись пришла из мини-окна или чата: дальше как будто её набрали здесь. Ждём загрузки
-  // тем: иначе предмет не найдётся, а дубли не отсеются.
-  const takeRef = useRef(take);
-  takeRef.current = take;
-  useEffect(() => {
-    const incoming = (event: Event) => void takeRef.current(String((event as CustomEvent).detail));
-    window.addEventListener(RECORD_EVENT, incoming);
-    return () => window.removeEventListener(RECORD_EVENT, incoming);
-  }, []);
-  useEffect(() => {
-    if (!ready) return;
-    // Через таймер: в разработке React запускает эффект дважды, а параметр уже будет убран.
-    const timer = window.setTimeout(() => {
-      const text = takeRecordParam("learned");
-      if (text) void takeRef.current(text);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [ready]);
 
   /** Разбор ошибся: человек лучше знает, что это тема. */
   const asTopic = useCallback(

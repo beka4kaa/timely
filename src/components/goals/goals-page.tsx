@@ -21,7 +21,8 @@ import { mascot } from "@/components/shell/mascot/mascot";
 import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { coverClass } from "@/lib/curriculum-cover";
-import { RECORD_EVENT, parseGoal, takeRecordParam, type Understood } from "@/lib/understand";
+import { useDataChanged } from "@/lib/data-changed";
+import { parseGoal, type Understood } from "@/lib/understand";
 
 // Цвета обложек предметов лежат там же, где сами книги: физика везде одного цвета.
 
@@ -57,7 +58,7 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
 
 type Offer =
   | { kind: "habit"; text: string; name: string; goalId: string | null }
-  | { kind: "topics" | "question"; text: string };
+  | { kind: "topics"; text: string };
 
 function motionOk(): boolean {
   return window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
@@ -350,28 +351,17 @@ export function GoalsPage() {
           name: result.name,
           goalId: suggestGoalFor(result.name, latest.current.goals.filter(isOpenGoal))?.id ?? null,
         });
+      } else if (result.kind === "question") {
+        // Вопрос или просьба об уже записанном: это дело помощника, и второго нажатия тут не надо.
+        prompt({ target: "book", text, send: true });
       } else {
         setOffer({ kind: result.kind, text });
       }
     });
   };
 
-  // Пришли с другой страницы с готовым текстом или прислали его на открытую страницу.
-  useEffect(() => {
-    const take = (text: string) =>
-      void ask(text, (result) => openFromText(result.kind === "goal" ? result : parseGoal(text)));
-    const incoming = (event: Event) => take(String((event as CustomEvent).detail));
-    window.addEventListener(RECORD_EVENT, incoming);
-    // Через таймер: в разработке React запускает эффект дважды, а параметр уже будет убран.
-    const timer = window.setTimeout(() => {
-      const text = takeRecordParam("new");
-      if (text) take(text);
-    }, 0);
-    return () => {
-      window.removeEventListener(RECORD_EVENT, incoming);
-      window.clearTimeout(timer);
-    };
-  }, [ask, openFromText]);
+  useDataChanged("goals", () => void refresh());
+  useDataChanged("habits", () => void refreshHabits());
 
   const addHabit = async (name: string, goalId: string | null) => {
     setAdding(true);
@@ -522,28 +512,6 @@ export function GoalsPage() {
           say="Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах."
           actions={[
             { label: "Открыть слабые темы", main: true, run: () => router.push("/dashboard/weaknesses") },
-            {
-              label: "Всё равно цель",
-              run: () => {
-                setOffer(null);
-                openFromText(parseGoal(offer.text));
-              },
-            },
-          ]}
-        />
-      ) : null}
-      {offer?.kind === "question" ? (
-        <AiOffer
-          say="Это больше похоже на вопрос."
-          actions={[
-            {
-              label: "Спросить тьютора",
-              main: true,
-              run: () => {
-                setOffer(null);
-                prompt({ target: "book", text: offer.text, send: true });
-              },
-            },
             {
               label: "Всё равно цель",
               run: () => {

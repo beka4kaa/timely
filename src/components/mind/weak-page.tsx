@@ -197,7 +197,6 @@ export function WeakPage() {
         <WeakLearned
           subjects={subjects}
           topics={topics ?? []}
-          ready={topics !== null && topics !== undefined}
           onAdded={onAdded}
           onAsk={askQuestion}
         />

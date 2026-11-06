@@ -31,8 +31,11 @@ export interface MascotEngine {
   thought: (text: string) => void;
   /** Без текста: остановили, плашка уходит. С текстом: готово, она ещё немного висит. */
   thinkEnd: (ready?: string) => void;
-  /** Напоминание: та же плашка, но с кнопкой «открыть». */
-  remind: (title: string, text: string, go: () => void) => void;
+  /**
+   * Напоминание: та же плашка, но с кнопкой «открыть». `long` показывает несколько строк, а
+   * не одну, `stay` держит её, пока ученик сам не откроет или не закроет.
+   */
+  remind: (title: string, text: string, go: () => void, options?: { long?: boolean; stay?: boolean }) => void;
   remindOff: () => void;
   hideCard: () => void;
   mood: (name: MascotExpression) => void;
@@ -866,11 +869,13 @@ export function createMascot(host: HTMLElement): MascotEngine {
     if (thoughts.dataset.state === "off") return;
     if (reduced) {
       thoughts.dataset.state = "off";
+      delete thoughts.dataset.long;
       return;
     }
     thoughts.dataset.state = "away";
     cardTimer = setTimeout(() => {
       thoughts.dataset.state = "off";
+      delete thoughts.dataset.long;
     }, 240);
   }
   function stepLine(text: string, shine: boolean) {
@@ -889,6 +894,7 @@ export function createMascot(host: HTMLElement): MascotEngine {
     thinking = true;
     cardHidden = false;
     stopHandler = onStop ?? null;
+    delete thoughts.dataset.long;
     cardTitle.textContent = title;
     cardStep.textContent = "";
     thoughts.dataset.state = "work";
@@ -906,17 +912,19 @@ export function createMascot(host: HTMLElement): MascotEngine {
       impulse(0.6);
     }
   }
-  function remind(title: string, text: string, go: () => void) {
+  function remind(title: string, text: string, go: () => void, options: { long?: boolean; stay?: boolean } = {}) {
     if (thinking) return;
     if (cardTimer) clearTimeout(cardTimer);
     remindGo = go;
     cardHidden = false;
+    if (options.long) thoughts.dataset.long = "true";
+    else delete thoughts.dataset.long;
     cardTitle.textContent = title;
     cardStep.textContent = "";
     stepLine(text, false);
     thoughts.dataset.state = "remind";
     // Сам не висит вечно: через четверть минуты уходит, ты уже видел.
-    cardTimer = setTimeout(hideCard, 15000);
+    if (!options.stay) cardTimer = setTimeout(hideCard, 15000);
     hideBubble();
     touched();
     if (!reduced) {
@@ -947,7 +955,7 @@ export function createMascot(host: HTMLElement): MascotEngine {
   const onCardClick = (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.closest(".m-card-go")) {
+    if (target.closest(".m-card-go") || (thoughts.dataset.long && target.closest(".m-card-text"))) {
       hideCard();
       remindGo?.();
     } else if (target.closest(".m-card-x")) {
@@ -967,8 +975,11 @@ export function createMascot(host: HTMLElement): MascotEngine {
   function frame(now: number) {
     const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
     last = now;
-    step(dt);
-    render();
+    // На странице чата маскот скрыт, и считать его кадры незачем
+    if (view !== "chat") {
+      step(dt);
+      render();
+    }
     frameId = requestAnimationFrame(frame);
   }
 

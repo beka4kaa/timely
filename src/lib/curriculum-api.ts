@@ -813,6 +813,10 @@ export async function askSubjectStream(
     model?: string;
     /** Уровень рассуждения. Без него низкий. */
     reasoning?: string;
+    /** Часовой пояс ученика: от него зависит, что считать сегодняшним днём. */
+    timezone?: string;
+    /** Страница, с которой спрашивают. */
+    page?: string;
   },
   signal?: AbortSignal,
 ): Promise<Response> {

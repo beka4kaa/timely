@@ -20,9 +20,10 @@ import json
 import logging
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from .usage import UsageNumbers, extract_usage, provider_from_base_url, record_model_usage
 
@@ -88,6 +89,50 @@ class TextLLMNotConfigured(RuntimeError):
     """Ключ провайдера не задан — вызывать модель нечем."""
 
 
+@dataclass(frozen=True)
+class ToolCallEvent:
+    """Модель зовёт инструмент. Идёт в потоке рядом с текстом: ученик видит, что сейчас происходит."""
+
+    name: str
+
+
+def _collect_tool_deltas(pending: dict[int, dict], deltas: Any) -> None:
+    """Вызов инструмента приезжает кусками: имя в первой дельте, аргументы дописываются до конца."""
+    for delta in deltas or []:
+        index = getattr(delta, "index", None)
+        slot = pending.setdefault(index if index is not None else len(pending), {"id": "", "name": "", "arguments": ""})
+        slot["id"] = getattr(delta, "id", None) or slot["id"]
+        function = getattr(delta, "function", None)
+        if function is None:
+            continue
+        slot["name"] = getattr(function, "name", None) or slot["name"]
+        slot["arguments"] += getattr(function, "arguments", None) or ""
+
+
+def _collect_reasoning(details: list[dict], deltas: Any) -> None:
+    """Рассуждение тоже идёт кусками. Модели отдаём его обратно: так советует OpenRouter для кругов с инструментами."""
+    for delta in deltas or []:
+        row = delta if isinstance(delta, dict) else getattr(delta, "model_dump", lambda: None)()
+        if not isinstance(row, dict):
+            continue
+        same = next(
+            (item for item in details if item.get("index") == row.get("index") and item.get("type") == row.get("type")),
+            None,
+        )
+        if same is None:
+            details.append(dict(row))
+            continue
+        for key, value in row.items():
+            if key in ("text", "summary", "data") and isinstance(value, str):
+                same[key] = (same.get(key) or "") + value
+            elif value is not None:
+                same[key] = value
+
+
+def _without_reasoning(messages: list[dict]) -> list[dict]:
+    return [{key: value for key, value in message.items() if key != "reasoning_details"} for message in messages]
+
+
 class _TextResponse:
     """Минимальный аналог ответа google-generativeai: важен только `.text`."""
 
@@ -138,6 +183,9 @@ class TextModel:
         feature: str = "text_stream",
         reasoning_effort: str | None = None,
         on_usage: Callable[[UsageNumbers], None] | None = None,
+        tools: list[dict] | Callable[[], list[dict]] | None = None,
+        run_tool: Callable[[str, dict], dict] | None = None,
+        max_tool_rounds: int = 5,
     ):
         """Отдаёт ответ по мере генерации. Генератор кусочков текста.
 
@@ -151,6 +199,12 @@ class TextModel:
         Рассуждение по умолчанию на минимуме. Его токены списываются из `max_tokens`, поэтому
         лимит на вызове должен оставлять место и ответу. Текст рассуждения приходит в
         `delta.reasoning`, и наружу он не идёт (CLAUDE.md §5.8).
+
+        С `tools` и `run_tool` модель может звать инструменты. Тогда в потоке рядом с текстом
+        идут `ToolCallEvent`, а результат возвращается модели. Кругов не больше `max_tool_rounds`:
+        на последнем она обязана ответить словами, потому что каждый круг это оплаченный запрос.
+        `on_usage` срабатывает на каждом круге. `run_tool` не должен бросать исключений. Функция
+        в `tools` читается заново перед каждым кругом: набор инструментов может вырасти.
         """
         if not TEXT_LLM_API_KEY:
             raise TextLLMNotConfigured(
@@ -163,44 +217,131 @@ class TextModel:
         )
         logger.info("[text_llm] поток от %s (%s)", self.model, feature)
         reasoning = reasoning_options(self.model, enabled=bool(reasoning_effort), effort=reasoning_effort)
-        stream = client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=self.temperature,
-            timeout=timeout,
-            stream=True,
-            # Без include_usage последний чанк приходит без usage, и учёт
-            # токенов для стримящего пути молча обнуляется — это уже было
-            # пройдено в `skills/router.py`.
-            stream_options={"include_usage": True},
-            # `usage.include` просит у OpenRouter ещё и цену этого запроса.
-            extra_body={"reasoning": reasoning, "usage": {"include": True}},
-        )
 
-        usage_chunk = None
-        for chunk in stream:
-            if getattr(chunk, "usage", None):
-                # Чанк с usage приходит последним и НЕ содержит choices.
-                usage_chunk = chunk
-            choices = getattr(chunk, "choices", None)
-            if not choices:
-                continue
-            delta = getattr(choices[0], "delta", None)
-            content = getattr(delta, "content", None) if delta else None
-            if content:
-                yield content
-
-        if usage_chunk is not None:
-            record_model_usage(
-                usage_chunk,
+        def open_stream(history: list[dict], offered: list[dict], *, force_text: bool = False):
+            tool_options: dict[str, Any] = {}
+            if offered:
+                tool_options["tools"] = offered
+                if force_text:
+                    tool_options["tool_choice"] = "none"
+            return client.chat.completions.create(
                 model=self.model,
-                provider=provider_from_base_url(TEXT_LLM_BASE_URL),
-                feature=feature,
-                input_payload=messages,
+                messages=history,
+                max_tokens=max_tokens,
+                temperature=self.temperature,
+                timeout=timeout,
+                stream=True,
+                # Без include_usage последний чанк приходит без usage, и учёт
+                # токенов для стримящего пути молча обнуляется — это уже было
+                # пройдено в `skills/router.py`.
+                stream_options={"include_usage": True},
+                # `usage.include` просит у OpenRouter ещё и цену этого запроса.
+                extra_body={"reasoning": reasoning, "usage": {"include": True}},
+                **tool_options,
             )
-            if on_usage is not None:
-                on_usage(extract_usage(usage_chunk, input_payload=messages))
+
+        conversation = list(messages)
+        read_tools = tools if callable(tools) else lambda: tools or []
+        uses_tools = bool(run_tool and read_tools())
+        last_round = max_tool_rounds if uses_tools else 0
+        offered: list[dict] = []
+        said_anything = False
+
+        for round_index in range(last_round + 1):
+            force_text = round_index == last_round
+            if uses_tools:
+                offered = list(read_tools())
+            try:
+                stream = open_stream(conversation, offered, force_text=force_text)
+            except BadRequestError as exc:
+                if not offered:
+                    raise
+                # Чат не должен падать из-за инструментов: на первом круге отвечаем без них,
+                # а дальше повторяем без того, что провайдер мог не принять.
+                logger.warning("[text_llm] %s не принял запрос с инструментами (круг %s): %s", self.model, round_index, exc)
+                if round_index == 0:
+                    uses_tools = False
+                    offered = []
+                    stream = open_stream(conversation, offered)
+                else:
+                    conversation = _without_reasoning(conversation)
+                    stream = open_stream(conversation, offered)
+
+            usage_chunk = None
+            pending: dict[int, dict] = {}
+            reasoning_details: list[dict] = []
+            round_text = ""
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    # Чанк с usage приходит последним и НЕ содержит choices.
+                    usage_chunk = chunk
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                if not delta:
+                    continue
+                content = getattr(delta, "content", None)
+                if content:
+                    # Сказала что-то перед инструментом, а теперь отвечает: это разные абзацы.
+                    if said_anything and not round_text:
+                        yield "\n\n"
+                    round_text += content
+                    said_anything = True
+                    yield content
+                if offered:
+                    _collect_tool_deltas(pending, getattr(delta, "tool_calls", None))
+                    _collect_reasoning(reasoning_details, getattr(delta, "reasoning_details", None))
+
+            if usage_chunk is not None:
+                record_model_usage(
+                    usage_chunk,
+                    model=self.model,
+                    provider=provider_from_base_url(TEXT_LLM_BASE_URL),
+                    feature=feature,
+                    input_payload=conversation,
+                )
+                if on_usage is not None:
+                    on_usage(extract_usage(usage_chunk, input_payload=conversation))
+
+            calls = [
+                {**pending[index], "id": pending[index]["id"] or f"call_{round_index}_{index}"}
+                for index in sorted(pending)
+                if pending[index]["name"]
+            ]
+            if not calls or not offered or round_index == last_round:
+                return
+
+            assistant_message: dict[str, Any] = {
+                "role": "assistant",
+                "content": round_text,
+                "tool_calls": [
+                    {
+                        "id": call["id"],
+                        "type": "function",
+                        "function": {"name": call["name"], "arguments": call["arguments"] or "{}"},
+                    }
+                    for call in calls
+                ],
+            }
+            if reasoning_details:
+                assistant_message["reasoning_details"] = reasoning_details
+            conversation.append(assistant_message)
+
+            for call in calls:
+                yield ToolCallEvent(call["name"])
+                try:
+                    arguments = json.loads(call["arguments"] or "{}")
+                except (TypeError, ValueError):
+                    arguments = {}
+                result = run_tool(call["name"], arguments if isinstance(arguments, dict) else {})
+                conversation.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(result, ensure_ascii=False, default=str),
+                    }
+                )
 
     def generate_json_content(
         self,

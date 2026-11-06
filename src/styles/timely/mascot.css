@@ -66,6 +66,11 @@
 .m-card-go:hover { background: var(--t-accent); filter: brightness(1.12); }
 .m-card-go .i { width: 13px; height: 13px; stroke-width: 2.2; }
 .m-thoughts[data-state="remind"] .m-card-stop { display: none; }
+/* Готовый ответ: несколько строк вместо одной, чтобы его можно было прочитать прямо здесь. */
+.m-thoughts[data-long] .m-card-text { cursor: pointer; }
+.m-thoughts[data-long] .m-card { width: min(300px, calc(100vw - 32px)); align-items: end; }
+.m-thoughts[data-long] .m-card-step { height: auto; margin-top: 2px; }
+.m-thoughts[data-long] .m-card-step span { position: static; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; white-space: normal; }
 .m-thoughts[data-state="remind"] .m-card-go { display: grid; }
 .m-thoughts[data-state="done"] .m-card-stop { visibility: hidden; }
 .m-card-x { position: absolute; left: -4px; top: -6px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--t-cloud); color: var(--t-ink); box-shadow: 0 0 0 0.5px var(--t-cloud-rim), 0 2px 5px var(--t-cloud-sh); transition: transform 140ms ease; }

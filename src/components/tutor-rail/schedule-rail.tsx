@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { answerPreview } from "@/components/chat/answer-preview";
+import { AssistantProposals, type ProposalChange } from "@/components/chat/assistant-proposals";
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { invalidatePlan } from "@/components/now/now-resources";
 import { Icon } from "@/components/shell/icons";
@@ -72,7 +74,7 @@ export function ScheduleRail() {
     saveStudyWindows,
     selectSchedule,
   } = useActiveSchedule();
-  const { open, toggle, pending, consumePrompt } = useAskRail();
+  const { open, toggle, openRail, pending, consumePrompt } = useAskRail();
   const { attached } = useQuick();
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
   const [state, setState] = useState<AssistantState>(initialAssistantState);
@@ -88,6 +90,8 @@ export function ScheduleRail() {
   const [note, setNote] = useState<string | null>(null);
   /** «Не надо»: ответ убран с экрана, а реплики остаются контекстом следующей просьбы. */
   const [hidden, setHidden] = useState(false);
+  /** Ответ пришёл, пока окно было закрыто, и его ещё не открывали. */
+  const [unseen, setUnseen] = useState(false);
   const pendingTargetRef = useRef<string | null>(null);
   const keepConversationFor = useRef<string | null>(null);
   const keepDraftFor = useRef<string | null>(null);
@@ -165,8 +169,11 @@ export function ScheduleRail() {
   const lastAnswer = lastTurn?.role === "assistant" ? lastTurn.content : "";
   const stage = state.stages[state.stages.length - 1];
 
-  // Слайм думает над запросом, даже если окно уже закрыли.
+  // Слайм думает над запросом, даже если окно уже закрыли. Закрыли: готовый ответ он показывает
+  // прямо в плашке, иначе ученик увидел бы только, что слайм подумал и замолчал.
   const thinkingRef = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
     if (thinking && !thinkingRef.current) {
       thinkingRef.current = true;
@@ -176,10 +183,25 @@ export function ScheduleRail() {
       });
     } else if (!thinking && thinkingRef.current) {
       thinkingRef.current = false;
-      const proposal = state.revision || state.commitments?.length || state.studyWindows;
-      mascot.thinkEnd(state.status === "error" ? undefined : proposal ? "Есть вариант" : "Готово");
+      const proposal =
+        state.revision || state.commitments?.length || state.studyWindows || state.proposals.length;
+      if (openRef.current) {
+        mascot.thinkEnd(state.status === "error" ? undefined : proposal ? "Есть вариант" : "Готово");
+        return;
+      }
+      mascot.thinkEnd();
+      const text =
+        state.status === "error" ? state.error : proposal ? "Есть вариант. Открой, чтобы посмотреть." : answerPreview(state.answer);
+      if (!text) return;
+      mascot.remind(lastQuestion || "Запрос", text, openRail, { stay: true, long: true });
+      setUnseen(true);
     }
-  }, [lastQuestion, state.commitments, state.revision, state.status, state.studyWindows, thinking]);
+  }, [lastQuestion, openRail, state, thinking]);
+  useEffect(() => {
+    if (!open || !unseen) return;
+    setUnseen(false);
+    mascot.remindOff();
+  }, [open, unseen]);
   useEffect(() => {
     if (thinkingRef.current && stage) mascot.thought(stageLabel(stage));
   }, [stage]);
@@ -470,13 +492,25 @@ export function ScheduleRail() {
   // Закрыли окно: готовый ответ больше не нужен. Предложение и настройка ждут, и работу
   // модели тоже не прерываем: слайм скажет, когда будет готово.
   const wasOpen = useRef(open);
-  const waiting = thinking || setupOpen || Boolean(state.revision || state.commitments?.length || state.studyWindows);
+  const waiting =
+    thinking ||
+    setupOpen ||
+    unseen ||
+    Boolean(state.revision || state.commitments?.length || state.studyWindows || state.proposals.some((item) => !item.state));
   useEffect(() => {
     if (wasOpen.current && !open && !waiting) clear();
     wasOpen.current = open;
   }, [clear, open, waiting]);
 
   const hasAnswer = !hidden && (turns.length > 0 || Boolean(note || applied || state.error));
+  const changeProposal = useCallback<ProposalChange>((id, patch) => {
+    setState((current) => ({
+      ...current,
+      proposals: current.proposals.map((item) =>
+        item.id === id ? ({ ...item, ...patch } as (typeof current.proposals)[number]) : item,
+      ),
+    }));
+  }, []);
   const showExchange = !setupOpen && !hidden;
   // Дело сделано: остаётся только итог, а не «осталось нажать «Применить»».
   const finished = Boolean(applied || note);
@@ -488,6 +522,7 @@ export function ScheduleRail() {
       newLabel="Заново"
       onNew={hasAnswer && !setupOpen ? clear : undefined}
       feedRef={feedRef}
+      unseen={unseen}
       title={
         scheduleOptions.length > 1 && !setupOpen ? (
           <ScheduleTargetPicker
@@ -572,6 +607,8 @@ export function ScheduleRail() {
           }}
         />
       ) : null}
+
+      {showExchange ? <AssistantProposals proposals={state.proposals} onChange={changeProposal} /> : null}
 
       {showExchange && applied ? (
         <>

@@ -6,6 +6,7 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from habits.models import Habit
 from studyplan.models import ScheduleRevision, StudySchedule
 from studyplan.services import generate_schedule
 
@@ -176,8 +177,9 @@ class ConversationTests(ChatFixture):
         self.assertEqual(len(client.completions.calls), 1)
         call = client.completions.calls[0]
         self.assertIn("Режим: оценка расписания", call["messages"][0]["content"])
+        names = [tool["function"]["name"] for tool in call["tools"]]
         self.assertEqual(
-            [tool["function"]["name"] for tool in call["tools"]],
+            names[:4],
             [
                 "get_schedule",
                 "find_free_slots",
@@ -185,6 +187,30 @@ class ConversationTests(ChatFixture):
                 "list_courses",
             ],
         )
+        # В режиме оценки менять нечего: ни расписание, ни остальные дела.
+        self.assertFalse([name for name in names if name.startswith("propose_")])
+        self.assertNotIn("add_course_to_schedule", names)
+
+    def test_other_affairs_are_a_card_and_nothing_is_written(self):
+        rounds = [
+            _Message(tool_calls=[_ToolCall(1, "propose_new_habit", {"name": "Растяжка"})]),
+            _Message(content="Предлагаю привычку."),
+        ]
+        response, events, client = self.run_chat(rounds, message="добавь привычку растяжка", mode="plan")
+        cards = [data for name, data in events if name == "proposal"]
+        self.assertEqual(cards[0]["kind"], "new_habit")
+        self.assertEqual(cards[0]["name"], "Растяжка")
+        self.assertFalse(Habit.objects.exists())
+        self.assertIn("propose_new_habit", [tool["function"]["name"] for tool in client.completions.calls[0]["tools"]])
+
+    def test_read_only_mode_refuses_a_proposal_for_other_affairs(self):
+        rounds = [
+            _Message(tool_calls=[_ToolCall(1, "propose_new_habit", {"name": "Растяжка"})]),
+            _Message(content="Для этого есть /plan."),
+        ]
+        response, events, client = self.run_chat(rounds, message="добавь привычку растяжка", mode="advice")
+        self.assertFalse([data for name, data in events if name == "proposal"])
+        self.assertIn("tool_not_allowed", client.completions.calls[1]["messages"][-1]["content"])
 
     def test_tool_stage_is_reported_while_the_model_works(self):
         rounds = [

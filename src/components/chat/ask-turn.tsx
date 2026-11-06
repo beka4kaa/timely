@@ -8,7 +8,8 @@ import { memo } from "react";
 import { bookLabel } from "@/lib/book-label";
 import type { AskCitation } from "@/lib/curriculum-api";
 
-import { askErrorText, placeLabel, stageLabel, STOPPED_ERROR } from "./ask-stages";
+import { askErrorText, placeLabel, STOPPED_ERROR, turnStage } from "./ask-stages";
+import { AssistantProposals, type ProposalChange } from "./assistant-proposals";
 import { usageLine } from "./chat-usage";
 import { MarkdownMessage } from "./markdown-message";
 import type { Turn } from "./use-subject-chat";
@@ -18,6 +19,7 @@ export const AskTurn = memo(function AskTurn({
   id,
   onCite,
   onRetry,
+  onProposal,
   showUsage = false,
 }: {
   turn: Turn;
@@ -28,6 +30,8 @@ export const AskTurn = memo(function AskTurn({
   onCite: (documentId: string, page: number) => void;
   /** Только у ответа, который не получился, и только если он последний. */
   onRetry?: () => void;
+  /** Ученик решил, что делать с предложением тьютора. */
+  onProposal: ProposalChange;
 }) {
   if (turn.role === "user") {
     return (
@@ -47,7 +51,7 @@ export const AskTurn = memo(function AskTurn({
     <div className="m-turn" id={id}>
       {thinking ? (
         <p className="m-think shine" role="status">
-          {stageLabel(turn.stage ?? "", turn.found)}
+          {turnStage(turn)}
         </p>
       ) : null}
 
@@ -58,6 +62,8 @@ export const AskTurn = memo(function AskTurn({
           {turn.citations?.length ? <Citations items={turn.citations} onCite={onCite} /> : null}
         </div>
       ) : null}
+
+      <AssistantProposals proposals={turn.proposals} onChange={onProposal} />
 
       {showUsage && turn.usage ? <p className="m-usage">{usageLine(turn.usage)}</p> : null}
 

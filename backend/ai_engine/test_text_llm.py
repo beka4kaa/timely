@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 from django.test import SimpleTestCase
+from openai import BadRequestError
 
 from . import text_llm
-from .text_llm import TextModel
+from .text_llm import TextModel, ToolCallEvent
 
 
 class _Message:
@@ -278,3 +281,165 @@ class MandatoryReasoningTests(SimpleTestCase):
         self.assertEqual(seen[0].output_tokens, 40)
         self.assertEqual(seen[0].reasoning_tokens, 25)
         self.assertEqual(seen[0].cached_input_tokens, 80)
+
+
+def _delta_chunk(*, content=None, tool_calls=None, reasoning_details=None):
+    delta = SimpleNamespace(content=content, tool_calls=tool_calls, reasoning_details=reasoning_details)
+    return SimpleNamespace(usage=None, choices=[SimpleNamespace(delta=delta)])
+
+
+def _tool_delta(index=0, call_id=None, name=None, arguments=None):
+    return SimpleNamespace(index=index, id=call_id, function=SimpleNamespace(name=name, arguments=arguments))
+
+
+class _ScriptedClient:
+    """Отдаёт заранее заданные потоки по кругам и записывает запросы."""
+
+    def __init__(self, *rounds):
+        self.rounds = list(rounds)
+        self.calls = []
+        self.chat = self
+        self.completions = self
+
+    def create(self, **request):
+        self.calls.append({**request, "messages": list(request["messages"])})
+        answer = self.rounds.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return iter(answer)
+
+
+def _bad_request():
+    response = httpx.Response(400, request=httpx.Request("POST", "http://test"))
+    return BadRequestError("нельзя", response=response, body=None)
+
+
+class ToolLoopTests(SimpleTestCase):
+    """Модель зовёт инструменты, результат возвращается к ней, в поток идут текст и подписи."""
+
+    def _run(self, client, **options):
+        ran = []
+
+        def run_tool(name, args):
+            ran.append((name, args))
+            return {"ok": True}
+
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "k"):
+            produced = list(
+                TextModel("z-ai/glm-5.3").stream_content(
+                    [{"role": "user", "content": "что у меня сегодня"}],
+                    tools=[{"type": "function", "function": {"name": "list_habits"}}],
+                    run_tool=run_tool,
+                    **options,
+                )
+            )
+        return produced, ran
+
+    def test_tool_result_goes_back_and_the_model_answers(self):
+        client = _ScriptedClient(
+            [
+                # Имя и начало аргументов в одном куске, конец в другом.
+                _delta_chunk(tool_calls=[_tool_delta(call_id="c1", name="list_habits", arguments='{"x"')]),
+                _delta_chunk(tool_calls=[_tool_delta(arguments=": 1}")]),
+            ],
+            [_delta_chunk(content="У тебя две привычки.")],
+        )
+        produced, ran = self._run(client)
+        self.assertEqual(produced, [ToolCallEvent("list_habits"), "У тебя две привычки."])
+        self.assertEqual(ran, [("list_habits", {"x": 1})])
+        second = client.calls[1]["messages"]
+        self.assertEqual(second[1]["tool_calls"][0]["function"]["arguments"], '{"x": 1}')
+        self.assertEqual(second[2], {"role": "tool", "tool_call_id": "c1", "content": '{"ok": true}'})
+
+    def test_several_calls_in_one_round_all_run(self):
+        client = _ScriptedClient(
+            [
+                _delta_chunk(
+                    tool_calls=[
+                        _tool_delta(0, "a", "list_habits", "{}"),
+                        _tool_delta(1, "b", "list_goals", "{}"),
+                    ]
+                )
+            ],
+            [_delta_chunk(content="Готов ответ.")],
+        )
+        produced, ran = self._run(client)
+        self.assertEqual([name for name, _ in ran], ["list_habits", "list_goals"])
+        self.assertEqual(produced[:2], [ToolCallEvent("list_habits"), ToolCallEvent("list_goals")])
+
+    def test_last_round_has_to_answer_in_words(self):
+        looping = [_delta_chunk(tool_calls=[_tool_delta(0, "a", "list_habits", "{}")])]
+        client = _ScriptedClient(looping, looping, [_delta_chunk(content="Хватит смотреть.")])
+        produced, ran = self._run(client, max_tool_rounds=2)
+        self.assertEqual(len(ran), 2)
+        self.assertEqual(produced[-1], "Хватит смотреть.")
+        self.assertEqual(client.calls[2]["tool_choice"], "none")
+        self.assertNotIn("tool_choice", client.calls[0])
+
+    def test_words_before_a_tool_are_a_separate_paragraph(self):
+        client = _ScriptedClient(
+            [_delta_chunk(content="Сейчас посмотрю."), _delta_chunk(tool_calls=[_tool_delta(0, "a", "list_habits", "{}")])],
+            [_delta_chunk(content="Всё отмечено.")],
+        )
+        produced, _ = self._run(client)
+        text = "".join(row for row in produced if isinstance(row, str))
+        self.assertEqual(text, "Сейчас посмотрю.\n\nВсё отмечено.")
+
+    def test_rejected_tools_do_not_break_the_chat(self):
+        client = _ScriptedClient(_bad_request(), [_delta_chunk(content="Отвечаю без инструментов.")])
+        produced, ran = self._run(client)
+        self.assertEqual(produced, ["Отвечаю без инструментов."])
+        self.assertEqual(ran, [])
+        self.assertNotIn("tools", client.calls[1])
+
+    def test_reasoning_goes_back_and_is_dropped_if_rejected(self):
+        details = [{"type": "reasoning.text", "index": 0, "text": "ду"}, {"type": "reasoning.text", "index": 0, "text": "маю"}]
+        client = _ScriptedClient(
+            [
+                _delta_chunk(reasoning_details=details[:1]),
+                _delta_chunk(reasoning_details=details[1:]),
+                _delta_chunk(tool_calls=[_tool_delta(0, "a", "list_habits", "{}")]),
+            ],
+            _bad_request(),
+            [_delta_chunk(content="Ответ.")],
+        )
+        produced, _ = self._run(client)
+        self.assertEqual(produced[-1], "Ответ.")
+        self.assertEqual(client.calls[1]["messages"][1]["reasoning_details"][0]["text"], "думаю")
+        self.assertNotIn("reasoning_details", client.calls[2]["messages"][1])
+
+    def test_every_round_reports_its_usage(self):
+        seen = []
+        client = _ScriptedClient(
+            [_delta_chunk(tool_calls=[_tool_delta(0, "a", "list_habits", "{}")]), _UsageChunk()],
+            [_delta_chunk(content="Ответ."), _UsageChunk()],
+        )
+        self._run(client, on_usage=seen.append)
+        self.assertEqual(len(seen), 2)
+
+    def test_tool_set_is_read_again_each_round(self):
+        offered = [[{"type": "function", "function": {"name": "open_all"}}]]
+        client = _ScriptedClient(
+            [_delta_chunk(tool_calls=[_tool_delta(0, "a", "open_all", "{}")])],
+            [_delta_chunk(content="Ответ.")],
+        )
+
+        def run_tool(name, args):
+            offered[0] = [{"type": "function", "function": {"name": "list_habits"}}]
+            return {"ok": True}
+
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "k"):
+            list(
+                TextModel("z-ai/glm-5.3").stream_content(
+                    [{"role": "user", "content": "x"}], tools=lambda: offered[0], run_tool=run_tool
+                )
+            )
+        self.assertEqual(client.calls[0]["tools"][0]["function"]["name"], "open_all")
+        self.assertEqual(client.calls[1]["tools"][0]["function"]["name"], "list_habits")
+
+    def test_without_tools_the_request_stays_the_same(self):
+        client = _ScriptedClient([_delta_chunk(content="Привет.")])
+        with patch.object(text_llm, "OpenAI", return_value=client), patch.object(text_llm, "TEXT_LLM_API_KEY", "k"):
+            produced = list(TextModel("z-ai/glm-5.3").stream_content([{"role": "user", "content": "x"}]))
+        self.assertEqual(produced, ["Привет."])
+        self.assertNotIn("tools", client.calls[0])

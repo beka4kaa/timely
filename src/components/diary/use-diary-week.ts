@@ -29,6 +29,7 @@ import {
   type LessonSlot,
 } from "@/lib/diary-undo";
 import { lessonTitle } from "@/lib/now-feed";
+import { dataChanged, useDataChanged } from "@/lib/data-changed";
 import { invalidateResources } from "@/lib/resource-cache";
 import type {
   DiaryDay,
@@ -154,7 +155,7 @@ async function patchLesson(
 /** Запись целой неделей: то, чего нет в PATCH. Основа берётся свежая, а не с экрана. */
 async function rewriteLesson(
   weekStart: string,
-  target: LessonTarget,
+  target: Pick<LessonTarget, "dayId" | "lessonId" | "slot">,
   patch: Partial<DiaryLesson>,
 ): Promise<DiaryWeek> {
   const fresh = await readWeek(weekStart);
@@ -164,6 +165,21 @@ async function rewriteLesson(
   return putWeek(
     mapLesson(fresh, found.day.id, found.lesson.id, (lesson) => ({ ...lesson, ...patch })),
   );
+}
+
+/** Отметка задания не со страницы дневника: из ответа тьютора. */
+export async function markHomeworkDone(
+  weekStart: string,
+  place: { day_id: string; lesson_id: string; slot: LessonSlot },
+  done: boolean,
+): Promise<void> {
+  await rewriteLesson(
+    weekStart,
+    { dayId: place.day_id, lessonId: place.lesson_id, slot: place.slot },
+    { homeworkDone: done },
+  );
+  invalidateResources("now:diary:");
+  dataChanged("diary");
 }
 
 function targetOf(week: DiaryWeek, day: DiaryDay, lesson: DiaryLesson): LessonTarget {
@@ -232,6 +248,10 @@ export function useDiaryWeek(weekStart: string | null) {
   useEffect(() => {
     if (weekStart) void load(weekStart);
   }, [load, weekStart]);
+
+  useDataChanged("diary", () => {
+    if (weekStartRef.current) void load(weekStartRef.current, true);
+  });
 
   // Очередь записей (см. п. 2 в начале файла).
   const tail = useRef<Promise<unknown>>(Promise.resolve());

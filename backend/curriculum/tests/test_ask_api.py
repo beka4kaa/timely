@@ -12,10 +12,12 @@ from unittest import mock
 
 from django.test import TestCase
 
+from ai_engine.text_llm import ToolCallEvent
 from ai_engine.usage import UsageNumbers
 from curriculum.ask import OUTSIDE_MARKER
 from curriculum.models import Document, KnowledgeChunk, LearningGoal
 from config.testing import auth_headers
+from habits.models import Habit
 
 OWNER = "owner@example.com"
 INTRUDER = "intruder@example.com"
@@ -323,7 +325,7 @@ class AskModesTests(TestCase):
         self.assertIn("Режим: наводящая помощь", self._system(mode="guide"))
 
     def test_планирование_не_обещает_менять_расписание(self):
-        self.assertIn("Расписание ты не меняешь", self._system(mode="plan"))
+        self.assertIn("Сам ты расписание не меняешь", self._system(mode="plan"))
 
     def test_без_режима_и_с_незнакомым_обычный(self):
         self.assertIn("Режим: обычный разговор", self._system())
@@ -418,3 +420,110 @@ class AskModelChoiceTests(TestCase):
         self.assertEqual([row["key"] for row in body["models"]], ["glm-5.3", "glm-5.3-flash"])
         self.assertEqual([row["key"] for row in body["reasoning"]], ["low", "high", "max"])
         self.assertNotIn("model_id", body["models"][0])
+
+
+class AssistantInStreamTests(TestCase):
+    """Тьютор смотрит дела ученика прямо в ответе и предлагает карточки."""
+
+    def _ask(self, stream, **fields):
+        with mock.patch("ai_engine.text_llm.TextModel.stream_content", stream):
+            response = self.client.post(
+                URL, {"message": "добавь зарядку", **fields}, content_type="application/json", **_auth(OWNER)
+            )
+            # Поток читается лениво, поэтому и разбирать его надо, пока модель подменена.
+            return _events(response)
+
+    def test_tool_call_shows_a_plain_label_and_a_card(self):
+        def stream(self, messages, **kwargs):
+            yield ToolCallEvent("list_habits")
+            kwargs["run_tool"]("list_habits", {})
+            yield ToolCallEvent("propose_new_habit")
+            kwargs["run_tool"]("propose_new_habit", {"name": "Зарядка"})
+            yield "Предлагаю привычку."
+
+        events = self._ask(stream)
+        labels = [data.get("label") for name, data in events if name == "stage" and data["stage"] == "tool"]
+        self.assertEqual(labels, ["Смотрю привычки", "Готовлю предложение"])
+        cards = [data for name, data in events if name == "proposal"]
+        self.assertEqual(cards[0]["kind"], "new_habit")
+        self.assertEqual(cards[0]["name"], "Зарядка")
+        self.assertFalse(Habit.objects.filter(user_email=OWNER).exists())
+
+    def test_silent_proposal_still_gets_words(self):
+        def stream(self, messages, **kwargs):
+            yield ToolCallEvent("propose_new_habit")
+            kwargs["run_tool"]("propose_new_habit", {"name": "Зарядка"})
+
+        events = self._ask(stream)
+        self.assertEqual("".join(data["delta"] for name, data in events if name == "content"), "Вот что предлагаю:")
+
+    def test_answer_about_affairs_is_not_presented_as_from_the_book(self):
+        goal = LearningGoal.objects.create(user_email=OWNER, original_text="механика")
+        document = Document.objects.create(
+            user_email=OWNER, goal=goal, title="Механика", ingestion_status=Document.Status.READY
+        )
+        KnowledgeChunk.objects.create(
+            document_id=document.pk,
+            normalized_text="Зарядка полезна для здоровья",
+            content_hash="b" * 64,
+            processing_version=document.processing_version,
+            section_path="§ 1",
+            page_start=1,
+            page_end=1,
+        )
+
+        def stream(self, messages, **kwargs):
+            yield ToolCallEvent("list_habits")
+            yield "Сегодня ты не отметил зарядку, и этого хватит для ответа."
+
+        events = dict(self._ask(stream, goal_id=str(goal.pk), message="зарядка"))
+        self.assertEqual(events["citations"]["items"], [])
+        self.assertFalse(events["citations"]["library"])
+
+    def test_the_model_gets_tools_and_the_rules(self):
+        seen = {}
+
+        def stream(self, messages, **kwargs):
+            seen["messages"] = messages
+            seen["tools"] = kwargs["tools"]()
+            yield "Привет."
+
+        self._ask(stream, timezone="Asia/Almaty")
+        self.assertIn("«Применить»", seen["messages"][0]["content"])
+        self.assertIn("list_habits", {row["function"]["name"] for row in seen["tools"]})
+
+    def test_plain_study_question_costs_almost_nothing(self):
+        seen = {}
+
+        def stream(self, messages, **kwargs):
+            seen["system"] = messages[0]["content"]
+            seen["tools"] = kwargs["tools"]()
+            yield "Предел отношения приращений."
+
+        self._ask(stream, message="Что такое производная?")
+        self.assertEqual([row["function"]["name"] for row in seen["tools"]], ["open_my_affairs"])
+        self.assertNotIn("«Применить»", seen["system"])
+
+    def test_page_narrows_tools_to_its_subject(self):
+        seen = {}
+
+        def stream(self, messages, **kwargs):
+            seen["tools"] = kwargs["tools"]()
+            yield "Ответ."
+
+        self._ask(stream, message="Читать двадцать минут", page="habits")
+        names = {row["function"]["name"] for row in seen["tools"]}
+        self.assertIn("propose_new_habit", names)
+        self.assertNotIn("get_schedule", names)
+
+    def test_usage_sums_rounds_but_context_is_the_last_one(self):
+        def stream(self, messages, **kwargs):
+            kwargs["on_usage"](UsageNumbers(input_tokens=100, output_tokens=20, reasoning_tokens=5, total_tokens=120, cost_usd=Decimal("0.001")))
+            kwargs["on_usage"](UsageNumbers(input_tokens=300, output_tokens=40, reasoning_tokens=10, total_tokens=340, cost_usd=Decimal("0.002")))
+            yield "Ответ."
+
+        usage = dict(self._ask(stream))["usage"]
+        self.assertEqual(usage["input_tokens"], 400)
+        self.assertEqual(usage["output_tokens"], 60)
+        self.assertEqual(usage["context_tokens"], 330)
+        self.assertAlmostEqual(usage["cost_usd"], 0.003)

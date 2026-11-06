@@ -48,6 +48,8 @@ export async function askAssistant(
       schedule_id: input.scheduleId,
       history: input.history,
       mode: input.mode,
+      // «Завтра» у ученика, а не на сервере.
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }),
     signal: input.signal,
   });

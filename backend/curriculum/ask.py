@@ -81,6 +81,8 @@ class AskContext:
     has_library: bool = True
     # Как тьютор ведёт разговор: см. `ask_modes.py`.
     mode: str = DEFAULT_MODE
+    # Что он умеет в делах ученика: см. `assistant_tools.py`. Пусто, если инструментов нет.
+    assistant_rules: str = ""
 
     @property
     def grounded(self) -> bool:
@@ -94,6 +96,8 @@ class AskContext:
     def messages(self) -> list[dict]:
         """Сообщения для провайдера в формате OpenAI."""
         instructions = mode_instructions(self.mode)
+        if self.assistant_rules:
+            instructions = f"{instructions}\n\n{self.assistant_rules}"
         if not self.has_library:
             messages = [
                 {"role": "system", "content": f"{GENERAL_SYSTEM_PROMPT}\n\n{instructions}"}

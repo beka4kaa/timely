@@ -93,7 +93,7 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .chat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; height: calc(100vh - 32px); min-height: 520px; }
 .chat.has-sources { grid-template-columns: minmax(0, 1fr) 216px; }
 .chat:not(.has-sources) .sources { display: none; }
-.chat-bar { display: none; }
+.chat-bar, .chats-fab { display: none; }
 .talk { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 100%; max-width: 720px; min-width: 0; min-height: 0; margin: 0 auto; }
 .log { flex: 1; display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow-y: auto; padding: 8px 0; scrollbar-width: thin; }
 .m-you { align-self: flex-end; max-width: 78%; padding: 7px 13px; border-radius: 15px 15px 5px 15px; background: var(--t-fill); font-size: 14px; }
@@ -525,6 +525,8 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 }
 .quick > * { pointer-events: auto; }
 :root[data-view="chat"] .quick, :root[data-view="board"] .quick { display: none; }
+/* В чате всё видно в самой ленте, и маскот только заслонял бы переписку */
+:root[data-view="chat"] .mascot { display: none; }
 .quick[data-state="closed"] .q-win, .quick[data-state="closed"] .q-suggest, .quick[data-state="closed"] .q-pickbar { display: none; }
 .quick[data-state="open"] .q-pill, .quick[data-state="open"] .q-pickbar { display: none; }
 .quick[data-state="picking"] .q-win, .quick[data-state="picking"] .q-suggest, .quick[data-state="picking"] .q-pill { display: none; }
@@ -729,14 +731,23 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
   .subnav a[aria-current="page"] { border-color: var(--t-ink); color: var(--t-ink); font-weight: 500; }
   .t-toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
   /* Чаты на телефоне: панели нет, список открывается снизу */
-  .chat-bar { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 10px; }
-  .chat-bar .btn { flex: none; height: 34px; padding: 0 12px 0 8px; }
+  /* Прилипает к верху прокрутки и не занимает места: заголовок стоит с ней в одном ряду */
+  .talk > .chats-fab {
+    --r: 50%;
+    position: sticky; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); flex: none; align-self: flex-start;
+    display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: -56px; color: var(--t-ink);
+    /* Лежит поверх текста, поэтому стекло плотнее обычного */
+    background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong);
+  }
+  /* У стекла скругления как у Apple, а тут нужен именно круг */
+  .talk > .chats-fab, .talk > .chats-fab::before, .talk > .chats-fab::after { corner-shape: round; }
+  .chats-fab .i { width: 20px; height: 20px; }
+  .chat-bar { display: flex; align-items: center; min-width: 0; min-height: 44px; padding-left: 54px; margin-bottom: 10px; }
   .chat-now { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
-  /* Над нижними вкладками: строка ввода, над ней маскот */
+  /* Строка ввода над нижними вкладками */
   :root[data-view="chat"] .content { padding-bottom: 0; }
   .chat { min-height: calc(100vh - 94px); }
   .talk > .composer { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
-  :root[data-view="chat"] .mascot { --mascot-bottom: 162px; }
   /* Новое сообщение показывается над строкой ввода и вкладками, а не под ними */
   .m-you, .m-ai, .m-think { scroll-margin-bottom: 150px; }
   /* Шестнадцать пикселей, чтобы телефон не увеличивал страницу при вводе */
@@ -756,10 +767,6 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
 @media (min-width: 641px) and (max-width: 1088px) {
   :root[data-view="board"] .content { padding-bottom: 120px; }
 }
-@media (min-width: 641px) and (max-width: 1208px) {
-  :root[data-view="chat"] .mascot { --mascot-bottom: 100px; }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   .dial-ticks.is-running .now { animation: tick-now 2.4s ease-in-out infinite; }
   .mode-menu:not(.is-off) { animation: q-in 180ms cubic-bezier(0.2, 1.2, 0.4, 1) both; transform-origin: 20% 100%; }

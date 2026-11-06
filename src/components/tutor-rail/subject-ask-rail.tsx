@@ -7,10 +7,12 @@
 // показывает один последний ответ, а продолжить разговор можно уже в чате.
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { askErrorText, stageLabel } from "@/components/chat/ask-stages";
+import { answerPreview } from "@/components/chat/answer-preview";
+import { askErrorText, STOPPED_ERROR, turnStage } from "@/components/chat/ask-stages";
+import { proposalSummary } from "@/components/chat/assistant-proposal";
+import { AssistantProposals, type ProposalChange } from "@/components/chat/assistant-proposals";
 import { usageLine } from "@/components/chat/chat-usage";
 import { MarkdownMessage } from "@/components/chat/markdown-message";
 import { useSubjectChat, type Turn } from "@/components/chat/use-subject-chat";
@@ -35,13 +37,6 @@ import {
   type LearningGoal,
 } from "@/lib/curriculum-api";
 import { subjectTitle } from "@/lib/curriculum-catalog";
-import {
-  RECORD_EVENT,
-  recordTarget,
-  understandLocally,
-  type Understood,
-  type UnderstoodKind,
-} from "@/lib/understand";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 import "katex/dist/katex.min.css";
 import { RailShell } from "./rail-shell";
@@ -59,18 +54,14 @@ const SUBJECT_KEY = "timely.ask.subject";
 const NO_BOOK = "none";
 
 const SUGGESTIONS: Partial<Record<DashboardView, string[]>> = {
-  now: ["С чего начать?", "Разбей это на шаги", "Объясни проще"],
-  diary: ["Как распределить домашку на вечер?"],
-  focus: ["Как не отвлекаться?"],
+  now: ["Что у меня сегодня?", "С чего начать?", "Разбей это на шаги"],
+  diary: ["Что задали на завтра?", "Как распределить домашку на вечер?"],
+  focus: ["Сколько я занимался на неделе?", "Как не отвлекаться?"],
+  weak: ["Что пора повторить?"],
+  goals: ["Какая цель ближе всего по сроку?"],
+  habits: ["Что я сегодня не отметил?"],
   library: ["С чего начать?"],
   course: ["Объясни проще", "Приведи пример"],
-};
-
-/** Что человек, скорее всего, вводит на этой странице: запись, а не вопрос. */
-const EXPECT: Partial<Record<DashboardView, UnderstoodKind>> = {
-  weak: "topics",
-  goals: "goal",
-  habits: "habit",
 };
 
 export function SubjectAskRail() {
@@ -83,14 +74,14 @@ export function SubjectAskRail() {
 }
 
 function AskRail() {
-  const { open, toggle, pending, consumePrompt } = useAskRail();
+  const { open, openRail, pending, consumePrompt } = useAskRail();
   const { goalId: pageGoalId } = useActiveSubject();
-  const path = useDashboardPath();
-  const view = dashboardViewOf(path);
-  const router = useRouter();
-  /** Написали не вопрос, а цель, привычку или то, что изучил. Здесь только разбор правилами. */
-  const [record, setRecord] = useState<{ text: string; found: Understood } | null>(null);
+  const view = dashboardViewOf(useDashboardPath());
   const [subjects, setSubjects] = useState<Subject[] | null>(null);
+  /** Книга из прошлого раза уже выбрана: теперь вопрос можно отправлять. */
+  const [bookSettled, setBookSettled] = useState(false);
+  /** Ответ пришёл, пока окно было закрыто, и его ещё не открывали. */
+  const [unseen, setUnseen] = useState(false);
   /** `null` — без книги: тьютор отвечает от себя и источников не показывает. */
   const [selected, setSelected] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -101,6 +92,7 @@ function AskRail() {
   const chat = useSubjectChat({
     goalId: selected,
     enabled: open,
+    page: view,
     migrateLegacy: true,
   });
 
@@ -135,11 +127,21 @@ function AskRail() {
     setSelected(pageGoalId);
   }, [pageGoalId, conversationActive]);
 
+  // Книга из прошлого раза выбирается сразу при открытии, а не когда загрузится список. Смена
+  // книги начинает новый разговор: вопрос, заданный раньше, она обрывала, и ученик видел только,
+  // что слайм подумал и замолчал. Просьба со страницы ждёт этого шага.
   useEffect(() => {
-    if (pageGoalId || !subjects?.length) return;
+    if (!open || bookSettled) return;
+    setBookSettled(true);
+    if (pageGoalId) return;
     const remembered = window.localStorage.getItem(SUBJECT_KEY);
-    if (remembered === NO_BOOK) return;
-    if (subjects.some((item) => item.goalId === remembered)) setSelected(remembered);
+    if (remembered && remembered !== NO_BOOK) setSelected(remembered);
+  }, [open, bookSettled, pageGoalId]);
+
+  // Книгу могли удалить, пока ученика не было. Идущий разговор не трогаем.
+  useEffect(() => {
+    if (!subjects?.length || !selected || conversationActive) return;
+    if (!subjects.some((item) => item.goalId === selected)) setSelected(null);
     // Только при загрузке списка: дальше выбор делает сам ученик.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subjects]);
@@ -156,7 +158,7 @@ function AskRail() {
   // Просьба извне: «Нужна помощь» на карточке, вопрос с главной. Сначала выбирается
   // предмет, и только следующим проходом разговор: смена предмета сбрасывает ленту.
   useEffect(() => {
-    if (!pending || pending.target !== "book" || !open) return;
+    if (!pending || pending.target !== "book" || !open || !bookSettled) return;
     const wanted = pending.goalId ?? null;
     if (wanted && wanted !== selected) {
       setSelected(wanted);
@@ -174,60 +176,72 @@ function AskRail() {
       setDraft({ text: pending.text, nonce: pending.id });
     }
     consumePrompt(pending.id);
-  }, [pending, open, selected, chat, consumePrompt]);
+  }, [pending, open, bookSettled, selected, chat, consumePrompt]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [chat.turns]);
 
-  // Слайм думает над запросом, даже если окно уже закрыли.
+  // Слайм думает над запросом, даже если окно уже закрыли. Закрыли: готовый ответ он показывает
+  // прямо в плашке, иначе ученик увидел бы только, что слайм подумал и замолчал.
   const last = chat.turns[chat.turns.length - 1];
   const stage = last?.role === "assistant" ? last.stage ?? "" : "";
   const thinking = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const { busy, stop, turns } = chat;
+  const lastQuestion = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? "Вопрос";
   useEffect(() => {
     if (busy && !thinking.current) {
       thinking.current = true;
-      const question = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? "Вопрос";
-      mascot.thinkStart(question, () => {
+      mascot.thinkStart(lastQuestion, () => {
         thinking.current = false;
         stop();
       });
     } else if (!busy && thinking.current) {
       thinking.current = false;
-      const failed = turns[turns.length - 1]?.error;
-      mascot.thinkEnd(failed ? undefined : "Готово");
+      const answer = turns[turns.length - 1];
+      const proposals = (answer?.proposals ?? []).filter((item) => !item.state);
+      if (openRef.current) {
+        mascot.thinkEnd(answer?.error ? undefined : proposals.length ? "Есть вариант" : "Готово");
+        return;
+      }
+      mascot.thinkEnd();
+      const text = readyText(answer);
+      if (!text) return;
+      mascot.remind(lastQuestion, text, openRail, { stay: true, long: true });
+      setUnseen(true);
     }
-  }, [busy, turns, stop]);
+  }, [busy, turns, stop, lastQuestion, openRail]);
   useEffect(() => {
-    if (thinking.current && stage) mascot.thought(stageLabel(stage, last?.found));
-  }, [stage, last?.found]);
+    if (thinking.current && stage) mascot.thought(last ? turnStage(last) : "");
+  }, [stage, last?.found, last?.toolLabel]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Страница, где окна нет: разговор обрывается, и плашка не должна думать вечно.
+  useEffect(
+    () => () => {
+      if (thinking.current) mascot.thinkEnd();
+      thinking.current = false;
+    },
+    [],
+  );
+
+  // Открыли окно: ответ на месте, напоминать больше не о чем. Начинаем с его начала, а если
+  // ждёт решение, с кнопок.
+  useEffect(() => {
+    if (!open || !unseen) return;
+    setUnseen(false);
+    mascot.remindOff();
+    const toButtons = Boolean(last?.proposals?.some((item) => !item.state));
+    window.requestAnimationFrame(() => {
+      const feed = feedRef.current;
+      feed?.scrollTo({ top: toButtons ? feed.scrollHeight : 0 });
+    });
+  }, [open, unseen, last]);
 
   const current = useMemo(
     () => subjects?.find((item) => item.goalId === selected) ?? null,
     [subjects, selected],
   );
-
-  const submit = (text: string) => {
-    const found = understandLocally(text, EXPECT[view]);
-    if (found.kind === "question") {
-      setRecord(null);
-      void chat.ask(text);
-    } else {
-      setRecord({ text, found });
-    }
-  };
-
-  const saveRecord = () => {
-    if (!record) return;
-    const target = recordTarget(record.found.kind, record.text);
-    setRecord(null);
-    toggle();
-    if (!target) return;
-    // Страница уже открыта: адрес не изменится и она ничего не заметит, поэтому говорим ей прямо.
-    if (target.path === path) window.dispatchEvent(new CustomEvent(RECORD_EVENT, { detail: record.text }));
-    else router.push(target.href);
-  };
 
   const picker = (
     <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
@@ -266,88 +280,36 @@ function AskRail() {
         <QuickComposer
           key={draft?.nonce ?? "composer"}
           initialDraft={draft?.text}
-          onSubmit={submit}
+          onSubmit={(text) => void chat.ask(text)}
           onStop={chat.stop}
           busy={chat.busy}
           placeholder={current ? "Спроси по книге" : "Чем помочь?"}
-          suggestions={chat.turns.length || record ? undefined : SUGGESTIONS[view]}
+          suggestions={chat.turns.length ? undefined : SUGGESTIONS[view]}
           left={picker}
         />
       }
       feedRef={feedRef}
+      unseen={unseen}
     >
-      {record ? (
-        <RecordOffer
-          found={record.found}
-          onSave={saveRecord}
-          onAsk={() => {
-            const { text } = record;
-            setRecord(null);
-            void chat.ask(text);
-          }}
-          onDismiss={() => setRecord(null)}
+      {chat.turns.length ? (
+        <LastAnswer
+          turns={chat.turns}
+          chatId={chat.chatId}
+          onNew={chat.startNew}
+          onProposal={chat.updateProposal}
         />
-      ) : chat.turns.length ? (
-        <LastAnswer turns={chat.turns} chatId={chat.chatId} onNew={chat.startNew} />
       ) : null}
     </RailShell>
   );
 }
 
-/**
- * Запись вместо вопроса. Само окно ничего не сохраняет: у страницы цели, привычки или темы
- * есть предпросмотр, выбор предмета и отмена, и второй такой же набор здесь разъехался бы.
- */
-function RecordOffer({
-  found,
-  onSave,
-  onAsk,
-  onDismiss,
-}: {
-  found: Understood;
-  onSave: () => void;
-  onAsk: () => void;
-  onDismiss: () => void;
-}) {
-  const rows =
-    found.kind === "topics"
-      ? found.topics.map((topic) => ({ name: topic.title, note: topic.subject }))
-      : found.kind === "habit"
-        ? [{ name: found.name, note: "каждый день" }]
-        : found.kind === "goal"
-          ? [{ name: found.title, note: found.scope === "study" ? "учёба" : "общая" }]
-          : [];
-  const say =
-    found.kind === "topics"
-      ? "Запишу в повторение, первое завтра:"
-      : found.kind === "habit"
-        ? "Это привычка:"
-        : "Это цель:";
-  const target = recordTarget(found.kind, "");
-  return (
-    <div>
-      <p className="q-say">{say}</p>
-      <ul className="q-diff">
-        {rows.map((row) => (
-          <li key={row.name}>
-            <span className="nm">{row.name}</span>
-            <span className="chg">{row.note}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="q-acts">
-        <button className="btn btn-main" type="button" onClick={onSave}>
-          {target?.label ?? "Записать"}
-        </button>
-        <button className="btn btn-text" type="button" onClick={onAsk}>
-          Это вопрос
-        </button>
-        <button className="btn btn-text" type="button" onClick={onDismiss}>
-          Не надо
-        </button>
-      </div>
-    </div>
-  );
+/** Что сказать в плашке, если окно закрыто. Пусто: сказать нечего, ученик сам остановил ответ. */
+function readyText(answer: Turn | undefined): string {
+  if (!answer || answer.error === STOPPED_ERROR) return "";
+  if (answer.error) return askErrorText(answer.error);
+  const waiting = (answer.proposals ?? []).filter((item) => !item.state);
+  if (waiting.length) return `Предлагаю: ${waiting.map(proposalSummary).join("; ")}. Открой, чтобы применить.`;
+  return answerPreview(answer.content);
 }
 
 /** Один последний ответ: окно для быстрого дела, а весь разговор в чате. */
@@ -355,10 +317,12 @@ function LastAnswer({
   turns,
   chatId,
   onNew,
+  onProposal,
 }: {
   turns: Turn[];
   chatId: string | null;
   onNew: () => void;
+  onProposal: ProposalChange;
 }) {
   const { showUsage } = useChatPrefs();
   const answer = turns[turns.length - 1];
@@ -370,7 +334,7 @@ function LastAnswer({
     <>
       {question?.role === "user" ? <p className="q-q">{question.content}</p> : null}
       {working && !answer.content ? (
-        <p className="q-status shine">{stageLabel(answer.stage ?? "", answer.found)}</p>
+        <p className="q-status shine">{turnStage(answer)}</p>
       ) : null}
       {answer.error ? <p className="q-status">{askErrorText(answer.error)}</p> : null}
       {answer.content ? (
@@ -378,6 +342,7 @@ function LastAnswer({
           <MarkdownMessage content={answer.content} variant="rail" />
         </div>
       ) : null}
+      <AssistantProposals proposals={answer.proposals} onChange={onProposal} />
       {showUsage && answer.usage ? <p className="q-cite">{usageLine(answer.usage)}</p> : null}
       {spots.length ? (
         <p className="q-cite">

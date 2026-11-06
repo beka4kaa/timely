@@ -14,6 +14,11 @@ export function stageLabel(stage: string, found?: number): string {
   return "Думаю";
 }
 
+/** Подпись текущего этапа ответа. Пока тьютор смотрит дела ученика, её присылает сервер. */
+export function turnStage(turn: { stage?: string; found?: number; toolLabel?: string }): string {
+  return turn.toolLabel || stageLabel(turn.stage ?? "", turn.found);
+}
+
 export function fragmentWord(count: number): string {
   const tens = count % 100;
   const ones = count % 10;
@@ -39,6 +44,7 @@ export const STOPPED_ERROR = "Остановлено.";
 const EMPTY_ERROR = "Пустой ответ.";
 const NOT_FOUND_ERROR = "Предмет не найден.";
 const NETWORK = /failed to fetch|load failed|networkerror|network error/i;
+const LIMIT = /лимит/i;
 
 /**
  * Понятная фраза вместо технической ошибки.
@@ -50,6 +56,7 @@ export function askErrorText(raw: string): string {
   if (raw === STOPPED_ERROR) return "Остановлено";
   if (raw === EMPTY_ERROR) return "Тьютор ничего не ответил. Попробуй спросить ещё раз.";
   if (raw === NOT_FOUND_ERROR) return "Этой книги больше нет. Выбери другую и спроси ещё раз.";
+  if (LIMIT.test(raw)) return "Лимит запросов закончился. Он обновится через несколько часов.";
   if (NETWORK.test(raw)) return "Нет связи с сервером. Проверь интернет и попробуй ещё раз.";
   return "Тьютор сейчас не отвечает. Попробуй ещё раз через минуту.";
 }

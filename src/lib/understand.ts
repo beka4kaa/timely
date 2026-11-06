@@ -96,7 +96,7 @@ const STUDIED =
   /(^|\s)(изучил[аи]?|изучали|прош[её]л|прошла|прошли|разобрал[аи]?|разбирали|выучил[аи]?|учил[аи]?|повторил[аи]?)(\s|$)/;
 const HABIT = /кажд(ый|ое|ую|ые)|ежедневно|привычк|по утрам|по вечерам|раза? в неделю/;
 const GOAL = /(^|\s)(хочу|цель|сдать|поступить|выиграть|победить|достичь|добиться)(\s|$)/;
-const COMMAND = /перен[её]с|сдвин|подвин|короч|таймер|помодоро|задал|контест|рейтинг|дальше/;
+const COMMAND = /перен[её]с|сдвин|подвин|короч|таймер|помодоро|задал|контест|рейтинг|дальше|отмет|сними|удали|убери|поменяй|измени/;
 /** Похоже на вопрос, даже если в нём есть «хочу» или «цель»: такое идёт к тьютору. */
 const QUESTION =
   /\?\s*$|^(как|что|почему|зачем|когда|где|кто|сколько|объясни|помоги|расскажи|покажи|реши|проверь)\s|хочу\s+(понять|узнать|спросить|разобраться)/;
@@ -206,42 +206,4 @@ export async function understand(text: string, expect?: UnderstoodKind): Promise
     window.clearTimeout(timer);
   }
   return understandLocally(text, expect);
-}
-
-/** Событие для страницы, которая уже открыта: запись принимает её собственная строка ввода. */
-export const RECORD_EVENT = "timely:record";
-
-const RECORD_VIEW: Record<Exclude<UnderstoodKind, "question">, { path: string; param: string; label: string }> = {
-  goal: { path: "/dashboard/goals", param: "new", label: "Записать как цель" },
-  habit: { path: "/dashboard/habits", param: "new", label: "Записать как привычку" },
-  topics: { path: "/dashboard/weaknesses", param: "learned", label: "Записать в повторение" },
-};
-
-/** Куда нести запись. Сохраняет страница: там предпросмотр, подтверждение и отмена. */
-export function recordTarget(kind: UnderstoodKind, text: string) {
-  if (kind === "question") return null;
-  const view = RECORD_VIEW[kind];
-  return {
-    path: view.path,
-    href: `${view.path}?${view.param}=${encodeURIComponent(text)}`,
-    label: view.label,
-  };
-}
-
-/**
- * Текст, с которым пришли на страницу. Параметр убирается сразу: перезагрузка
- * не должна разбирать ту же запись второй раз.
- */
-export function takeRecordParam(param: string): string | null {
-  const params = new URLSearchParams(window.location.search);
-  const text = params.get(param)?.trim();
-  if (!text) return null;
-  params.delete(param);
-  const rest = params.toString();
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`,
-  );
-  return text.slice(0, 600);
 }

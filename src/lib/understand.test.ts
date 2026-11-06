@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseDeadline, recordTarget, understandLocally } from "./understand.ts";
+import { parseDeadline, understandLocally } from "./understand.ts";
 
 test("вопрос остаётся вопросом, даже если в нём есть «хочу» или «цель»", () => {
   assert.equal(understandLocally("Что такое цель?").kind, "question");
   assert.equal(understandLocally("как сдать физику").kind, "question");
   assert.equal(understandLocally("Хочу понять производную").kind, "question");
   assert.equal(understandLocally("Перенеси физику на завтра").kind, "question");
+  // Просьба об уже записанном идёт к помощнику, а не становится новой записью.
+  assert.equal(understandLocally("Отметь зарядку за сегодня", "habit").kind, "question");
 });
 
 test("запись находит своё место по смыслу", () => {
@@ -47,11 +49,4 @@ test("срок из текста: прошедший месяц значит с�
   assert.equal(parseDeadline("к декабрю", now), "2026-12-01");
   assert.equal(parseDeadline("до 20 мая", now), "2027-05-20");
   assert.equal(parseDeadline("когда-нибудь", now), null);
-});
-
-test("запись несут на её страницу, вопрос никуда не несут", () => {
-  assert.equal(recordTarget("question", "что это"), null);
-  assert.equal(recordTarget("goal", "сдать физику")?.href, "/dashboard/goals?new=%D1%81%D0%B4%D0%B0%D1%82%D1%8C%20%D1%84%D0%B8%D0%B7%D0%B8%D0%BA%D1%83");
-  assert.equal(recordTarget("habit", "x")?.path, "/dashboard/habits");
-  assert.equal(recordTarget("topics", "x")?.href, "/dashboard/weaknesses?learned=x");
 });

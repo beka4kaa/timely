@@ -26,6 +26,11 @@ const USAGE: AskUsage = {
   cost_estimated: false,
 };
 
+test("у ответа с инструментами окно занято последним кругом, а не суммой", () => {
+  assert.equal(contextUsed({ ...USAGE, input_tokens: 9000, context_tokens: 4100 }), 4100);
+  assert.equal(contextUsed(USAGE), 3214 + 412 - 96);
+});
+
 test("числа читаются глазами", () => {
   assert.equal(countLabel(412), "412");
   assert.equal(countLabel(3214), "3 214");

@@ -8,6 +8,7 @@
 // тянуть `@/`-зависимости — ts-node в `node --test` их не разрешает, и тест
 // молча не запускается. Типовые импорты стираются компилятором и потому можно.
 
+import type { AssistantProposal } from "@/components/chat/assistant-proposal";
 import type { ScheduleRevision } from "@/lib/studyplan-api";
 
 /** Событие потока. Своё объявление, а не импорт из `sse.ts`: тот модуль
@@ -61,6 +62,8 @@ export interface AssistantState {
   revision: ScheduleRevision | null;
   commitments: ParsedCommitment[] | null;
   studyWindows: ProposedStudyWindows | null;
+  /** Что он предлагает в делах вне расписания: привычки, цели, темы, задания. */
+  proposals: AssistantProposal[];
   error: string | null;
   /**
    * Машинный код отказа, если бэкенд его назвал.
@@ -79,6 +82,7 @@ export const initialAssistantState: AssistantState = {
   revision: null,
   commitments: null,
   studyWindows: null,
+  proposals: [],
   error: null,
   errorCode: null,
 };
@@ -95,6 +99,18 @@ const STAGE_LABELS: Record<string, string> = {
   propose_recovery_plan: "Собираю план догона",
   propose_fixed_commitments: "Записываю занятость",
   propose_study_windows: "Подбираю время занятий",
+  open_my_affairs: "Смотрю твои дела",
+  get_diary: "Смотрю дневник",
+  list_habits: "Смотрю привычки",
+  list_goals: "Смотрю цели",
+  list_review_topics: "Смотрю темы",
+  get_focus_stats: "Смотрю помодоро",
+  propose_new_habit: "Готовлю предложение",
+  propose_mark_habit: "Готовлю предложение",
+  propose_new_goal: "Готовлю предложение",
+  propose_goal_progress: "Готовлю предложение",
+  propose_new_topics: "Готовлю предложение",
+  propose_mark_homework: "Готовлю предложение",
 };
 
 export function stageLabel(tool: string): string {
@@ -169,6 +185,12 @@ export function applyAssistantEvent(
         },
       };
     }
+    case "proposal":
+      return {
+        ...state,
+        status: "thinking",
+        proposals: [...state.proposals, event.data as unknown as AssistantProposal],
+      };
     case "content": {
       const text = typeof event.data.text === "string" ? event.data.text : "";
       return { ...state, status: "thinking", answer: text };

@@ -31,7 +31,8 @@ export const mascot = {
     pendingThink = null;
     engine?.thinkEnd(ready);
   },
-  remind: (title: string, text: string, go: () => void) => engine?.remind(title, text, go),
+  remind: (title: string, text: string, go: () => void, options?: { long?: boolean; stay?: boolean }) =>
+    engine?.remind(title, text, go, options),
   remindOff: () => engine?.remindOff(),
   hideCard: () => engine?.hideCard(),
   mood: (name: MascotExpression) => engine?.mood(name),
