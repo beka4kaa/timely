@@ -53,16 +53,7 @@ logger = logging.getLogger(__name__)
 # «отменить весь семестр» одним промахом мыши.
 MAX_BULK_BLOCKS = 200
 
-# Что отменить уже нельзя. Выполненное и идущее — это история и текущая работа,
-# а отменённое отменять второй раз незачем.
-_UNCANCELLABLE = frozenset(
-    {
-        LearningBlock.Status.COMPLETED,
-        LearningBlock.Status.PARTIALLY_COMPLETED,
-        LearningBlock.Status.IN_PROGRESS,
-        LearningBlock.Status.CANCELLED,
-    }
-)
+_UNCANCELLABLE = LearningBlock.UNCANCELLABLE_STATUSES
 
 
 def _no_user() -> Response:

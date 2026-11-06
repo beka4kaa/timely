@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applyAll, dismissAll, undoAll } from "./assistant-batch.ts";
+import { applyAll, dismissAll, isStaleError, undoAll } from "./assistant-batch.ts";
 import type { AssistantProposal, ProposalUndo } from "./assistant-proposal.ts";
 
 const habit = (id: string, state?: AssistantProposal["state"]) =>
@@ -153,4 +153,16 @@ test("устаревшее при «Не надо» не мешает убрат
     ["a", { state: "stale" }],
     ["b", { state: "dismissed" }],
   ]);
+});
+
+test("карточка устарела, если записи больше нет или на неё уже ответили", () => {
+  assert.equal(isStaleError(new Error("habits: 404")), true);
+  assert.equal(isStaleError(new Error("goals: 404")), true);
+  assert.equal(isStaleError(new Error("Запрос не прошёл (404)")), true);
+  assert.equal(isStaleError(Object.assign(new Error("Не найдено"), { status: 404 })), true);
+  assert.equal(isStaleError(Object.assign(new Error("Устарело"), { isStale: true })), true);
+  assert.equal(isStaleError(Object.assign(new Error("Закрыто"), { isClosed: true })), true);
+  assert.equal(isStaleError(new Error("habits: 500")), false);
+  assert.equal(isStaleError(new Error("Нет связи")), false);
+  assert.equal(isStaleError(null), false);
 });

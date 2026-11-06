@@ -46,6 +46,7 @@ DEFAULT_WINDOW_DAYS = 14
 # Потолок, чтобы один вызов не вытащил в контекст модели три месяца календаря.
 MAX_WINDOW_DAYS = 60
 MAX_BLOCKS_IN_ANSWER = 120
+MAX_COMMITMENTS_IN_ANSWER = 30
 # Программ у ученика единицы, но список идёт в контекст модели на каждый вызов.
 MAX_COURSES_IN_ANSWER = 20
 
@@ -150,12 +151,26 @@ def _block_payload(block: LearningBlock, zone) -> dict[str, Any]:
 # ─────────────────────────── Чтение расписания ───────────────────────────────
 
 
+def _commitments_payload(context: ScheduleToolContext) -> list[dict[str, Any]]:
+    """Занятое время ученика: его видно и без расписания, и убрать его можно по `id`."""
+    rows = []
+    for item in FixedCommitment.objects.filter(user_email=context.user_email)[:MAX_COMMITMENTS_IN_ANSWER]:
+        if item.is_recurring:
+            when = f"{_WEEKDAY_NAMES[item.weekday]}, {item.start_time:%H:%M}, {item.duration_minutes} мин"
+        elif item.start_at:
+            when = item.start_at.astimezone(context.zone).strftime("%Y-%m-%d %H:%M")
+        else:
+            when = ""
+        rows.append({"id": str(item.id), "title": item.title, "when": when})
+    return rows
+
+
 def _handle_get_schedule(
     args: dict[str, Any], context: ScheduleToolContext
 ) -> dict[str, Any]:
     problem = _require_schedule(context)
     if problem:
-        return problem
+        return {**problem, "commitments": _commitments_payload(context)}
 
     schedule = context.schedule
     start, end = _window(args, context)
@@ -182,6 +197,7 @@ def _handle_get_schedule(
         "today": context.current_date().isoformat(),
         "daily_minutes": load,
         "blocks": [_block_payload(block, zone) for block in blocks],
+        "commitments": _commitments_payload(context),
         # Ритм — рамка, в которой вообще может стоять занятие: занятия ставятся
         # ТОЛЬКО внутрь этих окон (`availability.free_windows`). Без него модель
         # не отличала «в 9:00 занято» от «в 9:00 ученик не готов заниматься» и

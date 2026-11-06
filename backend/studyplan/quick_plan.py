@@ -219,9 +219,17 @@ def _find_goal(request: QuickPlanRequest) -> LearningGoal | None:
         return goal
     # В Python, а не в запросе: SQLite не знает регистра кириллицы.
     wanted = _clean_name(request.subject).casefold()
-    for goal in goals.order_by("-updated_at"):
-        names = {_clean_name(goal.normalized_subject).casefold(), _clean_name(goal.original_text).casefold()}
-        if wanted in names:
+    rows = list(goals.order_by("-updated_at"))
+    names = [
+        (goal, {_clean_name(goal.normalized_subject).casefold(), _clean_name(goal.original_text).casefold()})
+        for goal in rows
+    ]
+    for goal, known in names:
+        if wanted in known:
+            return goal
+    # «русский» это тот же «Русский язык»: так же предметы ищет и клиент (`findSubject`).
+    for goal, known in names:
+        if any(name.startswith(f"{wanted} ") or wanted.startswith(f"{name} ") for name in known if name):
             return goal
     return None
 

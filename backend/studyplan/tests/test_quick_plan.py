@@ -181,6 +181,15 @@ class NewSubjectTests(QuickPlanFixture):
         self.assertFalse(result.created_goal)
         self.assertEqual(LearningGoal.objects.filter(user_email=OWNER).count(), 1)
 
+    def test_a_shorter_name_finds_the_same_subject(self):
+        apply_quick_plan(just_a_subject())
+
+        result = apply_quick_plan(request(subject="русский"))
+
+        self.assertFalse(result.created_goal)
+        self.assertEqual(result.subject, "Русский язык")
+        self.assertEqual(LearningGoal.objects.filter(user_email=OWNER).count(), 1)
+
     def test_a_block_without_a_book_has_a_topic_for_the_calendar(self):
         result = apply_quick_plan(request())
 

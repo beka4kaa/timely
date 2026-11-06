@@ -10,15 +10,18 @@ import { localDay, nextHabitColor } from "@/components/habits/habit-days";
 import { schedulePatch, scheduleOf } from "@/components/habits/habit-schedule";
 import { createHabit, deleteHabit, listHabits, markHabit, updateHabit } from "@/components/habits/lib";
 import { invalidatePlan } from "@/components/now/now-resources";
+import { confirmGoal, deleteGoal } from "@/lib/curriculum-api";
 import { dataChanged } from "@/lib/data-changed";
 import { closedByRejecting } from "@/lib/now-feed";
 import {
   applyQuickPlan,
   applyStudyWindows,
+  cancelBlocks,
   confirmRevision,
   createCommitment,
   deleteCommitment,
   listTemplates,
+  pinBlocks,
   rejectRevision,
   StudyplanApiError,
   undoQuickPlan,
@@ -31,20 +34,40 @@ import {
   deleteSubject,
   deleteTopic,
   fetchSubjects,
+  patchTopic,
+  renameSubject,
+  reviewTopic,
   subjectsChanged,
   topicsChanged,
 } from "@/lib/weak-topics-api";
 
-import type { AssistantProposal, ProposalUndo } from "./assistant-proposal";
-
-/** Предложение опоздало: расписание уже поменялось или на него уже ответили. */
-export function isStaleProposalError(error: unknown): boolean {
-  return error instanceof StudyplanApiError && (error.isStale || error.isClosed);
-}
+import type { AssistantProposal, BlockAction, ProposalUndo } from "./assistant-proposal";
 
 /** Сервер объяснил отказ словами: показываем их, а не общую фразу. */
 export function proposalFailureText(error: unknown, fallback: string): string {
   return error instanceof StudyplanApiError && error.status === 400 && error.code ? error.message : fallback;
+}
+
+const OPPOSITE: Record<BlockAction, BlockAction> = { cancel: "restore", restore: "cancel", pin: "unpin", unpin: "pin" };
+
+async function changeBlocks(ids: string[], action: BlockAction): Promise<string[]> {
+  const { changed } =
+    action === "pin" || action === "unpin"
+      ? await pinBlocks(ids, action === "pin")
+      : await cancelBlocks(ids, { restore: action === "restore" });
+  return changed;
+}
+
+/** Предмет живёт в двух местах: книги и календарь, дневник и темы. */
+async function renameEverywhere(goalIds: string[], subjectIds: string[], name: string): Promise<void> {
+  await Promise.all([
+    ...goalIds.map((id) => confirmGoal(id, { normalized_subject: name })),
+    ...subjectIds.map((id) => renameSubject(id, name)),
+  ]);
+  subjectsChanged();
+  topicsChanged();
+  dataChanged("subjects");
+  invalidatePlan();
 }
 
 /** Записывает. Возвращает то, что нужно для «Вернуть как было». */
@@ -178,6 +201,45 @@ export async function applyProposal(proposal: AssistantProposal): Promise<Propos
       dataChanged("subjects");
       return { quickPlan: applied.undo };
     }
+    case "block_changes": {
+      const changed = await changeBlocks(proposal.block_ids, proposal.action);
+      if (!changed.length) throw new StudyplanApiError("Занятия уже поменялись.", 409, "stale_revision");
+      invalidatePlan();
+      return { blockIds: changed };
+    }
+    case "commitment_removal":
+      await Promise.all(proposal.items.map((item) => deleteCommitment(item.id)));
+      invalidatePlan();
+      return {};
+    case "goal_change":
+      await updateGoal(proposal.goal_id, proposal.fields);
+      dataChanged("goals");
+      return {};
+    case "habit_change":
+      if (proposal.delete) await deleteHabit(proposal.habit_id);
+      else await updateHabit(proposal.habit_id, proposal.fields, today);
+      dataChanged("habits");
+      return {};
+    case "topic_change":
+      if (proposal.delete) await deleteTopic(proposal.topic_id);
+      else if (proposal.reviewed) await reviewTopic(proposal.topic_id, "GOOD");
+      else await patchTopic(proposal.topic_id, proposal.fields as Partial<WeakTopic>);
+      topicsChanged();
+      return {};
+    case "subject_change":
+      if (!proposal.delete) {
+        await renameEverywhere(proposal.goal_ids, proposal.subject_ids, proposal.new_name ?? proposal.name);
+        return {};
+      }
+      await Promise.all([
+        ...proposal.goal_ids.map((id) => deleteGoal(id)),
+        ...proposal.subject_ids.map((id) => deleteSubject(id)),
+      ]);
+      subjectsChanged();
+      topicsChanged();
+      dataChanged("subjects");
+      invalidatePlan();
+      return {};
   }
 }
 
@@ -242,6 +304,48 @@ export async function undoProposal(proposal: AssistantProposal): Promise<void> {
       await undoQuickPlan(undo.quickPlan ?? {});
       invalidatePlan();
       dataChanged("subjects");
+      return;
+    case "block_changes":
+      await changeBlocks(undo.blockIds ?? proposal.block_ids, OPPOSITE[proposal.action]);
+      invalidatePlan();
+      return;
+    case "commitment_removal":
+      for (const item of proposal.items) {
+        await createCommitment(
+          {
+            title: item.title,
+            kind: item.kind,
+            weekday: item.weekday ?? undefined,
+            start_time: item.start_time ?? undefined,
+            duration_minutes: item.duration_minutes,
+            valid_from: item.valid_from ?? null,
+            valid_until: item.valid_until ?? null,
+            start_at: item.start_at ?? undefined,
+            end_at: item.end_at ?? undefined,
+          },
+          "chat",
+        );
+      }
+      invalidatePlan();
+      return;
+    case "goal_change":
+      await updateGoal(proposal.goal_id, proposal.before);
+      // Главная цель одна: сервер снял её с прежней, и отмена должна вернуть.
+      if (proposal.fields.isMain && proposal.previous_main_id) {
+        await updateGoal(proposal.previous_main_id, { isMain: true });
+      }
+      dataChanged("goals");
+      return;
+    case "habit_change":
+      await updateHabit(proposal.habit_id, proposal.before, today);
+      dataChanged("habits");
+      return;
+    case "topic_change":
+      await patchTopic(proposal.topic_id, proposal.before as Partial<WeakTopic>);
+      topicsChanged();
+      return;
+    case "subject_change":
+      await renameEverywhere(proposal.goal_ids, proposal.subject_ids, proposal.name);
       return;
   }
 }

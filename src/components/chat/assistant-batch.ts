@@ -11,6 +11,22 @@ export interface BatchFailure {
   error: unknown;
 }
 
+/**
+ * Предложение опоздало: записи больше нет или на него уже ответили. Часть API сообщает статус
+ * полем, часть только в тексте ошибки, поэтому смотрим на оба.
+ */
+export function isStaleError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { isStale, isClosed, status, message } = error as {
+    isStale?: boolean;
+    isClosed?: boolean;
+    status?: unknown;
+    message?: unknown;
+  };
+  if (isStale || isClosed) return true;
+  return typeof status === "number" ? status === 404 : /\b404\b/.test(String(message ?? ""));
+}
+
 /** Пишет то, что ещё ждёт. Устаревшее пропускает, на первом сбое останавливается. */
 export async function applyAll(
   proposals: AssistantProposal[],

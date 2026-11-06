@@ -369,6 +369,17 @@ class LearningBlock(TimestampedModel):
         RESCHEDULED = "rescheduled", "Перенесён"
         CANCELLED = "cancelled", "Отменён"
 
+    # Что отменить уже нельзя. Выполненное и идущее — это след учёбы, а отменённое
+    # отменять второй раз незачем.
+    UNCANCELLABLE_STATUSES = frozenset(
+        {
+            Status.COMPLETED,
+            Status.PARTIALLY_COMPLETED,
+            Status.IN_PROGRESS,
+            Status.CANCELLED,
+        }
+    )
+
     class DetailLevel(models.TextChoices):
         # Дата, тема, тип и длительность известны — задания ещё нет.
         OUTLINE = "outline", "Контур"

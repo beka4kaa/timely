@@ -28,14 +28,14 @@ from typing import Any, Callable
 from django.core.exceptions import ValidationError
 from django.utils import timezone as django_timezone
 
-from curriculum.models import LearningGoal
-from diary.models import DiaryWeek
+from curriculum.models import Document, LearningGoal, SubjectChat
+from diary.models import DiaryWeek, TemplateLesson
 from habits.models import Habit
 from habits.serializers import clean_schedule, habit_payload
 from mind.models import Subject, Topic
 from planner.models import Goal
 from pomodoro.models import FocusSession
-from studyplan.models import ScheduleRevision, StudySchedule
+from studyplan.models import FixedCommitment, LearningBlock, ScheduleRevision, StudySchedule
 from studyplan.quick_plan import QuickPlanRejected, QuickPlanRequest, preview_quick_plan
 from studyplan.scheduling.slots import local_to_utc, resolve_zone
 from studyplan.serializers import ScheduleRevisionSerializer
@@ -56,6 +56,8 @@ MAX_TOPICS_IN_PROPOSAL = 8
 MAX_HABITS_FOR_GOAL = 3
 # Одна карточка на всё, но и её надо успеть прочитать.
 MAX_PROPOSALS = 10
+MAX_BLOCKS_IN_PROPOSAL = 30
+_BLOCK_ACTIONS = ("cancel", "restore", "pin", "unpin")
 # Сводка уходит в системное сообщение на каждом круге.
 SUMMARY_MAX_CHARS = 1500
 SUMMARY_DAYS_AHEAD = 3
@@ -254,6 +256,7 @@ def _list_review_topics(args: dict, ctx: AssistantContext) -> dict[str, Any]:
         if args.get("only_due") and not due:
             continue
         topics.append({
+            "id": str(topic.pk),
             "name": topic.name,
             "subject": topic.subject.name,
             "known": topic.status,
@@ -487,6 +490,106 @@ def _propose_goal_progress(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     )
 
 
+def _propose_goal_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    goal = (
+        Goal.objects.filter(pk=str(args.get("goal_id") or ""), user_email=ctx.user_email)
+        .exclude(status="archived")
+        .first()
+    )
+    if goal is None:
+        return _fail("not_found", "Такой цели нет.")
+
+    fields: dict[str, Any] = {}
+    before: dict[str, Any] = {}
+    if "title" in args:
+        title = _clean(args.get("title"), 200)
+        if not title:
+            return _fail("invalid_arguments", "Нужна формулировка цели.")
+        if title != goal.title:
+            fields["title"], before["title"] = title, goal.title
+    if "deadline" in args:
+        deadline = None
+        if args.get("deadline"):
+            deadline = _parse_day(args["deadline"])
+            if deadline is None:
+                return _fail("invalid_arguments", "Срок нужен датой вида 2026-12-01.")
+            if deadline < ctx.today:
+                return _fail("invalid_arguments", "Этот срок уже прошёл.")
+        if deadline != goal.due_date:
+            fields["dueDate"] = deadline.isoformat() if deadline else None
+            before["dueDate"] = goal.due_date.isoformat() if goal.due_date else None
+    if "main" in args:
+        if not isinstance(args["main"], bool):
+            return _fail("invalid_arguments", "main это да или нет.")
+        if args["main"] != goal.is_main:
+            fields["isMain"], before["isMain"] = args["main"], goal.is_main
+    if "status" in args:
+        if args["status"] not in ("done", "archived"):
+            return _fail("invalid_arguments", "Цель можно закрыть (done) или убрать в архив (archived).")
+        if args["status"] != goal.status:
+            fields["status"], before["status"] = args["status"], goal.status
+    if not fields:
+        return _fail("invalid_arguments", "Менять нечего.")
+
+    previous_main = None
+    if fields.get("isMain"):
+        previous_main = Goal.objects.filter(user_email=ctx.user_email, is_main=True).exclude(pk=goal.pk).first()
+    return ctx.propose(
+        "goal_change",
+        goal_id=str(goal.pk),
+        title=goal.title,
+        fields=fields,
+        before=before,
+        previous_main_id=str(previous_main.pk) if previous_main else None,
+    )
+
+
+def _propose_habit_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    habit = Habit.objects.filter(pk=_int(args.get("habit_id")), user_email=ctx.user_email).first()
+    if habit is None:
+        return _fail("not_found", "Такой привычки нет.")
+    if args.get("delete") is True:
+        return ctx.propose(
+            "habit_change", habit_id=habit.pk, name=habit.name, fields={}, before={}, goal_title=None, delete=True
+        )
+
+    fields: dict[str, Any] = {}
+    before: dict[str, Any] = {}
+    if "name" in args:
+        name = _clean(args.get("name"), 120)
+        if not name:
+            return _fail("invalid_arguments", "Нужно название привычки.")
+        if name != habit.name:
+            # Сравнение здесь, а не в запросе: SQLite не знает регистра кириллицы, а привычек единицы.
+            others = Habit.objects.filter(user_email=ctx.user_email).exclude(pk=habit.pk).values_list("name", flat=True)
+            if name.casefold() in {row.casefold() for row in others}:
+                return _fail("exists", "Такая привычка уже есть.")
+            fields["name"], before["name"] = name, habit.name
+    goal_title = None
+    if "goal_id" in args:
+        goal = None
+        if args.get("goal_id"):
+            goal = Goal.objects.filter(pk=str(args["goal_id"]), user_email=ctx.user_email).first()
+            if goal is None:
+                return _fail("not_found", "Такой цели нет.")
+        goal_id = str(goal.pk) if goal else None
+        previous = str(habit.goal_id) if habit.goal_id else None
+        if goal_id != previous:
+            fields["goal"], before["goal"] = goal_id, previous
+            goal_title = goal.title if goal else None
+    if not fields:
+        return _fail("invalid_arguments", "Менять нечего.")
+    return ctx.propose(
+        "habit_change",
+        habit_id=habit.pk,
+        name=habit.name,
+        fields=fields,
+        before=before,
+        goal_title=goal_title,
+        delete=False,
+    )
+
+
 def _propose_new_topics(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     raw = args.get("topics") if isinstance(args.get("topics"), list) else []
     known = {
@@ -643,6 +746,78 @@ def _propose_study_plan(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     return answer
 
 
+def _rows_by_ids(model: Any, raw: list, email: str) -> list | None:
+    """Строки этого ученика по идентификаторам от модели. `None`, если хоть одной у него нет."""
+    wanted = {str(value) for value in raw}
+    try:
+        rows = list(model.objects.filter(user_email=email, pk__in=wanted))
+    except (ValidationError, ValueError):
+        return None
+    return rows if len(rows) == len(wanted) else None
+
+
+def _would_change(block: LearningBlock, action: str) -> bool:
+    """Те же условия, что у API: на карточке только то, что и правда изменится."""
+    if action == "pin":
+        return not block.fixed
+    if action == "unpin":
+        return block.fixed
+    if block.fixed:
+        return False
+    if action == "restore":
+        return block.status == LearningBlock.Status.CANCELLED
+    return block.status not in LearningBlock.UNCANCELLABLE_STATUSES
+
+
+def _propose_block_changes(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    action = args.get("action")
+    raw = args.get("block_ids")
+    if action not in _BLOCK_ACTIONS or not isinstance(raw, list) or not raw or len(raw) > MAX_BLOCKS_IN_PROPOSAL:
+        return _fail("invalid_arguments", "Нужны занятия из get_schedule и действие.")
+    blocks = _rows_by_ids(LearningBlock, raw, ctx.user_email)
+    if blocks is None:
+        return _fail("not_found", "Такого занятия нет.")
+    changing = sorted((block for block in blocks if _would_change(block, action)), key=lambda block: block.start_at)
+    if not changing:
+        return _fail("nothing_to_change", "Менять нечего: занятия уже такие, закреплены или пройдены.")
+    answer = ctx.propose(
+        "block_changes",
+        action=action,
+        block_ids=[str(block.pk) for block in changing],
+        titles=[_clean(block.title, 120) for block in changing],
+    )
+    if answer.get("ok") and len(changing) < len(blocks):
+        answer["skipped"] = len(blocks) - len(changing)
+    return answer
+
+
+def _commitment_snapshot(row: FixedCommitment) -> dict[str, Any]:
+    """Всё, что нужно, чтобы вернуть запись как было: удаление стирает её совсем."""
+    return {
+        "id": str(row.pk),
+        "title": row.title,
+        "kind": row.kind,
+        "weekday": row.weekday,
+        "weekday_name": _WEEKDAYS[row.weekday] if row.weekday is not None else None,
+        "start_time": row.start_time.strftime("%H:%M") if row.start_time else None,
+        "duration_minutes": row.duration_minutes,
+        "valid_from": row.valid_from.isoformat() if row.valid_from else None,
+        "valid_until": row.valid_until.isoformat() if row.valid_until else None,
+        "start_at": row.start_at.isoformat() if row.start_at else None,
+        "end_at": row.end_at.isoformat() if row.end_at else None,
+    }
+
+
+def _propose_commitment_removal(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    raw = args.get("commitment_ids")
+    if not isinstance(raw, list) or not raw or len(raw) > MAX_BLOCKS_IN_PROPOSAL:
+        return _fail("invalid_arguments", "Нужно занятое время из get_schedule.")
+    rows = _rows_by_ids(FixedCommitment, raw, ctx.user_email)
+    if rows is None:
+        return _fail("not_found", "Такой записи нет.")
+    return ctx.propose("commitment_removal", items=[_commitment_snapshot(row) for row in rows])
+
+
 # После первого изменения у расписания другая версия, и второе молча устарело бы.
 _WAIT_FOR_DECISION = "По этому расписанию уже есть предложение. Сначала ученик решит по нему, остальное предложи потом."
 
@@ -665,6 +840,106 @@ def _proposal_from_schedule(name: str, result: dict, ctx: AssistantContext, sche
             current=result.get("current") or [],
             template_id=str(schedule.template_id),
         )
+
+
+def _propose_topic_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    topic = (
+        Topic.objects.filter(pk=str(args.get("topic_id") or ""), subject__user_email=ctx.user_email, archived=False)
+        .select_related("subject")
+        .first()
+    )
+    if topic is None:
+        return _fail("not_found", "Такой темы нет.")
+
+    def proposal(*, fields=None, before=None, new_subject=None, reviewed=False, delete=False) -> dict[str, Any]:
+        return ctx.propose(
+            "topic_change",
+            topic_id=str(topic.pk),
+            name=topic.name,
+            subject=topic.subject.name,
+            fields=fields or {},
+            before=before or {},
+            new_subject=new_subject,
+            reviewed=reviewed,
+            delete=delete,
+        )
+
+    if args.get("delete") is True:
+        return proposal(delete=True)
+    if args.get("reviewed") is True:
+        return proposal(
+            reviewed=True,
+            before={
+                "status": topic.status,
+                "lastRevisedAt": topic.last_revised_at.isoformat() if topic.last_revised_at else None,
+                "nextReviewAt": topic.next_review_at.isoformat() if topic.next_review_at else None,
+                "intervalDays": topic.interval_days,
+                "easeFactor": topic.ease_factor,
+            },
+        )
+
+    fields: dict[str, Any] = {}
+    before: dict[str, Any] = {}
+    new_subject = None
+    if "name" in args:
+        name = _clean(args.get("name"), 200)
+        if not name:
+            return _fail("invalid_arguments", "Нужно название темы.")
+        if name != topic.name:
+            fields["name"], before["name"] = name, topic.name
+    if "subject" in args:
+        wanted = _clean(args.get("subject"), 160).casefold()
+        subject = next(
+            (row for row in Subject.objects.filter(user_email=ctx.user_email) if row.name.casefold() == wanted), None
+        )
+        if subject is None:
+            return _fail("not_found", "Такого предмета среди тем нет.")
+        if subject.pk != topic.subject_id:
+            fields["subjectId"], before["subjectId"] = str(subject.pk), str(topic.subject_id)
+            new_subject = subject.name
+    if not fields:
+        return _fail("invalid_arguments", "Менять нечего.")
+    return proposal(fields=fields, before=before, new_subject=new_subject)
+
+
+def _propose_subject_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    """Для ученика предмет одно слово, а в коде их два: ищем в обоих и называем всё, что изменится."""
+    name = _clean(args.get("name"), 160)
+    delete = args.get("delete") is True
+    new_name = _clean(args.get("new_name"), 160)
+    if not name or not (delete or new_name) or (not delete and new_name.casefold() == name.casefold()):
+        return _fail("invalid_arguments", "Нужно название предмета и что с ним сделать.")
+
+    wanted = name.casefold()
+    goals = [
+        goal
+        for goal in LearningGoal.objects.filter(user_email=ctx.user_email).exclude(status=LearningGoal.Status.ARCHIVED)
+        if wanted in {_clean(goal.normalized_subject, 160).casefold(), _clean(goal.original_text, 160).casefold()}
+    ]
+    subjects = [row for row in Subject.objects.filter(user_email=ctx.user_email) if row.name.casefold() == wanted]
+    if not goals and not subjects:
+        return _fail("not_found", "Такого предмета нет.")
+
+    subject_ids = [str(row.pk) for row in subjects]
+    if delete and TemplateLesson.objects.filter(
+        template__user_email=ctx.user_email, template__is_active=True, subject_id__in=subject_ids
+    ).exists():
+        return _fail("in_timetable", "Этот предмет есть в школьном расписании. Сначала поменяй расписание.")
+
+    return ctx.propose(
+        "subject_change",
+        goal_ids=[str(goal.pk) for goal in goals],
+        subject_ids=subject_ids,
+        name=(goals[0].normalized_subject or goals[0].original_text) if goals else subjects[0].name,
+        new_name=new_name or None,
+        delete=delete,
+        blocks=LearningBlock.objects.filter(user_email=ctx.user_email, course_plan__goal__in=goals)
+        .exclude(schedule__status=StudySchedule.Status.ARCHIVED)
+        .count(),
+        topics=Topic.objects.filter(subject__in=subjects, archived=False).count(),
+        books=Document.objects.filter(goal__in=goals).count(),
+        chats=SubjectChat.objects.filter(goal__in=goals).count(),
+    )
 
 
 # ─────────────────────────────── Каталог ──────────────────────────────
@@ -877,6 +1152,96 @@ OWN_TOOLS = {
             },
             _propose_study_plan,
         ),
+        AssistantTool(
+            "propose_block_changes",
+            "Готовлю изменение занятий",
+            "Предложить отменить, вернуть, закрепить или открепить занятия из get_schedule.",
+            {
+                "type": "object",
+                "properties": {
+                    "block_ids": {"type": "array", "items": {"type": "string"}},
+                    "action": {"type": "string", "enum": list(_BLOCK_ACTIONS)},
+                },
+                "required": ["block_ids", "action"],
+            },
+            _propose_block_changes,
+        ),
+        AssistantTool(
+            "propose_commitment_removal",
+            "Готовлю изменение занятости",
+            "Предложить убрать занятое время из get_schedule.",
+            {
+                "type": "object",
+                "properties": {"commitment_ids": {"type": "array", "items": {"type": "string"}}},
+                "required": ["commitment_ids"],
+            },
+            _propose_commitment_removal,
+        ),
+        AssistantTool(
+            "propose_goal_change",
+            "Готовлю изменение цели",
+            "Предложить поменять цель из list_goals: название, срок, главная, закрыть или убрать в архив.",
+            {
+                "type": "object",
+                "properties": {
+                    "goal_id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "deadline": {"type": "string", "description": "ISO-дата. Пустая строка убирает срок."},
+                    "main": {"type": "boolean"},
+                    "status": {"type": "string", "enum": ["done", "archived"]},
+                },
+                "required": ["goal_id"],
+            },
+            _propose_goal_change,
+        ),
+        AssistantTool(
+            "propose_habit_change",
+            "Готовлю изменение привычки",
+            "Предложить поменять привычку из list_habits: название, цель или удалить. Как часто: propose_habit_schedule.",
+            {
+                "type": "object",
+                "properties": {
+                    "habit_id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "goal_id": {"type": "string", "description": "Цель из list_goals. Пустая строка отвязывает."},
+                    "delete": {"type": "boolean", "description": "Отметки удалятся, вернуть нельзя."},
+                },
+                "required": ["habit_id"],
+            },
+            _propose_habit_change,
+        ),
+        AssistantTool(
+            "propose_topic_change",
+            "Готовлю изменение темы",
+            "Предложить поменять тему из list_review_topics: название, предмет, отметить повторённой или удалить.",
+            {
+                "type": "object",
+                "properties": {
+                    "topic_id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "subject": {"type": "string", "description": "Предмет из тем, куда перенести."},
+                    "reviewed": {"type": "boolean", "description": "Ученик её повторил."},
+                    "delete": {"type": "boolean"},
+                },
+                "required": ["topic_id"],
+            },
+            _propose_topic_change,
+        ),
+        AssistantTool(
+            "propose_subject_change",
+            "Готовлю изменение предмета",
+            "Предложить переименовать или удалить предмет. Карточка сама назовёт, что удалится.",
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Как предмет называется сейчас."},
+                    "new_name": {"type": "string"},
+                    "delete": {"type": "boolean"},
+                },
+                "required": ["name"],
+            },
+            _propose_subject_change,
+        ),
     )
 }
 
@@ -920,13 +1285,13 @@ _OPEN_ALL_SCHEMA = {
 # О чём речь. Лишнее совпадение стоит немного токенов, поэтому основы широкие.
 _AREA_WORDS = {
     "habits": re.compile(r"привычк|отмет|зарядк|стрик|подряд|как часто|через день|раз в |по будням"),
-    "goals": re.compile(r"цел[ьиея]|прогресс"),
-    "topics": re.compile(r"повтор|тем[уыа]\b|тем\b|изучил|выучил|прош[её]л|прошла|прошли"),
+    "goals": re.compile(r"цел[ьиея]|прогресс|дедлайн"),
+    "topics": re.compile(r"повтор|тем[уыае]\b|тем\b|изучил|выучил|прош[её]л|прошла|прошли"),
     "diary": re.compile(r"дневник|домашк|домашн|задани|задал|оценк|урок|контрольн|\bсор\b|\bсоч\b"),
     "focus": re.compile(r"помодоро|таймер|занимал|фокус"),
     "schedule": re.compile(
         r"распис|календар|занят|план|перен[её]с|сдвин|подвин|разгруз|освобо|свобод|\bокн|ритм|"
-        r"репетитор|секци|пропустил|наверст|курс|программ|предмет|"
+        r"репетитор|секци|пропустил|наверст|курс|программ|предмет|отмен|закреп|откреп|"
         r"через день|раз в |по будням|по выходным|по (понедельник|вторник|сред|четверг|пятниц|суббот|воскресен)"
     ),
 }
@@ -941,12 +1306,19 @@ _ACTION_WORDS = re.compile(
 )
 
 _AREA_TOOLS = {
-    "habits": ("list_habits", "propose_new_habit", "propose_habit_schedule", "propose_mark_habit"),
-    "goals": ("list_goals", "propose_new_goal", "propose_goal_progress"),
-    "topics": ("list_review_topics", "propose_new_topics"),
+    "habits": ("list_habits", "propose_new_habit", "propose_habit_schedule", "propose_mark_habit", "propose_habit_change"),
+    "goals": ("list_goals", "propose_new_goal", "propose_goal_progress", "propose_goal_change"),
+    "topics": ("list_review_topics", "propose_new_topics", "propose_topic_change"),
     "diary": ("get_diary", "propose_mark_homework"),
     "focus": ("get_focus_stats",),
-    "schedule": (*SCHEDULE_READ_TOOLS, *SCHEDULE_PROPOSAL_TOOLS, "propose_study_plan"),
+    "schedule": (
+        *SCHEDULE_READ_TOOLS,
+        *SCHEDULE_PROPOSAL_TOOLS,
+        "propose_study_plan",
+        "propose_block_changes",
+        "propose_commitment_removal",
+        "propose_subject_change",
+    ),
 }
 _ALL_TOOLS = tuple(name for names in _AREA_TOOLS.values() for name in names)
 # На этих страницах и так понятно, о чём речь: «добавь чтение» на привычках это привычка.

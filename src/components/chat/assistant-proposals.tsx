@@ -11,7 +11,7 @@ import { useState } from "react";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { CommitmentsCard, RevisionCard, StudyWindowsCard } from "@/components/studyplan/revision-cards";
 
-import { applyAll, dismissAll, undoAll } from "./assistant-batch";
+import { applyAll, dismissAll, isStaleError, undoAll } from "./assistant-batch";
 import {
   batchRows,
   canUndoProposal,
@@ -24,7 +24,6 @@ import {
 import {
   applyProposal,
   dismissProposal,
-  isStaleProposalError,
   proposalFailureText,
   undoProposal,
 } from "./assistant-proposal-actions";
@@ -51,7 +50,7 @@ export function AssistantProposals({
 }
 
 const nothing = () => undefined;
-const STALE_TEXT = "Это предложение устарело: расписание уже поменялось.";
+const STALE_TEXT = "Это предложение устарело: с тех пор всё поменялось.";
 
 function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; onChange: ProposalChange }) {
   const [busy, setBusy] = useState(false);
@@ -75,21 +74,21 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
 
   const accept = () =>
     run(async () => {
-      const failure = await applyAll(proposals, applyProposal, onChange, isStaleProposalError);
+      const failure = await applyAll(proposals, applyProposal, onChange, isStaleError);
       if (failure) setApplyFailed(proposalFailureText(failure.error, proposalSummary(failure.proposal)));
       else if (waiting.length) mascot.hop(0.7);
     });
   const dismiss = () =>
     run(async () => {
-      const failure = await dismissAll(proposals, dismissProposal, onChange, isStaleProposalError);
+      const failure = await dismissAll(proposals, dismissProposal, onChange, isStaleError);
       if (failure) setFailed(proposalFailureText(failure.error, "Отменить не получилось. Попробуй ещё раз."));
     });
   const revert = () =>
     run(async () => {
       const failure =
-        (await undoAll(proposals, undoProposal, onChange, isStaleProposalError)) ??
+        (await undoAll(proposals, undoProposal, onChange, isStaleError)) ??
         // Что ещё ждало решения, после отмены уже не нужно.
-        (await dismissAll(proposals, dismissProposal, onChange, isStaleProposalError));
+        (await dismissAll(proposals, dismissProposal, onChange, isStaleError));
       if (failure) setFailed(proposalFailureText(failure.error, "Вернуть не получилось. Попробуй ещё раз."));
     });
 
@@ -120,7 +119,7 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
       ))}
       {staleOnes.map((item) => (
         <p className="q-status" key={item.id}>
-          Устарело: {proposalSummary(item)}. Расписание уже поменялось.
+          Устарело: {proposalSummary(item)}. С тех пор всё поменялось.
         </p>
       ))}
       {waiting.length && applyFailed ? (
@@ -209,7 +208,7 @@ function ProposalCard({ proposal, onChange }: { proposal: AssistantProposal; onC
     try {
       await action();
     } catch (error) {
-      if (isStaleProposalError(error)) onChange(proposal.id, { state: "stale" });
+      if (isStaleError(error)) onChange(proposal.id, { state: "stale" });
       else setFailed(proposalFailureText(error, failure));
     } finally {
       setBusy(false);

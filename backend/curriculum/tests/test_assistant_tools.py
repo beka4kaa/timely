@@ -23,8 +23,8 @@ from curriculum.assistant_tools import (
     choose_tools,
     tool_label,
 )
-from curriculum.models import LearningGoal
-from diary.models import DiaryWeek
+from curriculum.models import Document, LearningGoal, SubjectChat
+from diary.models import DiaryWeek, TemplateLesson, WeeklyTemplate
 from habits.models import Habit, HabitLog
 from mind.models import Subject, Topic
 from planner.models import Goal
@@ -841,3 +841,403 @@ class AccountSummaryTests(TestCase):
         chars = sum(len(json.dumps(schema, ensure_ascii=False)) for schema in self.tools.schemas())
 
         self.assertLessEqual(chars, 20000)
+
+
+class CalendarChangesTests(TestCase):
+    """Отменить, вернуть, закрепить занятие и убрать занятое время: только предложение и только своё."""
+
+    def setUp(self):
+        today = timezone.localdate()
+        self.monday = today + dt.timedelta(days=7 - today.weekday())
+        applied = apply_quick_plan(
+            QuickPlanRequest(
+                user_email=OWNER,
+                subject="Механика",
+                timezone="Asia/Almaty",
+                weekdays=(0, 1),
+                start_time=dt.time(16, 0),
+                from_date=self.monday,
+                to_date=self.monday + dt.timedelta(days=1),
+            )
+        )
+        self.blocks = list(LearningBlock.objects.filter(schedule_id=applied.schedule_id).order_by("start_at"))
+        self.tools = _tools()
+
+    def test_block_changes_only_propose(self):
+        answer = self.tools.run("propose_block_changes", {"block_ids": [str(self.blocks[0].pk)], "action": "cancel"})
+
+        self.assertTrue(answer["ok"])
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "block_changes")
+        self.assertEqual(proposal["action"], "cancel")
+        self.assertEqual(proposal["titles"], ["Механика, занятие 1"])
+        self.blocks[0].refresh_from_db()
+        self.assertEqual(self.blocks[0].status, LearningBlock.Status.SCHEDULED)
+
+    def test_block_changes_check_the_owner(self):
+        answer = _tools(INTRUDER).run("propose_block_changes", {"block_ids": [str(self.blocks[0].pk)], "action": "pin"})
+
+        self.assertEqual(answer["error"], "not_found")
+
+    def test_block_changes_refuse_rubbish(self):
+        for args in (
+            {"block_ids": [], "action": "cancel"},
+            {"block_ids": [str(self.blocks[0].pk)], "action": "взорвать"},
+            {"block_ids": "всё", "action": "cancel"},
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(self.tools.run("propose_block_changes", args)["error"], "invalid_arguments")
+        self.assertEqual(self.tools.run("propose_block_changes", {"block_ids": ["не номер"], "action": "cancel"})["error"], "not_found")
+
+    def test_only_what_really_changes_goes_on_the_card(self):
+        LearningBlock.objects.filter(pk=self.blocks[1].pk).update(status=LearningBlock.Status.COMPLETED)
+
+        answer = self.tools.run(
+            "propose_block_changes", {"block_ids": [str(row.pk) for row in self.blocks], "action": "cancel"}
+        )
+
+        self.assertEqual(self.tools.proposals[0]["block_ids"], [str(self.blocks[0].pk)])
+        self.assertEqual(answer["skipped"], 1)
+
+    def test_nothing_to_change_is_said_plainly(self):
+        LearningBlock.objects.filter(pk=self.blocks[0].pk).update(fixed=True)
+
+        answer = self.tools.run("propose_block_changes", {"block_ids": [str(self.blocks[0].pk)], "action": "cancel"})
+        self.assertEqual(answer["error"], "nothing_to_change")
+
+        answer = self.tools.run("propose_block_changes", {"block_ids": [str(self.blocks[0].pk)], "action": "pin"})
+        self.assertEqual(answer["error"], "nothing_to_change")
+        self.assertEqual(self.tools.proposals, [])
+
+    def test_commitment_removal_keeps_a_snapshot(self):
+        row = FixedCommitment.objects.create(
+            user_email=OWNER, title="Репетитор", kind="tutor", weekday=2, start_time=dt.time(18, 0), duration_minutes=60
+        )
+
+        answer = self.tools.run("propose_commitment_removal", {"commitment_ids": [str(row.pk)]})
+
+        self.assertTrue(answer["ok"])
+        item = self.tools.proposals[0]["items"][0]
+        self.assertEqual(
+            (item["id"], item["title"], item["kind"], item["weekday"], item["start_time"], item["duration_minutes"]),
+            (str(row.pk), "Репетитор", "tutor", 2, "18:00", 60),
+        )
+        self.assertTrue(FixedCommitment.objects.filter(pk=row.pk).exists())
+
+    def test_one_off_commitment_keeps_its_dates(self):
+        start = timezone.now() + dt.timedelta(days=3)
+        row = FixedCommitment.objects.create(
+            user_email=OWNER, title="Экзамен", kind="exam", start_at=start, end_at=start + dt.timedelta(hours=2)
+        )
+
+        self.tools.run("propose_commitment_removal", {"commitment_ids": [str(row.pk)]})
+
+        item = self.tools.proposals[0]["items"][0]
+        self.assertEqual(item["start_at"], start.isoformat())
+        self.assertIsNone(item["weekday"])
+
+    def test_a_removed_commitment_comes_back_from_its_snapshot(self):
+        # Так отмену собирает клиент: пустые поля расписания не шлёт, пустой срок шлёт как null.
+        start = timezone.now() + dt.timedelta(days=3)
+        rows = (
+            FixedCommitment(user_email=OWNER, title="Репетитор", kind="tutor", weekday=2, start_time=dt.time(18, 0), duration_minutes=60),
+            FixedCommitment(user_email=OWNER, title="Экзамен", kind="exam", start_at=start, end_at=start + dt.timedelta(hours=2)),
+        )
+        for row in rows:
+            with self.subTest(title=row.title):
+                row.save()
+                self.tools.run("propose_commitment_removal", {"commitment_ids": [str(row.pk)]})
+                item = self.tools.proposals[-1]["items"][0]
+                row.delete()
+                body = {
+                    "title": item["title"],
+                    "kind": item["kind"],
+                    "duration_minutes": item["duration_minutes"],
+                    "valid_from": item["valid_from"],
+                    "valid_until": item["valid_until"],
+                    "source": "chat",
+                    "source_text": "",
+                }
+                for key in ("weekday", "start_time", "start_at", "end_at"):
+                    if item[key] is not None:
+                        body[key] = item[key]
+
+                response = self.client.post(
+                    "/api/study-commitments/", data=json.dumps(body), content_type="application/json", **auth_headers(OWNER)
+                )
+
+                self.assertEqual(response.status_code, 201, response.content)
+                self.assertEqual(FixedCommitment.objects.filter(user_email=OWNER, title=row.title).count(), 1)
+
+    def test_commitment_removal_checks_the_owner(self):
+        row = FixedCommitment.objects.create(
+            user_email=INTRUDER, title="Чужое", weekday=2, start_time=dt.time(18, 0), duration_minutes=60
+        )
+
+        self.assertEqual(self.tools.run("propose_commitment_removal", {"commitment_ids": [str(row.pk)]})["error"], "not_found")
+        self.assertEqual(self.tools.run("propose_commitment_removal", {"commitment_ids": []})["error"], "invalid_arguments")
+
+    def test_schedule_lists_commitments(self):
+        FixedCommitment.objects.create(
+            user_email=OWNER, title="Репетитор", weekday=2, start_time=dt.time(18, 0), duration_minutes=60
+        )
+
+        rows = self.tools.run("get_schedule", {})["commitments"]
+
+        self.assertEqual(rows[0]["title"], "Репетитор")
+        self.assertIn("18:00", rows[0]["when"])
+        self.assertTrue(rows[0]["id"])
+
+    def test_commitments_are_listed_without_a_schedule_too(self):
+        FixedCommitment.objects.create(
+            user_email=INTRUDER, title="Репетитор", weekday=2, start_time=dt.time(18, 0), duration_minutes=60
+        )
+
+        rows = _tools(INTRUDER).run("get_schedule", {})["commitments"]
+
+        self.assertEqual(rows[0]["title"], "Репетитор")
+
+    def test_words_open_the_tools(self):
+        self.assertIn("propose_block_changes", choose_tools("отмени занятие завтра"))
+        self.assertIn("propose_block_changes", choose_tools("закрепи физику"))
+        self.assertIn("propose_commitment_removal", choose_tools("убери репетитора"))
+
+
+class GoalAndHabitChangesTests(TestCase):
+    def setUp(self):
+        self.tools = _tools()
+        self.today = self.tools.context.today
+        self.goal = Goal.objects.create(
+            user_email=OWNER, title="Сдать физику", type="goal", scope="study", due_date=self.today + dt.timedelta(days=30)
+        )
+        self.habit = Habit.objects.create(user_email=OWNER, name="Зарядка")
+
+    def test_goal_change_keeps_the_old_values(self):
+        deadline = (self.today + dt.timedelta(days=60)).isoformat()
+
+        answer = self.tools.run(
+            "propose_goal_change", {"goal_id": str(self.goal.pk), "title": "Сдать физику на 9", "deadline": deadline}
+        )
+
+        self.assertTrue(answer["ok"])
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "goal_change")
+        self.assertEqual(proposal["title"], "Сдать физику")
+        self.assertEqual(proposal["fields"], {"title": "Сдать физику на 9", "dueDate": deadline})
+        self.assertEqual(proposal["before"]["title"], "Сдать физику")
+        self.assertEqual(proposal["before"]["dueDate"], (self.today + dt.timedelta(days=30)).isoformat())
+        self.goal.refresh_from_db()
+        self.assertEqual(self.goal.title, "Сдать физику")
+
+    def test_goal_can_lose_its_deadline(self):
+        self.tools.run("propose_goal_change", {"goal_id": str(self.goal.pk), "deadline": None})
+
+        self.assertEqual(self.tools.proposals[0]["fields"], {"dueDate": None})
+
+    def test_goal_can_be_closed_or_archived(self):
+        self.tools.run("propose_goal_change", {"goal_id": str(self.goal.pk), "status": "done"})
+        self.tools.run("propose_goal_change", {"goal_id": str(self.goal.pk), "status": "archived"})
+
+        self.assertEqual([row["fields"]["status"] for row in self.tools.proposals], ["done", "archived"])
+        self.assertEqual(self.tools.proposals[0]["before"]["status"], self.goal.status)
+
+    def test_a_new_main_goal_remembers_the_old_one(self):
+        other = Goal.objects.create(user_email=OWNER, title="Другая", type="goal", scope="study", is_main=True)
+
+        self.tools.run("propose_goal_change", {"goal_id": str(self.goal.pk), "main": True})
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["fields"], {"isMain": True})
+        self.assertEqual(proposal["previous_main_id"], str(other.pk))
+
+    def test_goal_changes_are_checked(self):
+        goal_id = str(self.goal.pk)
+        for args in (
+            {"goal_id": goal_id},
+            {"goal_id": goal_id, "title": "   "},
+            {"goal_id": goal_id, "title": "Сдать физику"},
+            {"goal_id": goal_id, "deadline": "завтра"},
+            {"goal_id": goal_id, "deadline": "2000-01-01"},
+            {"goal_id": goal_id, "status": "взорвать"},
+            {"goal_id": goal_id, "main": "да"},
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(self.tools.run("propose_goal_change", args)["error"], "invalid_arguments")
+        self.assertEqual(self.tools.proposals, [])
+
+    def test_changes_check_the_owner(self):
+        other_goal = Goal.objects.create(user_email=INTRUDER, title="Чужая", type="goal")
+        other_habit = Habit.objects.create(user_email=INTRUDER, name="Чужая")
+
+        self.assertEqual(self.tools.run("propose_goal_change", {"goal_id": str(other_goal.pk), "title": "Моя"})["error"], "not_found")
+        self.assertEqual(self.tools.run("propose_habit_change", {"habit_id": other_habit.pk, "name": "Моя"})["error"], "not_found")
+        self.assertEqual(
+            self.tools.run("propose_habit_change", {"habit_id": self.habit.pk, "goal_id": str(other_goal.pk)})["error"],
+            "not_found",
+        )
+
+    def test_habit_change_names_the_new_goal(self):
+        self.tools.run("propose_habit_change", {"habit_id": self.habit.pk, "goal_id": str(self.goal.pk)})
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "habit_change")
+        self.assertEqual(proposal["fields"], {"goal": str(self.goal.pk)})
+        self.assertEqual(proposal["goal_title"], "Сдать физику")
+        self.assertEqual(proposal["before"], {"goal": None})
+        self.habit.refresh_from_db()
+        self.assertIsNone(self.habit.goal_id)
+
+    def test_habit_can_be_renamed_or_deleted(self):
+        self.tools.run("propose_habit_change", {"habit_id": self.habit.pk, "name": "Растяжка"})
+        self.tools.run("propose_habit_change", {"habit_id": self.habit.pk, "delete": True})
+
+        rename, delete = self.tools.proposals
+        self.assertEqual((rename["fields"], rename["before"], rename["delete"]), ({"name": "Растяжка"}, {"name": "Зарядка"}, False))
+        self.assertIs(delete["delete"], True)
+        self.assertTrue(Habit.objects.filter(pk=self.habit.pk).exists())
+
+    def test_habit_changes_are_checked(self):
+        for args in ({"habit_id": self.habit.pk}, {"habit_id": self.habit.pk, "name": "Зарядка"}, {"habit_id": self.habit.pk, "name": "  "}):
+            with self.subTest(args=args):
+                self.assertEqual(self.tools.run("propose_habit_change", args)["error"], "invalid_arguments")
+
+    def test_a_taken_name_is_refused(self):
+        Habit.objects.create(user_email=OWNER, name="Растяжка")
+
+        self.assertEqual(self.tools.run("propose_habit_change", {"habit_id": self.habit.pk, "name": "растяжка"})["error"], "exists")
+
+    def test_words_open_the_tools(self):
+        self.assertIn("propose_goal_change", choose_tools("перенеси срок цели"))
+        self.assertIn("propose_habit_change", choose_tools("удали привычку зарядка"))
+
+
+class TopicAndSubjectChangesTests(TestCase):
+    def setUp(self):
+        self.tools = _tools()
+        self.subject = Subject.objects.create(user_email=OWNER, name="Биология")
+        self.topic = Topic.objects.create(subject=self.subject, name="Клетка", next_review_at=timezone.now())
+
+    def test_topics_have_ids(self):
+        rows = self.tools.run("list_review_topics", {})["topics"]
+
+        self.assertEqual(rows[0]["id"], str(self.topic.pk))
+
+    def test_topic_can_be_renamed(self):
+        self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "name": "Строение клетки"})
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "topic_change")
+        self.assertEqual((proposal["name"], proposal["subject"]), ("Клетка", "Биология"))
+        self.assertEqual(proposal["fields"], {"name": "Строение клетки"})
+        self.assertEqual(proposal["before"], {"name": "Клетка"})
+        self.topic.refresh_from_db()
+        self.assertEqual(self.topic.name, "Клетка")
+
+    def test_topic_can_move_to_another_subject(self):
+        other = Subject.objects.create(user_email=OWNER, name="Химия")
+
+        self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "subject": "химия"})
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["fields"], {"subjectId": str(other.pk)})
+        self.assertEqual(proposal["before"], {"subjectId": str(self.subject.pk)})
+        self.assertEqual(proposal["new_subject"], "Химия")
+
+    def test_review_keeps_the_old_schedule(self):
+        self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "reviewed": True})
+
+        proposal = self.tools.proposals[0]
+        self.assertIs(proposal["reviewed"], True)
+        self.assertEqual(
+            sorted(proposal["before"]), ["easeFactor", "intervalDays", "lastRevisedAt", "nextReviewAt", "status"]
+        )
+
+    def test_topic_can_be_deleted(self):
+        self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "delete": True})
+
+        self.assertIs(self.tools.proposals[0]["delete"], True)
+        self.assertTrue(Topic.objects.filter(pk=self.topic.pk).exists())
+
+    def test_topic_changes_are_checked(self):
+        other = Subject.objects.create(user_email=INTRUDER, name="Чужой")
+        foreign = Topic.objects.create(subject=other, name="Чужая тема")
+        topic_id = str(self.topic.pk)
+
+        self.assertEqual(self.tools.run("propose_topic_change", {"topic_id": str(foreign.pk), "name": "Моя"})["error"], "not_found")
+        self.assertEqual(self.tools.run("propose_topic_change", {"topic_id": topic_id})["error"], "invalid_arguments")
+        self.assertEqual(self.tools.run("propose_topic_change", {"topic_id": topic_id, "name": "Клетка"})["error"], "invalid_arguments")
+        self.assertEqual(self.tools.run("propose_topic_change", {"topic_id": topic_id, "subject": "Чужой"})["error"], "not_found")
+
+    def test_subject_found_in_both_places(self):
+        goal = LearningGoal.objects.create(user_email=OWNER, original_text="Биология", normalized_subject="Биология")
+        Document.objects.create(user_email=OWNER, goal=goal, title="Учебник")
+        SubjectChat.objects.create(user_email=OWNER, goal=goal, title="Разговор")
+        today = self.tools.context.today
+        monday = today + dt.timedelta(days=7 - today.weekday())
+        apply_quick_plan(
+            QuickPlanRequest(
+                user_email=OWNER,
+                subject="Биология",
+                timezone="Asia/Almaty",
+                weekdays=(0, 1),
+                start_time=dt.time(16, 0),
+                from_date=monday,
+                to_date=monday + dt.timedelta(days=1),
+            )
+        )
+
+        answer = self.tools.run("propose_subject_change", {"name": "биология", "delete": True})
+
+        self.assertTrue(answer["ok"])
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "subject_change")
+        self.assertEqual(proposal["goal_ids"], [str(goal.pk)])
+        self.assertEqual(proposal["subject_ids"], [str(self.subject.pk)])
+        self.assertEqual((proposal["name"], proposal["delete"]), ("Биология", True))
+        self.assertEqual((proposal["blocks"], proposal["topics"], proposal["books"], proposal["chats"]), (2, 1, 1, 1))
+
+    def test_subject_found_in_one_place(self):
+        self.tools.run("propose_subject_change", {"name": "Биология", "new_name": "Биология 10"})
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual((proposal["goal_ids"], proposal["subject_ids"]), ([], [str(self.subject.pk)]))
+        self.assertEqual(proposal["new_name"], "Биология 10")
+
+    def test_unknown_subject_is_not_found(self):
+        self.assertEqual(self.tools.run("propose_subject_change", {"name": "Астрология", "delete": True})["error"], "not_found")
+
+    def test_someone_elses_subject_is_not_found(self):
+        Subject.objects.create(user_email=INTRUDER, name="Астрология")
+
+        self.assertEqual(self.tools.run("propose_subject_change", {"name": "Астрология", "delete": True})["error"], "not_found")
+
+    def test_subject_changes_are_checked(self):
+        for args in ({"name": "Биология"}, {"name": "", "delete": True}, {"name": "Биология", "new_name": "биология"}):
+            with self.subTest(args=args):
+                self.assertEqual(self.tools.run("propose_subject_change", args)["error"], "invalid_arguments")
+
+    def test_a_subject_in_the_school_timetable_is_not_deleted_from_under_it(self):
+        template = WeeklyTemplate.objects.create(id="t1", user_email=OWNER, name="Школа", is_active=True)
+        TemplateLesson.objects.create(
+            template=template,
+            day_of_week="monday",
+            lesson_number=1,
+            start_time="08:00",
+            end_time="08:45",
+            subject_id=str(self.subject.pk),
+        )
+
+        answer = self.tools.run("propose_subject_change", {"name": "Биология", "delete": True})
+
+        self.assertEqual(answer["error"], "in_timetable")
+
+    def test_nothing_is_written(self):
+        self.tools.run("propose_subject_change", {"name": "Биология", "delete": True})
+
+        self.assertTrue(Subject.objects.filter(pk=self.subject.pk).exists())
+        self.assertTrue(Topic.objects.filter(pk=self.topic.pk).exists())
+
+    def test_words_open_the_tools(self):
+        self.assertIn("propose_subject_change", choose_tools("удали предмет биология"))
+        self.assertIn("propose_topic_change", choose_tools("переименуй тему"))
+        self.assertIn("propose_topic_change", choose_tools("я повторил клетку"))

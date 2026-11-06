@@ -62,6 +62,10 @@ export function createSubject(name: string): Promise<WeakSubject> {
   return send("/api/subjects", "POST", { name });
 }
 
+export function renameSubject(id: string, name: string): Promise<WeakSubject> {
+  return send(`/api/subjects/${encodeURIComponent(id)}`, "PATCH", { name });
+}
+
 export function deleteSubject(id: string): Promise<void> {
   return send(`/api/subjects/${encodeURIComponent(id)}`, "DELETE");
 }

@@ -22,6 +22,29 @@ export interface ProposalUndo {
   commitmentIds?: string[];
   /** Что вернуть сервер решил сам: клиент хранит это, не разбирая. */
   quickPlan?: Record<string, unknown>;
+  blockIds?: string[];
+}
+
+export type BlockAction = "cancel" | "restore" | "pin" | "unpin";
+export type RemovedCommitment = ParsedCommitment & { id: string };
+export interface GoalChangeFields {
+  title?: string;
+  dueDate?: string | null;
+  isMain?: boolean;
+  status?: string;
+}
+export interface HabitChangeFields {
+  name?: string;
+  goal?: string | null;
+}
+export interface TopicChangeFields {
+  name?: string;
+  subjectId?: string;
+  status?: string;
+  lastRevisedAt?: string | null;
+  nextReviewAt?: string | null;
+  intervalDays?: number | null;
+  easeFactor?: number;
 }
 
 export interface LessonSlotRef {
@@ -84,6 +107,48 @@ export type AssistantProposal = ProposalBase &
         left_topics: number;
         approves_plan: boolean;
       }
+    | { kind: "block_changes"; action: BlockAction; block_ids: string[]; titles: string[] }
+    | { kind: "commitment_removal"; items: RemovedCommitment[] }
+    | {
+        kind: "goal_change";
+        goal_id: string;
+        title: string;
+        fields: GoalChangeFields;
+        before: GoalChangeFields;
+        previous_main_id: string | null;
+      }
+    | {
+        kind: "habit_change";
+        habit_id: number;
+        name: string;
+        fields: HabitChangeFields;
+        before: HabitChangeFields;
+        goal_title: string | null;
+        delete: boolean;
+      }
+    | {
+        kind: "topic_change";
+        topic_id: string;
+        name: string;
+        subject: string;
+        fields: TopicChangeFields;
+        before: TopicChangeFields;
+        new_subject: string | null;
+        reviewed: boolean;
+        delete: boolean;
+      }
+    | {
+        kind: "subject_change";
+        goal_ids: string[];
+        subject_ids: string[];
+        name: string;
+        new_name: string | null;
+        delete: boolean;
+        blocks: number;
+        topics: number;
+        books: number;
+        chats: number;
+      }
   );
 
 export interface ProposalRow {
@@ -136,6 +201,55 @@ function studyPlanRows(proposal: StudyPlanProposal): ProposalRow[] {
   return rows;
 }
 
+const BLOCK_ACTIONS: Record<BlockAction, { heading: string; done: string; summary: string }> = {
+  cancel: { heading: "Отменю занятия:", done: "Занятия отменены.", summary: "отменить занятия" },
+  restore: { heading: "Верну занятия:", done: "Занятия возвращены.", summary: "вернуть занятия" },
+  pin: { heading: "Закреплю занятия:", done: "Занятия закреплены.", summary: "закрепить занятия" },
+  unpin: { heading: "Сниму закрепление:", done: "Закрепление снято.", summary: "открепить занятия" },
+};
+
+function goalChangeNote({ fields, before }: Extract<AssistantProposal, { kind: "goal_change" }>): string {
+  const parts: string[] = [];
+  if (fields.title) parts.push(`название «${fields.title}»`);
+  if (fields.dueDate === null) parts.push("срок убрать");
+  else if (fields.dueDate) parts.push(before.dueDate ? `срок ${dayLabel(before.dueDate)} → ${dayLabel(fields.dueDate)}` : `срок ${dayLabel(fields.dueDate)}`);
+  if (fields.isMain !== undefined) parts.push(fields.isMain ? "сделаю главной" : "больше не главная");
+  if (fields.status === "done") parts.push("закрою");
+  if (fields.status === "archived") parts.push("уберу в архив, вернуть можно");
+  return parts.join(", ");
+}
+
+function habitChangeNote(proposal: Extract<AssistantProposal, { kind: "habit_change" }>): string {
+  if (proposal.delete) return "отметки удалятся, вернуть нельзя";
+  const parts: string[] = [];
+  if (proposal.fields.name) parts.push(`название «${proposal.fields.name}»`);
+  if (proposal.fields.goal !== undefined) parts.push(proposal.fields.goal ? `к цели «${proposal.goal_title}»` : "без цели");
+  return parts.join(", ");
+}
+
+function topicChangeNote(proposal: Extract<AssistantProposal, { kind: "topic_change" }>): string {
+  if (proposal.delete) return "вернуть нельзя";
+  if (proposal.reviewed) return "отмечу, что повторил";
+  const parts: string[] = [];
+  if (proposal.fields.name) parts.push(`название «${proposal.fields.name}»`);
+  if (proposal.new_subject) parts.push(`в предмет «${proposal.new_subject}»`);
+  return parts.join(", ");
+}
+
+/** Удаление уносит всё, что к предмету привязано: об этом надо сказать до нажатия. */
+function subjectChangeNote(proposal: Extract<AssistantProposal, { kind: "subject_change" }>): string {
+  if (!proposal.delete) return `название «${proposal.new_name}»`;
+  const parts = [
+    proposal.blocks ? `${proposal.blocks} ${plural(proposal.blocks, "занятие", "занятия", "занятий")}` : "",
+    proposal.topics ? `${proposal.topics} ${plural(proposal.topics, "тему", "темы", "тем")} на повторение` : "",
+    proposal.books ? `${proposal.books} ${plural(proposal.books, "книгу", "книги", "книг")}` : "",
+    proposal.chats ? `${proposal.chats} ${plural(proposal.chats, "разговор", "разговора", "разговоров")}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "вернуть нельзя";
+  const last = parts.pop();
+  return `удалю ${parts.length ? `${parts.join(", ")} и ${last}` : last}, вернуть нельзя`;
+}
+
 /** Строка над списком изменений. */
 export function proposalHeading(proposal: AssistantProposal): string {
   switch (proposal.kind) {
@@ -155,6 +269,18 @@ export function proposalHeading(proposal: AssistantProposal): string {
       return proposal.done ? "Отмечу задание сделанным:" : "Сниму отметку с задания:";
     case "study_plan":
       return proposal.path === "extra_sessions" ? "Добавлю занятия:" : "Настрою предмет:";
+    case "block_changes":
+      return BLOCK_ACTIONS[proposal.action].heading;
+    case "commitment_removal":
+      return "Уберу занятое время:";
+    case "goal_change":
+      return "Поменяю цель:";
+    case "habit_change":
+      return proposal.delete ? "Удалю привычку:" : "Поменяю привычку:";
+    case "topic_change":
+      return proposal.delete ? "Удалю тему:" : "Поменяю тему:";
+    case "subject_change":
+      return proposal.delete ? "Удалю предмет:" : "Поменяю предмет:";
     default:
       return "";
   }
@@ -185,6 +311,21 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
       return [{ name: proposal.subject, note: proposal.homework }];
     case "study_plan":
       return studyPlanRows(proposal);
+    case "block_changes":
+      return proposal.titles.map((title) => ({ name: title, note: "" }));
+    case "commitment_removal":
+      return proposal.items.map((item) => ({
+        name: item.title,
+        note: item.weekday_name ? `${item.weekday_name}, ${item.start_time}` : "разово",
+      }));
+    case "goal_change":
+      return [{ name: proposal.title, note: goalChangeNote(proposal) }];
+    case "habit_change":
+      return [{ name: proposal.name, note: habitChangeNote(proposal) }];
+    case "topic_change":
+      return [{ name: proposal.name, note: topicChangeNote(proposal) }];
+    case "subject_change":
+      return [{ name: proposal.name, note: subjectChangeNote(proposal) }];
     default:
       return [];
   }
@@ -201,6 +342,14 @@ export function batchRows(proposal: AssistantProposal): ProposalRow[] {
       );
     case "new_topics":
       return proposal.topics.map((topic) => ({ name: topic.title, note: `в повторение, ${topic.subject}` }));
+    case "goal_change":
+      return [{ name: `Цель «${proposal.title}»`, note: goalChangeNote(proposal) }];
+    case "habit_change":
+      return [{ name: `Привычка «${proposal.name}»`, note: habitChangeNote(proposal) }];
+    case "topic_change":
+      return [{ name: `Тема «${proposal.name}»`, note: topicChangeNote(proposal) }];
+    case "subject_change":
+      return [{ name: `Предмет «${proposal.name}»`, note: subjectChangeNote(proposal) }];
     default: {
       const heading = proposalHeading(proposal).replace(/:$/, "").toLowerCase();
       return proposalRows(proposal).map((row) => (row.note ? row : { ...row, note: heading }));
@@ -235,11 +384,30 @@ export function proposalDoneText(proposal: AssistantProposal): string {
       return proposal.sessions
         ? `«${proposal.subject}»: ${sessionsLabel(proposal.sessions)} в календаре.`
         : `Предмет «${proposal.subject}» добавлен.`;
+    case "block_changes":
+      return BLOCK_ACTIONS[proposal.action].done;
+    case "commitment_removal":
+      return "Занятое время убрано.";
+    case "goal_change":
+      return `Цель «${proposal.fields.title ?? proposal.title}» обновлена.`;
+    case "habit_change":
+      return proposal.delete
+        ? `Привычка «${proposal.name}» удалена.`
+        : `Привычка «${proposal.fields.name ?? proposal.name}» обновлена.`;
+    case "topic_change":
+      return proposal.delete ? `Тема «${proposal.name}» удалена.` : "Тема обновлена.";
+    case "subject_change":
+      return proposal.delete
+        ? `Предмет «${proposal.name}» удалён.`
+        : `Предмет теперь называется «${proposal.new_name}».`;
   }
 }
 
-/** Вернуть можно всё, кроме ритма: прежние окна уже удалены. */
+/** Вернуть можно всё, кроме ритма (прежние окна уже удалены) и удалённого насовсем. */
 export function canUndoProposal(proposal: AssistantProposal): boolean {
+  if (proposal.kind === "habit_change" || proposal.kind === "topic_change" || proposal.kind === "subject_change") {
+    return !proposal.delete;
+  }
   return proposal.kind !== "study_windows";
 }
 
@@ -270,6 +438,24 @@ export function proposalSummary(proposal: AssistantProposal): string {
       const name = `${proposal.is_new ? "новый предмет" : "предмет"} «${proposal.subject}»`;
       return proposal.sessions ? `${name}, ${studyPlanWhen(proposal)}` : name;
     }
+    case "block_changes":
+      return `${BLOCK_ACTIONS[proposal.action].summary}: ${proposal.titles.join(", ")}`;
+    case "commitment_removal":
+      return `убрать занятое время: ${proposal.items.map((item) => item.title).join(", ")}`;
+    case "goal_change":
+      return `поменять цель «${proposal.title}»: ${goalChangeNote(proposal)}`;
+    case "habit_change":
+      return proposal.delete
+        ? `удалить привычку «${proposal.name}»`
+        : `поменять привычку «${proposal.name}»: ${habitChangeNote(proposal)}`;
+    case "topic_change":
+      return proposal.delete
+        ? `удалить тему «${proposal.name}»`
+        : `поменять тему «${proposal.name}»: ${topicChangeNote(proposal)}`;
+    case "subject_change":
+      return proposal.delete
+        ? `удалить предмет «${proposal.name}»`
+        : `переименовать предмет «${proposal.name}» в «${proposal.new_name}»`;
   }
 }
 
