@@ -358,3 +358,137 @@ test("в плашке начало ответа без разметки", () => 
   assert.ok(long.endsWith("…"));
   assert.ok(!long.includes("  "));
 });
+
+const DIARY: AssistantProposal = {
+  id: "d",
+  kind: "diary_changes",
+  week_start: "2026-11-02",
+  changes: [
+    {
+      day_id: "d1",
+      lesson_id: "l1",
+      slot: { dayOfWeek: "friday", lessonNumber: 3, startTime: "10:30" },
+      subject_id: "s1",
+      subject: "Физика",
+      date: "2026-11-06",
+      fields: { homework: "№12", grades: { test: 5 } },
+      before: { homework: "", grades: { test: null } },
+    },
+  ],
+};
+
+test("запись в дневник говорит, что и куда", () => {
+  assert.equal(proposalHeading(DIARY), "Запишу в дневник:");
+  assert.deepEqual(proposalRows(DIARY), [{ name: "Физика, 6 ноября", note: "домашка: №12, оценка за тест: 5" }]);
+  assert.deepEqual(batchRows(DIARY), proposalRows(DIARY));
+  assert.equal(canUndoProposal(DIARY), true);
+  assert.equal(proposalDoneText(DIARY), "Записано в дневник.");
+  assert.equal(proposalSummary(DIARY), "в дневник: Физика, 6 ноября, домашка: №12, оценка за тест: 5");
+});
+
+test("то, что убирается из дневника, так и названо", () => {
+  const [change] = (DIARY as Extract<AssistantProposal, { kind: "diary_changes" }>).changes;
+  const removal: AssistantProposal = {
+    ...DIARY,
+    changes: [{ ...change, fields: { homework: "", notes: "", grades: { exercises: null } }, before: {} }],
+  } as AssistantProposal;
+  const notes: AssistantProposal = {
+    ...DIARY,
+    changes: [{ ...change, fields: { notes: "Циркуль", grades: { exercises: 4 } }, before: {} }],
+  } as AssistantProposal;
+
+  assert.equal(proposalRows(removal)[0].note, "убрать домашку, убрать оценку, убрать заметку");
+  assert.equal(proposalRows(notes)[0].note, "оценка: 4, заметка: Циркуль");
+});
+
+const TIMETABLE: AssistantProposal = {
+  id: "t",
+  kind: "school_timetable",
+  lessons: [
+    { weekday: 0, start: "08:30", end: "09:15", subject: "Алгебра" },
+    { weekday: 0, start: "09:30", end: "10:15", subject: "Физика" },
+    { weekday: 2, start: "10:00", end: "10:45", subject: "Химия" },
+  ],
+  clear_weekdays: [5],
+  template_id: "t1",
+  before_slots: [
+    { id: "a", dayOfWeek: "monday", lessonNumber: 1, startTime: "08:00", endTime: "08:45", subjectId: "s" },
+    { id: "b", dayOfWeek: "friday", lessonNumber: 1, startTime: "08:00", endTime: "08:45", subjectId: "s" },
+  ],
+};
+
+test("школьное расписание говорит, что по дням и что остаётся", () => {
+  assert.equal(proposalHeading(TIMETABLE), "Запишу школьное расписание:");
+  assert.deepEqual(proposalRows(TIMETABLE), [
+    { name: "Понедельник", note: "Алгебра 8:30, Физика 9:30" },
+    { name: "Среда", note: "Химия 10:00" },
+    { name: "Суббота", note: "уроков не будет" },
+    { name: "Остальные дни", note: "останутся как есть" },
+    { name: "Недели с оценками и заданиями", note: "останутся как есть" },
+  ]);
+  assert.deepEqual(batchRows(TIMETABLE), proposalRows(TIMETABLE));
+  assert.equal(canUndoProposal(TIMETABLE), true);
+  assert.equal(proposalDoneText(TIMETABLE), "Школьное расписание записано.");
+  assert.equal(proposalSummary(TIMETABLE), "школьное расписание: понедельник, среда, суббота");
+});
+
+test("без прежнего расписания про остальные дни не говорим", () => {
+  const first: AssistantProposal = { ...TIMETABLE, before_slots: [] } as AssistantProposal;
+
+  assert.ok(!proposalRows(first).some((row) => row.name === "Остальные дни"));
+});
+
+test("о днях, которые и так меняются, строки про остальные нет", () => {
+  const whole: AssistantProposal = {
+    ...TIMETABLE,
+    before_slots: [{ id: "a", dayOfWeek: "monday", lessonNumber: 1, startTime: "08:00", endTime: "08:45", subjectId: "s" }],
+  } as AssistantProposal;
+
+  assert.ok(!proposalRows(whole).some((row) => row.name === "Остальные дни"));
+});
+
+test("запись в дневник показывает, что она заменит", () => {
+  const [change] = (DIARY as Extract<AssistantProposal, { kind: "diary_changes" }>).changes;
+  const replace = {
+    ...DIARY,
+    changes: [
+      {
+        ...change,
+        fields: { homework: "№5", grades: { exercises: 5 }, notes: "Новая\nстрока" },
+        before: { homework: "§12", grades: { exercises: 3 }, notes: "Старая" },
+      },
+    ],
+  } as AssistantProposal;
+  const removal = {
+    ...DIARY,
+    changes: [
+      {
+        ...change,
+        fields: { homework: "", grades: { exercises: null }, notes: "" },
+        before: { homework: "§12 и задача " + "х".repeat(80), grades: { exercises: 3 }, notes: "Старая" },
+      },
+    ],
+  } as AssistantProposal;
+
+  assert.equal(proposalRows(replace)[0].note, "домашка: §12 → №5, оценка: 3 → 5, заметка: Старая → Новая строка");
+  assert.equal(
+    proposalRows(removal)[0].note,
+    `убрать домашку «§12 и задача ${"х".repeat(47)}…», убрать оценку 3, убрать заметку «Старая»`,
+  );
+});
+
+test("карточка расписания называет, что уйдёт из названных дней", () => {
+  const replacing = {
+    ...TIMETABLE,
+    removed: [
+      { weekday: 0, start: "08:00", name: "История" },
+      { weekday: 5, start: "08:00", name: "Труд" },
+    ],
+  } as AssistantProposal;
+
+  assert.deepEqual(proposalRows(replacing).slice(0, 3), [
+    { name: "Понедельник", note: "Алгебра 8:30, Физика 9:30; уберу: История 8:00" },
+    { name: "Среда", note: "Химия 10:00" },
+    { name: "Суббота", note: "уберу: Труд 8:00" },
+  ]);
+});

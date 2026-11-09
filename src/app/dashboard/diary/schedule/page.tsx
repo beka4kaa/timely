@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { GripVertical } from "lucide-react"
 import { Icon } from "@/components/shell/icons"
+import { useDataChanged } from "@/lib/data-changed"
 import { SubNav } from "@/components/shell/tab-bar"
 import {
   Select,
@@ -351,6 +352,10 @@ export default function SchedulePage() {
     setSlotsByDay(map)
   }
 
+  // Тьютор мог записать расписание из мини-окна: иначе «Сохранить» затёрло бы его старым.
+  const [reloads, setReloads] = useState(0)
+  useDataChanged('timetable', () => setReloads(count => count + 1))
+
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -389,7 +394,7 @@ export default function SchedulePage() {
     }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [reloads])
 
   function addSlot(day: DayOfWeek) {
     setSlotsByDay(prev => {

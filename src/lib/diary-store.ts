@@ -20,6 +20,7 @@ import type {
   YoutubeLink,
 } from '@/types/diary'
 import { DAYS_ORDER, BLOCK_TYPE_META } from '@/types/diary'
+import { existingWeek, isWeekUnchanged } from '@/lib/diary-weeks'
 
 // ── Django API helper ────────────────────────────────────────
 
@@ -232,49 +233,44 @@ export async function applyTemplateToWeek(
   // 2. Build fresh snapshot from the template
   const fresh = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
 
-  // 3. Check for existing week and merge preserved data
-  try {
-    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
-    if (res.ok) {
-      const data: DiaryWeek[] = await res.json()
-      const existing = data[0]
-      if (existing) {
-        // Build lookup: dayOfWeek+lessonNumber → existing lesson data
-        type LessonKey = string // `${dayOfWeek}:${lessonNumber}`
-        const preserved = new Map<LessonKey, Pick<DiaryLesson, 'grades' | 'homework' | 'notes' | 'homeworkDone'>>()
-        for (const day of existing.days) {
-          for (const lesson of day.lessons) {
-            const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
-            preserved.set(key, {
-              grades: lesson.grades,
-              homework: lesson.homework,
-              notes: lesson.notes,
-              homeworkDone: lesson.homeworkDone,
-            })
-          }
-        }
-
-        // Merge: overlay preserved grades/homework/notes onto fresh lessons
-        for (const day of fresh.days) {
-          for (const lesson of day.lessons) {
-            const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
-            const saved = preserved.get(key)
-            if (saved) {
-              lesson.grades = saved.grades
-              lesson.homework = saved.homework
-              lesson.notes = saved.notes
-              lesson.homeworkDone = saved.homeworkDone
-            }
-          }
-        }
-
-        // Carry over the existing week ID and persist
-        fresh.id = existing.id
-        await replaceWeek(userId, existing.id, fresh)
-        return fresh
+  // 3. Check for existing week and merge preserved data. Сбой поиска бросает: иначе создание
+  //    поверх затёрло бы оценки и задания, которые здесь как раз сохраняются.
+  const existing = await existingWeek(await diaryFetch(userId, `/weeks/?week_start=${weekStart}`))
+  if (existing) {
+    // Build lookup: dayOfWeek+lessonNumber → existing lesson data
+    type LessonKey = string // `${dayOfWeek}:${lessonNumber}`
+    const preserved = new Map<LessonKey, Pick<DiaryLesson, 'grades' | 'homework' | 'notes' | 'homeworkDone'>>()
+    for (const day of existing.days) {
+      for (const lesson of day.lessons) {
+        const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
+        preserved.set(key, {
+          grades: lesson.grades,
+          homework: lesson.homework,
+          notes: lesson.notes,
+          homeworkDone: lesson.homeworkDone,
+        })
       }
     }
-  } catch { /* no existing week — fall through to create */ }
+
+    // Merge: overlay preserved grades/homework/notes onto fresh lessons
+    for (const day of fresh.days) {
+      for (const lesson of day.lessons) {
+        const key: LessonKey = `${day.dayOfWeek}:${lesson.lessonNumber}`
+        const saved = preserved.get(key)
+        if (saved) {
+          lesson.grades = saved.grades
+          lesson.homework = saved.homework
+          lesson.notes = saved.notes
+          lesson.homeworkDone = saved.homeworkDone
+        }
+      }
+    }
+
+    // Carry over the existing week ID and persist
+    fresh.id = existing.id
+    await replaceWeek(userId, existing.id, fresh)
+    return fresh
+  }
 
   // 4. No existing week: just persist the fresh snapshot
   await persistWeek(userId, fresh)
@@ -362,20 +358,6 @@ export function buildWeekSnapshot(
   }
 }
 
-function isWeekUnchanged(week: DiaryWeek): boolean {
-  for (const day of week.days) {
-    if (day.youtubeLinks && day.youtubeLinks.length > 0) return false
-    for (const lesson of day.lessons) {
-      const g = lesson.grades
-      if (g.retelling !== null || g.exercises !== null || g.test !== null) return false
-      if (lesson.homework && lesson.homework.trim() !== '') return false
-      if (lesson.notes && lesson.notes.trim() !== '') return false
-      if (lesson.homeworkDone) return false
-    }
-  }
-  return true
-}
-
 // ── DiaryWeek persistence ─────────────────────────────────────
 
 // Обе записи бросают при отказе бэкенда. Раньше ответ не проверялся, и API
@@ -403,25 +385,17 @@ export async function getOrCreateWeek(
   resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
 ): Promise<DiaryWeek> {
   const template = await getActiveTemplate(userId)
+  // Сбой поиска бросает, а не идёт дальше: создание на сервере обновило бы найденную неделю пустой.
+  const existing = await existingWeek(await diaryFetch(userId, `/weeks/?week_start=${weekStart}`))
 
-  // Try to load existing week
-  try {
-    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
-    if (res.ok) {
-      const data: DiaryWeek[] = await res.json()
-      const existing = data[0]
-      if (existing) {
-        if (isWeekUnchanged(existing)) {
-          // Refresh from latest template (propagates template changes)
-          const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
-          refreshed.id = existing.id
-          await replaceWeek(userId, existing.id, refreshed)
-          return refreshed
-        }
-        return existing
-      }
-    }
-  } catch { /* fallthrough to create */ }
+  if (existing) {
+    if (!isWeekUnchanged(existing)) return existing
+    // Refresh from latest template (propagates template changes)
+    const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+    refreshed.id = existing.id
+    await replaceWeek(userId, existing.id, refreshed)
+    return refreshed
+  }
 
   const newWeek = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
   await persistWeek(userId, newWeek)
@@ -435,22 +409,15 @@ export async function forceRecreateWeek(
   resolveSubject: (subjectId: string) => { name: string; emoji: string; color: string },
 ): Promise<DiaryWeek> {
   const template = await getActiveTemplate(userId)
-  try {
-    const res = await diaryFetch(userId, `/weeks/?week_start=${weekStart}`)
-    if (res.ok) {
-      const data: DiaryWeek[] = await res.json()
-      const existing = data[0]
-      if (existing) {
-        const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
-        refreshed.id = existing.id
-        await replaceWeek(userId, existing.id, refreshed)
-        return refreshed
-      }
-    }
-  } catch { /* fallthrough */ }
-  const newWeek = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
-  await persistWeek(userId, newWeek)
-  return newWeek
+  const existing = await existingWeek(await diaryFetch(userId, `/weeks/?week_start=${weekStart}`))
+  const refreshed = buildWeekSnapshot(userId, weekStart, template, resolveSubject)
+  if (existing) {
+    refreshed.id = existing.id
+    await replaceWeek(userId, existing.id, refreshed)
+    return refreshed
+  }
+  await persistWeek(userId, refreshed)
+  return refreshed
 }
 
 /**

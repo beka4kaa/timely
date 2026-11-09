@@ -7,17 +7,18 @@ import {
   dayDiff,
   draftHasSubject,
   dueTopics,
-  exactSubject,
   findSubject,
   firstReviewFields,
   lastTimeLabel,
   memoryCurve,
   memoryPercent,
   nearestTopic,
-  reviewGroup,
   topicsInGroup,
-  whenLabel,
+  reviewGroup,
+  subjectsToRemove,
   type WeakTopic,
+  whenLabel,
+  exactSubject,
 } from "./weak-topics";
 
 // 5 ноября 2026 — четверг.
@@ -253,4 +254,12 @@ test("новая тема: повторяли сегодня, следующий
   assert.equal(fields.studyState, "STUDIED");
   assert.equal(fields.lastRevisedAt, NOW.toISOString());
   assert.equal(dayDiff(NOW, new Date(fields.nextReviewAt)), 1);
+});
+
+test("созданный карточкой предмет убираем, только если он пуст и не стоит в расписании", () => {
+  assert.deepEqual(
+    subjectsToRemove(["пустой", "с темой", "в расписании"], [{ subject: "с темой" }], [{ subjectId: "в расписании" }]),
+    ["пустой"],
+  );
+  assert.deepEqual(subjectsToRemove([], [], []), []);
 });

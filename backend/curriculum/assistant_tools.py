@@ -29,7 +29,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone as django_timezone
 
 from curriculum.models import Document, LearningGoal, SubjectChat
-from diary.models import DiaryWeek, TemplateLesson
+from diary.models import DiaryWeek, TemplateLesson, WeeklyTemplate
 from habits.models import Habit
 from habits.serializers import clean_schedule, habit_payload
 from mind.models import Subject, Topic
@@ -49,6 +49,11 @@ _SHORT_WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 
 # Ответ инструмента идёт в контекст модели на каждом следующем круге.
 MAX_DIARY_DAYS = 31
+MAX_DIARY_CHANGES = 8
+MAX_HOMEWORK_CHARS = 500
+MAX_NOTES_CHARS = 1000
+MAX_TIMETABLE_LESSONS = 70
+DEFAULT_LESSON_MINUTES = 45
 MAX_TOPICS_IN_ANSWER = 60
 MAX_GOALS_IN_ANSWER = 30
 MAX_HABITS_IN_ANSWER = 30
@@ -113,6 +118,12 @@ def _clean(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def _text(value: Any, limit: int) -> str:
+    """Текст ученика целиком: пробелы внутри строк сжаты, переносы строк остаются."""
+    lines = (" ".join(line.split()) for line in str(value or "").splitlines())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:limit]
+
+
 def _parse_day(value: Any) -> date | None:
     try:
         return date.fromisoformat(str(value or "").strip())
@@ -136,15 +147,103 @@ def _main_schedule(user_email: str) -> StudySchedule | None:
 
 def _lesson_payload(lesson: dict) -> dict[str, Any]:
     grades = lesson.get("grades") if isinstance(lesson.get("grades"), dict) else {}
+    # Целиком и с переносами: правка заменяет поле, и обрезанное модель потеряла бы.
+    notes = _text(lesson.get("notes"), MAX_NOTES_CHARS)
     return {
         "id": str(lesson.get("id") or ""),
         "subject": _clean(lesson.get("subjectName") or lesson.get("blockLabel"), 80),
         "start": str(lesson.get("startTime") or ""),
         "end": str(lesson.get("endTime") or ""),
-        "homework": _clean(lesson.get("homework"), 300),
+        "homework": _text(lesson.get("homework"), MAX_HOMEWORK_CHARS),
         "homework_done": bool(lesson.get("homeworkDone")),
         "grades": {key: value for key, value in grades.items() if value not in (None, "", 0)},
+        **({"notes": notes} if notes else {}),
     }
+
+
+_WEEKDAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_BLOCK_NAMES = {
+    "break": "Перерыв",
+    "rest": "Отдых",
+    "focus": "Фокус",
+    "test": "Тест",
+    "feynman": "Feynman",
+    "error-review": "Разбор ошибок",
+}
+_TEST_BLOCKS = {"test", "weakness-test", "cumulative-test", "error-test", "error-review"}
+
+
+def _week_has_records(week: DiaryWeek) -> bool:
+    """Как isWeekUnchanged на клиенте: неделя без записей при открытии собирается из шаблона заново."""
+    for day in week.days or []:
+        if not isinstance(day, dict):
+            continue
+        if day.get("youtubeLinks"):
+            return True
+        for lesson in day.get("lessons") or []:
+            if not isinstance(lesson, dict):
+                continue
+            grades = lesson.get("grades") if isinstance(lesson.get("grades"), dict) else {}
+            if any(value is not None for value in grades.values()):
+                return True
+            if _clean(lesson.get("homework"), 1) or _clean(lesson.get("notes"), 1) or lesson.get("homeworkDone"):
+                return True
+    return False
+
+
+def _school_lesson(slot: dict, names: dict[str, str]) -> dict[str, Any]:
+    """Строка шаблона в том виде, в каком она ляжет в неделю (buildWeekSnapshot на клиенте)."""
+    block = slot.get("blockType") or "lesson"
+    label = str(slot.get("label") or "")
+    subject_id = str(slot.get("subjectId") or "") if block == "lesson" else ""
+    return {
+        "id": str(slot.get("id") or ""),
+        "lessonNumber": slot.get("lessonNumber"),
+        "startTime": slot.get("startTime"),
+        "endTime": slot.get("endTime"),
+        "blockType": block,
+        "blockLabel": label,
+        "subjectId": subject_id,
+        "subjectName": names.get(subject_id, "Предмет") if block == "lesson" else label or _BLOCK_NAMES.get(block, "Занятие"),
+    }
+
+
+def _diary_days(ctx: AssistantContext, start: date, end: date) -> list[tuple[str, dict]]:
+    """Дни периода с их неделей такими, какими их покажет дневник. Строки в базе может ещё не быть."""
+    template = WeeklyTemplate.objects.filter(user_email=ctx.user_email, is_active=True).first()
+    slots = [row for row in (template.slots if template else []) or [] if isinstance(row, dict)]
+
+    stored: dict[str, tuple[str, dict]] = {}
+    weeks = DiaryWeek.objects.filter(
+        user_email=ctx.user_email, week_start__lte=end.isoformat(), week_end__gte=start.isoformat()
+    ).order_by("week_start")
+    for week in weeks:
+        if slots and not _week_has_records(week):
+            continue
+        for day in week.days or []:
+            key = str(day.get("date") or "") if isinstance(day, dict) else ""
+            if start.isoformat() <= key <= end.isoformat():
+                stored[key] = (week.week_start, day)
+
+    subject_ids = [str(row.get("subjectId")) for row in slots if row.get("subjectId")]
+    names = {
+        str(pk): name
+        for pk, name in Subject.objects.filter(user_email=ctx.user_email, pk__in=subject_ids).values_list("pk", "name")
+    }
+    days = []
+    current = start
+    while current <= end:
+        key = current.isoformat()
+        weekday = _WEEKDAY_KEYS[current.weekday()]
+        rows = sorted((row for row in slots if row.get("dayOfWeek") == weekday), key=lambda row: row.get("lessonNumber") or 0)
+        if key in stored:
+            days.append(stored[key])
+        elif rows:
+            monday = current - timedelta(days=current.weekday())
+            lessons = [_school_lesson(row, names) for row in rows]
+            days.append((monday.isoformat(), {"id": "", "date": key, "dayOfWeek": weekday, "lessons": lessons}))
+        current += timedelta(days=1)
+    return days
 
 
 def _get_diary(args: dict, ctx: AssistantContext) -> dict[str, Any]:
@@ -155,30 +254,21 @@ def _get_diary(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     end = min(end, start + timedelta(days=MAX_DIARY_DAYS))
 
     days = []
-    weeks = DiaryWeek.objects.filter(
-        user_email=ctx.user_email, week_start__lte=end.isoformat(), week_end__gte=start.isoformat()
-    ).order_by("week_start")
-    for week in weeks:
-        for day in week.days or []:
-            if not isinstance(day, dict):
-                continue
-            key = str(day.get("date") or "")
-            if not start.isoformat() <= key <= end.isoformat():
-                continue
-            lessons = [_lesson_payload(row) for row in day.get("lessons") or [] if isinstance(row, dict)]
-            if lessons:
-                parsed = _parse_day(key)
-                days.append({
-                    "date": key,
-                    "weekday": _WEEKDAYS[parsed.weekday()] if parsed else "",
-                    "lessons": lessons,
-                })
+    for _week_start, day in _diary_days(ctx, start, end):
+        lessons = [_lesson_payload(row) for row in day.get("lessons") or [] if isinstance(row, dict)]
+        if lessons:
+            parsed = _parse_day(day.get("date"))
+            days.append({
+                "date": str(day.get("date")),
+                "weekday": _WEEKDAYS[parsed.weekday()] if parsed else "",
+                "lessons": lessons,
+            })
     return {
         "ok": True,
         "today": ctx.today.isoformat(),
         "period": {"from": start.isoformat(), "to": end.isoformat()},
         "days": days,
-        **({} if days else {"note": "В дневнике за эти дни пусто. Заполняется в разделе «Дневник»."}),
+        **({} if days else {"note": "В дневнике за эти дни пусто: школьное расписание не записано. Заполняется здесь или в разделе «Дневник»."}),
     }
 
 
@@ -611,20 +701,33 @@ def _propose_new_topics(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     return ctx.propose("new_topics", topics=topics)
 
 
+def _find_lesson(ctx: AssistantContext, day_key: date, lesson_id: str) -> tuple[str, dict, dict] | None:
+    """Неделя, день и урок. Ищем только у этого ученика."""
+    for week_start, day in _diary_days(ctx, day_key, day_key):
+        for lesson in day.get("lessons") or []:
+            if isinstance(lesson, dict) and str(lesson.get("id")) == lesson_id:
+                return week_start, day, lesson
+    return None
+
+
+def _lesson_slot(day: dict, lesson: dict) -> dict[str, Any]:
+    """Где урок стоит в неделе. Идентификаторы нестойкие: неделю без записей дневник собирает заново."""
+    return {
+        "dayOfWeek": day.get("dayOfWeek"),
+        "lessonNumber": lesson.get("lessonNumber"),
+        "startTime": lesson.get("startTime"),
+    }
+
+
 def _propose_mark_homework(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     day_key = _parse_day(args.get("date"))
     lesson_id = str(args.get("lesson_id") or "")
     if day_key is None or not lesson_id:
         return _fail("invalid_arguments", "Нужны дата и урок из дневника.")
-    key = day_key.isoformat()
-    week = DiaryWeek.objects.filter(user_email=ctx.user_email, week_start__lte=key, week_end__gte=key).first()
-    day = next((row for row in (week.days if week else []) if isinstance(row, dict) and row.get("date") == key), None)
-    lesson = next(
-        (row for row in (day or {}).get("lessons") or [] if isinstance(row, dict) and str(row.get("id")) == lesson_id),
-        None,
-    )
-    if lesson is None:
+    found = _find_lesson(ctx, day_key, lesson_id)
+    if found is None:
         return _fail("not_found", "Такого урока в дневнике нет.")
+    week_start, day, lesson = found
     if not _clean(lesson.get("homework"), 300):
         return _fail("nothing_to_mark", "На этот урок ничего не задано.")
     done = args.get("done") is not False
@@ -632,26 +735,228 @@ def _propose_mark_homework(args: dict, ctx: AssistantContext) -> dict[str, Any]:
         return _fail("already", "Задание уже так и отмечено.")
     return ctx.propose(
         "mark_homework",
-        week_start=week.week_start,
+        week_start=week_start,
         day_id=str(day.get("id") or ""),
         lesson_id=lesson_id,
-        slot={
-            "dayOfWeek": day.get("dayOfWeek"),
-            "lessonNumber": lesson.get("lessonNumber"),
-            "startTime": lesson.get("startTime"),
-        },
+        slot=_lesson_slot(day, lesson),
         subject=_clean(lesson.get("subjectName") or lesson.get("blockLabel"), 80),
         homework=_clean(lesson.get("homework"), 120),
         done=done,
     )
 
 
+def _grade_field(lesson: dict) -> str | None:
+    """Какую оценку показывает дневник. Она у строки одна (gradeField на клиенте), другая была бы не видна."""
+    block = lesson.get("blockType") or "lesson"
+    if block == "lesson":
+        return "exercises"
+    if block == "feynman":
+        return "retelling"
+    return "test" if block in _TEST_BLOCKS else None
+
+
+_TEXT_FIELDS = (("homework", MAX_HOMEWORK_CHARS), ("notes", MAX_NOTES_CHARS))
+
+
+def _lesson_changes(row: dict, lesson: dict) -> tuple[dict, dict]:
+    """Что изменится и что там сейчас. Прежнее как есть: по нему клиент проверит, что урок не трогали."""
+    fields: dict[str, Any] = {}
+    before: dict[str, Any] = {}
+    for name, limit in _TEXT_FIELDS:
+        if row.get(name) is None:
+            continue
+        value = _text(row[name], limit)
+        if value != _text(lesson.get(name), limit):
+            fields[name] = value
+            before[name] = str(lesson.get(name) or "")
+    # Новый текст в строке, где от прежнего осталась отметка, не должен родиться сделанным.
+    if "homework" in fields and lesson.get("homeworkDone") and not (fields["homework"] and before["homework"].strip()):
+        fields["homeworkDone"] = False
+        before["homeworkDone"] = True
+    if row.get("grade") is not None:
+        field = _grade_field(lesson)
+        grades = lesson.get("grades") if isinstance(lesson.get("grades"), dict) else {}
+        wanted = int(row["grade"]) or None
+        if field and wanted != grades.get(field):
+            fields["grades"] = {field: wanted}
+            before["grades"] = {field: grades.get(field)}
+    return fields, before
+
+
+def _good_grade(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+        return False
+    return 0 <= value <= 5
+
+
+def _propose_diary_changes(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    raw = args.get("changes")
+    if not isinstance(raw, list) or not raw or len(raw) > MAX_DIARY_CHANGES:
+        return _fail("invalid_arguments", "Нужно от одной до восьми правок.")
+
+    # Домашка и оценка одного урока могут прийти двумя строками: на карточке это одна правка.
+    wanted: dict[tuple[date, str], dict] = {}
+    for row in raw:
+        day_key = _parse_day(row.get("date")) if isinstance(row, dict) else None
+        lesson_id = str(row.get("lesson_id") or "") if isinstance(row, dict) else ""
+        if day_key is None or not lesson_id:
+            return _fail("invalid_arguments", "Нужны дата и урок из дневника.")
+        if not _good_grade(row.get("grade")):
+            return _fail("invalid_arguments", "Оценка от 1 до 5, а 0 её убирает.")
+        wanted.setdefault((day_key, lesson_id), {}).update({key: value for key, value in row.items() if value is not None})
+
+    by_week: dict[str, list[dict]] = {}
+    for (day_key, lesson_id), row in wanted.items():
+        found = _find_lesson(ctx, day_key, lesson_id)
+        if found is None:
+            return _fail("not_found", "Такого урока в дневнике нет.")
+        week_start, day, lesson = found
+        if row.get("grade") is not None and _grade_field(lesson) is None:
+            return _fail("no_grade_here", "У этой строки дневника оценки нет.")
+        # Такой текст модель видела не целиком, и замена потеряла бы конец.
+        if any(row.get(name) is not None and len(_text(lesson.get(name), limit + 1)) > limit for name, limit in _TEXT_FIELDS):
+            return _fail("too_long", "Этот текст в дневнике длиннее, чем мне видно. Его лучше поправить в самом дневнике.")
+        fields, before = _lesson_changes(row, lesson)
+        if fields:
+            by_week.setdefault(week_start, []).append({
+                "day_id": str(day.get("id") or ""),
+                "lesson_id": lesson_id,
+                "slot": _lesson_slot(day, lesson),
+                "subject_id": str(lesson.get("subjectId") or ""),
+                "subject": _clean(lesson.get("subjectName") or lesson.get("blockLabel"), 80),
+                "date": day_key.isoformat(),
+                "fields": fields,
+                "before": before,
+            })
+    if not by_week:
+        return _fail("nothing_to_change", "В дневнике уже так и записано.")
+
+    # Неделя пишется целиком, поэтому у каждой своя карточка: они применятся по очереди.
+    answer: dict[str, Any] = {}
+    for week_start, changes in by_week.items():
+        answer = ctx.propose("diary_changes", week_start=week_start, changes=changes)
+        if not answer["ok"]:
+            break
+    return answer
+
+
 def _parse_time(value: Any) -> time | None:
     """Время от модели. Зону она иногда дописывает сама, но считаем мы в зоне ученика."""
+    text = str(value or "").strip()
     try:
-        return time.fromisoformat(str(value or "").strip()).replace(tzinfo=None)
+        return time.fromisoformat(f"0{text}" if re.match(r"\d:", text) else text).replace(tzinfo=None)
     except ValueError:
         return None
+
+
+def _good_weekday(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 6
+
+
+def _timetable_lesson(row: Any) -> dict[str, Any] | None:
+    """Урок от модели, или ничего, если такой не записать."""
+    if not isinstance(row, dict) or not _good_weekday(row.get("weekday")):
+        return None
+    start = _parse_time(row.get("start"))
+    subject = _clean(row.get("subject"), 80)
+    if start is None or not subject:
+        return None
+    if row.get("end"):
+        end = _parse_time(row["end"])
+    else:
+        minutes = start.hour * 60 + start.minute + DEFAULT_LESSON_MINUTES
+        end = time(minutes // 60, minutes % 60) if minutes < 24 * 60 else None
+    if end is None or end <= start:
+        return None
+    return {"weekday": row["weekday"], "start": f"{start:%H:%M}", "end": f"{end:%H:%M}", "subject": subject}
+
+
+def _minutes(value: Any) -> int | None:
+    parsed = _parse_time(value)
+    return parsed.hour * 60 + parsed.minute if parsed else None
+
+
+def _timetable_removals(ctx: AssistantContext, before: list, lessons: list[dict], cleared: list[int]) -> list[dict]:
+    """Что уйдёт из названных дней, по тому же правилу, что mergeTimetable на клиенте. Перемены не называем."""
+    days = {row["weekday"] for row in lessons} | set(cleared)
+    names = dict(Subject.objects.filter(user_email=ctx.user_email).values_list("pk", "name"))
+    removed = []
+    for slot in before:
+        if not isinstance(slot, dict) or slot.get("dayOfWeek") not in _WEEKDAY_KEYS:
+            continue
+        weekday = _WEEKDAY_KEYS.index(slot["dayOfWeek"])
+        block = slot.get("blockType") or "lesson"
+        start, end = _minutes(slot.get("startTime")), _minutes(slot.get("endTime"))
+        if weekday not in days or block in ("break", "rest") or start is None:
+            continue
+        same_day = [row for row in lessons if row["weekday"] == weekday]
+        if block == "lesson":
+            name = names.get(str(slot.get("subjectId") or ""), "Предмет")
+            # Тот же урок в то же время есть и в новом списке: для ученика он остаётся.
+            if any(row["subject"].casefold() == name.casefold() and _minutes(row["start"]) == start for row in same_day):
+                continue
+        else:
+            name = str(slot.get("label") or "") or _BLOCK_NAMES.get(block, "Занятие")
+            if end is None or not any(_minutes(row["start"]) < end and start < _minutes(row["end"]) for row in same_day):
+                continue
+        removed.append({"weekday": weekday, "start": f"{start // 60:02d}:{start % 60:02d}", "name": name})
+    return sorted(removed, key=lambda row: (row["weekday"], row["start"]))
+
+
+def _timetable_note(removed: list[dict]) -> str:
+    if not removed:
+        return SHOWN_NOTE
+    gone = ", ".join(f"{row['name']} ({_SHORT_WEEKDAYS[row['weekday']]} {row['start']})" for row in removed)
+    return f"{SHOWN_NOTE} Из названных дней уйдут: {gone}. Если ученик просил только добавить, вызови ещё раз со всеми уроками этих дней."
+
+
+def _by_day_and_time(lessons: list[dict]) -> list[dict]:
+    return sorted(lessons, key=lambda row: (row["weekday"], row["start"]))
+
+
+def _propose_school_timetable(args: dict, ctx: AssistantContext) -> dict[str, Any]:
+    raw = args.get("lessons") or []
+    cleared = args.get("clear_weekdays") or []
+    if not isinstance(raw, list) or not isinstance(cleared, list) or not (raw or cleared) or len(raw) > MAX_TIMETABLE_LESSONS:
+        return _fail("invalid_arguments", "Нужны уроки или дни, где уроков больше нет.")
+    if not all(_good_weekday(day) for day in cleared):
+        return _fail("invalid_arguments", "День недели это число от 0 до 6.")
+    parsed = [_timetable_lesson(row) for row in raw]
+    if None in parsed:
+        return _fail("invalid_arguments", "У каждого урока нужны день от 0 до 6, предмет, начало и конец позже начала.")
+
+    lessons = _by_day_and_time(parsed)
+    for left, right in zip(lessons, lessons[1:]):
+        if left["weekday"] == right["weekday"] and right["start"] < left["end"]:
+            return _fail("invalid_arguments", f"Уроки пересекаются: {left['subject']} и {right['subject']}.")
+
+    named = {row["weekday"] for row in lessons}
+    # Карточки уходят в конце ответа. Вторая устарела бы, как только применили первую, поэтому карточка одна.
+    earlier = next((row for row in ctx.proposals if row["kind"] == "school_timetable"), None)
+    if earlier is not None:
+        kept = [row for row in earlier["lessons"] if row["weekday"] not in named | set(cleared)]
+        earlier["lessons"] = _by_day_and_time([*kept, *lessons])
+        earlier["clear_weekdays"] = sorted((set(earlier["clear_weekdays"]) | set(cleared)) - named)
+        earlier["removed"] = _timetable_removals(ctx, earlier["before_slots"], earlier["lessons"], earlier["clear_weekdays"])
+        return {"ok": True, "note": _timetable_note(earlier["removed"])}
+
+    template = WeeklyTemplate.objects.filter(user_email=ctx.user_email, is_active=True).first()
+    before_slots = list(template.slots or []) if template else []
+    clear_weekdays = sorted(set(cleared) - named)
+    removed = _timetable_removals(ctx, before_slots, lessons, clear_weekdays)
+    answer = ctx.propose(
+        "school_timetable",
+        lessons=lessons,
+        clear_weekdays=clear_weekdays,
+        template_id=template.pk if template else "",
+        before_slots=before_slots,
+        removed=removed,
+    )
+    if answer["ok"]:
+        answer["note"] = _timetable_note(removed)
+    return answer
 
 
 def _clashing_proposal(ctx: AssistantContext, weekdays: tuple[int, ...], result: Any, start: time, minutes: int) -> str | None:
@@ -1130,6 +1435,65 @@ OWN_TOOLS = {
             _propose_mark_homework,
         ),
         AssistantTool(
+            "propose_diary_changes",
+            "Готовлю запись в дневник",
+            "Предложить запись в дневник: домашка, заметка или оценка у уроков из get_diary. Можно сразу несколько.",
+            {
+                "type": "object",
+                "properties": {
+                    "changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "date": {"type": "string", "description": "День урока из get_diary."},
+                                "lesson_id": {"type": "string", "description": "Идентификатор урока из get_diary."},
+                                "homework": {"type": "string", "description": "Пустая строка убирает задание."},
+                                "notes": {"type": "string", "description": "Пустая строка убирает заметку."},
+                                "grade": {"type": "integer", "description": "От 1 до 5, а 0 убирает оценку."},
+                            },
+                            "required": ["date", "lesson_id"],
+                        },
+                    },
+                },
+                "required": ["changes"],
+            },
+            _propose_diary_changes,
+        ),
+        AssistantTool(
+            "propose_school_timetable",
+            "Готовлю школьное расписание",
+            (
+                "Предложить школьное расписание, то есть уроки недели. Меняются только названные дни: "
+                "передай все уроки такого дня, остальные дни останутся. Предметы найдутся или создадутся сами. "
+                "Время уроков не названо: сначала спроси."
+            ),
+            {
+                "type": "object",
+                "properties": {
+                    "lessons": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "weekday": {"type": "integer", "description": "0 понедельник, 6 воскресенье."},
+                                "start": {"type": "string", "description": "ЧЧ:ММ."},
+                                "end": {"type": "string", "description": "ЧЧ:ММ. Без него урок идёт 45 минут."},
+                                "subject": {"type": "string"},
+                            },
+                            "required": ["weekday", "start", "subject"],
+                        },
+                    },
+                    "clear_weekdays": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Дни, где уроков больше нет.",
+                    },
+                },
+            },
+            _propose_school_timetable,
+        ),
+        AssistantTool(
             "propose_study_plan",
             "Готовлю предмет и занятия",
             (
@@ -1287,7 +1651,7 @@ _AREA_WORDS = {
     "habits": re.compile(r"привычк|отмет|зарядк|стрик|подряд|как часто|через день|раз в |по будням"),
     "goals": re.compile(r"цел[ьиея]|прогресс|дедлайн"),
     "topics": re.compile(r"повтор|тем[уыае]\b|тем\b|изучил|выучил|прош[её]л|прошла|прошли"),
-    "diary": re.compile(r"дневник|домашк|домашн|задани|задал|оценк|урок|контрольн|\bсор\b|\bсоч\b"),
+    "diary": re.compile(r"дневник|домашк|домашн|задани|задал|оценк|заметк|урок|школ|контрольн|пят[её]рк|четв[её]рк|тро[йе]к|двойк|\bсор\b|\bсоч\b"),
     "focus": re.compile(r"помодоро|таймер|занимал|фокус"),
     "schedule": re.compile(
         r"распис|календар|занят|план|перен[её]с|сдвин|подвин|разгруз|освобо|свобод|\bокн|ритм|"
@@ -1309,7 +1673,7 @@ _AREA_TOOLS = {
     "habits": ("list_habits", "propose_new_habit", "propose_habit_schedule", "propose_mark_habit", "propose_habit_change"),
     "goals": ("list_goals", "propose_new_goal", "propose_goal_progress", "propose_goal_change"),
     "topics": ("list_review_topics", "propose_new_topics", "propose_topic_change"),
-    "diary": ("get_diary", "propose_mark_homework"),
+    "diary": ("get_diary", "propose_mark_homework", "propose_diary_changes", "propose_school_timetable"),
     "focus": ("get_focus_stats",),
     "schedule": (
         *SCHEDULE_READ_TOOLS,
@@ -1480,13 +1844,14 @@ OPEN_ALL_RULE = (
 ASSISTANT_RULES = """Ты ещё и помощник ученика в его делах. Сегодня {today}, {weekday}.
 
 Через инструменты ты видишь его расписание занятий, школьный дневник, привычки, цели, темы на повторение и помодоро, а в блоке <account> короткую сводку. Подробности смотри инструментами.
-- Ты можешь почти всё в его делах: предметы, расписание, занятия, привычки, цели, темы. Поэтому не отправляй его в разделы и не говори, что не можешь, пока не проверил инструменты.
+- Ты можешь почти всё в его делах: предметы, расписание, занятия, дневник, школьное расписание, привычки, цели, темы. Поэтому не отправляй его в разделы и не говори, что не можешь, пока не проверил инструменты.
 - Нужного инструмента нет в списке: вызови open_my_affairs, он откроет все. Инструмента на это нет и там, например загрузить книгу: скажи прямо и подскажи, где это сделать.
 - Спрашивают про его дела: сначала посмотри инструментом и отвечай по данным. Не выдумывай и не говори, что у тебя нет доступа.
 - Сам ты ничего не меняешь. Просят изменить, добавить или отметить: вызови инструмент propose_*, и ученик увидит карточку с кнопкой «Применить».
 - Всё нужное предлагай за один ответ: ученик подтвердит всё разом.
 - Не хватает предмета, периода или времени занятий: спроси одним коротким вопросом. Остальное выбери сам и скажи одной строкой: например, занятие длится час.
 - Занятия по предмету с днями и временем это propose_study_plan, а не привычка. Предмет уже есть в сводке: передай его название как есть.
+- Уроки в школе это школьное расписание, а не занятия: propose_school_timetable. Один урок только на одну неделю поставить нельзя, меняется всё расписание сразу: так и скажи.
 - Поэтому не пиши «готово», «добавил», «перенёс»: пока он не нажал, ничего не изменилось. После предложения хватит одной строки о том, что предлагаешь.
 - В истории разговора в квадратных скобках видно, что ты предлагал и что решил ученик. Сам такие скобки не пиши. Просит применить то, что ещё ждёт решения: напомни нажать кнопку на карточке, а второй раз не предлагай.
 - Обычный учебный вопрос инструментов не требует: просто отвечай.

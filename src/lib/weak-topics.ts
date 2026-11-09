@@ -319,6 +319,17 @@ export function findSubject<T extends { name: string }>(subjects: T[], name: str
   );
 }
 
+/** Созданный карточкой предмет убираем при отмене, только пока он пуст и не стоит в школьном расписании. */
+export function subjectsToRemove(
+  created: string[],
+  topics: { subject: string }[],
+  slots: { subjectId?: string }[],
+): string[] {
+  return created.filter(
+    (id) => !topics.some((topic) => topic.subject === id) && !slots.some((slot) => slot.subjectId === id),
+  );
+}
+
 /** Одна тема в предпросмотре, ещё не записанная. */
 export interface TopicDraft {
   key: string;

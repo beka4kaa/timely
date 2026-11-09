@@ -1241,3 +1241,545 @@ class TopicAndSubjectChangesTests(TestCase):
         self.assertIn("propose_subject_change", choose_tools("удали предмет биология"))
         self.assertIn("propose_topic_change", choose_tools("переименуй тему"))
         self.assertIn("propose_topic_change", choose_tools("я повторил клетку"))
+
+
+def _week_row(week_id: str, monday: dt.date, days: list, email: str = OWNER) -> DiaryWeek:
+    return DiaryWeek.objects.create(
+        id=week_id,
+        user_email=email,
+        week_start=monday.isoformat(),
+        week_end=(monday + dt.timedelta(days=6)).isoformat(),
+        days=days,
+    )
+
+
+_NO_GRADES = {"retelling": None, "exercises": None, "test": None}
+
+
+class DiaryChangesTests(TestCase):
+    """Домашка, оценка и заметка: только предложение, неделя остаётся как была."""
+
+    def setUp(self):
+        self.tools = _tools()
+        self.today = self.tools.context.today
+        self.monday = self.today - dt.timedelta(days=self.today.weekday())
+        self.key = self.today.isoformat()
+        self.week = _week_row(
+            "w1",
+            self.monday,
+            [
+                {
+                    "id": "d1",
+                    "date": self.key,
+                    "dayOfWeek": "monday",
+                    "lessons": [
+                        {
+                            "id": "l1",
+                            "lessonNumber": 1,
+                            "startTime": "08:30",
+                            "blockType": "lesson",
+                            "subjectId": "s1",
+                            "subjectName": "Физика",
+                            "homework": "§5",
+                            "notes": "",
+                            "grades": dict(_NO_GRADES),
+                        },
+                        {
+                            "id": "l2",
+                            "lessonNumber": 2,
+                            "startTime": "09:30",
+                            "blockType": "test",
+                            "subjectId": "",
+                            "subjectName": "Тест",
+                            "homework": "",
+                            "notes": "",
+                            "grades": {**_NO_GRADES, "test": 3},
+                        },
+                        {
+                            "id": "l3",
+                            "lessonNumber": 3,
+                            "startTime": "10:30",
+                            "blockType": "break",
+                            "subjectId": "",
+                            "subjectName": "Перерыв",
+                            "homework": "",
+                            "notes": "",
+                            "grades": dict(_NO_GRADES),
+                        },
+                    ],
+                }
+            ],
+        )
+
+    def _propose(self, **fields):
+        return self.tools.run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "l1", **fields}]})
+
+    def test_diary_change_keeps_the_old_values_and_writes_nothing(self):
+        stored = json.dumps(self.week.days)
+
+        answer = self._propose(homework="№12", notes="Принести циркуль", grade=5)
+
+        self.assertTrue(answer["ok"])
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "diary_changes")
+        self.assertEqual(proposal["week_start"], self.monday.isoformat())
+        change = proposal["changes"][0]
+        self.assertEqual(change["fields"], {"homework": "№12", "notes": "Принести циркуль", "grades": {"exercises": 5}})
+        self.assertEqual(change["before"], {"homework": "§5", "notes": "", "grades": {"exercises": None}})
+        self.assertEqual(change["subject"], "Физика")
+        self.assertEqual(change["subject_id"], "s1")
+        self.assertEqual(change["date"], self.key)
+        self.assertEqual(change["slot"], {"dayOfWeek": "monday", "lessonNumber": 1, "startTime": "08:30"})
+        self.week.refresh_from_db()
+        self.assertEqual(json.dumps(self.week.days), stored)
+
+    def test_the_model_sees_a_note_to_edit_it(self):
+        self.week.days[0]["lessons"][0]["notes"] = "Принести циркуль"
+        self.week.save()
+
+        lessons = self.tools.run("get_diary", {"from_date": self.key, "to_date": self.key})["days"][0]["lessons"]
+
+        self.assertEqual(lessons[0]["notes"], "Принести циркуль")
+        self.assertNotIn("notes", lessons[1])
+
+    def test_the_model_sees_the_whole_text_with_its_lines(self):
+        note = "Строка один\nСтрока два " + "х" * 400
+        self.week.days[0]["lessons"][0]["notes"] = note
+        self.week.save()
+
+        row = self.tools.run("get_diary", {"from_date": self.key, "to_date": self.key})["days"][0]["lessons"][0]
+
+        self.assertEqual(row["notes"], note)
+
+    def test_line_breaks_survive_the_change(self):
+        self._propose(notes="Купить:\n  линейку   и циркуль\n\n\n\nи тетрадь\n")
+
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["fields"], {"notes": "Купить:\nлинейку и циркуль\n\nи тетрадь"})
+
+    def test_a_text_too_long_to_see_is_not_replaced(self):
+        self.week.days[0]["lessons"][0]["notes"] = "х" * 1001
+        self.week.save()
+
+        self.assertEqual(self._propose(notes="коротко")["error"], "too_long")
+        self.assertTrue(self._propose(grade=5)["ok"])
+
+    def test_explicit_nulls_do_not_drop_a_change(self):
+        rows = [
+            {"date": self.key, "lesson_id": "l1", "homework": "№12", "grade": None, "notes": None},
+            {"date": self.key, "lesson_id": "l1", "homework": None, "grade": 5},
+        ]
+
+        self.tools.run("propose_diary_changes", {"changes": rows})
+
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["fields"], {"homework": "№12", "grades": {"exercises": 5}})
+
+    def test_grade_is_checked(self):
+        for grade in (9, -1, "пять", True, 2.5):
+            with self.subTest(grade=grade):
+                self.assertEqual(self._propose(grade=grade)["error"], "invalid_arguments")
+        self.assertEqual(self.tools.proposals, [])
+
+    def test_the_grade_goes_where_the_diary_shows_it(self):
+        answer = self.tools.run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "l2", "grade": 4}]})
+
+        self.assertTrue(answer["ok"])
+        change = self.tools.proposals[0]["changes"][0]
+        self.assertEqual(change["fields"], {"grades": {"test": 4}})
+        self.assertEqual(change["before"], {"grades": {"test": 3}})
+
+    def test_a_break_has_no_grade(self):
+        answer = self.tools.run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "l3", "grade": 4}]})
+
+        self.assertEqual(answer["error"], "no_grade_here")
+
+    def test_zero_removes_the_grade(self):
+        self.tools.run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "l2", "grade": 0}]})
+
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["fields"], {"grades": {"test": None}})
+
+    def test_empty_text_removes_it_and_a_missing_one_stays(self):
+        self._propose(homework="", notes=None)
+
+        change = self.tools.proposals[0]["changes"][0]
+        self.assertEqual(change["fields"], {"homework": ""})
+        self.assertEqual(change["before"], {"homework": "§5"})
+
+    def test_unknown_lesson_is_not_found(self):
+        answer = self.tools.run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "нет", "grade": 5}]})
+
+        self.assertEqual(answer["error"], "not_found")
+
+    def test_someone_elses_week_is_not_found(self):
+        answer = _tools(INTRUDER).run("propose_diary_changes", {"changes": [{"date": self.key, "lesson_id": "l1", "grade": 5}]})
+
+        self.assertEqual(answer["error"], "not_found")
+
+    def test_the_list_is_checked(self):
+        too_many = [{"date": self.key, "lesson_id": "l1", "grade": 5}] * 9
+        for changes in ([], None, "нет", too_many, ["нет"], [{"date": "вчера", "lesson_id": "l1", "grade": 5}]):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.tools.run("propose_diary_changes", {"changes": changes})["error"], "invalid_arguments")
+
+    def test_only_what_changes_goes_on_the_card(self):
+        self.assertEqual(self._propose(homework="§5")["error"], "nothing_to_change")
+        self.assertEqual(self.tools.proposals, [])
+
+        self._propose(homework="§5", notes="Новая")
+
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["fields"], {"notes": "Новая"})
+
+    def test_two_rows_about_one_lesson_become_one_change(self):
+        rows = [{"date": self.key, "lesson_id": "l1", "homework": "№12"}, {"date": self.key, "lesson_id": "l1", "grade": 5}]
+
+        self.tools.run("propose_diary_changes", {"changes": rows})
+
+        changes = self.tools.proposals[0]["changes"]
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["fields"], {"homework": "№12", "grades": {"exercises": 5}})
+
+    def test_new_text_does_not_inherit_the_done_mark(self):
+        lessons = self.week.days[0]["lessons"]
+        lessons[0]["homeworkDone"] = True
+        self.week.save()
+
+        self._propose(homework="")
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["fields"], {"homework": "", "homeworkDone": False})
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["before"], {"homework": "§5", "homeworkDone": True})
+
+        # Текст просто уточнили: задание остаётся сделанным, как и на странице дневника.
+        self._propose(homework="§5 и §6")
+        self.assertEqual(self.tools.proposals[1]["changes"][0]["fields"], {"homework": "§5 и §6"})
+
+    def test_the_old_text_stays_exact_for_the_check_before_writing(self):
+        lessons = self.week.days[0]["lessons"]
+        lessons[0]["homework"] = "§5\nи таблица"
+        self.week.save()
+
+        self._propose(homework="№12")
+
+        self.assertEqual(self.tools.proposals[0]["changes"][0]["before"], {"homework": "§5\nи таблица"})
+
+    def test_two_weeks_make_two_cards(self):
+        next_monday = self.monday + dt.timedelta(days=7)
+        _week_row(
+            "w2",
+            next_monday,
+            [
+                {
+                    "id": "d2",
+                    "date": next_monday.isoformat(),
+                    "dayOfWeek": "monday",
+                    "lessons": [
+                        {
+                            "id": "l9",
+                            "lessonNumber": 1,
+                            "startTime": "08:30",
+                            "blockType": "lesson",
+                            "subjectId": "s2",
+                            "subjectName": "Химия",
+                            "homework": "старое",
+                            "grades": dict(_NO_GRADES),
+                        }
+                    ],
+                }
+            ],
+        )
+
+        answer = self.tools.run(
+            "propose_diary_changes",
+            {
+                "changes": [
+                    {"date": self.key, "lesson_id": "l1", "homework": "№12"},
+                    {"date": next_monday.isoformat(), "lesson_id": "l9", "homework": "№3"},
+                ]
+            },
+        )
+
+        self.assertTrue(answer["ok"])
+        self.assertEqual(
+            [row["week_start"] for row in self.tools.proposals], [self.monday.isoformat(), next_monday.isoformat()]
+        )
+
+    def test_words_open_the_tools(self):
+        for question in ("запиши домашку по физике", "получил пятёрку по алгебре", "добавь заметку к уроку"):
+            with self.subTest(question=question):
+                self.assertIn("propose_diary_changes", choose_tools(question))
+
+
+class DiaryFromTemplateTests(TestCase):
+    """Неделя без записей: дневник соберёт её из шаблона, и модель должна видеть то же самое."""
+
+    def setUp(self):
+        self.tools = _tools()
+        self.today = self.tools.context.today
+        self.monday = self.today - dt.timedelta(days=self.today.weekday())
+        self.subject = Subject.objects.create(user_email=OWNER, name="Физика")
+        weekday = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")[self.today.weekday()]
+        self.weekday = weekday
+        slot = {
+            "id": "slot1",
+            "dayOfWeek": weekday,
+            "lessonNumber": 2,
+            "startTime": "09:30",
+            "endTime": "10:15",
+            "subjectId": str(self.subject.pk),
+            "blockType": "lesson",
+            "label": "",
+        }
+        pause = {**slot, "id": "slot2", "lessonNumber": 1, "startTime": "09:15", "endTime": "09:30", "blockType": "break", "subjectId": ""}
+        WeeklyTemplate.objects.create(id="t1", user_email=OWNER, name="Школа", is_active=True, slots=[slot, pause])
+
+    def test_a_week_never_opened_shows_the_template(self):
+        days = self.tools.run("get_diary", {"from_date": self.today.isoformat(), "to_date": self.today.isoformat()})["days"]
+
+        self.assertEqual([row["subject"] for row in days[0]["lessons"]], ["Перерыв", "Физика"])
+        self.assertEqual(days[0]["lessons"][1]["id"], "slot1")
+
+    def test_a_week_without_records_shows_the_template_not_its_old_lessons(self):
+        _week_row(
+            "w1",
+            self.monday,
+            [
+                {
+                    "id": "d1",
+                    "date": self.today.isoformat(),
+                    "lessons": [{"id": "old", "subjectName": "Старый урок", "homework": "", "notes": "", "grades": dict(_NO_GRADES)}],
+                }
+            ],
+        )
+
+        days = self.tools.run("get_diary", {"from_date": self.today.isoformat(), "to_date": self.today.isoformat()})["days"]
+
+        self.assertEqual([row["subject"] for row in days[0]["lessons"]], ["Перерыв", "Физика"])
+
+    def test_a_week_with_records_keeps_its_lessons(self):
+        _week_row(
+            "w1",
+            self.monday,
+            [
+                {
+                    "id": "d1",
+                    "date": self.today.isoformat(),
+                    "lessons": [{"id": "old", "subjectName": "Старый урок", "homework": "§1", "notes": "", "grades": dict(_NO_GRADES)}],
+                }
+            ],
+        )
+
+        days = self.tools.run("get_diary", {"from_date": self.today.isoformat(), "to_date": self.today.isoformat()})["days"]
+
+        self.assertEqual([row["subject"] for row in days[0]["lessons"]], ["Старый урок"])
+
+    def test_a_lesson_of_an_unopened_week_gets_homework(self):
+        answer = self.tools.run(
+            "propose_diary_changes",
+            {"changes": [{"date": self.today.isoformat(), "lesson_id": "slot1", "homework": "№12", "grade": 5}]},
+        )
+
+        self.assertTrue(answer["ok"])
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["week_start"], self.monday.isoformat())
+        change = proposal["changes"][0]
+        self.assertEqual(change["slot"], {"dayOfWeek": self.weekday, "lessonNumber": 2, "startTime": "09:30"})
+        self.assertEqual(change["subject"], "Физика")
+        self.assertEqual(change["subject_id"], str(self.subject.pk))
+        self.assertEqual(change["before"], {"homework": "", "grades": {"exercises": None}})
+        self.assertFalse(DiaryWeek.objects.filter(user_email=OWNER).exists())
+
+    def test_nothing_to_mark_on_a_lesson_of_an_unopened_week(self):
+        answer = self.tools.run("propose_mark_homework", {"date": self.today.isoformat(), "lesson_id": "slot1"})
+
+        self.assertEqual(answer["error"], "nothing_to_mark")
+
+    def test_a_slot_with_a_broken_subject_does_not_break_the_diary(self):
+        template = WeeklyTemplate.objects.get(pk="t1")
+        template.slots[0]["subjectId"] = "нет такого"
+        template.save()
+
+        days = self.tools.run("get_diary", {"from_date": self.today.isoformat(), "to_date": self.today.isoformat()})["days"]
+
+        self.assertEqual(sorted(row["subject"] for row in days[0]["lessons"]), ["Перерыв", "Предмет"])
+
+    def test_someone_elses_template_stays_hidden(self):
+        tools = _tools(INTRUDER)
+
+        self.assertEqual(tools.run("get_diary", {"from_date": self.today.isoformat(), "to_date": self.today.isoformat()})["days"], [])
+        answer = tools.run("propose_diary_changes", {"changes": [{"date": self.today.isoformat(), "lesson_id": "slot1", "grade": 5}]})
+        self.assertEqual(answer["error"], "not_found")
+
+
+class SchoolTimetableTests(TestCase):
+    """Школьное расписание: карточка помнит прежнее, а записи в базе нет."""
+
+    def setUp(self):
+        self.tools = _tools()
+        self.lesson = {"weekday": 0, "start": "08:30", "end": "09:15", "subject": "Алгебра"}
+
+    def _propose(self, *lessons, **fields):
+        return self.tools.run("propose_school_timetable", {"lessons": list(lessons), **fields})
+
+    def test_timetable_is_checked(self):
+        bad = (
+            {**self.lesson, "end": "08:00"},
+            {**self.lesson, "weekday": 9},
+            {**self.lesson, "weekday": "понедельник"},
+            {**self.lesson, "weekday": True},
+            {**self.lesson, "start": "утром"},
+            {**self.lesson, "subject": "  "},
+            "нет",
+        )
+        for row in bad:
+            with self.subTest(row=row):
+                self.assertEqual(self._propose(row)["error"], "invalid_arguments")
+        self.assertEqual(self._propose()["error"], "invalid_arguments")
+        self.assertEqual(self.tools.run("propose_school_timetable", {"lessons": "нет"})["error"], "invalid_arguments")
+        self.assertEqual(self._propose(*[self.lesson] * 71)["error"], "invalid_arguments")
+        self.assertEqual(self.tools.proposals, [])
+
+    def test_lessons_of_one_day_must_not_overlap(self):
+        answer = self._propose(self.lesson, {**self.lesson, "start": "09:00", "end": "09:45", "subject": "Физика"})
+
+        self.assertEqual(answer["error"], "invalid_arguments")
+
+    def test_timetable_remembers_the_old_one(self):
+        slots = [{"id": "s1", "dayOfWeek": "monday", "lessonNumber": 1, "startTime": "08:00", "endTime": "08:45", "subjectId": "x"}]
+        template = WeeklyTemplate.objects.create(id="t1", user_email=OWNER, name="Школа", is_active=True, slots=slots)
+        WeeklyTemplate.objects.create(id="t2", user_email=OWNER, name="Старое", is_active=False, slots=[])
+        WeeklyTemplate.objects.create(id="t3", user_email=INTRUDER, name="Чужое", is_active=True, slots=[{"id": "z"}])
+
+        self.assertTrue(self._propose(self.lesson)["ok"])
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["kind"], "school_timetable")
+        self.assertEqual(proposal["template_id"], "t1")
+        self.assertEqual(proposal["before_slots"], slots)
+        self.assertEqual(proposal["lessons"], [{"weekday": 0, "start": "08:30", "end": "09:15", "subject": "Алгебра"}])
+        self.assertEqual(proposal["clear_weekdays"], [])
+        template.refresh_from_db()
+        self.assertEqual(template.slots, slots)
+        self.assertFalse(TemplateLesson.objects.exists())
+
+    def test_without_a_template_it_still_proposes(self):
+        self.assertTrue(self._propose(self.lesson)["ok"])
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["template_id"], "")
+        self.assertEqual(proposal["before_slots"], [])
+        self.assertFalse(WeeklyTemplate.objects.exists())
+
+    def test_lessons_come_in_order_and_last_45_minutes_by_default(self):
+        self._propose(
+            {"weekday": 1, "start": "9:00", "subject": "Физика"},
+            {"weekday": 0, "start": "10:00", "subject": "Химия"},
+            {"weekday": 0, "start": "08:30+05:00", "end": "09:15", "subject": "Алгебра"},
+        )
+
+        self.assertEqual(
+            [(row["weekday"], row["start"], row["end"], row["subject"]) for row in self.tools.proposals[0]["lessons"]],
+            [(0, "08:30", "09:15", "Алгебра"), (0, "10:00", "10:45", "Химия"), (1, "09:00", "09:45", "Физика")],
+        )
+
+    def test_a_lesson_cannot_cross_midnight(self):
+        self.assertEqual(self._propose({"weekday": 0, "start": "23:50", "subject": "Физика"})["error"], "invalid_arguments")
+
+    def test_a_day_can_be_cleared(self):
+        self.assertTrue(self.tools.run("propose_school_timetable", {"clear_weekdays": [5, 5, 6]})["ok"])
+
+        proposal = self.tools.proposals[0]
+        self.assertEqual(proposal["lessons"], [])
+        self.assertEqual(proposal["clear_weekdays"], [5, 6])
+
+    def test_a_named_day_is_not_cleared(self):
+        self._propose(self.lesson, clear_weekdays=[0, 5])
+
+        self.assertEqual(self.tools.proposals[0]["clear_weekdays"], [5])
+
+    def test_clear_days_are_checked(self):
+        for days in ([9], ["суббота"], "суббота", [True]):
+            with self.subTest(days=days):
+                self.assertEqual(
+                    self.tools.run("propose_school_timetable", {"clear_weekdays": days})["error"], "invalid_arguments"
+                )
+
+    def test_a_second_call_goes_on_the_same_card(self):
+        self._propose(self.lesson)
+        self._propose({"weekday": 0, "start": "12:00", "subject": "История"}, {"weekday": 1, "start": "09:00", "subject": "Физика"})
+
+        self.assertEqual(len(self.tools.proposals), 1)
+        self.assertEqual(
+            [(row["weekday"], row["subject"]) for row in self.tools.proposals[0]["lessons"]],
+            [(0, "История"), (1, "Физика")],
+        )
+
+    def _school(self, *slots):
+        WeeklyTemplate.objects.create(id="t1", user_email=OWNER, name="Школа", is_active=True, slots=list(slots))
+
+    @staticmethod
+    def _slot(slot_id, day, number, start, end, subject_id="", block="lesson", label=""):
+        return {
+            "id": slot_id,
+            "dayOfWeek": day,
+            "lessonNumber": number,
+            "startTime": start,
+            "endTime": end,
+            "subjectId": subject_id,
+            "blockType": block,
+            "label": label,
+        }
+
+    def test_a_named_day_says_what_goes(self):
+        algebra = str(Subject.objects.create(user_email=OWNER, name="Алгебра").pk)
+        chemistry = str(Subject.objects.create(user_email=OWNER, name="Химия").pk)
+        self._school(
+            self._slot("a", "wednesday", 1, "08:30", "09:15", algebra),
+            self._slot("b", "wednesday", 2, "09:15", "09:30", block="break"),
+            self._slot("c", "wednesday", 3, "09:30", "10:15", chemistry),
+            self._slot("d", "wednesday", 4, "11:30", "12:00", block="focus", label="Чтение"),
+            self._slot("e", "wednesday", 5, "16:00", "17:00", block="focus", label="Спорт"),
+            self._slot("f", "monday", 1, "08:30", "09:15", algebra),
+        )
+
+        answer = self._propose({"weekday": 2, "start": "11:40", "subject": "Физика"})
+
+        self.assertEqual(
+            self.tools.proposals[0]["removed"],
+            [
+                {"weekday": 2, "start": "08:30", "name": "Алгебра"},
+                {"weekday": 2, "start": "09:30", "name": "Химия"},
+                {"weekday": 2, "start": "11:30", "name": "Чтение"},
+            ],
+        )
+        self.assertIn("Алгебра", answer["note"])
+
+    def test_a_lesson_that_stays_is_not_named(self):
+        algebra = str(Subject.objects.create(user_email=OWNER, name="Алгебра").pk)
+        self._school(self._slot("a", "monday", 1, "8:30", "09:15", algebra))
+
+        answer = self._propose({**self.lesson, "subject": "алгебра"}, {"weekday": 0, "start": "09:30", "subject": "Физика"})
+
+        self.assertEqual(self.tools.proposals[0]["removed"], [])
+        self.assertNotIn("Алгебра", answer["note"])
+
+    def test_a_cleared_day_names_its_lessons(self):
+        algebra = str(Subject.objects.create(user_email=OWNER, name="Алгебра").pk)
+        self._school(
+            self._slot("a", "saturday", 1, "08:30", "09:15", algebra),
+            self._slot("b", "saturday", 2, "16:00", "17:00", block="focus", label="Спорт"),
+        )
+
+        self.tools.run("propose_school_timetable", {"clear_weekdays": [5]})
+
+        self.assertEqual(self.tools.proposals[0]["removed"], [{"weekday": 5, "start": "08:30", "name": "Алгебра"}])
+
+    def test_the_second_call_counts_what_goes_again(self):
+        algebra = str(Subject.objects.create(user_email=OWNER, name="Алгебра").pk)
+        self._school(self._slot("a", "wednesday", 1, "08:30", "09:15", algebra))
+
+        self._propose({"weekday": 2, "start": "11:40", "subject": "Физика"})
+        self._propose({"weekday": 2, "start": "08:30", "subject": "Алгебра"}, {"weekday": 2, "start": "11:40", "subject": "Физика"})
+
+        self.assertEqual(self.tools.proposals[0]["removed"], [])
+
+    def test_words_open_the_tools(self):
+        for question in ("запиши школьное расписание", "в понедельник первым уроком алгебра"):
+            with self.subTest(question=question):
+                self.assertIn("propose_school_timetable", choose_tools(question))

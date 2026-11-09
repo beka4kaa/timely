@@ -118,6 +118,8 @@ const STAGE_LABELS: Record<string, string> = {
   propose_goal_progress: "Готовлю предложение",
   propose_new_topics: "Готовлю предложение",
   propose_mark_homework: "Готовлю предложение",
+  propose_diary_changes: "Готовлю запись в дневник",
+  propose_school_timetable: "Готовлю школьное расписание",
 };
 
 export function stageLabel(tool: string): string {

@@ -6,8 +6,10 @@
 
 import type { ScheduleRevision } from "@/lib/studyplan-api";
 import type { ParsedCommitment, ParsedStudyWindow } from "@/lib/studyplan-chat";
-import type { DayOfWeek } from "@/types/diary";
+import type { DayOfWeek, LessonGrades, TemplateLessonSlot } from "@/types/diary";
 
+import { DAY_OF_WEEK_LABELS, DAYS_ORDER } from "../../types/diary";
+import type { LessonValues, TimetableLesson } from "../diary/diary-edits";
 import { plural } from "../habits/habit-days";
 import { scheduleLabel, scheduleOf, type SchedulePatch } from "../habits/habit-schedule";
 
@@ -23,6 +25,10 @@ export interface ProposalUndo {
   /** Что вернуть сервер решил сам: клиент хранит это, не разбирая. */
   quickPlan?: Record<string, unknown>;
   blockIds?: string[];
+  /** Расписание, которое создали с нуля: отмена его удаляет. */
+  templateId?: string;
+  /** Что записали: если ученик поправил расписание сам, отмена его правки не сотрёт. */
+  slots?: TemplateLessonSlot[];
 }
 
 export type BlockAction = "cancel" | "restore" | "pin" | "unpin";
@@ -51,6 +57,17 @@ export interface LessonSlotRef {
   dayOfWeek: DayOfWeek;
   lessonNumber: number;
   startTime: string;
+}
+
+export interface LessonChange {
+  day_id: string;
+  lesson_id: string;
+  slot: LessonSlotRef;
+  subject_id: string;
+  subject: string;
+  date: string;
+  fields: LessonValues;
+  before: LessonValues;
 }
 
 interface ProposalBase {
@@ -148,6 +165,17 @@ export type AssistantProposal = ProposalBase &
         topics: number;
         books: number;
         chats: number;
+      }
+    | { kind: "diary_changes"; week_start: string; changes: LessonChange[] }
+    | {
+        kind: "school_timetable";
+        lessons: TimetableLesson[];
+        clear_weekdays: number[];
+        /** Пусто: расписания ещё нет. */
+        template_id: string;
+        before_slots: TemplateLessonSlot[];
+        /** Что уйдёт из названных дней. У старых карточек поля нет. */
+        removed?: { weekday: number; start: string; name: string }[];
       }
   );
 
@@ -250,6 +278,72 @@ function subjectChangeNote(proposal: Extract<AssistantProposal, { kind: "subject
   return `удалю ${parts.length ? `${parts.join(", ")} и ${last}` : last}, вернуть нельзя`;
 }
 
+const GRADE_NAMES: Record<keyof LessonGrades, string> = {
+  exercises: "оценка",
+  test: "оценка за тест",
+  retelling: "оценка за пересказ",
+};
+
+const oneLine = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
+const BEFORE_CHARS = 60;
+
+function shortened(text: string): string {
+  const line = oneLine(text);
+  return line.length > BEFORE_CHARS ? `${line.slice(0, BEFORE_CHARS).trimEnd()}…` : line;
+}
+
+/** Правка заменяет поле целиком, поэтому прежнее видно на карточке. */
+function textChange(label: string, removal: string, after: string | undefined, before: string | undefined): string | null {
+  if (after === undefined) return null;
+  const was = shortened(before ?? "");
+  if (!after) return was ? `${removal} «${was}»` : removal;
+  return was ? `${label}: ${was} → ${oneLine(after)}` : `${label}: ${oneLine(after)}`;
+}
+
+function lessonChangeNote({ fields, before }: LessonChange): string {
+  const parts = [textChange("домашка", "убрать домашку", fields.homework, before.homework)];
+  for (const [field, value] of Object.entries(fields.grades ?? {})) {
+    const was = before.grades?.[field as keyof LessonGrades] ?? null;
+    const name = GRADE_NAMES[field as keyof LessonGrades];
+    if (value === null) parts.push(was === null ? "убрать оценку" : `убрать оценку ${was}`);
+    else parts.push(was === null ? `${name}: ${value}` : `${name}: ${was} → ${value}`);
+  }
+  parts.push(textChange("заметка", "убрать заметку", fields.notes, before.notes));
+  return parts.filter(Boolean).join(", ");
+}
+
+const lessonChangeName = (change: LessonChange) => `${change.subject}, ${dayLabel(change.date)}`;
+
+type TimetableProposal = Extract<AssistantProposal, { kind: "school_timetable" }>;
+
+const clock = (time: string) => time.replace(/^0/, "");
+const weekdayName = (day: number) => DAY_OF_WEEK_LABELS[DAYS_ORDER[day]];
+
+function timetableDays({ lessons, clear_weekdays }: TimetableProposal): number[] {
+  return Array.from(new Set([...lessons.map((lesson) => lesson.weekday), ...clear_weekdays])).sort((a, b) => a - b);
+}
+
+function timetableRows(proposal: TimetableProposal): ProposalRow[] {
+  const days = timetableDays(proposal);
+  const rows: ProposalRow[] = days.map((day) => {
+    const added = proposal.lessons
+      .filter((lesson) => lesson.weekday === day)
+      .map((lesson) => `${lesson.subject} ${clock(lesson.start)}`)
+      .join(", ");
+    const gone = (proposal.removed ?? [])
+      .filter((slot) => slot.weekday === day)
+      .map((slot) => `${slot.name} ${clock(slot.start)}`)
+      .join(", ");
+    return { name: weekdayName(day), note: [added, gone && `уберу: ${gone}`].filter(Boolean).join("; ") || "уроков не будет" };
+  });
+  const named = days.map((day) => DAYS_ORDER[day]);
+  if (proposal.before_slots.some((slot) => !named.includes(slot.dayOfWeek))) {
+    rows.push({ name: "Остальные дни", note: "останутся как есть" });
+  }
+  rows.push({ name: "Недели с оценками и заданиями", note: "останутся как есть" });
+  return rows;
+}
+
 /** Строка над списком изменений. */
 export function proposalHeading(proposal: AssistantProposal): string {
   switch (proposal.kind) {
@@ -281,6 +375,10 @@ export function proposalHeading(proposal: AssistantProposal): string {
       return proposal.delete ? "Удалю тему:" : "Поменяю тему:";
     case "subject_change":
       return proposal.delete ? "Удалю предмет:" : "Поменяю предмет:";
+    case "diary_changes":
+      return "Запишу в дневник:";
+    case "school_timetable":
+      return "Запишу школьное расписание:";
     default:
       return "";
   }
@@ -326,6 +424,10 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
       return [{ name: proposal.name, note: topicChangeNote(proposal) }];
     case "subject_change":
       return [{ name: proposal.name, note: subjectChangeNote(proposal) }];
+    case "diary_changes":
+      return proposal.changes.map((change) => ({ name: lessonChangeName(change), note: lessonChangeNote(change) }));
+    case "school_timetable":
+      return timetableRows(proposal);
     default:
       return [];
   }
@@ -400,6 +502,10 @@ export function proposalDoneText(proposal: AssistantProposal): string {
       return proposal.delete
         ? `Предмет «${proposal.name}» удалён.`
         : `Предмет теперь называется «${proposal.new_name}».`;
+    case "diary_changes":
+      return "Записано в дневник.";
+    case "school_timetable":
+      return "Школьное расписание записано.";
   }
 }
 
@@ -456,6 +562,10 @@ export function proposalSummary(proposal: AssistantProposal): string {
       return proposal.delete
         ? `удалить предмет «${proposal.name}»`
         : `переименовать предмет «${proposal.name}» в «${proposal.new_name}»`;
+    case "diary_changes":
+      return `в дневник: ${proposal.changes.map((change) => `${lessonChangeName(change)}, ${lessonChangeNote(change)}`).join("; ")}`;
+    case "school_timetable":
+      return `школьное расписание: ${timetableDays(proposal).map((day) => weekdayName(day).toLowerCase()).join(", ")}`;
   }
 }
 

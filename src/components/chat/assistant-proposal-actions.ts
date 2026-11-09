@@ -3,7 +3,15 @@
 // Запись предложения помощника. Те же API и те же проверки, что у страниц: новых путей записи
 // модель не получает. Сюда приходят только после нажатия «Применить».
 
-import { markHomeworkDone } from "@/components/diary/use-diary-week";
+import { LessonChangedError, mergeTimetable, sameSlots, type LessonEdit } from "@/components/diary/diary-edits";
+import {
+  activeTemplate,
+  createActiveTemplate,
+  removeTemplate,
+  saveTemplateSlots,
+  timetableChanged,
+} from "@/components/diary/template-api";
+import { editLessons, markHomeworkDone } from "@/components/diary/use-diary-week";
 import { TONES, isOpenGoal } from "@/components/goals/goal-logic";
 import { createGoal, listGoals, moveGoalProgress, updateGoal } from "@/components/goals/goals-api";
 import { localDay, nextHabitColor } from "@/components/habits/habit-days";
@@ -27,12 +35,13 @@ import {
   undoQuickPlan,
   undoRevision,
 } from "@/lib/studyplan-api";
-import { findSubject, firstReviewFields, type WeakSubject, type WeakTopic } from "@/lib/weak-topics";
+import { findSubject, firstReviewFields, subjectsToRemove, type WeakSubject, type WeakTopic } from "@/lib/weak-topics";
 import {
   createSubject,
   createTopic,
   deleteSubject,
   deleteTopic,
+  fetchAllTopics,
   fetchSubjects,
   patchTopic,
   renameSubject,
@@ -41,7 +50,7 @@ import {
   topicsChanged,
 } from "@/lib/weak-topics-api";
 
-import type { AssistantProposal, BlockAction, ProposalUndo } from "./assistant-proposal";
+import type { AssistantProposal, BlockAction, LessonChange, ProposalUndo } from "./assistant-proposal";
 
 /** Сервер объяснил отказ словами: показываем их, а не общую фразу. */
 export function proposalFailureText(error: unknown, fallback: string): string {
@@ -68,6 +77,79 @@ async function renameEverywhere(goalIds: string[], subjectIds: string[], name: s
   topicsChanged();
   dataChanged("subjects");
   invalidatePlan();
+}
+
+/** Отмена это та же правка наоборот: урок должен быть таким, каким его оставила запись. */
+function lessonEdits(changes: LessonChange[], undo: boolean): LessonEdit[] {
+  return changes.map((change) => ({
+    place: change,
+    expect: undo ? change.fields : change.before,
+    write: undo ? change.before : change.fields,
+  }));
+}
+
+type TimetableProposal = Extract<AssistantProposal, { kind: "school_timetable" }>;
+
+const TIMETABLE_CHANGED = "Школьное расписание уже поменялось";
+
+/** Поверх чужих правок не пишем: карточка считает от того расписания, которое видела. */
+async function applyTimetable(proposal: TimetableProposal): Promise<ProposalUndo> {
+  const active = await activeTemplate();
+  if ((active?.id ?? "") !== proposal.template_id || !sameSlots(active?.slots ?? [], proposal.before_slots)) {
+    throw new LessonChangedError(TIMETABLE_CHANGED);
+  }
+  const known = await fetchSubjects();
+  const created: WeakSubject[] = [];
+  for (const lesson of proposal.lessons) {
+    if (findSubject(known, lesson.subject)) continue;
+    const subject = await createSubject(lesson.subject);
+    known.push(subject);
+    created.push(subject);
+  }
+  const slots = mergeTimetable(
+    proposal.before_slots,
+    proposal.lessons,
+    proposal.clear_weekdays,
+    (name) => findSubject(known, name)?.id ?? "",
+    () => crypto.randomUUID(),
+  );
+  const saved = active ? await saveTemplateSlots(active.id, slots) : await createActiveTemplate(slots);
+  if (created.length) subjectsChanged((list) => [...list, ...created]);
+  timetableChanged();
+  return {
+    subjectIds: created.map((subject) => subject.id),
+    ...(active ? {} : { templateId: saved.id }),
+    slots: saved.slots,
+  };
+}
+
+async function undoTimetable(proposal: TimetableProposal, undo: ProposalUndo): Promise<void> {
+  const active = await activeTemplate();
+  const wanted = undo.templateId ?? proposal.template_id;
+  if (!active || active.id !== wanted || !sameSlots(active.slots, undo.slots ?? [])) {
+    throw new LessonChangedError(TIMETABLE_CHANGED);
+  }
+  if (undo.templateId) await removeTemplate(undo.templateId);
+  else await saveTemplateSlots(active.id, proposal.before_slots);
+  timetableChanged();
+
+  await removeEmptySubjects(undo.subjectIds ?? []);
+}
+
+/**
+ * Предмет, созданный карточкой, при отмене убираем, только если он пуст и не стоит в школьном
+ * расписании: удаление уносит темы. Лишний пустой предмет не страшен, поэтому сбой здесь не мешает.
+ */
+async function removeEmptySubjects(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  try {
+    const [topics, template] = await Promise.all([fetchAllTopics(), activeTemplate()]);
+    const empty = subjectsToRemove(ids, topics, template?.slots ?? []);
+    await Promise.all(empty.map((id) => deleteSubject(id)));
+    subjectsChanged((list) => list.filter((row) => !empty.includes(row.id)));
+  } catch {
+    subjectsChanged();
+  }
 }
 
 /** Записывает. Возвращает то, что нужно для «Вернуть как было». */
@@ -240,6 +322,11 @@ export async function applyProposal(proposal: AssistantProposal): Promise<Propos
       dataChanged("subjects");
       invalidatePlan();
       return {};
+    case "diary_changes":
+      await editLessons(proposal.week_start, lessonEdits(proposal.changes, false));
+      return {};
+    case "school_timetable":
+      return applyTimetable(proposal);
   }
 }
 
@@ -280,11 +367,9 @@ export async function undoProposal(proposal: AssistantProposal): Promise<void> {
       return;
     case "new_topics": {
       const topicIds = undo.topicIds ?? [];
-      const subjectIds = undo.subjectIds ?? [];
       await Promise.all(topicIds.map((id) => deleteTopic(id)));
-      await Promise.all(subjectIds.map((id) => deleteSubject(id)));
       topicsChanged((list) => list.filter((row) => !topicIds.includes(row.id)));
-      if (subjectIds.length) subjectsChanged((list) => list.filter((row) => !subjectIds.includes(row.id)));
+      await removeEmptySubjects(undo.subjectIds ?? []);
       return;
     }
     case "mark_homework":
@@ -346,6 +431,12 @@ export async function undoProposal(proposal: AssistantProposal): Promise<void> {
       return;
     case "subject_change":
       await renameEverywhere(proposal.goal_ids, proposal.subject_ids, proposal.name);
+      return;
+    case "diary_changes":
+      await editLessons(proposal.week_start, lessonEdits(proposal.changes, true));
+      return;
+    case "school_timetable":
+      await undoTimetable(proposal, undo);
       return;
   }
 }

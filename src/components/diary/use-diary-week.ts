@@ -14,6 +14,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
+import {
+  applyLessonEdits,
+  LessonChangedError,
+  locateById,
+  locateBySlot,
+  mapLesson,
+  type LessonEdit,
+} from "@/components/diary/diary-edits";
 import { gradeField, taskText, weekRangeLabel } from "@/lib/diary-tasks";
 import {
   canRedo,
@@ -87,47 +95,6 @@ interface LessonTarget {
   slot: LessonSlot;
 }
 
-interface Located {
-  day: DiaryDay;
-  lesson: DiaryLesson;
-}
-
-function locateById(week: DiaryWeek, dayId: string, lessonId: string): Located | null {
-  const day = week.days.find((item) => item.id === dayId);
-  const lesson = day?.lessons.find((item) => item.id === lessonId);
-  return day && lesson ? { day, lesson } : null;
-}
-
-function locateBySlot(week: DiaryWeek, slot: LessonSlot): Located | null {
-  const day = week.days.find((item) => item.dayOfWeek === slot.dayOfWeek);
-  const lesson =
-    day?.lessons.find(
-      (item) => item.lessonNumber === slot.lessonNumber && item.startTime === slot.startTime,
-    ) ?? day?.lessons.find((item) => item.lessonNumber === slot.lessonNumber);
-  return day && lesson ? { day, lesson } : null;
-}
-
-function mapLesson(
-  week: DiaryWeek,
-  dayId: string,
-  lessonId: string,
-  change: (lesson: DiaryLesson) => DiaryLesson,
-): DiaryWeek {
-  return {
-    ...week,
-    days: week.days.map((day) =>
-      day.id !== dayId
-        ? day
-        : {
-            ...day,
-            lessons: day.lessons.map((lesson) =>
-              lesson.id === lessonId ? change(lesson) : lesson,
-            ),
-          },
-    ),
-  };
-}
-
 /** PATCH с проверкой, что запись попала в урок (см. п. 1 в начале файла). */
 async function patchLesson(
   target: LessonTarget,
@@ -143,7 +110,7 @@ async function patchLesson(
 
   const fresh = await readWeek(answer.weekStart);
   const found = locateBySlot(fresh, target.slot);
-  if (!found) throw new Error("Этого урока на неделе больше нет");
+  if (!found) throw new LessonChangedError("Этого урока на неделе больше нет");
   return patchWeek({
     weekId: fresh.id,
     dayId: found.day.id,
@@ -161,7 +128,7 @@ async function rewriteLesson(
   const fresh = await readWeek(weekStart);
   const found =
     locateById(fresh, target.dayId, target.lessonId) ?? locateBySlot(fresh, target.slot);
-  if (!found) throw new Error("Этого урока на неделе больше нет");
+  if (!found) throw new LessonChangedError("Этого урока на неделе больше нет");
   return putWeek(
     mapLesson(fresh, found.day.id, found.lesson.id, (lesson) => ({ ...lesson, ...patch })),
   );
@@ -178,6 +145,13 @@ export async function markHomeworkDone(
     { dayId: place.day_id, lessonId: place.lesson_id, slot: place.slot },
     { homeworkDone: done },
   );
+  invalidateResources("now:diary:");
+  dataChanged("diary");
+}
+
+/** Правки из карточки тьютора. Вся неделя одной записью: на полпути она не останется. */
+export async function editLessons(weekStart: string, edits: LessonEdit[]): Promise<void> {
+  await putWeek(applyLessonEdits(await readWeek(weekStart), edits));
   invalidateResources("now:diary:");
   dataChanged("diary");
 }
