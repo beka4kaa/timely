@@ -6,7 +6,7 @@
 .now-skel { display: block; border-radius: 8px; background: var(--t-fill); }
 .now-skel + .now-skel { margin-top: 10px; }
 .now-skel.is-title { width: 280px; max-width: 60%; height: 33px; }
-.now-skel.is-week { width: 320px; max-width: 100%; height: 30px; border-radius: 11px; }
+.now-skel.is-week { width: 330px; max-width: 100%; height: 50px; border-radius: 12px; }
 .now-skel.is-big { width: 62%; height: 28px; }
 .now-skel.is-line { width: 44%; height: 14px; }
 .now-skel.is-btn { width: 136px; height: 32px; margin-top: 16px; border-radius: 10px; }
@@ -92,7 +92,7 @@
 
 /* Самые узкие телефоны: семь дней должны уместиться */
 @container main (max-width: 350px) {
-  .weekline a { padding-inline: 6px; }
+  .weekline { gap: 3px; }
 }
 
 @media (max-width: 640px) {

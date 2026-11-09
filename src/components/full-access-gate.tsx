@@ -37,7 +37,11 @@ export function useFullAccessDenied(): boolean {
   return me.has_full_access === false && me.is_admin === false
 }
 
-export function FullAccessGate({ children }: { children: ReactNode }) {
+/**
+ * `denied`: что показать вместо раздела, если он закрыт. Без него закрытый раздел
+ * объясняется карточкой.
+ */
+export function FullAccessGate({ children, denied: fallback }: { children: ReactNode; denied?: ReactNode }) {
   const { me, loading } = useMe()
 
   // Пока грузится — показываем раздел. Заглушка на полсекунды с последующим
@@ -50,6 +54,7 @@ export function FullAccessGate({ children }: { children: ReactNode }) {
 
   const denied = me.has_full_access === false && me.is_admin === false
   if (!denied) return <>{children}</>
+  if (fallback) return <>{fallback}</>
 
   // Явный отказ — единственный случай, когда раздел закрыт. И он объясняется,
   // а не заканчивается молчаливым переносом на другую страницу.

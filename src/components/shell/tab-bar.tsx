@@ -12,13 +12,14 @@ import {
   getDashboardSections,
   type DashboardSectionKey,
   type DashboardView,
+  itemMatches,
 } from "@/config/dashboard-navigation";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 const TABS: Array<{ key: string; title: string; icon: IconName; href: string }> = [
   { key: "now", title: "Сейчас", icon: "now", href: "/dashboard" },
   { key: "chat", title: "Тьютор", icon: "chat", href: "/dashboard/chat" },
-  { key: "diary", title: "Учёба", icon: "diary", href: "/dashboard/diary" },
+  { key: "diary", title: "Учёба", icon: "diary", href: "/dashboard/plan" },
   { key: "library", title: "Книги", icon: "book", href: "/dashboard/curriculum" },
 ];
 
@@ -128,7 +129,7 @@ export function SubNav({ group }: { group: keyof typeof SUBNAV_SECTION }) {
   return (
     <nav className="subnav" aria-label="Страницы раздела">
       {section.items.map((item) => (
-        <Link key={item.url} href={item.url} aria-current={path === item.url || path.startsWith(`${item.url}/`) ? "page" : undefined}>
+        <Link key={item.url} href={item.url} aria-current={itemMatches(item, path) ? "page" : undefined}>
           {item.title}
         </Link>
       ))}

@@ -1,7 +1,7 @@
 "use client";
 
-// Неделя одной строкой в заголовке страницы: дни ведут в «План», точка отмечает
-// день с контрольной.
+// Неделя плитками в заголовке страницы: день недели и число, сегодня тёмная плитка.
+// Дни ведут в «Неделю», точка отмечает день с контрольной.
 
 import Link from "next/link";
 
@@ -15,7 +15,7 @@ export function WeekStrip({ days }: { days: WeekDay[] }) {
         const date = longDateLabel(day.dateKey);
         const label = `${day.isToday ? `Сегодня, ${date.charAt(0).toLowerCase()}${date.slice(1)}` : date}${
           day.test ? `, ${day.test}` : ""
-        }. Открыть план`;
+        }. Открыть неделю`;
         return (
           <Link
             key={day.dateKey}
@@ -25,7 +25,8 @@ export function WeekStrip({ days }: { days: WeekDay[] }) {
             aria-label={label}
             title={day.test ?? undefined}
           >
-            {day.weekday} {day.day}
+            {day.weekday}
+            <b>{day.day}</b>
           </Link>
         );
       })}

@@ -1,3 +1,4 @@
+import { DiaryPage } from "@/components/diary/diary-page";
 import { FullAccessGate } from "@/components/full-access-gate";
 import { StudyPlanPage } from "@/components/studyplan/plan-page";
 
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default function PlanPage() {
   return (
-    <FullAccessGate>
+    // «Неделя»: план с уроками и заданиями. Кому план закрыт, тот видит прежний дневник.
+    <FullAccessGate denied={<DiaryPage />}>
       <StudyPlanPage />
     </FullAccessGate>
   );

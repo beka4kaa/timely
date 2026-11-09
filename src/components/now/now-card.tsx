@@ -446,7 +446,7 @@ function quietContent(
         title: "План для этого аккаунта закрыт",
         text: "Доступ к плану и темам включает администратор. Дневник и тьютор работают.",
         action: "Открыть дневник",
-        href: "/dashboard/diary",
+        href: "/dashboard/plan",
         primary: false,
       };
     case "done":
@@ -455,7 +455,7 @@ function quietContent(
         text: `${done} ${plural(done, ["занятие", "занятия", "занятий"])} по плану позади.${
           next ? ` Дальше ${nextText(next, timeZone, today)}.` : ""
         }`,
-        action: "Открыть план",
+        action: "Открыть неделю",
         href: "/dashboard/plan",
         primary: false,
       };
@@ -484,7 +484,7 @@ function quietContent(
       return {
         title: "Занятий по плану нет",
         text: parts.join(" ") || "Если хочется, спроси тьютора о том, что непонятно.",
-        action: "Открыть план",
+        action: "Открыть неделю",
         href: "/dashboard/plan",
         primary: false,
       };

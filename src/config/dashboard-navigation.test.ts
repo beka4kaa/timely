@@ -6,6 +6,7 @@ import {
   getDashboardNavigation,
   getDashboardPageMeta,
   getDashboardSections,
+  itemMatches,
   matchNavigation,
 } from "./dashboard-navigation.ts";
 
@@ -24,10 +25,18 @@ test("«Сейчас» горит только на корне, а не на к�
   assert.equal(matchNavigation("/dashboard/profile").section, null);
 });
 
-test("побеждает самый точный пункт: страница курса в библиотеке, шаблон в дневнике", () => {
+test("побеждает самый точный пункт: страница курса в библиотеке, шаблон уроков в неделе", () => {
   assert.deepEqual(matchNavigation("/dashboard/diary/schedule"), {
     section: "study",
-    itemUrl: "/dashboard/diary",
+    itemUrl: "/dashboard/plan",
+  });
+  assert.deepEqual(matchNavigation("/dashboard/diary/grades"), {
+    section: "study",
+    itemUrl: "/dashboard/plan",
+  });
+  assert.deepEqual(matchNavigation("/dashboard/plan"), {
+    section: "study",
+    itemUrl: "/dashboard/plan",
   });
   assert.equal(matchNavigation("/dashboard/curriculum/plan/42").section, "library");
   assert.equal(matchNavigation("/dashboard/habits").section, "growth");
@@ -62,4 +71,13 @@ test("заголовок шапки: корень — «Сейчас», чужа
   assert.equal(getDashboardPageMeta("/dashboard").title, "Сейчас");
   assert.equal(getDashboardPageMeta("/dashboard/leaderboard").title, "Рейтинг");
   assert.equal(getDashboardPageMeta("/dashboard/unknown").title, "Timely");
+});
+
+test("в учёбе одна неделя вместо дневника и плана", () => {
+  const study = getDashboardSections().find((section) => section.key === "study");
+
+  assert.deepEqual(study?.items.map((item) => item.title), ["Неделя", "Слабые темы", "Помодоро"]);
+  assert.equal(study?.url, "/dashboard/plan");
+  assert.equal(itemMatches({ url: "/dashboard/plan", aliases: ["/dashboard/diary"] }, "/dashboard/diary/schedule"), true);
+  assert.equal(itemMatches({ url: "/dashboard/plan" }, "/dashboard/planner"), false);
 });

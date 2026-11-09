@@ -39,6 +39,8 @@ import {
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import { durationLabel } from "@/lib/studyplan-visuals";
+import { parseClock } from "@/lib/now-feed";
+import type { SchoolDay, SchoolLesson } from "@/lib/school-week";
 
 import {
   HOUR_PX,
@@ -122,6 +124,8 @@ export function PlanCalendar({
   selectedIds,
   busy = false,
   dues = NO_DUES,
+  school = NO_SCHOOL,
+  onOpenLesson,
   ownIds = NO_IDS,
   leaving = NO_IDS,
   ghosts = NO_IDS,
@@ -149,6 +153,9 @@ export function PlanCalendar({
   busy?: boolean;
   /** Сроки на весь день: дедлайны, контрольные. */
   dues?: readonly Due[];
+  /** Уроки школы по дням, из дневника. Двигать их нельзя, нажатие открывает урок. */
+  school?: readonly SchoolDay[];
+  onOpenLesson?: (lesson: SchoolLesson) => void;
   /** Свои блоки: выглядят и двигаются как занятия. */
   ownIds?: ReadonlySet<string>;
   /** Предпросмотр предложения: старое место, новое место, новая длина. */
@@ -218,22 +225,34 @@ export function PlanCalendar({
   const scrollTo = useCallback(() => {
     const body = bodyRef.current;
     if (!body) return;
+    // Со школой неделя начинается с уроков: иначе вечером их было бы не видно совсем.
+    const schoolStart = school.length ? Math.min(...school.map((day) => day.startMinutes)) - 30 : null;
     let target: number;
     if (days.includes(todayKey)) {
-      target = zonedMinutes(new Date(), timeZone) - NOW_LEAD_MINUTES;
+      const now = zonedMinutes(new Date(), timeZone) - NOW_LEAD_MINUTES;
+      target = schoolStart === null ? now : Math.min(now, schoolStart);
     } else {
-      const starts = shown.map((entry) => zonedMinutes(entry.start_at, timeZone));
-      target = (starts.length ? Math.min(...starts) : 9 * 60) - 60;
+      const starts = shown.map((entry) => zonedMinutes(entry.start_at, timeZone) - 60);
+      if (schoolStart !== null) starts.push(schoolStart);
+      target = starts.length ? Math.min(...starts) : 8 * 60;
     }
     body.scrollTop = Math.max(0, (target / 60) * HOUR_PX);
     // Только при открытии и по кнопке: при листании недель сетка остаётся, где была.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, todayKey, timeZone]);
+  }, [days, todayKey, timeZone, school]);
 
   useEffect(() => {
     scrollTo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollNonce]);
+
+  // Дневник приходит позже календаря. Когда уроки появились впервые, сетка встаёт к ним один раз.
+  const scrolledToSchool = useRef(false);
+  useEffect(() => {
+    if (scrolledToSchool.current || !school.length) return;
+    scrolledToSchool.current = true;
+    scrollTo();
+  }, [school.length, scrollTo]);
 
   // Предложение помощника должно быть видно: новое место могло оказаться за краем сетки.
   const ghostKey = Array.from(ghosts).join(",");
@@ -479,7 +498,7 @@ export function PlanCalendar({
       if (entry && isMovable(entry)) startDrag(event, entry, element);
       return;
     }
-    if (target.closest(".draft, .ghost")) return;
+    if (target.closest(".draft, .ghost, [data-school]")) return;
     if (target.closest(".wcol")) startMarquee(event);
   };
 
@@ -494,7 +513,7 @@ export function PlanCalendar({
       else onOpen(entry);
       return;
     }
-    if (target.closest(".draft, .ghost")) return;
+    if (target.closest(".draft, .ghost, [data-school]")) return;
     const column = target.closest<HTMLElement>(".wcol");
     if (!column?.dataset.day) {
       onDismiss();
@@ -538,6 +557,8 @@ export function PlanCalendar({
     }
     return map;
   }, [dues]);
+
+  const schoolByDay = useMemo(() => new Map(school.map((day) => [day.dateKey, day])), [school]);
 
   const noAllDay = mode === "day" && !dueByDay.get(pickedDay)?.length;
   const nowLine = nowMs === null ? null : new Date(nowMs);
@@ -632,6 +653,10 @@ export function PlanCalendar({
                 aria-label={`Сейчас ${clock(nowMinutes)}`}
                 style={{ top: `calc(${nowMinutes / 60} * var(--hh))` }}
               />
+            ) : null}
+
+            {schoolByDay.get(column.dateKey) ? (
+              <SchoolBand day={schoolByDay.get(column.dateKey)!} onOpen={onOpenLesson} />
             ) : null}
 
             {column.blocks.map((positioned) => {
@@ -770,6 +795,50 @@ function DraftBlock({ draft }: { draft: PlanDraft }) {
     >
       <b>{draft.title.trim() || "Новое занятие"}</b>
       <small>{clockRange(draft.startMinutes, draft.durationMinutes)}</small>
+    </div>
+  );
+}
+
+const NO_SCHOOL: readonly SchoolDay[] = [];
+
+/** Уроки дня на своих местах по времени. Промежутки между ними это перемены. */
+function SchoolBand({ day, onOpen }: { day: SchoolDay; onOpen?: (lesson: SchoolLesson) => void }) {
+  const start = day.startMinutes;
+  const end = Math.max(day.endMinutes, start + 15);
+  return (
+    <div className="school" data-school="" style={{ "--s": start / 60, "--d": end - start } as CSSProperties}>
+      {day.lessons.map((lesson) => {
+        const from = Math.max(parseClock(lesson.start) ?? start, start);
+        const to = Math.min(Math.max(parseClock(lesson.end) ?? from + 40, from + 15), end);
+        const time = `${lesson.start.replace(/^0/, "")}–${lesson.end.replace(/^0/, "")}`;
+        const note = lesson.grade ? `оценка ${lesson.grade}` : lesson.task === "open" ? "есть задание" : lesson.task === "done" ? "задание сделано" : "";
+        return (
+          <button
+            key={lesson.lessonId}
+            type="button"
+            className="school-l"
+            style={{ "--o": from - start, "--l": to - from } as CSSProperties}
+            aria-label={[lesson.title, time, note].filter(Boolean).join(", ")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen?.(lesson);
+            }}
+          >
+            <span className="school-n">
+              <i style={{ background: lesson.color }} />
+              <span>{lesson.title}</span>
+            </span>
+            <span className="school-t">
+              <small>{time}</small>
+              {lesson.grade ? (
+                <b>{lesson.grade}</b>
+              ) : lesson.task !== "none" ? (
+                <em className={lesson.task === "done" ? "is-done" : undefined}>дз</em>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

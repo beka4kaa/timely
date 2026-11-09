@@ -12,10 +12,22 @@ import {
   useState,
 } from "react";
 
+import { LessonDialog } from "@/components/diary/lesson-dialog";
+import { useDiaryWeek } from "@/components/diary/use-diary-week";
+import { WeekVideos } from "@/components/diary/week-videos";
+import { COMMITMENTS_KEY, TTL, fetchCommitments } from "@/components/now/now-resources";
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useQuick } from "@/components/shell/quick/quick-context";
 import { SubNav } from "@/components/shell/tab-bar";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { usePageSchedule } from "@/contexts/active-schedule";
 import { useAskRail } from "@/contexts/ask-rail";
 import {
@@ -35,6 +47,10 @@ import {
   isCommitmentEntry,
 } from "@/lib/studyplan-calendar-entries";
 import { durationLabel, weekLabel } from "@/lib/studyplan-visuals";
+import { localDateKey } from "@/lib/diary-tasks";
+import { useResource } from "@/lib/resource-cache";
+import { schoolDays, type SchoolLesson } from "@/lib/school-week";
+import type { DiaryDay, DiaryLesson } from "@/types/diary";
 
 import { BlockCard, CalPopover, DraftCard } from "./block-details";
 import { PlanCalendar, type PlanDraft } from "./plan-calendar";
@@ -46,8 +62,6 @@ import {
   dayShort,
   fullDayLabel,
   isOwnEvent,
-  monthCells,
-  monthTitle,
   soonWhen,
   upcomingDeadlines,
   type Due,
@@ -58,6 +72,7 @@ import {
   resolveScheduleTarget,
 } from "./schedule-targets";
 import { type CalendarEntry, useSchedule } from "./use-schedule";
+import { WeekTasks } from "./week-tasks";
 
 
 type Mode = "week" | "day";
@@ -248,6 +263,33 @@ export function StudyPlanPage() {
         ? todayKey
         : schedule.days[0];
 
+  // Школа этой же недели из дневника: уроки, задания, оценки. Неделя дневника с понедельника, как и здесь.
+  const diaryWeekStart = schedule.days[0] ?? null;
+  const diary = useDiaryWeek(diaryWeekStart);
+  const school = useMemo(() => schoolDays(diary.week, schedule.days), [diary.week, schedule.days]);
+  const [lessonTarget, setLessonTarget] = useState<{ day: DiaryDay; lesson: DiaryLesson } | null>(null);
+  const [showVideos, setShowVideos] = useState(false);
+  const openLesson = useCallback(
+    (lesson: SchoolLesson) => {
+      const day = diary.week?.days.find((row) => row.id === lesson.dayId);
+      const row = day?.lessons.find((item) => item.id === lesson.lessonId);
+      if (day && row) setLessonTarget({ day, lesson: row });
+    },
+    [diary.week],
+  );
+
+  // «В план» из «Задано» записывает занятое время. Календарь держит его у себя и без
+  // перезагрузки не увидел бы.
+  const commitmentsCache = useResource(COMMITMENTS_KEY, fetchCommitments, { ttl: TTL.day });
+  const commitmentsGeneration = useRef<number | null>(null);
+  useEffect(() => {
+    const generation = commitmentsCache.generation;
+    if (commitmentsGeneration.current !== null && commitmentsGeneration.current !== generation) {
+      void scheduleRef.current.reload();
+    }
+    commitmentsGeneration.current = generation;
+  }, [commitmentsCache.generation]);
+
   const dues = usePlanDeadlines(ready ? todayKey : null, displayTimeZone, commitmentSources);
   // Экзамен уже стоит в сетке со своим временем: в строке «весь день» он был бы дважды.
   const weekDues = useMemo(
@@ -371,15 +413,6 @@ export function StudyPlanPage() {
       dismissAll();
     },
     [dismissAll, narrow],
-  );
-
-  const pickMonthDay = useCallback(
-    (key: string) => {
-      setDayKey(key);
-      scheduleRef.current.goToDate(key);
-      dismissAll();
-    },
-    [dismissAll],
   );
 
   const stepView = useCallback(
@@ -666,7 +699,7 @@ export function StudyPlanPage() {
     <div className="content view plan-view">
       <SubNav group="study" />
       <header className="head">
-        <h1 className="title">План</h1>
+        <h1 className="title">Неделя</h1>
         {ready ? (
           <div className="head-tools">
             <button className="btn btn-line" type="button" onClick={goToday}>
@@ -696,6 +729,26 @@ export function StudyPlanPage() {
                 </button>
               ))}
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="btn btn-line plan-setup" type="button">
+                  Настроить
+                  <Icon name="chev-d" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="plan-setup-menu">
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/diary/grades">Оценки за четверть</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/diary/schedule">Шаблон уроков</Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!diary.week} onSelect={() => setShowVideos(true)}>
+                  Видео и трансляции
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ) : null}
       </header>
@@ -730,7 +783,16 @@ export function StudyPlanPage() {
             }
           />
 
-          <div className="cal-wrap" data-mode={mode}>
+          {!hasSchedule && !railOpen && school.length ? (
+            <div className="card plan-hint">
+              <span>Своих занятий пока нет. Ответь на пару вопросов, и они встанут в свободное от школы время.</span>
+              <button className="btn btn-line" type="button" onClick={startSetup}>
+                Настроить занятия
+              </button>
+            </div>
+          ) : null}
+
+          <div className="cal-wrap has-tasks" data-mode={mode}>
             <PlanCalendar
               mode={mode}
               days={schedule.days}
@@ -741,6 +803,8 @@ export function StudyPlanPage() {
               selectedIds={selectedIds}
               busy={schedule.busy}
               dues={weekDues}
+              school={school}
+              onOpenLesson={openLesson}
               ownIds={ownIds}
               leaving={preview.leaving}
               ghosts={preview.ghosts}
@@ -757,7 +821,7 @@ export function StudyPlanPage() {
               onDismiss={dismissAll}
               onMove={moveEntry}
             >
-              {!hasSchedule && !railOpen ? (
+              {!hasSchedule && !railOpen && !school.length ? (
                 <div className="plan-empty">
                   <h2>Расписания пока нет</h2>
                   <p>Ответь на пару вопросов, и появится черновик недели. В календарь он попадёт, только когда ты его подтвердишь.</p>
@@ -768,13 +832,8 @@ export function StudyPlanPage() {
               ) : null}
             </PlanCalendar>
 
-            <aside className="cal-side" aria-label="Месяц и ближайшие сроки">
-              <MiniMonth
-                pickedDay={activeDay}
-                days={schedule.days}
-                todayKey={todayKey}
-                onPick={pickMonthDay}
-              />
+            <aside className="cal-side" aria-label="Задания и ближайшие сроки">
+              <WeekTasks api={diary} weekStart={diaryWeekStart} />
               <SoonCard items={soon} todayKey={todayKey} />
             </aside>
           </div>
@@ -830,6 +889,15 @@ export function StudyPlanPage() {
           ) : null}
         </>
       ) : null}
+
+      <LessonDialog target={lessonTarget} api={diary} onClose={() => setLessonTarget(null)} />
+
+      <Dialog open={showVideos} onOpenChange={setShowVideos}>
+        <DialogContent className="plan-videos">
+          <DialogTitle>Видео и трансляции</DialogTitle>
+          {diary.week ? <WeekVideos week={diary.week} today={localDateKey(new Date())} api={diary} /> : null}
+        </DialogContent>
+      </Dialog>
 
       <PlanToast
         notice={notice}
@@ -891,50 +959,6 @@ function ProposalLine({
   return null;
 }
 
-function MiniMonth({
-  pickedDay,
-  days,
-  todayKey,
-  onPick,
-}: {
-  pickedDay: string;
-  days: string[];
-  todayKey: string;
-  onPick: (dateKey: string) => void;
-}) {
-  const cells = useMemo(() => monthCells(pickedDay), [pickedDay]);
-  return (
-    <section className="scard card">
-      <h2>{monthTitle(pickedDay)}</h2>
-      <div className="mm">
-        {["пн", "вт", "ср", "чт", "пт", "сб", "вс"].map((name) => (
-          <span key={name}>{name}</span>
-        ))}
-        {cells.map((cell) => (
-          <button
-            key={cell.dateKey}
-            type="button"
-            className={[
-              "m",
-              cell.out && "out",
-              days.includes(cell.dateKey) && "wk",
-              cell.dateKey === todayKey && "today",
-              cell.dateKey === pickedDay && "on",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            aria-label={fullDayLabel(cell.dateKey)}
-            aria-current={cell.dateKey === todayKey ? "date" : undefined}
-            onClick={() => onPick(cell.dateKey)}
-          >
-            {cell.day}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function SoonCard({ items, todayKey }: { items: Due[]; todayKey: string }) {
   return (
     <section className="scard card">
@@ -952,7 +976,7 @@ function SoonCard({ items, todayKey }: { items: Due[]; todayKey: string }) {
         </ul>
       ) : (
         <p className="small-note">
-          Близких сроков нет. Они появятся из контрольных в <Link href="/dashboard/diary">дневнике</Link> и{" "}
+          Близких сроков нет. Они появятся из контрольных в дневнике и{" "}
           <Link href="/dashboard/goals">целей</Link> с датой.
         </p>
       )}

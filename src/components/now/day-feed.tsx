@@ -190,8 +190,8 @@ function SchoolRow({
           />
         ))}
         <li className="school-foot">
-          <Link className="link" href="/dashboard/diary">
-            Открыть дневник
+          <Link className="link" href="/dashboard/plan">
+            Открыть неделю
           </Link>
         </li>
       </ul>

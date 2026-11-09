@@ -12,6 +12,8 @@ export interface DashboardNavigationItem {
   url: string;
   icon: IconName;
   access?: "admin" | "moderator";
+  /** Другие адреса, на которых этот пункт тоже горит: страницы, вошедшие в него. */
+  aliases?: readonly string[];
 }
 
 export interface DashboardNavigationGroup {
@@ -54,8 +56,8 @@ const dashboardPageMeta: Record<string, DashboardPageMeta> = {
     subtitle: "Программа по вашему учебнику со ссылками на страницы",
   },
   "/dashboard/plan": {
-    title: "План недели",
-    subtitle: "Программа, разложенная по дням и часам",
+    title: "Неделя",
+    subtitle: "Уроки, занятия и задания недели",
   },
   // Ключ длиннее «/dashboard/curriculum», а `getDashboardPageMeta` сортирует
   // ключи по убыванию длины — поэтому он выигрывает. В боковое меню программа
@@ -218,10 +220,10 @@ const dashboardSections: DashboardSection[] = [
     key: "study",
     title: "Учёба",
     icon: "diary",
-    url: "/dashboard/diary",
+    url: "/dashboard/plan",
     items: [
-      { title: "Дневник", url: "/dashboard/diary", icon: "diary" },
-      { title: "План", url: "/dashboard/plan", icon: "plan" },
+      // Дневник и план стали одной неделей. Шаблон уроков и оценки живут по старым адресам.
+      { title: "Неделя", url: "/dashboard/plan", icon: "plan", aliases: ["/dashboard/diary"] },
       { title: "Слабые темы", url: "/dashboard/weaknesses", icon: "target" },
       { title: "Помодоро", url: "/dashboard/pomodoro", icon: "timer" },
     ],
@@ -306,17 +308,22 @@ export interface NavigationMatch {
  * Побеждает самое длинное совпадение: «Итоговые оценки» живут под
  * `/dashboard/diary/grades`, и по префиксу их перехватил бы «Дневник».
  */
+/** Горит ли пункт на этой странице: по своему адресу или по одному из прежних. */
+export function itemMatches(item: Pick<DashboardNavigationItem, "url" | "aliases">, pathname: string): boolean {
+  return [item.url, ...(item.aliases ?? [])].some((url) => matches(pathname, url));
+}
+
 export function matchNavigation(pathname: string): NavigationMatch {
   let best: { section: DashboardSectionKey; itemUrl: string; length: number } | null =
     null;
   for (const section of dashboardSections) {
     const candidates = section.items.length
-      ? section.items.map((item) => item.url)
-      : [section.url];
-    for (const url of candidates) {
+      ? section.items.flatMap((item) => [item.url, ...(item.aliases ?? [])].map((url) => ({ url, itemUrl: item.url })))
+      : [{ url: section.url, itemUrl: section.url }];
+    for (const { url, itemUrl } of candidates) {
       if (!matches(pathname, url)) continue;
       if (!best || url.length > best.length) {
-        best = { section: section.key, itemUrl: url, length: url.length };
+        best = { section: section.key, itemUrl, length: url.length };
       }
     }
   }

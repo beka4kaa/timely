@@ -43,6 +43,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile"
 import { dataChanged, useDataChanged } from "@/lib/data-changed"
 import { invalidateResources } from "@/lib/resource-cache"
+import { subjectColor } from "@/lib/subject-color"
 import { createSubject } from "@/lib/weak-topics-api"
 import { BLOCK_TYPE_META, DAYS_ORDER, DAY_OF_WEEK_LABELS, PRESET_BLOCK_TYPES } from "@/types/diary"
 import type { DayOfWeek, WeeklyTemplate } from "@/types/diary"
@@ -76,20 +77,8 @@ function saveCustomPresets(presets: CustomPreset[]) {
   }
 }
 
-// ── Цвет предмета ────────────────────────────────────────────────────────────
-// У предмета без своего цвета стоит общий фиолетовый: в таблице все точки слились бы.
-const DEFAULT_SUBJECT_COLOR = "#8b5cf6"
-const PALETTE = ["#5b7cfa", "#e0803a", "#2fa37a", "#d4556b", "#3aa0b8", "#b5803c", "#8a63e8", "#5aa84e", "#c9568f", "#4f8ad1", "#3e9a8a", "#9aa13a"]
-
-function colorOf(name: string, color?: string | null): string {
-  if (color && color.toLowerCase() !== DEFAULT_SUBJECT_COLOR && color.toLowerCase() !== "#6366f1") return color
-  let hash = 0
-  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return PALETTE[hash % PALETTE.length]
-}
-
 function toSubject(row: { id: string | number; name: string; color?: string | null }): TemplateSubject {
-  return { id: String(row.id), name: row.name, color: colorOf(row.name, row.color) }
+  return { id: String(row.id), name: row.name, color: subjectColor(row.name, row.color) }
 }
 
 export default function SchedulePage() {
@@ -604,9 +593,9 @@ export default function SchedulePage() {
             </DropdownMenuContent>
           </DropdownMenu>
           <input ref={importRef} type="file" accept=".csv" className="is-off" onChange={(event) => void importCsv(event)} />
-          <Link className="btn btn-text" href="/dashboard/diary">
+          <Link className="btn btn-text" href="/dashboard/plan">
             <Icon name="chev-l" />
-            Дневник
+            Неделя
           </Link>
         </div>
       </header>

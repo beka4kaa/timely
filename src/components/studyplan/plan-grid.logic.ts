@@ -357,7 +357,7 @@ export function buildDeadlines(input: {
 }): Due[] {
   const list: Due[] = [];
   for (const test of input.tests ?? []) {
-    list.push({ id: `test:${test.dateKey}:${test.title}`, title: test.title, dateKey: test.dateKey, minutes: null, href: "/dashboard/diary" });
+    list.push({ id: `test:${test.dateKey}:${test.title}`, title: test.title, dateKey: test.dateKey, minutes: null, href: "/dashboard/plan" });
   }
   for (const goal of input.goals ?? []) {
     const date = goal.dueDate || goal.endDate;

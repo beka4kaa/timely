@@ -125,7 +125,7 @@ export default function GradesPage() {
         <div className="card dy-empty">
           <h2>{monthLabel}: оценок нет</h2>
           <p>Ставь оценки в дневнике, и они появятся здесь.</p>
-          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
+          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
         </div>
       )
     }
@@ -170,7 +170,7 @@ export default function GradesPage() {
         <div className="card dy-empty">
           <h2>Нет оценок за {schoolYearStart}–{schoolYearStart + 1}</h2>
           <p>Ставь оценки в дневнике, и здесь появится итог по предметам.</p>
-          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
+          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
         </div>
       )
     }
@@ -235,7 +235,7 @@ export default function GradesPage() {
         <div className="card dy-empty">
           <h2>{monthLabel}: видео нет</h2>
           <p>Добавляй ссылки на записи уроков в дневнике, и они появятся здесь.</p>
-          <Link className="btn btn-line" href="/dashboard/diary">Открыть дневник</Link>
+          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
         </div>
       )
     }
@@ -288,9 +288,9 @@ export default function GradesPage() {
       <header className="head">
         <h1 className="title">Итоговые оценки</h1>
         <div className="head-tools">
-          <Link className="btn btn-text" href="/dashboard/diary">
+          <Link className="btn btn-text" href="/dashboard/plan">
             <Icon name="chev-l" />
-            Дневник
+            Неделя
           </Link>
           <div className="tabs" role="group" aria-label="Что показать">
             {VIEWS.map(item => (

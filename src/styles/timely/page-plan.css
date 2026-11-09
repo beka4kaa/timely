@@ -112,3 +112,41 @@
   .pop-form input, .ps-other input { font-size: 16px; }
   .plan-toast { max-width: calc(100vw - 24px); white-space: normal; }
 }
+
+/* ══════════════════ «Неделя»: школа в календаре и «Задано» рядом ══════════════════ */
+/* Уроки стоят на своём времени. Обведены, а не залиты: свои занятия залиты, школа нет. */
+.school { position: absolute; z-index: 0; left: 3px; right: 3px; top: calc((var(--s) - var(--from)) * var(--hh) + 1px); height: calc(var(--d) / 60 * var(--hh) - 2px); }
+.school-l { position: absolute; left: 0; right: 0; top: calc(var(--o) / 60 * var(--hh)); height: calc(var(--l) / 60 * var(--hh) - 2px); display: grid; align-content: start; gap: 1px; overflow: hidden; padding: 3px 6px; border-radius: 7px; background: var(--t-card); color: var(--t-ink); font-size: 12px; line-height: 1.3; text-align: left; box-shadow: inset 0 0 0 1px var(--t-line-strong); cursor: pointer; transition: box-shadow 120ms ease; }
+.school-l:hover { box-shadow: inset 0 0 0 1px var(--t-ink-2); }
+.school-l:focus-visible { outline: 2px solid var(--t-ink); outline-offset: 1px; }
+.school-n { display: flex; align-items: center; gap: 5px; min-width: 0; font-weight: 500; }
+.school-n > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.school-t { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.school-n i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.school-l em { flex: none; padding: 0 5px; border-radius: 99px; background: var(--t-ink); color: var(--t-on-ink); font: 600 10px/15px var(--t-sans); font-style: normal; }
+.school-l em.is-done { background: none; color: var(--t-faint); box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.school-l b { flex: none; font-size: 12px; font-weight: 600; }
+.school-l small { min-width: 0; overflow: hidden; color: var(--t-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.plan-cal.is-dragging .school { pointer-events: none; }
+
+/* «Задано» видно и у недели, и у дня. На узкой ширине оно уходит под календарь. */
+.cal-wrap.has-tasks, .cal-wrap.has-tasks[data-mode="day"] { grid-template-columns: minmax(0, 1fr); }
+.cal-wrap.has-tasks[data-mode] .cal-side { display: flex; }
+@container main (min-width: 1020px) {
+  .cal-wrap.has-tasks, .cal-wrap.has-tasks[data-mode="day"] { grid-template-columns: minmax(0, 1fr) 272px; }
+}
+.wk-tasks { display: grid; gap: 10px; }
+.wk-tasks-h { font: 400 21px/1.2 var(--t-serif); }
+.wk-tasks .td-day + .td-day { margin-top: 4px; }
+.wk-tasks .td-day > h2 { font-size: 15px; }
+.wk-tasks-empty { color: var(--t-muted); font-size: 13px; }
+.wk-tasks-skel { --r: 16px; display: grid; gap: 8px; padding: 12px; }
+.wk-tasks-note { --r: 16px; display: grid; gap: 8px; padding: 12px 14px; color: var(--t-muted); font-size: 13px; }
+.wk-tasks-more { justify-self: start; height: 30px; padding-inline: 6px; font-size: 13px; }
+
+.plan-hint { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; padding: 10px 12px 10px 16px; color: var(--t-ink-2); font-size: 13.5px; }
+.plan-hint .btn { height: 32px; }
+.plan-setup { display: inline-flex; align-items: center; gap: 6px; }
+.plan-setup .i { width: 14px; height: 14px; color: var(--t-muted); }
+.plan-setup-menu { min-width: 210px; }
+.plan-videos { max-width: 640px; max-height: calc(100dvh - 48px); overflow: auto; }

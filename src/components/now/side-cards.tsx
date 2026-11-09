@@ -112,7 +112,7 @@ export function HomeworkTile({
   if (!homework) return null;
   const title = homeworkTitle(homework.dateKey, today);
   return (
-    <Link className="tile card quiet" href="/dashboard/diary">
+    <Link className="tile card quiet" href="/dashboard/plan">
       <h2>{title}</h2>
       <ul>
         {homework.items.map((item) => (
