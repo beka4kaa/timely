@@ -154,44 +154,111 @@ div.dy-dialog { width: calc(100vw - 32px); max-width: 420px; gap: 12px; padding:
 .dg-video-b small { display: block; margin-top: 2px; color: var(--t-muted); font-size: 12.5px; }
 
 /* ══════════════════ Шаблон расписания ══════════════════ */
-.ds-card { --r: 16px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; padding: 14px 15px 15px; }
-.ds-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
-.ds-card-top h2 { font-size: 13.5px; font-weight: 600; }
-.ds-card-tools { display: flex; gap: 2px; margin-left: auto; }
-.ds-badge { color: var(--t-muted); font-size: 12.5px; }
-.ds-name { max-width: 320px; }
-.ds-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-.ds-acts .btn { height: 30px; font-size: 12.5px; }
-.ds-acts .btn:disabled, .ds-card-tools .icon-btn:disabled { opacity: 0.5; }
-.ds-acts .danger { margin-left: auto; }
-.ds-warn { margin-bottom: 18px; padding: 12px 15px; color: var(--t-muted); font-size: 13.5px; }
-.ds-warn b { color: var(--t-ink); font-weight: 500; }
-.ds-day { margin-top: 18px; }
-.ds-day > .sec { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.ds-day > .sec span { color: var(--t-muted); font-family: var(--t-sans); font-size: 12.5px; letter-spacing: 0; }
-.ds-day .card { --r: 16px; padding: 4px; }
-.ds-slot { display: grid; grid-template-columns: 16px 16px minmax(0, 118px) 62px 62px minmax(0, 1fr) 28px; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; border-radius: 12px; transition: background 120ms ease; }
-.ds-slot:hover { background: var(--t-hover); }
-.ds-grip { width: 16px; color: var(--t-faint); cursor: grab; }
-.ds-grip:active { cursor: grabbing; }
-.ds-n { color: var(--t-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: center; }
-.ds-time input { font-variant-numeric: tabular-nums; text-align: center; padding-inline: 3px; }
-.ds-type { display: flex; align-items: center; width: 100%; height: 28px; padding: 0 8px; border-radius: 8px; background: var(--t-fill); font-size: 13px; text-align: left; }
-.ds-type span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-div.ds-type-pop { border: 0; background: var(--t-cloud); color: var(--t-ink); box-shadow: var(--t-glass-shadow); }
-.ds-type-search { width: 100%; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--t-line); outline: none; background: transparent; color: var(--t-ink); font-size: 13px; }
-.ds-type-list { max-height: 200px; overflow: auto; padding: 4px; }
-.ds-type-opt { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 5px 8px; border-radius: 8px; color: var(--t-ink); font-size: 13px; text-align: left; cursor: pointer; }
-.ds-type-opt:hover { background: var(--t-hover); }
-.ds-type-opt .i { width: 13px; height: 13px; }
-.ds-type-opt .ds-type-x { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--t-muted); }
-.ds-type-opt .ds-type-x:hover { background: var(--t-fill); color: var(--t-warn); }
-.ds-type-none { padding: 8px; color: var(--t-muted); font-size: 12.5px; }
-button.ds-select { height: 28px; padding-inline: 8px; border: 0; border-radius: 8px; background: var(--t-fill); box-shadow: none; color: var(--t-ink); font-size: 13px; }
-button.ds-select:focus { box-shadow: none; outline: 1.5px solid color-mix(in srgb, var(--t-ink) 62%, transparent); outline-offset: 1px; }
-.ds-none { padding: 7px 10px; color: var(--t-muted); font-size: 13px; }
-.ds-foot { --r: 14px; position: sticky; bottom: 14px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; width: fit-content; max-width: 100%; margin-top: 20px; padding: 5px; }
+.ds-page { padding-bottom: 96px; }
+.ds-tpl { display: inline-flex; align-items: center; gap: 8px; max-width: 340px; height: 34px; padding: 0 9px 0 13px; }
+.ds-tpl .i { width: 14px; height: 14px; color: var(--t-muted); }
+.ds-tpl-name { min-width: 0; overflow: hidden; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.ds-badge { flex: none; padding: 1px 7px; border-radius: 99px; background: var(--t-card); color: var(--t-muted); font-size: 11.5px; box-shadow: 0 0 0 0.5px var(--t-line-strong); }
+.ds-menu { min-width: 230px; }
+.ds-menu [role="menuitem"] { gap: 8px; }
+.ds-menu [role="menuitem"] .i { width: 14px; height: 14px; color: var(--t-muted); }
+.ds-menu-main { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ds-menu-note { margin-left: auto; padding-left: 12px; color: var(--t-muted); font-size: 12px; }
+.ds-menu-danger { color: var(--t-warn); }
+.ds-warn { --r: 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 14px; padding: 9px 10px 9px 15px; color: var(--t-ink-2); font-size: 13.5px; }
+.ds-warn .btn { height: 30px; font-size: 13px; }
+.ds-swapbar { --r: 14px; position: sticky; top: 12px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; padding: 6px 6px 6px 15px; font-size: 13.5px; }
+
+/* Неделя таблицей: дни колонками, уроки строками по порядку */
+.ds-week { --r: 18px; padding: 8px; }
+.ds-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.ds-grid { display: grid; }
+.ds-dh { display: flex; align-items: flex-start; justify-content: space-between; gap: 2px; min-width: 0; padding: 6px 2px 8px 10px; }
+.ds-dh b { display: block; font-size: 13.5px; font-weight: 600; }
+.ds-dh span { display: block; color: var(--t-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ds-dh-menu { width: 26px; height: 26px; margin-top: -2px; color: var(--t-faint); }
+.ds-dh-menu:hover { color: var(--t-ink); }
+.ds-dh-more { display: flex; align-items: center; justify-content: center; gap: 3px; height: 32px; margin: 4px 4px 0; border: 1px dashed var(--t-line-strong); border-radius: 10px; color: var(--t-muted); font-size: 12.5px; }
+.ds-dh-more:hover { border-color: var(--t-ink-2); color: var(--t-ink); }
+.ds-dh-more .i { width: 12px; height: 12px; }
+.ds-num { display: grid; place-items: center; color: var(--t-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ds-at { min-width: 0; padding: 3px; }
+.ds-cell { position: relative; display: block; height: 100%; min-height: 56px; padding: 8px 10px 9px; border-radius: 11px; background: var(--t-fill); cursor: grab; outline: none; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: background 120ms ease, box-shadow 120ms ease, opacity 120ms ease; }
+.ds-cell:hover { box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.ds-cell:focus-visible { box-shadow: 0 0 0 2px var(--t-ink); }
+.ds-cell.is-selected, .ds-cell.is-picked { background: var(--t-card); box-shadow: 0 0 0 1.5px var(--t-ink); }
+.ds-cell.is-dragging { opacity: 0.35; }
+.ds-cell.is-over { background: var(--t-card); box-shadow: 0 0 0 1.5px var(--t-ink), 0 10px 24px -14px rgba(0, 0, 0, 0.35); }
+.ds-cell.is-target { cursor: pointer; }
+.ds-cell.is-target:hover { background: var(--t-card); box-shadow: 0 0 0 1.5px var(--t-ink); }
+.ds-cell.is-missing { box-shadow: 0 0 0 1.5px var(--t-warn); }
+.ds-cell-in { display: grid; gap: 3px; min-width: 0; }
+.ds-cell-in.is-overlay { width: 152px; padding: 8px 10px 9px; border-radius: 11px; background: var(--t-glass-strong); box-shadow: 0 0 0 0.5px var(--t-line-strong), 0 18px 34px -14px rgba(0, 0, 0, 0.4); transform: rotate(-1.5deg); cursor: grabbing; }
+.ds-cell-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13.5px; font-weight: 500; }
+.ds-cell-name > span:last-child { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ds-cell-in.is-block .ds-cell-name { color: var(--t-ink-2); font-weight: 400; }
+.ds-cell-empty { color: var(--t-muted); font-weight: 400; }
+.ds-cell-time { padding-left: 15px; color: var(--t-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ds-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--t-line-strong); }
+.ds-dot.is-block { background: none; box-shadow: inset 0 0 0 1.5px var(--t-faint); }
+.ds-add { display: flex; align-items: center; gap: 5px; width: calc(100% - 6px); min-height: 34px; margin: 3px; padding: 0 10px; border: 1px solid transparent; border-radius: 10px; color: var(--t-muted); font-size: 13px; text-align: left; }
+.ds-add .i { width: 13px; height: 13px; }
+.ds-add:hover { background: var(--t-hover); color: var(--t-ink); }
+.ds-add.is-drop { min-height: 56px; border-style: dashed; border-color: var(--t-line-strong); }
+.ds-add.is-over { background: var(--t-card); border-color: var(--t-ink); color: var(--t-ink); }
+.ds-hint { margin: 10px 2px 0; color: var(--t-muted); font-size: 12.5px; }
+
+/* Правка урока: у клетки на компьютере, снизу на телефоне */
+div.ds-pop { width: 320px; max-height: min(600px, calc(100dvh - 32px)); overflow: auto; padding: 12px; border: 0; border-radius: 16px; background: var(--t-glass-strong); color: var(--t-ink); box-shadow: var(--t-glass-shadow); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); }
+.ds-ed { display: grid; gap: 8px; }
+.ds-ed-search { width: 100%; height: 34px; padding: 0 11px; border: 0; border-radius: 10px; background: var(--t-fill); color: var(--t-ink); font-size: 13.5px; outline: none; }
+.ds-ed-search::placeholder, .ds-ed-label input::placeholder { color: var(--t-faint); }
+.ds-ed-search:focus-visible, .ds-ed-label input:focus-visible { box-shadow: 0 0 0 1.5px var(--t-ink); }
+.ds-ed-list { display: grid; align-content: start; gap: 1px; height: 236px; overflow: auto; margin: 0 -4px; padding: 0 4px; }
+.ds-opt { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 0 9px; border-radius: 9px; color: var(--t-ink); font-size: 13.5px; text-align: left; }
+.ds-opt:hover { background: var(--t-hover); }
+.ds-opt[aria-selected="true"] { background: var(--t-card); font-weight: 500; box-shadow: 0 0 0 0.5px var(--t-line-strong); }
+.ds-opt .i { width: 14px; height: 14px; margin-left: auto; color: var(--t-muted); }
+.ds-opt.is-new { color: var(--t-muted); }
+.ds-opt.is-new .i { margin-left: 0; }
+.ds-opt:disabled { opacity: 0.6; }
+.ds-opt-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ds-ed-h { margin: 6px 2px 0; color: var(--t-muted); font-size: 12px; }
+.ds-ed-note { margin: 2px 9px; color: var(--t-muted); font-size: 12.5px; }
+.ds-ed-label { display: grid; gap: 4px; color: var(--t-muted); font-size: 12px; }
+.ds-ed-label input { height: 32px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--t-fill); color: var(--t-ink); font-size: 13.5px; outline: none; }
+.ds-ed-times { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.ds-ed-to { color: var(--t-faint); font-size: 12.5px; }
+.ds-time { display: flex; align-items: center; gap: 3px; min-width: 0; padding: 3px; border-radius: 10px; background: var(--t-fill); }
+.ds-time input { flex: 1; min-width: 0; height: 26px; padding: 0 4px; border: 0; background: none; color: var(--t-ink); font: 500 14px var(--t-sans); font-variant-numeric: tabular-nums; outline: none; }
+.ds-time input::-webkit-calendar-picker-indicator { display: none; }
+.ds-time button { flex: none; width: 26px; height: 26px; border-radius: 7px; background: var(--t-card); color: var(--t-ink-2); box-shadow: 0 0 0 0.5px var(--t-line); }
+.ds-time button:hover { color: var(--t-ink); }
+.ds-ed-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ds-chip { height: 28px; padding: 0 10px; border-radius: 99px; background: var(--t-fill); color: var(--t-ink-2); font-size: 12.5px; }
+.ds-chip:hover { color: var(--t-ink); }
+.ds-chip.is-on { background: var(--t-ink); color: var(--t-on-ink); }
+.ds-ed-shift { display: flex; align-items: center; gap: 9px; color: var(--t-ink-2); font-size: 13px; cursor: pointer; }
+.ds-ed-acts { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--t-line); }
+.ds-ed-acts .btn { height: 30px; font-size: 13px; }
+.ds-ed-acts .danger { color: var(--t-warn); }
+div.ds-sheet { max-height: 90dvh; padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px)); border: 0; border-radius: 22px 22px 0 0; background: var(--t-bg); color: var(--t-ink); }
+.ds-sheet .ds-ed { overflow: auto; }
+.ds-sheet .ds-ed-list { height: 30dvh; }
+.ds-sheet-title { margin: 12px 2px 6px; font: 500 18px/1.25 var(--t-serif); }
+
+/* Несохранённое видно всегда: полоса снизу */
+/* Над кнопкой мини-окна и по той же середине: она стоит по центру рабочей области. */
+.ds-foot { --r: 16px; position: fixed; left: calc(50% + (var(--sb-w) + 8px) / 2); bottom: calc(72px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 16px; transform: translateX(-50%); font-size: 13.5px; white-space: nowrap; }
+.ds-foot.is-alert > span { color: var(--t-warn); }
+.ds-foot > span { margin-right: 8px; }
+.ds-foot .btn { height: 32px; }
 .ds-foot .btn:disabled { opacity: 0.6; }
+.ds-rename { max-width: 380px; }
+.ds-rename form { display: grid; gap: 12px; }
+.ds-rename input { height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--t-fill); color: var(--t-ink); font-size: 14px; outline: none; }
+.ds-rename input:focus-visible { box-shadow: 0 0 0 1.5px var(--t-ink); }
+.ds-rename-acts { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ── Узкие экраны ── */
 @container main (max-width: 700px) {
@@ -199,8 +266,6 @@ button.ds-select:focus { box-shadow: none; outline: 1.5px solid color-mix(in srg
   .dy-video-form .dy-select, .dy-video-form .dy-input:nth-of-type(1) { grid-column: 1 / -1; }
   .dy-input-min { order: 1; }
   .dy-video-form .btn { order: 2; }
-  .ds-slot { grid-template-columns: 16px 16px minmax(0, 1fr) 62px 62px 28px; }
-  .ds-slot .ds-what { grid-column: 3 / -1; grid-row: 2; }
 }
 
 @container main (max-width: 620px) {
@@ -218,11 +283,13 @@ button.ds-select:focus { box-shadow: none; outline: 1.5px solid color-mix(in srg
 
 @media (max-width: 640px) {
   /* iOS увеличивает страницу, если шрифт в поле меньше 16 */
-  .dy-input input, .dy-select, .ds-type-search { font-size: 16px; }
+  .dy-input input, .dy-select, .ds-ed-search, .ds-ed-label input, .ds-time input, .ds-rename input { font-size: 16px; }
   .dy-plan .btn, .dy-add-form .btn, .dy-video-form .btn, .dy-add .btn { height: 34px; }
   .dy-links .btn { height: 30px; padding-inline: 9px; }
   .dy-grade::after { inset: -9px -12px; }
-  .ds-acts .btn { height: 34px; }
-  /* Над вкладками и строкой мини-окна */
-  .ds-foot { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  /* Над вкладками */
+  .ds-foot { left: calc(12px + env(safe-area-inset-left, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(130px + env(safe-area-inset-bottom, 0px)); transform: none; }
+  .ds-foot > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ds-week { padding: 4px; }
+  .ds-tpl { max-width: 230px; }
 }
