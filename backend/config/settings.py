@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "curriculum",
     "pomodoro",
     "studyplan",
+    "demo",
     "django_filters",
 ]
 
@@ -82,8 +83,17 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "config.middleware.UserEmailMiddleware",  # Extract user email from header
+    "demo.middleware.DemoDailyBudgetMiddleware",
     "ai_engine.middleware.AIUsageContextMiddleware",
 ]
+
+# Демо для проверяющих (приложение `demo`, план 2026-11-10-demo-subdomain).
+# Без DEMO_MODE=true оно ничего не делает: эндпоинт отвечает 404, бюджет не считается.
+DEMO_MODE = os.getenv("DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+DEMO_DAILY_TOKEN_BUDGET = int(os.getenv("DEMO_DAILY_TOKEN_BUDGET", "1500000"))
+DEMO_VISITOR_TTL_DAYS = int(os.getenv("DEMO_VISITOR_TTL_DAYS", "14"))
+DEMO_STARTS_PER_IP_PER_HOUR = int(os.getenv("DEMO_STARTS_PER_IP_PER_HOUR", "60"))
+DEMO_AI_REQUESTS_PER_IP_PER_DAY = int(os.getenv("DEMO_AI_REQUESTS_PER_IP_PER_DAY", "60"))
 
 # CORS settings
 # Only the app itself calls this API from a browser.

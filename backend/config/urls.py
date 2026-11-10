@@ -152,6 +152,8 @@ urlpatterns = [
         name='studyplan-setup-no-slash',
     ),
     path('health/', health_check, name='health-check'),
+    # Демо для проверяющих: без DEMO_MODE отвечает 404.
+    path('api/demo/', include('demo.urls')),
     path('api/', include(router.urls)),
     
     path('api/me/', MeView.as_view(), name='me'),

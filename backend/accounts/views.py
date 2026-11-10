@@ -4,10 +4,12 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
+from demo.identity import visitors_q
 from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboard
 from .serializers import (
     LeaderboardSerializer,
@@ -55,6 +57,10 @@ def current_user(request):
 def on_public_board(viewer):
     """Who this viewer may see on the leaderboard: those who agreed, and themselves."""
     agreed = Q(show_in_leaderboard=True)
+    if settings.DEMO_MODE:
+        # Demo: every visitor is the same made-up student, so visitors see the
+        # made-up class and themselves, never each other.
+        agreed &= ~visitors_q()
     return agreed | Q(pk=viewer.pk) if viewer else agreed
 
 
