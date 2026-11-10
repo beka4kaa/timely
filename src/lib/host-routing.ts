@@ -8,6 +8,11 @@ export interface HostRoutingConfig {
   appOrigin: string;
   /** Без него — https:// плюс marketingHostname. */
   marketingOrigin?: string;
+  /**
+   * Публичное демо: тот же кабинет на чистых адресах, но без входа. Данные там
+   * подставляет браузер (src/lib/demo-mock), сервер в демо не участвует.
+   */
+  demoHostname?: string;
 }
 
 export interface HostRoutingInput {
@@ -176,8 +181,27 @@ export function resolveHostRouting(
     };
   }
 
-  if (!isAppHostname(input.hostname, config)) {
+  const onDemo =
+    !!config.demoHostname &&
+    normalizeHostname(input.hostname) === normalizeHostname(config.demoHostname);
+  // Кабинет на демо живёт по тем же правилам, что на app. Его переадресации
+  // относительные: middleware достраивает их от адреса самого запроса, так что
+  // демо работает и на https в проде, и на http://demo.localhost у стенда.
+  const origin = onDemo ? "" : config.appOrigin;
+
+  if (!isAppHostname(input.hostname, config) && !onDemo) {
     return { type: "next" };
+  }
+
+  // Входа в демо нет: сессию и данные подставляет браузер.
+  if (
+    onDemo &&
+    (input.pathname === "/auth" ||
+      input.pathname.startsWith("/auth/") ||
+      input.pathname === "/register" ||
+      input.pathname.startsWith("/register/"))
+  ) {
+    return { type: "redirect", destination: "/", status: 302 };
   }
 
   if (isMarketingOnlyPath(input.pathname)) {
@@ -199,7 +223,7 @@ export function resolveHostRouting(
     const cleanPath = dashboardPathToAppPath(input.pathname);
     return {
       type: "redirect",
-      destination: `${config.appOrigin.replace(/\/$/, "")}${cleanPath}${search}`,
+      destination: `${origin.replace(/\/$/, "")}${cleanPath}${search}`,
       status: 302,
     };
   }

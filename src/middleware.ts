@@ -19,6 +19,7 @@ import {
 } from "@/lib/landing-locale"
 import { SESSION_COOKIE_NAME } from "@/lib/auth-cookies"
 import { IS_DEMO, SIGN_IN_PATH } from "@/lib/demo-mode"
+import { DEMO_HOST, isDemoHost } from "@/lib/demo-mock/host"
 
 // В демо открыта только страница заведения гостя: вход, регистрация и прочее ведут
 // туда же, через обычный редирект на `pages.signIn`.
@@ -34,6 +35,7 @@ const DEV_BYPASS_AUTH =
 // ============================================================
 
 const HOST_ROUTING_CONFIG: HostRoutingConfig = {
+  demoHostname: DEMO_HOST,
   marketingHostname:
     process.env.TIMELY_MARKETING_HOST ?? DEFAULT_MARKETING_HOSTNAME,
   appHostname: process.env.TIMELY_APP_HOST ?? DEFAULT_APP_HOSTNAME,
@@ -52,7 +54,8 @@ export default withAuth(
     )
 
     if (hostAction.type === "redirect") {
-      return NextResponse.redirect(hostAction.destination, hostAction.status)
+      // У демо адреса относительные: достраиваем от самого запроса.
+      return NextResponse.redirect(new URL(hostAction.destination, req.url), hostAction.status)
     }
 
     if (hostAction.type === "rewrite") {
@@ -129,6 +132,9 @@ export default withAuth(
 
         const { pathname } = req.nextUrl
         const hostname = getRequestHostname(req.headers)
+
+        // Публичное демо: входа нет, сессию и данные подставляет браузер.
+        if (isDemoHost(hostname)) return true
 
         // The marketing /dashboard URL must reach the canonical redirect even
         // for signed-out visitors.

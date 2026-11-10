@@ -31,16 +31,36 @@ function reducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches
 }
 
-/** Первая видимая цель; части селектора проверяются по порядку, как приоритет. */
+/**
+ * Первая видимая цель; части селектора проверяются по порядку, как приоритет.
+ * Заглушки загрузки (`aria-busy`) не в счёт: через миг их заменит настоящая вёрстка.
+ */
 function findTarget(selector: string): HTMLElement | null {
   for (const part of selector.split(",")) {
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(part.trim()))
     for (const node of nodes) {
+      if (node.closest('[aria-busy="true"]')) continue
       const rect = node.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) return node
     }
   }
   return null
+}
+
+/** Ждёт, пока цель перестанет двигаться: страница дорисовывается после загрузки данных. */
+async function settle(node: HTMLElement, cancelled: () => boolean): Promise<void> {
+  let last = node.getBoundingClientRect()
+  for (let i = 0; i < 12 && !cancelled(); i++) {
+    await sleep(150)
+    const next = node.getBoundingClientRect()
+    const still =
+      Math.abs(next.top - last.top) < 1 &&
+      Math.abs(next.left - last.left) < 1 &&
+      Math.abs(next.width - last.width) < 1 &&
+      Math.abs(next.height - last.height) < 1
+    if (still) return
+    last = next
+  }
 }
 
 /** Высота панели вкладок снизу (на телефоне), чтобы карточка не легла на неё. */
@@ -158,6 +178,7 @@ export function DemoTour({
           await sleep(120)
         }
         if (!cancelled && !reducedMotion()) await sleep(SETTLE_MS)
+        if (!cancelled && targetRef.current) await settle(targetRef.current, () => cancelled)
       }
       if (cancelled) return
       measure()

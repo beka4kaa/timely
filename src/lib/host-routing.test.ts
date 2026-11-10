@@ -141,3 +141,31 @@ test("non-dashboard pages keep their own address", () => {
 test("an empty path falls back to the dashboard root", () => {
   assert.equal(toDashboardPath(""), "/dashboard");
 });
+
+test("the demo host serves the dashboard on clean paths, with no sign-in", () => {
+  const config = {
+    marketingHostname: "timely-plan.study",
+    appHostname: "app.timely-plan.study",
+    appOrigin: "https://app.timely-plan.study",
+    demoHostname: "demo.timely-plan.study",
+  };
+  const on = (pathname: string, search = "") =>
+    resolveHostRouting({ hostname: "demo.timely-plan.study", pathname, search }, config);
+
+  assert.deepEqual(on("/"), { type: "rewrite", pathname: "/dashboard" });
+  assert.deepEqual(on("/plan"), { type: "rewrite", pathname: "/dashboard/plan" });
+  // Relative, so the middleware keeps the demo's own scheme, host and port.
+  assert.deepEqual(on("/dashboard/chat", "?chat=1"), { type: "redirect", destination: "/chat?chat=1", status: 302 });
+  assert.deepEqual(on("/auth/signin"), { type: "redirect", destination: "/", status: 302 });
+  assert.deepEqual(on("/register"), { type: "redirect", destination: "/", status: 302 });
+  assert.deepEqual(on("/api/diary/week"), { type: "next" });
+  assert.deepEqual(on("/demo/fixtures.json"), { type: "next" });
+  // The app host keeps its absolute redirects and its sign-in.
+  assert.deepEqual(
+    resolveHostRouting({ hostname: "app.timely-plan.study", pathname: "/dashboard/chat" }, config),
+    { type: "redirect", destination: "https://app.timely-plan.study/chat", status: 302 },
+  );
+  assert.deepEqual(resolveHostRouting({ hostname: "app.timely-plan.study", pathname: "/auth/signin" }, config), {
+    type: "next",
+  });
+});

@@ -6,10 +6,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 
 import { startDemo } from "@/lib/demo-api"
+import { inDemoBrowser } from "@/lib/demo-mock/host"
 import type { DemoLang } from "@/lib/demo-mode"
 
 import { DEMO_UI } from "./demo-copy"
 import { DEMO_FRESH_KEY, DEMO_LANG_KEY, readStore, savedDemoLang, todayKey, writeStore } from "./demo-store"
+
+/** Тур на поддомене демо уже показывали в этом браузере. */
+const DEMO_TOURED_KEY = "timely.demo.toured"
 import { DemoTour } from "./demo-tour"
 
 export function DemoLayer() {
@@ -29,7 +33,11 @@ export function DemoLayer() {
     // Флаг тура ставит страница входа. Убираем его сразу, чтобы перезагрузка не
     // начинала тур заново.
     const params = new URLSearchParams(window.location.search)
-    if (params.get("tour") !== "1") return
+    // На поддомене демо входа нет: тур открывается сам при первом заходе.
+    if (params.get("tour") !== "1") {
+      if (inDemoBrowser() && readStore("local", DEMO_TOURED_KEY) !== "1") setOpen(true)
+      return
+    }
     params.delete("tour")
     const rest = params.toString()
     window.history.replaceState(
@@ -41,7 +49,9 @@ export function DemoLayer() {
   }, [])
 
   // Вернувшийся гость: вчерашний «сейчас» уже в прошлом, данные собираются заново.
+  // На поддомене демо сервера нет: даты сдвигает сам браузер.
   useEffect(() => {
+    if (inDemoBrowser()) return
     const today = todayKey()
     if (readStore("session", DEMO_FRESH_KEY) === today) return
     let alive = true
@@ -66,6 +76,7 @@ export function DemoLayer() {
 
   const close = useCallback(() => {
     setOpen(false)
+    writeStore("local", DEMO_TOURED_KEY, "1")
     const button = opener.current
     opener.current = null
     if (button?.isConnected) window.setTimeout(() => button.focus({ preventScroll: true }), 0)

@@ -45,7 +45,7 @@ export const TOUR_STOPS: TourStop[] = [
   {
     id: "week",
     route: "/dashboard/plan",
-    target: ".cal-wrap, .cal",
+    target: ".cal-wrap",
     title: { en: "The whole week in one place", ru: "Вся неделя в одном месте" },
     body: {
       en: "Lessons, homework and study blocks share one calendar. When plans change, the AI proposes a new week and shows exactly what moves before anything changes.",
