@@ -45,7 +45,7 @@ export function sessionRowFrom(row: HistoryRow, name: string): SessionRow {
   return {
     key: String(row.id),
     time: row.time,
-    name: row.isFocus ? name || "Фокус" : "Перерыв",
+    name: row.isFocus ? name || "Фокус" : row.isLong ? "Длинный перерыв" : "Перерыв",
     duration: `${row.minutes} мин`,
     isFocus: row.isFocus,
     stoppedEarly: row.isFocus && row.stoppedEarly,

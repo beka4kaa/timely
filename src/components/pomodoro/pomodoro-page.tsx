@@ -9,6 +9,7 @@ import { TTL, blocksKey, fetchBlocks } from "@/components/now/now-resources";
 import { SubNav } from "@/components/shell/tab-bar";
 import { isOpenBlock, splitBlockTitle } from "@/lib/now-feed";
 import {
+  CUSTOM_PRESET,
   EMPTY_SUMMARY,
   HEAT_WEEKS,
   PRESETS,
@@ -18,6 +19,7 @@ import {
   type PomodoroSummary,
 } from "@/lib/pomodoro";
 import { clearDay, fetchSessions, fetchSummary } from "@/lib/pomodoro-api";
+import { cycleDots, rhythmHint, rhythmLabel } from "@/lib/pomodoro-cycle";
 import {
   buildHeatWeeks,
   buildHistoryRows,
@@ -34,12 +36,16 @@ import {
   selectHasStarted,
   selectPlanned,
   selectRemaining,
+  selectRhythm,
+  selectWaiting,
   usePomodoroStore,
 } from "@/stores/pomodoro-store";
 
 import { SessionsCard, TodayCard, WeekCard, sessionRowFrom, type SessionRow } from "./focus-side";
+import { START_LABEL, primeAlerts } from "./pomodoro-alerts";
 import { SessionName, type PlanOption } from "./session-name";
 import { TimerDial } from "./timer-dial";
+import { TimerSettings } from "./timer-settings";
 import { useFocusUser } from "./use-focus-user";
 import { YearHeat } from "./year-heat";
 
@@ -59,6 +65,7 @@ export function PomodoroPage() {
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const [sessionName, setSessionName] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
 
   const presetIdx = usePomodoroStore((state) => state.presetIdx);
   const phase = usePomodoroStore((state) => state.phase);
@@ -70,10 +77,37 @@ export function PomodoroPage() {
   const planned = usePomodoroStore(selectPlanned);
   const elapsed = usePomodoroStore(selectElapsed);
   const hasStarted = usePomodoroStore(selectHasStarted);
+  const rhythm = usePomodoroStore(selectRhythm);
+  const done = usePomodoroStore((state) => state.done);
+  const waiting = usePomodoroStore(selectWaiting);
   const toggle = usePomodoroStore((state) => state.toggle);
   const skip = usePomodoroStore((state) => state.skip);
   const reset = usePomodoroStore((state) => state.reset);
   const choosePreset = usePomodoroStore((state) => state.choosePreset);
+  const chooseCustom = usePomodoroStore((state) => state.chooseCustom);
+  const dismissAlarm = usePomodoroStore((state) => state.dismissAlarm);
+
+  const cycle = useMemo(() => cycleDots(phase, done, rhythm.every), [phase, done, rhythm.every]);
+
+  const startOrPause = () => {
+    // Звук и вопрос про уведомления браузер разрешает только изнутри клика.
+    if (!running) primeAlerts();
+    toggle();
+  };
+
+  // «Своё» и есть настройки: свой ритм, автостарт, звук и уведомления в одной панели.
+  // Первый клик выбирает свой ритм и открывает её, следующий сворачивает. У готового
+  // ритма панели нет: она про своё.
+  const isCustom = presetIdx === CUSTOM_PRESET;
+  const panelOpen = isCustom && customOpen;
+  const pickCustom = () => {
+    if (isCustom) {
+      setCustomOpen((open) => !open);
+      return;
+    }
+    chooseCustom();
+    setCustomOpen(true);
+  };
 
   // Название читается после монтирования: на сервере localStorage нет.
   useEffect(() => {
@@ -228,32 +262,52 @@ export function PomodoroPage() {
             elapsed={elapsed}
             running={running}
             now={nowTs}
+            cycle={cycle}
           />
           <SessionName value={sessionName} onChange={changeName} options={planOptions} />
           <div className="fp-ctrl">
-            <button className="btn btn-main fp-start" type="button" onClick={toggle}>
-              {running ? "Пауза" : hasStarted ? "Продолжить" : "Начать"}
+            <button className="btn btn-main fp-start" type="button" onClick={startOrPause}>
+              {running ? "Пауза" : hasStarted ? "Продолжить" : START_LABEL[phase]}
             </button>
+            {waiting ? (
+              <button className="btn btn-line" type="button" onClick={dismissAlarm}>
+                Тихо
+              </button>
+            ) : null}
             <button className="btn btn-text" type="button" title="Следующая фаза" onClick={skip}>
               Дальше
             </button>
-            <button className="btn btn-text" type="button" disabled={!hasStarted} onClick={reset}>
-              Сбросить
-            </button>
+            {/* Пока следующая фаза ждёт клика, сбрасывать нечего: место отдано «Тихо». */}
+            {waiting ? null : (
+              <button className="btn btn-text" type="button" disabled={!hasStarted} onClick={reset}>
+                Сбросить
+              </button>
+            )}
           </div>
-          <div className="tabs fp-presets" role="group" aria-label="Ритм">
+          <div className="tabs fp-presets" role="group" aria-label="Ритм: фокус, перерыв и длинный перерыв">
             {PRESETS.map((preset, index) => (
               <button
                 key={preset.note}
                 type="button"
-                title={preset.note}
+                title={rhythmHint(preset)}
                 aria-pressed={index === presetIdx}
                 onClick={() => choosePreset(index)}
               >
-                {preset.focus} / {preset.brk}
+                {rhythmLabel(preset)}
               </button>
             ))}
+            <button
+              type="button"
+              title={isCustom ? `Своё: ${rhythmHint(rhythm).toLowerCase()}` : "Свой ритм, звук и уведомления"}
+              aria-pressed={isCustom}
+              aria-expanded={panelOpen}
+              aria-controls={panelOpen ? "fp-set" : undefined}
+              onClick={pickCustom}
+            >
+              Своё
+            </button>
           </div>
+          {panelOpen ? <TimerSettings id="fp-set" /> : null}
         </div>
 
         {now ? (

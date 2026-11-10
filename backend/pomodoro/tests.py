@@ -110,6 +110,37 @@ class FocusSessionApiTests(TestCase):
         self.assertEqual(session.user_email, self.email)
         self.assertEqual(session.seconds, 3000)
 
+    def test_same_session_sent_twice_is_stored_once(self):
+        # Ответ на первую отправку потерялся или две вкладки отправили одну фазу:
+        # вторая отправка возвращает уже записанную сессию, а не создаёт копию.
+        started_at = timezone.now().isoformat()
+        first = self._create(started_at=started_at)
+        second = self._create(started_at=started_at)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()['id'], first.json()['id'])
+        self.assertEqual(FocusSession.objects.count(), 1)
+
+    def test_resend_is_matched_per_user_and_kind(self):
+        started_at = timezone.now().isoformat()
+        self._create(started_at=started_at)
+        self._create(started_at=started_at, kind='break', seconds=600, planned_seconds=600)
+        other = self.client.post(
+            '/api/pomodoro/sessions/',
+            data={
+                'kind': 'focus',
+                'started_at': started_at,
+                'seconds': 3000,
+                'planned_seconds': 3000,
+                'preset_focus_min': 50,
+                'preset_break_min': 10,
+            },
+            content_type='application/json',
+            **auth_headers(self.other),
+        )
+        self.assertEqual(other.status_code, 201)
+        self.assertEqual(FocusSession.objects.count(), 3)
+
     def test_create_without_user_is_rejected(self):
         response = self.client.post(
             '/api/pomodoro/sessions/',

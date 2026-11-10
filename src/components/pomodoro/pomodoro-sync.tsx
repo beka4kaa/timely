@@ -1,7 +1,7 @@
 "use client";
 
-// Невидимый компонент: держит секундный тик помодоро и отправляет завершённые
-// фазы на бэкенд.
+// Невидимый компонент: держит секундный тик помодоро, договаривается с другими
+// вкладками и отправляет завершённые фазы на бэкенд.
 //
 // Монтируется в layout дашборда: таймер и слайм должны знать о сессии на любой
 // странице, а не только на странице помодоро.
@@ -11,26 +11,79 @@ import { useEffect, useRef, useState } from "react";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { createSession } from "@/lib/pomodoro-api";
 import { readSessionName, rememberSessionName } from "@/lib/pomodoro-names";
-import { usePomodoroStore } from "@/stores/pomodoro-store";
+import { leadTimer, startTicker } from "@/lib/pomodoro-tabs";
+import { POMODORO_STORAGE_KEY, POMODORO_STORAGE_VERSION, usePomodoroStore } from "@/stores/pomodoro-store";
 
 import { useFocusUser } from "./use-focus-user";
 
+/**
+ * Сколько новая ведущая вкладка ждёт перед первой отправкой: прошлая могла ещё ждать
+ * ответа на свою, и без паузы та же сессия ушла бы дважды.
+ */
+const LEADER_SETTLE_MS = 1500;
+
+/** Версия сохранённого состояния в записи другой вкладки. */
+function storedVersion(raw: string | null): number {
+  try {
+    const version: unknown = raw ? JSON.parse(raw)?.version : null;
+    return typeof version === "number" ? version : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function PomodoroSync() {
   const email = useFocusUser();
-  const tick = usePomodoroStore((state) => state.tick);
+  const leader = usePomodoroStore((state) => state.leader);
   const pending = usePomodoroStore((state) => state.pending);
   const dropPending = usePomodoroStore((state) => state.dropPending);
   const focusing = usePomodoroStore((state) => state.running && state.phase === "focus");
   const flushing = useRef(false);
   const named = useRef(new Set<string>());
   const mascotFocused = useRef(false);
+  const leaderSince = useRef(0);
   const [retryTick, setRetryTick] = useState(0);
 
+  // Тик из воркера: на свёрнутой вкладке он не замедляется. Вернулся на вкладку,
+  // и время подтягивается сразу, не дожидаясь следующей секунды.
   useEffect(() => {
-    tick();
-    const interval = window.setInterval(tick, 1000);
-    return () => window.clearInterval(interval);
-  }, [tick]);
+    const beat = () => usePomodoroStore.getState().tick();
+    beat();
+    const stop = startTicker(beat);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") beat();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  // Какая вкладка ведёт таймер. Новая ведущая сразу доделывает пропущенное.
+  useEffect(
+    () =>
+      leadTimer((on) => {
+        const state = usePomodoroStore.getState();
+        if (on && !state.leader) leaderSince.current = Date.now();
+        state.setLeader(on);
+        if (on) state.tick();
+      }),
+    [],
+  );
+
+  // Другая вкладка что-то поменяла: нажали «Тихо», начали перерыв, закончилась фаза.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== POMODORO_STORAGE_KEY) return;
+      // Вкладка со старой сборкой пишет своё каждую секунду, и цикл здесь сбрасывался бы
+      // вслед за ней. Её записи пропускаем: она перейдёт на новую при перезагрузке.
+      if (storedVersion(event.newValue) < POMODORO_STORAGE_VERSION) return;
+      void usePomodoroStore.persist.rehydrate();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   // Слайм собран, пока идёт фокус. Маскот монтируется позже этого компонента, поэтому
   // вызов откладывается: иначе после перезагрузки посреди сессии он бы об этом не узнал.
@@ -52,8 +105,15 @@ export function PomodoroSync() {
     }
   }, [pending]);
 
+  // Отправляет только ведущая вкладка: очередь общая, и две вкладки отправили бы её дважды.
   useEffect(() => {
-    if (!email || !pending.length || flushing.current) return;
+    if (!leader || !email || !pending.length || flushing.current) return;
+
+    const settle = leaderSince.current + LEADER_SETTLE_MS - Date.now();
+    if (settle > 0) {
+      const timer = window.setTimeout(() => setRetryTick((n) => n + 1), settle);
+      return () => window.clearTimeout(timer);
+    }
 
     let retryTimer = 0;
     flushing.current = true;
@@ -86,7 +146,7 @@ export function PomodoroSync() {
     return () => {
       if (retryTimer) window.clearTimeout(retryTimer);
     };
-  }, [email, pending, dropPending, retryTick]);
+  }, [leader, email, pending, dropPending, retryTick]);
 
   return null;
 }

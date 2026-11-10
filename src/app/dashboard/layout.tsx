@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { AuthGuard } from "@/components/auth-guard"
+import { PomodoroAlerts } from "@/components/pomodoro/pomodoro-alerts"
 import { PomodoroSync } from "@/components/pomodoro/pomodoro-sync"
 import { IconSprite } from "@/components/shell/icons"
 import { Mascot } from "@/components/shell/mascot/mascot"
@@ -52,6 +53,8 @@ export default function DashboardLayout({
           {/* Секундный тик помодоро и отправка завершённых сессий. Живёт в layout,
               чтобы таймер шёл на всех страницах. */}
           <PomodoroSync />
+          {/* Отсчёт во вкладке, звонок, уведомления и «Пора на перерыв» на любой странице. */}
+          <PomodoroAlerts />
           <ViewTracker />
           <Sidebar />
           <DashboardMain>{children}</DashboardMain>

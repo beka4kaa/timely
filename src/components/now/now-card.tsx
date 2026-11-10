@@ -10,6 +10,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 
+import { primeAlerts } from "@/components/pomodoro/pomodoro-alerts";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { BOARD_ENABLED } from "@/config/features";
 import { useAskRail } from "@/contexts/ask-rail";
@@ -258,12 +259,10 @@ function FocusRing({ hero }: { hero: Hero | null }) {
  */
 function FocusButtons({ hero }: { hero: Hero | null }) {
   const running = usePomodoroStore((state) => state.running);
-  const phase = usePomodoroStore((state) => state.phase);
-  const presetIdx = usePomodoroStore((state) => state.presetIdx);
   const started = usePomodoroStore(selectHasStarted);
   const toggle = usePomodoroStore((state) => state.toggle);
   const reset = usePomodoroStore((state) => state.reset);
-  const choosePreset = usePomodoroStore((state) => state.choosePreset);
+  const startFocus = usePomodoroStore((state) => state.startFocus);
 
   // Пока идёт сессия, маскот не отвлекает.
   useEffect(() => {
@@ -274,7 +273,14 @@ function FocusButtons({ hero }: { hero: Hero | null }) {
   if (started) {
     return (
       <>
-        <button type="button" className="btn btn-text" onClick={toggle}>
+        <button
+          type="button"
+          className="btn btn-text"
+          onClick={() => {
+            if (!running) primeAlerts();
+            toggle();
+          }}
+        >
           {running ? "Пауза" : "Продолжить"}
         </button>
         <button type="button" className="btn btn-text" onClick={reset}>
@@ -291,10 +297,10 @@ function FocusButtons({ hero }: { hero: Hero | null }) {
   const preset = presetAt(suggested);
 
   const start = () => {
-    // Таймер, оставленный на перерыве, начал бы перерыв, а кнопка обещает фокус.
-    // Выбор ритма заодно возвращает фазу фокуса.
-    if (phase !== "focus" || presetIdx !== suggested) choosePreset(suggested);
-    toggle();
+    // Таймер, оставленный на перерыве, начал бы перерыв, а кнопка обещает фокус:
+    // поэтому отдельное действие, которое переходит на фокус и сразу его начинает.
+    primeAlerts();
+    startFocus(suggested);
   };
 
   return (

@@ -1,24 +1,27 @@
 "use client";
 
 // Циферблат: чёрточка на минуту вместо тонкой дуги и тёмного диска.
+// Под цифрами точки цикла: сколько фокусов осталось до длинного перерыва.
 
 import { useMemo } from "react";
 
-import { clockOf, type PomodoroPhase } from "@/lib/pomodoro";
+import { clockOf, type TimerPhase } from "@/lib/pomodoro";
+import type { CycleDot } from "@/lib/pomodoro-cycle";
 import { dialSubtitle, dialTicks, tickClass } from "@/lib/pomodoro.logic";
 import { cn } from "@/lib/utils";
 
 interface TimerDialProps {
-  phase: PomodoroPhase;
+  phase: TimerPhase;
   remaining: number;
   planned: number;
   elapsed: number;
   running: boolean;
   /** Текущий момент из стора: подпись «до 16:55» на паузе ползёт вместе с часами. */
   now: number;
+  cycle: { dots: CycleDot[]; label: string };
 }
 
-export function TimerDial({ phase, remaining, planned, elapsed, running, now }: TimerDialProps) {
+export function TimerDial({ phase, remaining, planned, elapsed, running, now, cycle }: TimerDialProps) {
   const ticks = useMemo(() => dialTicks(planned), [planned]);
 
   return (
@@ -41,6 +44,11 @@ export function TimerDial({ phase, remaining, planned, elapsed, running, now }: 
           {clockOf(remaining)}
         </span>
         <span className="dial-sub">{dialSubtitle({ phase, running, remaining, planned, now })}</span>
+        <span className="fp-cycle" role="img" aria-label={cycle.label} title={cycle.label}>
+          {cycle.dots.map((dot, index) => (
+            <i key={index} data-dot={dot} />
+          ))}
+        </span>
       </div>
     </div>
   );

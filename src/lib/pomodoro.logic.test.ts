@@ -181,6 +181,23 @@ test("история сортируется от поздних к ранним 
 
   const brk = rows.find((row) => row.id === 3);
   assert.equal(brk?.isFocus, false);
+  assert.equal(brk?.isLong, false);
+});
+
+test("история отличает длинный перерыв: он длиннее обычного в ритме сессии", () => {
+  const rows = buildHistoryRows([
+    session({ id: 1, kind: "break", started_at: "2026-07-30T10:00:00Z", seconds: 1800, planned_seconds: 1800 }),
+    session({ id: 2, kind: "break", started_at: "2026-07-30T09:00:00Z", seconds: 600, planned_seconds: 600 }),
+    session({ id: 3, started_at: "2026-07-30T08:00:00Z", seconds: 3000, planned_seconds: 3000 }),
+  ]);
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.isLong]),
+    [
+      [1, true],
+      [2, false],
+      [3, false],
+    ],
+  );
 });
 
 test("история пустая, когда сессий нет", () => {
@@ -254,6 +271,9 @@ test("подпись под цифрами", () => {
   assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: true, remaining: 300 }), "перерыв, до 16:17");
   assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: false, remaining: 300 }), "пауза, до 16:17");
   assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: false, remaining: 600 }), "перерыв 10 минут");
+  assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: true, remaining: 300 }), "длинный перерыв, до 16:17");
+  assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: false, remaining: 1800 }), "длинный перерыв 30 минут");
+  assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: false, remaining: 300 }), "пауза, до 16:17");
 });
 
 test("clockTime дополняет нулями", () => {

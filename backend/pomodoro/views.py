@@ -61,9 +61,27 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
         return queryset.filter(started_at__gte=cutoff)
 
     def create(self, request, *args, **kwargs):
-        if not self._user_email():
+        user_email = self._user_email()
+        if not user_email:
             return Response({'detail': 'Не указан пользователь.'}, status=status.HTTP_401_UNAUTHORIZED)
-        return super().create(request, *args, **kwargs)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Та же фаза уже записана: ответ на первую отправку потерялся, или её отправила
+        # и другая вкладка. Отдаём записанную, а не создаём копию, иначе время фокуса
+        # в статистике и у тьютора удвоилось бы.
+        existing = FocusSession.objects.filter(
+            user_email=user_email,
+            kind=serializer.validated_data.get('kind', FocusSession.FOCUS),
+            started_at=serializer.validated_data['started_at'],
+        ).first()
+        if existing is not None:
+            return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         serializer.save(user_email=self._user_email())

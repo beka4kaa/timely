@@ -6,9 +6,10 @@ import {
   HEAT_WEEKS,
   RU_DAYS,
   type FocusSessionRow,
-  type PomodoroPhase,
+  type TimerPhase,
   dayKey,
   hm,
+  isLongBreakRow,
 } from "./pomodoro";
 
 /** Пять ступеней насыщенности календаря активности: классы `.h0`…`.h4`. */
@@ -206,6 +207,8 @@ export interface HistoryRow {
   id: number;
   time: string;
   isFocus: boolean;
+  /** Длинный перерыв: на сервере он обычный перерыв, отличаем по длине. */
+  isLong: boolean;
   startedAt: string;
   minutes: number;
   stoppedEarly: boolean;
@@ -223,6 +226,7 @@ export function buildHistoryRows(sessions: FocusSessionRow[]): HistoryRow[] {
       id: session.id,
       time: clockTime(new Date(session.started_at)),
       isFocus: session.kind === "focus",
+      isLong: isLongBreakRow(session),
       startedAt: session.started_at,
       minutes: Math.round(session.seconds / 60),
       stoppedEarly: session.seconds < session.planned_seconds,
@@ -256,7 +260,7 @@ export function buildTodayStats(
   };
 }
 
-function minutesWord(count: number): string {
+export function minutesWord(count: number): string {
   const hundred = count % 100;
   const ten = hundred % 10;
   if (hundred > 10 && hundred < 20) return "минут";
@@ -315,6 +319,8 @@ export function tickClass(index: number, elapsedSeconds: number, remainingSecond
   return index === gone && remainingSeconds > 0 ? "now" : "";
 }
 
+const BREAK_WORD: Record<TimerPhase, string> = { focus: "", break: "перерыв", long: "длинный перерыв" };
+
 /** Подпись под цифрами: когда закончится, на паузе, или сколько будет идти. */
 export function dialSubtitle({
   phase,
@@ -323,7 +329,7 @@ export function dialSubtitle({
   planned,
   now,
 }: {
-  phase: PomodoroPhase;
+  phase: TimerPhase;
   running: boolean;
   remaining: number;
   planned: number;
@@ -331,11 +337,12 @@ export function dialSubtitle({
   now: number;
 }): string {
   const end = clockTime(new Date(now + remaining * 1000));
-  if (running) return phase === "break" ? `перерыв, до ${end}` : `до ${end}`;
+  const word = BREAK_WORD[phase];
+  if (running) return word ? `${word}, до ${end}` : `до ${end}`;
   if (remaining < planned) return `пауза, до ${end}`;
   const minutes = Math.round(planned / 60);
   const length = `${minutes} ${minutesWord(minutes)}`;
-  return phase === "break" ? `перерыв ${length}` : length;
+  return word ? `${word} ${length}` : length;
 }
 
 /** Имя сессии хранится по моменту начала: сервер отдаёт его в другой записи, чем принял. */

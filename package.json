@@ -13,7 +13,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test:auth": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/auth-fetch.test.ts src/lib/auth-sign-in.test.ts src/lib/backend-token.test.ts src/lib/next-rewrites.test.ts",
-    "test:pomodoro": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/pomodoro.logic.test.ts",
+    "test:pomodoro": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/pomodoro.logic.test.ts src/lib/pomodoro-cycle.test.ts src/lib/pomodoro-bell.test.ts",
     "test:weak": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/mind-srs.test.ts src/lib/weak-topics.test.ts",
     "test:planning-intake": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/components/board/lesson-plan.logic.test.ts",
     "test:image-model-selection": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\",\"jsx\":\"react-jsx\",\"target\":\"es2022\",\"moduleResolution\":\"node\"}' node --test -r ts-node/register src/lib/image-model-selection.test.ts",

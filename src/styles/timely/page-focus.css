@@ -3,7 +3,7 @@
 /* При «меньше движения» плавного ввода нет, а поле всё равно лежит в .ti-host */
 .fp-name .ti-host input { width: 100%; }
 .fp-start { min-width: 136px; height: 40px; padding: 0 22px; font-size: 14px; }
-.fp-ctrl .btn-text { height: 40px; }
+.fp-ctrl .btn-text, .fp-ctrl .btn-line { height: 40px; }
 .fp-ctrl .btn-text:disabled { opacity: 0.45; cursor: default; }
 .fp-error { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 18px; padding: 14px 16px; font-size: 14px; }
 .fp-week-total { float: right; color: var(--t-muted); font-size: 12.5px; font-weight: 400; font-variant-numeric: tabular-nums lining-nums; }
@@ -14,4 +14,59 @@
 .fp-clear .btn { height: 28px; padding-inline: 9px; font-size: 12.5px; }
 @media (max-width: 640px) {
   .fp-clear .btn { height: 34px; }
+}
+
+/* Где ты в цикле: точка на фокус, сделанные закрашены, идущий обведён */
+.fp-cycle { display: flex; gap: 6px; margin-top: 7px; }
+.fp-cycle i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--t-faint); }
+.fp-cycle [data-dot="done"] { background: var(--t-ink); box-shadow: none; }
+.fp-cycle [data-dot="now"] { box-shadow: inset 0 0 0 1.5px var(--t-ink), 0 0 0 3px var(--t-hover); }
+
+/* Ритмы под кнопками; «Своё» открывает свой ритм и настройки таймера */
+.fp-presets { justify-content: center; }
+/* Шесть ритмов на телефоне: ровная сетка 3 на 2, а не рваные строки */
+@media (max-width: 640px) {
+  .fp-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .fp-presets button { height: 34px; padding: 0 6px; }
+}
+.fp-set { --r: 18px; display: flex; flex-direction: column; gap: 12px; width: min(100%, 460px); padding: 16px 18px 18px; }
+.fp-rhythm { min-width: 0; margin: 0 0 4px; padding: 0; border: 0; }
+.fp-rhythm legend { margin-bottom: 10px; padding: 0; font-size: 13.5px; font-weight: 600; }
+.fp-rhythm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.fp-num { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--t-muted); font-size: 12.5px; }
+.fp-num > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fp-num-in { display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 10px; border-radius: 10px; background: var(--t-hover); box-shadow: inset 0 0 0 1px var(--t-line); cursor: text; }
+.fp-num-in:focus-within { box-shadow: inset 0 0 0 1.5px var(--t-ink); }
+.fp-num input { flex: 1; width: 100%; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--t-ink); font: inherit; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums lining-nums; }
+.fp-num small { flex: none; font-size: 12px; }
+.fp-num.is-bad .fp-num-in { box-shadow: inset 0 0 0 1.5px var(--t-warn); }
+.fp-num em { color: var(--t-warn); font-size: 12px; font-style: normal; line-height: 1.3; }
+.fp-vol { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: -2px; }
+.fp-vol input { flex: 1; min-width: 0; accent-color: var(--t-ink); }
+.fp-vol input:disabled, .fp-vol .btn:disabled, .fp-set .switch:disabled { opacity: 0.45; cursor: default; }
+
+/* «Пора на перерыв!» на любой странице, пока следующая фаза ждёт клика. Стоит там же,
+   где тосты, над капсулой; открыто мини-окно, и плашка уходит наверх, чтобы его не закрыть */
+.fp-alarm {
+  position: fixed; z-index: 55; bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  left: calc(var(--sb-w) + 8px + env(safe-area-inset-left, 0px)); right: env(safe-area-inset-right, 0px);
+  display: flex; justify-content: center; padding: 0 16px; pointer-events: none;
+}
+.timely-dashboard-shell:has(.quick:not([data-state="closed"])) .fp-alarm { top: calc(14px + env(safe-area-inset-top, 0px)); bottom: auto; }
+/* На «Неделе» с несохранёнными правками на этом месте их бар: плашка встаёт над ним */
+.timely-dashboard-shell:has(.ds-foot):not(:has(.quick:not([data-state="closed"]))) .fp-alarm { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); }
+.fp-alarm-in {
+  --r: 15px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; max-width: 100%;
+  padding: 6px 6px 6px 16px; pointer-events: auto;
+  background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong);
+}
+.fp-alarm-t { margin-right: 4px; font-size: 13.5px; font-weight: 600; }
+.fp-alarm-in .btn { height: 30px; }
+@media (max-width: 640px) {
+  .fp-alarm { left: 0; bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
+  .timely-dashboard-shell:has(.ds-foot):not(:has(.quick:not([data-state="closed"]))) .fp-alarm { bottom: calc(188px + env(safe-area-inset-bottom, 0px)); }
+  .fp-alarm-in .btn { height: 34px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fp-alarm-in { animation: q-in 220ms cubic-bezier(0.2, 1.2, 0.4, 1) both; }
 }

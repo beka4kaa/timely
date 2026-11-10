@@ -1,23 +1,37 @@
 // Общие типы, пресеты и форматирование для помодоро-трекера.
 
+/** Что хранит бэкенд: длинный перерыв уходит туда обычным перерывом. */
 export type PomodoroPhase = "focus" | "break";
 
-export interface PomodoroPreset {
+/** Фазы самого таймера. */
+export type TimerPhase = "focus" | "break" | "long";
+
+/** Ритм: фокус, перерыв и длинный перерыв в минутах, длинный после каждых `every` фокусов. */
+export interface Rhythm {
   focus: number;
   brk: number;
+  long: number;
+  every: number;
+}
+
+export interface PomodoroPreset extends Rhythm {
   note: string;
   desc: string;
 }
 
+// Порядок не менять: выбранный ритм хранится в браузере индексом.
 export const PRESETS: PomodoroPreset[] = [
-  { focus: 25, brk: 5, note: "классика", desc: "Короткие подходы, частые паузы" },
-  { focus: 50, brk: 10, note: "глубоко", desc: "Стандарт для длинных тем" },
-  { focus: 60, brk: 10, note: "долго", desc: "Час без отвлечений" },
-  { focus: 90, brk: 20, note: "марафон", desc: "Полный цикл концентрации" },
-  { focus: 45, brk: 15, note: "мягко", desc: "Умеренно, с большой паузой" },
+  { focus: 25, brk: 5, long: 15, every: 4, note: "классика", desc: "Короткие подходы, частые паузы" },
+  { focus: 50, brk: 10, long: 30, every: 3, note: "глубоко", desc: "Стандарт для длинных тем" },
+  { focus: 60, brk: 10, long: 30, every: 3, note: "долго", desc: "Час без отвлечений" },
+  { focus: 90, brk: 20, long: 30, every: 2, note: "марафон", desc: "Полный цикл концентрации" },
+  { focus: 45, brk: 15, long: 30, every: 3, note: "мягко", desc: "Умеренно, с большой паузой" },
 ];
 
 export const DEFAULT_PRESET_INDEX = 1;
+
+/** Индекс «Своё» в сторе: свой ритм лежит отдельно от пресетов. */
+export const CUSTOM_PRESET = -1;
 
 /** Цель дня в минутах чистого времени учёбы. */
 export const DAY_GOAL_MIN = 180;
@@ -116,11 +130,10 @@ export function presetAt(index: number): PomodoroPreset {
   return PRESETS[index] ?? PRESETS[DEFAULT_PRESET_INDEX];
 }
 
-/** Длина фазы в секундах для выбранного пресета. */
-export function phaseDurationSeconds(
-  presetIndex: number,
-  phase: PomodoroPhase,
-): number {
-  const preset = presetAt(presetIndex);
-  return (phase === "focus" ? preset.focus : preset.brk) * 60;
+/**
+ * Длинный ли это перерыв. Отдельного вида на сервере нет, но длина пресета у сессии
+ * хранится, а длинный перерыв длиннее обычного в своём же ритме.
+ */
+export function isLongBreakRow(row: Pick<FocusSessionRow, "kind" | "planned_seconds" | "preset_break_min">): boolean {
+  return row.kind === "break" && row.planned_seconds > row.preset_break_min * 60;
 }
