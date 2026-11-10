@@ -29,7 +29,9 @@
   демо-бэкенда, свой `NEXTAUTH_SECRET`, `NEXTAUTH_URL=https://demo.timely-plan.study`,
   `TIMELY_APP_HOST=demo.timely-plan.study`, `TIMELY_APP_ORIGIN=https://demo.timely-plan.study`,
   `TIMELY_MARKETING_HOST=timely-plan.study` (иначе `/en` на демо уведёт на запасной
-  `timelyplan.me`). Флаги демо — только оба вместе и только здесь.
+  `timelyplan.me`), `NEXT_PUBLIC_DEMO_URL=https://demo.timely-plan.study` (в сборке демо
+  кнопки лендинга «Открыть» и «Войти» ведут туда, а не в настоящий кабинет). Флаги
+  демо — только оба вместе и только здесь.
 - **DNS**: CNAME `demo` на Vercel.
 
 Почему отдельная база: контесты и рейтинг общие для всех учеников. Выдуманные
