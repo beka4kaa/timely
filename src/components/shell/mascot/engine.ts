@@ -7,6 +7,10 @@
 //
 // React здесь только монтирует разметку: в каждом кадре атрибуты меняются напрямую,
 // иначе шестьдесят перерисовок в секунду шли бы через всё дерево каскада.
+//
+// Тот же слайм живёт и вне приложения — на лендинге и страницах входа («сцена», см.
+// MascotStageOptions). Там нет реплик и плашки над головой, а кадры считаются, только
+// пока он виден на экране.
 
 import type { DashboardView } from "@/config/dashboard-navigation";
 
@@ -44,6 +48,25 @@ export interface MascotEngine {
   setView: (view: DashboardView) => void;
   destroy: () => void;
 }
+
+/**
+ * Слайм на странице, а не в углу приложения: стоит в вёрстке, кадры идут, только пока
+ * он на экране, на прокрутку страницы откликается желе. Перетащить можно только мышью:
+ * пальцем по нему листают страницу. Без кнопки `.mascot-hit` в разметке он не
+ * реагирует на курсор и нажатия, а просто живёт.
+ */
+export interface MascotStageOptions {
+  /** Падает сверху при первом показе. */
+  drop?: boolean;
+  /** Чем он сопит во сне: «з» по-русски, «z» по-английски. */
+  sleepGlyph?: string;
+}
+
+/** С какой высоты падает слайм при первом показе, в единицах рисунка, и сколько секунд ждёт. */
+const DROP_HEIGHT = 330;
+const DROP_HOLD = 0.42;
+/** Быстрее этого сцена не падает: приземление с прыжка в приложении — около 380. */
+const TERMINAL_SPEED = 560;
 
 interface Spring {
   x: number;
@@ -165,9 +188,13 @@ function eyePath(mx: number, e: number[]): string {
   return `M${n1(x0)} ${n1(y0)}Q${n1(cx)} ${n1(cy)} ${n1(x2)} ${n1(y2)}Q${n1(c2x)} ${n1(c2y)} ${n1(x0)} ${n1(y0)}Z`;
 }
 
-export function createMascot(host: HTMLElement): MascotEngine {
+export function createMascot(host: HTMLElement, stageOptions?: MascotStageOptions): MascotEngine {
+  const stage = stageOptions ?? null;
   const art = host.querySelector<SVGSVGElement>(".mascot-art")!;
-  const hit = host.querySelector<HTMLButtonElement>(".mascot-hit")!;
+  // В приложении кнопка есть всегда; на сцене её нет у слайма-украшения.
+  const hit = host.querySelector<HTMLElement>(".mascot-hit");
+  // Сколько единиц рисунка в ширине рамки: у приложения 240, у сцены рамка по телу.
+  const viewWidth = art.viewBox.baseVal?.width || 240;
   const part = (name: string) => art.querySelector<SVGElement>(`[data-m="${name}"]`)!;
   const el = {
     all: part("all"),
@@ -346,7 +373,7 @@ export function createMascot(host: HTMLElement): MascotEngine {
     } else {
       node = document.createElementNS(SVGNS, "text");
       node.setAttribute("class", "m-z");
-      node.textContent = "з";
+      node.textContent = stage?.sleepGlyph ?? "з";
     }
     el.fx.appendChild(node);
     fx.push({ kind, node, x, y, vx, vy, t: 0, life, size });
@@ -586,6 +613,9 @@ export function createMascot(host: HTMLElement): MascotEngine {
     /* Полёт */
     if (airborne && !dragging) {
       pos.vy -= 980 * dt;
+      // На сцене слайм падает с высоты, а не с прыжка: без предела скорости он
+      // расплющился бы в блин. В приложении так высоко он не бывает.
+      if (stage && pos.vy < -TERMINAL_SPEED) pos.vy = -TERMINAL_SPEED;
       pos.y += pos.vy * dt;
       S.to = clamp(Math.abs(pos.vy) * 0.00062, 0, 0.2);
       L.v += -Hx.v * 0.05 * dt;
@@ -696,14 +726,19 @@ export function createMascot(host: HTMLElement): MascotEngine {
 
   function unitsPerPixel() {
     const box = art.getBoundingClientRect();
-    return 240 / (box.width || 124);
+    return viewWidth / (box.width || 124);
   }
+
+  /* Сцена считает кадры, только пока слайм на экране. В приложении он виден всегда. */
+  let onScreen = !stage;
 
   let lastMoveX = 0;
   let lastDir = 0;
   let turns = 0;
   let turnAt = 0;
   const onPointerMove = (event: PointerEvent) => {
+    // Слайм за экраном не следит за курсором: незачем мерить его рамку на каждое движение.
+    if (!onScreen) return;
     touched();
     pointerAt = T;
     const box = art.getBoundingClientRect();
@@ -730,13 +765,9 @@ export function createMascot(host: HTMLElement): MascotEngine {
     }
   };
 
-  // Страница скроллится внутри своей колонки, поэтому слушаем с погружением: scroll не всплывает.
-  let lastScroll = 0;
-  const onScroll = (event: Event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement) || !target.classList.contains("main")) return;
+  let lastScroll = stage ? window.scrollY : 0;
+  function scrolled(now: number) {
     touched();
-    const now = target.scrollTop;
     const delta = clamp(now - lastScroll, -90, 90);
     lastScroll = now;
     if (reduced || airborne || dragging) return;
@@ -745,11 +776,26 @@ export function createMascot(host: HTMLElement): MascotEngine {
     Fy.v -= delta * 1.5;
     S.v += Math.abs(delta) * 0.012 * (delta > 0 ? -1 : 1);
     impulse(Math.abs(delta) * 0.012);
+  }
+  // Страница скроллится внутри своей колонки, поэтому слушаем с погружением: scroll не всплывает.
+  const onScroll = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.classList.contains("main")) return;
+    scrolled(target.scrollTop);
+  };
+  // На сцене листается сама страница.
+  const onPageScroll = () => {
+    if (!onScreen) {
+      lastScroll = window.scrollY;
+      return;
+    }
+    scrolled(window.scrollY);
   };
 
   window.addEventListener("pointermove", onPointerMove, { passive: true });
   window.addEventListener("keydown", touched);
-  document.addEventListener("scroll", onScroll, { passive: true, capture: true });
+  if (stage) window.addEventListener("scroll", onPageScroll, { passive: true });
+  else document.addEventListener("scroll", onScroll, { passive: true, capture: true });
 
   const onEnter = () => {
     hoverOn = true;
@@ -761,8 +807,6 @@ export function createMascot(host: HTMLElement): MascotEngine {
   const onLeave = () => {
     hoverOn = false;
   };
-  hit.addEventListener("pointerenter", onEnter);
-  hit.addEventListener("pointerleave", onLeave);
 
   let downX = 0;
   let downY = 0;
@@ -777,7 +821,7 @@ export function createMascot(host: HTMLElement): MascotEngine {
     downX = event.clientX;
     downY = event.clientY;
     try {
-      hit.setPointerCapture(event.pointerId);
+      hit?.setPointerCapture(event.pointerId);
     } catch {
       // Указатель уже ушёл: перетаскивание просто не начнётся.
     }
@@ -785,6 +829,8 @@ export function createMascot(host: HTMLElement): MascotEngine {
   };
   const onDrag = (event: PointerEvent) => {
     if (!pressed || event.pointerId !== activeId || reduced) return;
+    // На сцене палец листает страницу, а не тащит слайм.
+    if (stage && event.pointerType !== "mouse") return;
     const dx = event.clientX - downX;
     const dy = event.clientY - downY;
     if (!moved && Math.sqrt(dx * dx + dy * dy) > 7) {
@@ -822,18 +868,38 @@ export function createMascot(host: HTMLElement): MascotEngine {
       return;
     }
     hop(1);
-    say();
+    if (!stage) say();
   };
-  hit.addEventListener("pointerdown", onDown);
-  hit.addEventListener("pointermove", onDrag);
-  hit.addEventListener("pointerup", release);
-  hit.addEventListener("pointercancel", release);
-  hit.addEventListener("click", onClick);
+  if (hit) {
+    hit.addEventListener("pointerenter", onEnter);
+    hit.addEventListener("pointerleave", onLeave);
+    hit.addEventListener("pointerdown", onDown);
+    hit.addEventListener("pointermove", onDrag);
+    hit.addEventListener("pointerup", release);
+    hit.addEventListener("pointercancel", release);
+    hit.addEventListener("click", onClick);
+  }
+
+  /*
+   * Реплика и плашка есть только в приложении. На сцене тех же узлов в документе нет:
+   * они создаются отдельно и никуда не вставляются, так что код ниже пишет в них, никому
+   * не мешая, а в приложении работает ровно как раньше.
+   */
+  function shellPart(selector: string, markup: string): HTMLElement {
+    const found = host.querySelector<HTMLElement>(selector);
+    if (found) return found;
+    const holder = document.createElement("div");
+    holder.innerHTML = markup;
+    return holder.firstElementChild as HTMLElement;
+  }
 
   /* Реплика на случай, если нужна помощь: только по нажатию, сама не лезет */
-  const bubble = host.querySelector<HTMLElement>(".mascot-bubble")!;
-  const sayEl = host.querySelector<HTMLElement>(".mascot-say")!;
-  const askEl = host.querySelector<HTMLElement>(".mascot-ask")!;
+  const bubble = shellPart(
+    ".mascot-bubble",
+    '<div class="mascot-bubble is-off"><p class="mascot-say"></p><button class="mascot-ask" type="button"></button></div>',
+  );
+  const sayEl = bubble.querySelector<HTMLElement>(".mascot-say")!;
+  const askEl = bubble.querySelector<HTMLElement>(".mascot-ask")!;
   let bubbleTimer: ReturnType<typeof setTimeout> | undefined;
   function hideBubble() {
     bubble.classList.add("is-off");
@@ -853,10 +919,13 @@ export function createMascot(host: HTMLElement): MascotEngine {
       hideBubble();
     }
   };
-  document.addEventListener("click", onDocumentClick);
+  if (!stage) document.addEventListener("click", onDocumentClick);
 
   /* Плашка над головой: над чем думает и что делает прямо сейчас */
-  const thoughts = host.querySelector<HTMLElement>(".m-thoughts")!;
+  const thoughts = shellPart(
+    ".m-thoughts",
+    '<div class="m-thoughts" data-state="off"><p class="m-card-title"><span></span></p><p class="m-card-step"></p></div>',
+  );
   const cardTitle = thoughts.querySelector<HTMLElement>(".m-card-title span")!;
   const cardStep = thoughts.querySelector<HTMLElement>(".m-card-step")!;
   let cardTimer: ReturnType<typeof setTimeout> | undefined;
@@ -975,6 +1044,10 @@ export function createMascot(host: HTMLElement): MascotEngine {
   function frame(now: number) {
     const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
     last = now;
+    if (stage) {
+      stageFrame(dt);
+      return;
+    }
     // На странице чата маскот скрыт, и считать его кадры незачем
     if (view !== "chat") {
       step(dt);
@@ -983,8 +1056,52 @@ export function createMascot(host: HTMLElement): MascotEngine {
     frameId = requestAnimationFrame(frame);
   }
 
+  /*
+   * Сцена. Падающий слайм первые доли секунды висит над местом невидимым (CSS прячет
+   * его, пока нет data-ready), потом летит вниз и шлёпается. Кадры идут, только пока он
+   * на экране: за экраном его часы стоят, и нагонять там нечего.
+   */
+  let hold = 0;
+  if (stage?.drop && !reduced) {
+    airborne = true;
+    pos.y = DROP_HEIGHT;
+    pos.vy = 0;
+    hold = DROP_HOLD;
+  } else if (stage) {
+    host.dataset.ready = "true";
+  }
+  function stageFrame(dt: number) {
+    frameId = 0;
+    if (hold > 0) {
+      hold -= dt;
+    } else {
+      if (!host.dataset.ready) host.dataset.ready = "true";
+      step(dt);
+      render();
+    }
+    if (onScreen && !document.hidden) frameId = requestAnimationFrame(frame);
+  }
+  function resume() {
+    if (reduced || frameId || !onScreen || document.hidden) return;
+    last = 0;
+    frameId = requestAnimationFrame(frame);
+  }
+  let watcher: IntersectionObserver | null = null;
+  if (stage) {
+    // С небольшим запасом: слайм оживает чуть раньше, чем въедет в кадр.
+    watcher = new IntersectionObserver(
+      ([entry]) => {
+        onScreen = entry.isIntersecting;
+        resume();
+      },
+      { rootMargin: "60px 0px" },
+    );
+    watcher.observe(host);
+    document.addEventListener("visibilitychange", resume);
+  }
+
   render();
-  if (!reduced) frameId = requestAnimationFrame(frame);
+  if (!reduced && !stage) frameId = requestAnimationFrame(frame);
 
   return {
     hop,
@@ -1020,20 +1137,25 @@ export function createMascot(host: HTMLElement): MascotEngine {
     },
     destroy: () => {
       cancelAnimationFrame(frameId);
+      watcher?.disconnect();
+      document.removeEventListener("visibilitychange", resume);
       if (stillTimer) clearTimeout(stillTimer);
       if (bubbleTimer) clearTimeout(bubbleTimer);
       if (cardTimer) clearTimeout(cardTimer);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("keydown", touched);
+      window.removeEventListener("scroll", onPageScroll);
       document.removeEventListener("scroll", onScroll, { capture: true });
       document.removeEventListener("click", onDocumentClick);
-      hit.removeEventListener("pointerenter", onEnter);
-      hit.removeEventListener("pointerleave", onLeave);
-      hit.removeEventListener("pointerdown", onDown);
-      hit.removeEventListener("pointermove", onDrag);
-      hit.removeEventListener("pointerup", release);
-      hit.removeEventListener("pointercancel", release);
-      hit.removeEventListener("click", onClick);
+      if (hit) {
+        hit.removeEventListener("pointerenter", onEnter);
+        hit.removeEventListener("pointerleave", onLeave);
+        hit.removeEventListener("pointerdown", onDown);
+        hit.removeEventListener("pointermove", onDrag);
+        hit.removeEventListener("pointerup", release);
+        hit.removeEventListener("pointercancel", release);
+        hit.removeEventListener("click", onClick);
+      }
       thoughts.removeEventListener("click", onCardClick);
     },
   };

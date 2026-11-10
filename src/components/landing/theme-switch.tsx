@@ -19,7 +19,14 @@ type ViewTransitionDocument = Document & {
  * и запоминается. Новая тема расходится кругом от кнопки — через View
  * Transitions; где их нет или просят меньше движения, смена мгновенная.
  */
-export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
+export function ThemeSwitch({
+  compact = false,
+  labels = { toLight: "Включить светлую тему", toDark: "Включить тёмную тему" },
+}: {
+  compact?: boolean;
+  /** Подписи на языке страницы; по умолчанию русские. */
+  labels?: { toLight: string; toDark: string };
+}) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -75,7 +82,7 @@ export function ThemeSwitch({ compact = false }: { compact?: boolean }) {
     transition.finished.then(cleanup, cleanup);
   };
 
-  const label = dark ? "Включить светлую тему" : "Включить тёмную тему";
+  const label = dark ? labels.toLight : labels.toDark;
 
   return (
     <button

@@ -6,6 +6,8 @@ export interface HostRoutingConfig {
   marketingHostname: string;
   appHostname: string;
   appOrigin: string;
+  /** Без него — https:// плюс marketingHostname. */
+  marketingOrigin?: string;
 }
 
 export interface HostRoutingInput {
@@ -78,6 +80,35 @@ export function isAppPassthroughPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Страницы, которые есть только на сайте-визитке: английский лендинг. На app-хосте
+ * такой адрес иначе превратился бы в несуществующий раздел `/dashboard/en`.
+ */
+const MARKETING_ONLY_PREFIXES = ["/en"];
+
+export function isMarketingOnlyPath(pathname: string): boolean {
+  return MARKETING_ONLY_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+export function marketingOriginOf(config: HostRoutingConfig): string {
+  return (config.marketingOrigin ?? `https://${config.marketingHostname}`).replace(/\/$/, "");
+}
+
+/**
+ * Адрес сайта-визитки из тех же переменных, что читает middleware. Значения по
+ * умолчанию — только запасной вариант: в продакшене хосты задаёт окружение.
+ */
+export function marketingOriginFromEnv(): string {
+  return marketingOriginOf({
+    marketingHostname: process.env.TIMELY_MARKETING_HOST ?? DEFAULT_MARKETING_HOSTNAME,
+    marketingOrigin: process.env.TIMELY_MARKETING_ORIGIN,
+    appHostname: process.env.TIMELY_APP_HOST ?? DEFAULT_APP_HOSTNAME,
+    appOrigin: process.env.TIMELY_APP_ORIGIN ?? DEFAULT_APP_ORIGIN,
+  });
+}
+
 export function dashboardPathToAppPath(pathname: string): string {
   if (pathname === "/dashboard" || pathname === "/dashboard/") return "/";
 
@@ -147,6 +178,14 @@ export function resolveHostRouting(
 
   if (!isAppHostname(input.hostname, config)) {
     return { type: "next" };
+  }
+
+  if (isMarketingOnlyPath(input.pathname)) {
+    return {
+      type: "redirect",
+      destination: `${marketingOriginOf(config)}${input.pathname}${search}`,
+      status: 302,
+    };
   }
 
   if (isAppPassthroughPath(input.pathname)) {

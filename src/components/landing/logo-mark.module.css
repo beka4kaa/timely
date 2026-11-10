@@ -26,24 +26,12 @@
 }
 
 .eyes {
-  fill: var(--logo-bg);
-  transform-box: fill-box;
-  transform-origin: center;
+  fill: none;
+  stroke: var(--logo-bg);
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .eyes {
-    animation: blink 5.5s ease-in-out infinite;
-  }
-}
-
-@keyframes blink {
-  0%,
-  92%,
-  100% {
-    transform: scaleY(1);
-  }
-  95% {
-    transform: scaleY(0.12);
-  }
+.blush {
+  fill: #ffc2d2;
 }

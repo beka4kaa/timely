@@ -1,0 +1,64 @@
+/* ══════════════════ Рисунок слайма ══════════════════
+   Общий для маскота в приложении и для слаймов на лендинге и страницах входа: здесь и
+   цвета, и правила. Приложение берёт файл через index.css, лендинг — из своего
+   slime.tsx, поэтому ничего, кроме самого рисунка, сюда класть нельзя.
+   Маскот белый в обеих темах. */
+:root {
+  --t-m-top: #e2e8fb;
+  --t-m-mid: #fbfcff;
+  --t-m-low: #f7f9ff;
+  --t-m-shade: #ccd6f3;
+  --t-m-core: #e8edfb;
+  --t-m-edge: #aab6dc;
+  --t-m-reflect: #ffffff;
+  --t-m-ink: #25263a;
+  --t-m-blush: #ffc2d2;
+  --t-m-hatch: #ee7e9f;
+  --t-m-aura: rgba(150, 170, 255, 0);
+  --t-m-floor: rgba(40, 46, 96, 0.34);
+}
+
+.dark {
+  --t-m-edge: rgba(214, 224, 255, 0.34);
+  --t-m-aura: rgba(255, 255, 255, 0.1);
+  --t-m-floor: rgba(0, 0, 0, 0.62);
+}
+
+/* Поддерево, которое всегда светлое: научная доска рисует холст своими цветами. */
+.tm-light {
+  --t-m-edge: #aab6dc;
+  --t-m-aura: rgba(150, 170, 255, 0);
+  --t-m-floor: rgba(40, 46, 96, 0.34);
+}
+
+@media print {
+  .dark {
+    --t-m-edge: #aab6dc;
+    --t-m-aura: rgba(150, 170, 255, 0);
+    --t-m-floor: rgba(40, 46, 96, 0.34);
+  }
+}
+
+.mascot-art { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+.m-body { fill: var(--t-m-shade); stroke: var(--t-m-edge); stroke-width: 1.5; stroke-linejoin: round; }
+.m-lit-a { stop-color: var(--t-m-top); }
+.m-lit-b { stop-color: var(--t-m-mid); }
+.m-lit-c { stop-color: var(--t-m-low); }
+.m-core { fill: var(--t-m-core); }
+.m-rim { fill: none; stroke: var(--t-m-reflect); stroke-width: 2.6; stroke-linecap: round; opacity: 0.9; }
+.m-gloss ellipse { fill: #ffffff; }
+.m-eye { fill: var(--t-m-ink); stroke: var(--t-m-ink); stroke-width: 0.9; stroke-linejoin: round; }
+.m-lash { fill: none; stroke: var(--t-m-ink); stroke-width: 1.3; stroke-linecap: round; }
+.m-mouth { fill: none; stroke: var(--t-m-ink); stroke-width: 1.9; stroke-linecap: round; }
+.m-o { fill: var(--t-m-ink); }
+.m-blush-fill { fill: var(--t-m-blush); }
+.m-blush-hatch { fill: none; stroke: var(--t-m-hatch); stroke-width: 1.15; stroke-linecap: round; }
+.m-aura-a { stop-color: var(--t-m-aura); }
+.m-aura-b { stop-color: var(--t-m-aura); stop-opacity: 0; }
+.m-floor-a { stop-color: var(--t-m-floor); }
+.m-floor-b { stop-color: var(--t-m-floor); stop-opacity: 0; }
+.m-drop { fill: var(--t-m-mid); stroke: var(--t-m-edge); stroke-width: 0.8; }
+.m-heart { fill: #ff8fb0; }
+/* На лендинге токенов приложения нет: там «з» берёт запасной серый и шрифт. */
+.m-z { fill: var(--t-muted, #8d8d96); font-family: var(--t-serif, Georgia, serif); font-size: 16px; font-style: italic; }

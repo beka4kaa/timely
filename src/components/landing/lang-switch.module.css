@@ -1,0 +1,57 @@
+/*
+ * RU/EN в шапке: та же капсула, что у переключателя темы, только на два слова.
+ * Текущий язык — тёмная плашка внутри. На узком экране места мало, и остаётся только
+ * второй язык: им и переключаются.
+ */
+.switch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.item {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 100%;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.item:hover {
+  color: var(--ink);
+}
+
+.item[aria-current="page"] {
+  background: var(--strong);
+  color: var(--on-strong);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 559px) {
+  .switch {
+    gap: 0;
+  }
+
+  .item[aria-current="page"] {
+    display: none;
+  }
+}

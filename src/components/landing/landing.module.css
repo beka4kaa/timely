@@ -253,6 +253,29 @@
   padding: 0 18px;
 }
 
+/* Рядом с языком и темой на узком телефоне кнопке тесно: там короткая надпись. */
+.openShort {
+  display: none;
+}
+
+@media (max-width: 479px) {
+  .headerInner {
+    gap: 12px;
+  }
+
+  .headerActions .darkButton {
+    padding: 0 14px;
+  }
+
+  .openFull {
+    display: none;
+  }
+
+  .openShort {
+    display: inline;
+  }
+}
+
 /* ── Первый экран ── */
 
 .hero {

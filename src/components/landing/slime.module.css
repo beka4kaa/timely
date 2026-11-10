@@ -1,85 +1,50 @@
 /*
- * Слайм чёрно-белый: в светлой теме — тёмный «пластилиновый» купол с белыми
- * глазами, в тёмной — наоборот. Все цвета здесь, в разметке только ссылки.
+ * Слайм в вёрстке страницы. Ширину задаёт место, высота идёт по рамке рисунка
+ * (STAGE_VIEWBOX, 172 × 128), прыжки и брызги рисуются за ней. Цвета и сам рисунок —
+ * в styles/timely/mascot-art.css, общем с приложением.
  */
 .slime {
-  --slime-hi: #5b5b6e;
-  --slime-mid: #23232e;
-  --slime-lo: #0b0b10;
-  --slime-eye: #ffffff;
-  --slime-eye-shade: #d5d5e0;
-  --slime-sheen: 0.1;
-  --slime-rim: rgba(255, 255, 255, 0.07);
-  --slime-gloss: 0.32;
-
+  position: relative;
   display: block;
   width: 100%;
-  height: auto;
-  overflow: visible;
-  /* цвет тени под слаймом */
-  color: #14141c;
+  aspect-ratio: 172 / 128;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
 }
 
-:global(.dark) .slime {
-  --slime-hi: #ffffff;
-  --slime-mid: #ececf3;
-  --slime-lo: #a4a4b6;
-  --slime-eye: #14141c;
-  --slime-eye-shade: #383844;
-  --slime-sheen: 0.5;
-  --slime-rim: rgba(20, 20, 40, 0.1);
-  --slime-gloss: 0.9;
-
-  color: #000000;
-}
-
-.slime[data-interactive="true"] {
+/* Двойной класс: если на странице окажутся стили приложения, их .mascot-hit не перебьёт. */
+.slime .hit {
+  position: absolute;
+  z-index: 2;
+  inset: 8% 7% 6%;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 50% 50% 34% 34%;
+  background: none;
+  color: inherit;
   cursor: pointer;
+  /* Пальцем по слайму листают страницу, а нажатие не ждёт двойного тапа. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.sheen {
-  opacity: var(--slime-sheen);
+.slime .hit:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
-.rim {
-  fill: var(--slime-rim);
+/* Мышью его можно потянуть и отпустить, как в приложении. */
+@media (hover: hover) and (pointer: fine) {
+  .slime .hit {
+    cursor: grab;
+  }
+
+  .slime .hit:active {
+    cursor: grabbing;
+  }
 }
 
-.gloss {
-  opacity: var(--slime-gloss);
-}
-
-.mouth {
-  fill: var(--slime-eye);
-}
-
-.eyesHappy path {
-  fill: none;
-  stroke: var(--slime-eye);
-  stroke-width: 6.5;
-  stroke-linecap: round;
-}
-
-.eyesOpen,
-.eyesHappy {
-  transition: opacity 120ms ease;
-}
-
-.eyesHappy {
-  opacity: 0;
-}
-
-.slime[data-happy="true"] .eyesHappy {
-  opacity: 1;
-}
-
-.slime[data-happy="true"] .eyesOpen {
-  opacity: 0;
-}
-
-/* Падающий слайм не должен на миг стоять на месте до старта анимации. */
+/* Падающий слайм не должен на миг стоять на месте до начала падения. */
 @media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
   .slime[data-drop="true"]:not([data-ready]) {
     visibility: hidden;

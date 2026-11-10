@@ -7,9 +7,11 @@ import {
   getRequestHostname,
   isAppHostname,
   isMarketingHostname,
+  isMarketingOnlyPath,
   resolveHostRouting,
   type HostRoutingConfig,
 } from "@/lib/host-routing"
+import { LANDING_LOCALE_COOKIE, resolveLandingLocale } from "@/lib/landing-locale"
 import { SESSION_COOKIE_NAME } from "@/lib/auth-cookies"
 
 // ===== TEMPORARY DEV BYPASS — REMOVE BEFORE PRODUCTION =====
@@ -26,6 +28,7 @@ const HOST_ROUTING_CONFIG: HostRoutingConfig = {
     process.env.TIMELY_MARKETING_HOST ?? DEFAULT_MARKETING_HOSTNAME,
   appHostname: process.env.TIMELY_APP_HOST ?? DEFAULT_APP_HOSTNAME,
   appOrigin: process.env.TIMELY_APP_ORIGIN ?? DEFAULT_APP_ORIGIN,
+  marketingOrigin: process.env.TIMELY_MARKETING_ORIGIN,
 }
 
 export default withAuth(
@@ -46,6 +49,28 @@ export default withAuth(
       const destination = req.nextUrl.clone()
       destination.pathname = hostAction.pathname
       return NextResponse.rewrite(destination)
+    }
+
+    // Первый заход на русскую главную без выбранного языка: тех, кто не читает
+    // по-русски, ведём на английскую версию. См. src/lib/landing-locale.ts.
+    if (isMarketingHostname(hostname, HOST_ROUTING_CONFIG)) {
+      const localeAction = resolveLandingLocale({
+        pathname,
+        search,
+        cookie: req.cookies.get(LANDING_LOCALE_COOKIE)?.value,
+        acceptLanguage: req.headers.get("accept-language"),
+        userAgent: req.headers.get("user-agent"),
+      })
+      if (localeAction) {
+        const response = NextResponse.redirect(
+          new URL(localeAction.destination, req.url),
+          localeAction.status,
+        )
+        // Ответ зависит от языка браузера и куки: общий кэш не должен отдать его другим.
+        response.headers.set("Vary", "Accept-Language, Cookie")
+        response.headers.set("Cache-Control", "private, no-store")
+        return response
+      }
     }
 
     // ===== TEMPORARY: skip all auth redirects in dev mode =====
@@ -103,6 +128,12 @@ export default withAuth(
         const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
 
         if (isPublicPath) return true
+
+        // The English landing lives on the marketing host only: on the app
+        // host its address must reach the redirect there, not the sign-in page.
+        if (isAppHostname(hostname, HOST_ROUTING_CONFIG) && isMarketingOnlyPath(pathname)) {
+          return true
+        }
 
         // Clean app-subdomain paths are dashboard routes after the internal
         // rewrite, so protect them before the rewrite occurs.

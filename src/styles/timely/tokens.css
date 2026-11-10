@@ -54,20 +54,8 @@
   --t-glow-c: rgba(0, 0, 0, 0.03);
   --t-grain: 0.05;
 
-  /* Маскот белый в обеих темах */
-  --t-m-top: #e2e8fb;
-  --t-m-mid: #fbfcff;
-  --t-m-low: #f7f9ff;
-  --t-m-shade: #ccd6f3;
-  --t-m-core: #e8edfb;
-  --t-m-edge: #aab6dc;
-  --t-m-reflect: #ffffff;
-  --t-m-ink: #25263a;
-  --t-m-blush: #ffc2d2;
-  --t-m-hatch: #ee7e9f;
-  --t-m-aura: rgba(150, 170, 255, 0);
+  /* Цвета маскота — в mascot-art.css, рядом с его рисунком. */
   --t-fold: rgba(0, 0, 0, 0.07);
-  --t-m-floor: rgba(40, 46, 96, 0.34);
   --t-cal-ev: rgba(17, 17, 18, 0.07);
   --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
   --t-cloud: #ffffff;
@@ -128,10 +116,7 @@
     --t-glow-c: rgba(255, 255, 255, 0.05);
     --t-grain: 0.04;
 
-    --t-m-edge: rgba(214, 224, 255, 0.34);
-    --t-m-aura: rgba(255, 255, 255, 0.1);
     --t-fold: rgba(0, 0, 0, 0.28);
-    --t-m-floor: rgba(0, 0, 0, 0.62);
     --t-cal-ev: rgba(255, 255, 255, 0.1);
     --t-cal-ev-hi: rgba(255, 255, 255, 0.15);
     --t-cloud: #2c2c30;
@@ -194,20 +179,7 @@
   --t-glow-c: rgba(0, 0, 0, 0.03);
   --t-grain: 0.05;
 
-  /* Маскот белый в обеих темах */
-  --t-m-top: #e2e8fb;
-  --t-m-mid: #fbfcff;
-  --t-m-low: #f7f9ff;
-  --t-m-shade: #ccd6f3;
-  --t-m-core: #e8edfb;
-  --t-m-edge: #aab6dc;
-  --t-m-reflect: #ffffff;
-  --t-m-ink: #25263a;
-  --t-m-blush: #ffc2d2;
-  --t-m-hatch: #ee7e9f;
-  --t-m-aura: rgba(150, 170, 255, 0);
   --t-fold: rgba(0, 0, 0, 0.07);
-  --t-m-floor: rgba(40, 46, 96, 0.34);
   --t-cal-ev: rgba(17, 17, 18, 0.07);
   --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
   --t-cloud: #ffffff;
@@ -276,20 +248,7 @@
   --t-glow-c: rgba(0, 0, 0, 0.03);
   --t-grain: 0.05;
 
-  /* Маскот белый в обеих темах */
-  --t-m-top: #e2e8fb;
-  --t-m-mid: #fbfcff;
-  --t-m-low: #f7f9ff;
-  --t-m-shade: #ccd6f3;
-  --t-m-core: #e8edfb;
-  --t-m-edge: #aab6dc;
-  --t-m-reflect: #ffffff;
-  --t-m-ink: #25263a;
-  --t-m-blush: #ffc2d2;
-  --t-m-hatch: #ee7e9f;
-  --t-m-aura: rgba(150, 170, 255, 0);
   --t-fold: rgba(0, 0, 0, 0.07);
-  --t-m-floor: rgba(40, 46, 96, 0.34);
   --t-cal-ev: rgba(17, 17, 18, 0.07);
   --t-cal-ev-hi: rgba(17, 17, 18, 0.11);
   --t-cloud: #ffffff;

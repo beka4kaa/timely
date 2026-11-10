@@ -15,16 +15,9 @@ import {
   ThumbsUp,
   Volume2,
 } from "lucide-react";
+import type { ChatDemoCopy } from "./copy";
 import { LogoMark } from "./logo-mark";
 import styles from "./chat-demo.module.css";
-
-const TODAY = ["Второй закон Ньютона", "План на неделю", "Квадратные уравнения"];
-const EARLIER = [
-  "Подготовка к СОЧ по химии",
-  "Эссе по «Капитанской дочке»",
-  "Фотосинтез простыми словами",
-  "Дроби без паники",
-];
 
 // Через сколько миллисекунд после предыдущей наступает каждая стадия диалога.
 const SCRIPT = [0, 700, 900, 2300, 1100, 1900, 700, 1000];
@@ -51,7 +44,7 @@ function Typing() {
   );
 }
 
-export function ChatDemo() {
+export function ChatDemo({ copy }: { copy: ChatDemoCopy }) {
   const [stage, setStage] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -106,24 +99,24 @@ export function ChatDemo() {
           </div>
           <ul className={styles.nav}>
             <li className={styles.navActive}>
-              <MessageCircle size={14} /> Тьютор
+              <MessageCircle size={14} /> {copy.tutor}
             </li>
             <li>
-              <BookOpen size={14} /> Курс по книге <span className={styles.count}>2</span>
+              <BookOpen size={14} /> {copy.course} <span className={styles.count}>2</span>
             </li>
           </ul>
-          <p className={styles.group}>Сегодня</p>
+          <p className={styles.group}>{copy.todayGroup}</p>
           <ul className={styles.history}>
-            {TODAY.map((title, index) => (
+            {copy.today.map((title, index) => (
               <li key={title} className={index === 0 ? styles.historyActive : undefined}>
                 {title}
                 {index === 0 && <Ellipsis size={14} />}
               </li>
             ))}
           </ul>
-          <p className={styles.group}>Ранее</p>
+          <p className={styles.group}>{copy.earlierGroup}</p>
           <ul className={`${styles.history} ${styles.historyFaded}`}>
-            {EARLIER.map((title) => (
+            {copy.earlier.map((title) => (
               <li key={title}>{title}</li>
             ))}
           </ul>
@@ -132,10 +125,10 @@ export function ChatDemo() {
         <div className={styles.main}>
           <div className={styles.topbar} aria-hidden="true">
             <span className={styles.subject}>
-              Физика, 9 класс <ChevronDown size={14} />
+              {copy.subject} <ChevronDown size={14} />
             </span>
             <span className={styles.source}>
-              <BookOpen size={13} /> По учебнику
+              <BookOpen size={13} /> {copy.source}
             </span>
           </div>
 
@@ -143,42 +136,34 @@ export function ChatDemo() {
             ref={scrollRef}
             className={styles.thread}
             role="img"
-            aria-label="Пример разговора с тьютором Timely про второй закон Ньютона"
+            aria-label={copy.threadLabel}
           >
-            {stage >= 1 && <p className={styles.user}>Не понимаю второй закон Ньютона</p>}
+            {stage >= 1 && <p className={styles.user}>{copy.ask}</p>}
 
             {stage === 2 && <Typing />}
 
             {stage >= 3 && (
               <div className={styles.assistant}>
                 <p>
-                  <strong>{stream("Давай разберёмся на примере.")}</strong>
+                  <strong>{stream(copy.lead)}</strong>
                 </p>
-                <p>
-                  {stream(
-                    "Толкни пустую тележку в магазине — она легко разгоняется. Нагрузи её покупками, и тот же толчок разгонит её заметно медленнее. Ускорение зависит от силы и от массы:",
-                  )}
-                </p>
+                <p>{stream(copy.explain)}</p>
                 {stage >= 4 && (
                   <div className={styles.formulaRow}>
                     <div className={styles.formula}>
                       <span className={styles.formulaMain}>
                         a = <span className={styles.frac}><span>F</span><span>m</span></span>
                       </span>
-                      <span className={styles.formulaCaption}>ускорение = сила / масса</span>
+                      <span className={styles.formulaCaption}>{copy.formulaCaption}</span>
                     </div>
                     <span className={styles.cite}>
-                      <BookOpen size={13} /> Физика 9, §10, с. 48
+                      <BookOpen size={13} /> {copy.cite}
                     </span>
                   </div>
                 )}
                 {stage >= 5 && (
                   <>
-                    <p>
-                      {stream(
-                        "Как думаешь: если массу увеличить вдвое, а силу оставить прежней, что станет с ускорением?",
-                      )}
-                    </p>
+                    <p>{stream(copy.question)}</p>
                     <div className={styles.actions} aria-hidden="true">
                       <Copy size={14} />
                       <ThumbsUp size={14} />
@@ -191,17 +176,13 @@ export function ChatDemo() {
               </div>
             )}
 
-            {stage >= 6 && <p className={styles.user}>Уменьшится в два раза?</p>}
+            {stage >= 6 && <p className={styles.user}>{copy.reply}</p>}
 
             {stage === 7 && <Typing />}
 
             {stage >= 8 && (
               <div className={styles.assistant}>
-                <p>
-                  {stream(
-                    "Именно! Теперь попробуй сам: тележку массой 20 кг толкают с силой 40 Н. Найди ускорение — если застрянешь, подскажу следующий шаг.",
-                  )}
-                </p>
+                <p>{stream(copy.answer)}</p>
               </div>
             )}
           </div>

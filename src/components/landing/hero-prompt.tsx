@@ -19,32 +19,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appLink } from "./app-url";
+import type { HeroPromptCopy } from "./copy";
 import styles from "./hero-prompt.module.css";
 
-const EXAMPLES = [
-  "Объясни второй закон Ньютона на примере",
-  "Составь план подготовки к СОЧ по алгебре",
-  "Проверь моё решение задачи про скорость",
-  "Что такое валентность? Объясни простыми словами",
-];
+// Иконки подсказок по порядку: план, тема, задача, контрольная; потом «Ещё»: проверить, повторить.
+const CHIP_ICONS: LucideIcon[] = [CalendarDays, Lightbulb, Sigma, Target];
+const MORE_ICONS: LucideIcon[] = [CheckCheck, Repeat2];
 
-type Chip = { icon: LucideIcon; label: string; prompt: string };
-
-const CHIPS: Chip[] = [
-  { icon: CalendarDays, label: "План на день", prompt: "Составь план на сегодня. Задали: " },
-  { icon: Lightbulb, label: "Объяснить тему", prompt: "Объясни простыми словами тему " },
-  { icon: Sigma, label: "Решить задачу", prompt: "Помоги разобраться с задачей: " },
-  { icon: Target, label: "К контрольной", prompt: "Помоги подготовиться к контрольной по " },
-];
-
-const MORE: Chip[] = [
-  { icon: CheckCheck, label: "Проверить решение", prompt: "Проверь моё решение: " },
-  { icon: Repeat2, label: "Повторить тему", prompt: "Давай повторим тему " },
-];
-
-export function HeroPrompt() {
+export function HeroPrompt({ copy }: { copy: HeroPromptCopy }) {
+  const { examples } = copy;
   const [value, setValue] = useState("");
-  const [ghost, setGhost] = useState(EXAMPLES[0]);
+  const [ghost, setGhost] = useState(examples[0]);
   const [typing, setTyping] = useState(false);
   const [more, setMore] = useState(false);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -58,7 +43,7 @@ export function HeroPrompt() {
     let timer = 0;
 
     const tick = () => {
-      const full = EXAMPLES[example];
+      const full = examples[example];
       if (!erasing) {
         length += 1;
         setGhost(full.slice(0, length));
@@ -74,7 +59,7 @@ export function HeroPrompt() {
       if (length <= 0) {
         length = 0;
         erasing = false;
-        example = (example + 1) % EXAMPLES.length;
+        example = (example + 1) % examples.length;
         setGhost("");
         timer = window.setTimeout(tick, 420);
         return;
@@ -87,7 +72,7 @@ export function HeroPrompt() {
     setGhost("");
     timer = window.setTimeout(tick, 1400);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [examples]);
 
   const resize = () => {
     const field = fieldRef.current;
@@ -122,7 +107,10 @@ export function HeroPrompt() {
     }
   };
 
-  const chips = more ? [...CHIPS, ...MORE] : CHIPS;
+  const chips = [
+    ...copy.chips.map((chip, index) => ({ ...chip, icon: CHIP_ICONS[index] })),
+    ...(more ? copy.more.map((chip, index) => ({ ...chip, icon: MORE_ICONS[index] })) : []),
+  ];
 
   return (
     <div className={styles.wrap}>
@@ -133,7 +121,7 @@ export function HeroPrompt() {
             className={styles.textarea}
             value={value}
             rows={3}
-            aria-label="Вопрос для Timely"
+            aria-label={copy.fieldLabel}
             onChange={(event) => {
               setValue(event.target.value);
               resize();
@@ -148,8 +136,8 @@ export function HeroPrompt() {
           )}
         </div>
         <div className={styles.bar}>
-          <span className={styles.hint}>Ответ откроется в Timely</span>
-          <button type="submit" className={styles.send} aria-label="Спросить Timely">
+          <span className={styles.hint}>{copy.hint}</span>
+          <button type="submit" className={styles.send} aria-label={copy.sendLabel}>
             <ArrowUp size={19} strokeWidth={2.2} />
           </button>
         </div>
@@ -160,8 +148,8 @@ export function HeroPrompt() {
           <button
             key={label}
             type="button"
-            className={`${styles.chip} ${index >= CHIPS.length ? styles.chipNew : ""}`}
-            style={{ "--i": index - CHIPS.length } as CSSProperties}
+            className={`${styles.chip} ${index >= copy.chips.length ? styles.chipNew : ""}`}
+            style={{ "--i": index - copy.chips.length } as CSSProperties}
             onClick={() => fill(prompt)}
           >
             <Icon size={16} strokeWidth={1.8} />
@@ -170,7 +158,7 @@ export function HeroPrompt() {
         ))}
         {!more && (
           <button type="button" className={styles.chip} onClick={() => setMore(true)}>
-            Ещё
+            {copy.moreLabel}
           </button>
         )}
       </div>
