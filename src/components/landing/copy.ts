@@ -91,7 +91,7 @@ export interface LandingCopy {
   /** Адрес этой версии страницы. */
   path: "/" | "/en";
   meta: { title: string; description: string; ogLocale: string };
-  nav: { label: string; tutor: string; how: string; subjects: string; faq: string };
+  nav: { label: string; tutor: string; how: string; subjects: string; faq: string; demo: string };
   header: { signIn: string; open: string; openShort: string };
   theme: { toLight: string; toDark: string };
   lang: { label: string; ru: string; en: string };
@@ -122,7 +122,7 @@ export interface LandingCopy {
     practice: { quote: string; foot: string };
   };
   faq: { eyebrow: string; title: string; sub: string; items: FaqItem[] };
-  cta: { title: string; sub: string; open: string; register: string };
+  cta: { title: string; sub: string; open: string; demo: string; register: string };
   footer: {
     note: string;
     /** Ссылки ведут в приложение: путь на app-хосте. */
@@ -145,6 +145,7 @@ const ru: LandingCopy = {
     how: "Как это работает",
     subjects: "Предметы",
     faq: "Вопросы",
+    demo: "Демо",
   },
   header: { signIn: "Войти", open: "Открыть Timely", openShort: "Открыть" },
   theme: { toLight: "Включить светлую тему", toDark: "Включить тёмную тему" },
@@ -375,6 +376,7 @@ const ru: LandingCopy = {
     title: "Начни с одного вопроса",
     sub: "Расскажи, что задали на завтра, и посмотри, как Timely разложит это на шаги.",
     open: "Открыть Timely",
+    demo: "Посмотреть демо",
     register: "Создать аккаунт",
   },
   footer: {
@@ -428,6 +430,7 @@ const en: LandingCopy = {
     how: "How it works",
     subjects: "Subjects",
     faq: "FAQ",
+    demo: "Demo",
   },
   header: { signIn: "Sign in", open: "Open Timely", openShort: "Open" },
   theme: { toLight: "Switch to light theme", toDark: "Switch to dark theme" },
@@ -662,6 +665,7 @@ const en: LandingCopy = {
     title: "Start with one question",
     sub: "Tell Timely what's due tomorrow and watch it break the work into steps.",
     open: "Open Timely",
+    demo: "Try the demo",
     register: "Create an account",
   },
   footer: {

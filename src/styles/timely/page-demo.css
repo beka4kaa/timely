@@ -1,0 +1,189 @@
+/* ── Демо для проверяющих: плашка «Демо» и тур. Рендерятся только в сборке демо. ── */
+
+:root {
+  --tour-veil: rgba(14, 14, 16, 0.42);
+  --tour-ring: rgba(255, 255, 255, 0.92);
+}
+.dark {
+  --tour-veil: rgba(0, 0, 0, 0.58);
+  --tour-ring: rgba(255, 255, 255, 0.42);
+}
+
+/* Плашка в левой панели, над профилем. Панель — колонка: её подвал уходит в конец,
+   а плашка, вставленная последним ребёнком, встаёт перед ним. */
+.sidebar > .sb-foot { order: 1; }
+.demo-sb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 2px 0;
+  padding: 5px 4px 5px 9px;
+  border-radius: 10px;
+  background: var(--t-fill);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--t-ink);
+}
+.demo-pill-tag {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.demo-pill-btn {
+  flex: none;
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--t-btn-main);
+  color: var(--t-on-ink);
+  font-size: 12px;
+  font-weight: 500;
+  transition: filter 140ms ease;
+}
+.demo-pill-btn:hover { filter: brightness(1.12); }
+.demo-pill-btn[aria-pressed="true"] { visibility: hidden; }
+.nav-collapsed .demo-sb { justify-content: center; padding: 4px; }
+.nav-collapsed .demo-sb .demo-pill-tag { display: none; }
+
+/* На телефоне панели нет: маленькая кнопка «Тур» внизу слева, над вкладками, рядом с
+   быстрым вопросом. В чате внизу поле ввода, там её нет. */
+.demo-pill { display: none; }
+@media (max-width: 640px) {
+  .demo-pill {
+    --r: 999px;
+    position: fixed;
+    z-index: 44;
+    left: 12px;
+    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    padding: 4px;
+  }
+  .demo-pill .demo-pill-tag { display: none; }
+  .demo-pill .demo-pill-btn { height: 30px; padding: 0 13px; }
+  :root[data-view="chat"] .demo-pill { display: none; }
+}
+
+/* Тур */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* Ловит клики мимо окна; само окно вырезано `clip-path`, и цель в нём живая. */
+.tour-block {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+/* Окно. Его тень и есть затемнение, поэтому оно переезжает плавно. */
+.tour-ring {
+  position: fixed;
+  border-radius: 16px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--tour-ring), 0 0 0 200vmax var(--tour-veil);
+  transition:
+    top 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms ease;
+}
+.tour-ring.is-closed { box-shadow: 0 0 0 0 transparent, 0 0 0 200vmax var(--tour-veil); }
+
+.tour-card {
+  --r: 18px;
+  position: fixed;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 13px 16px 14px;
+  pointer-events: auto;
+  font-family: var(--t-sans);
+  color: var(--t-ink);
+  transition:
+    top 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tour-card:focus { outline: none; }
+.tour-card.is-welcome {
+  --r: 22px;
+  width: 440px;
+  padding: 20px 22px 18px;
+}
+.tour[data-placement="dock"] .tour-card {
+  left: 16px;
+  right: 16px;
+  width: auto;
+}
+
+.tour-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.is-welcome .tour-head { align-items: flex-start; margin-bottom: 14px; }
+.tour-count {
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--t-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tour-lang { margin-left: auto; height: 26px; font-size: 12px; }
+.tour-x { width: 26px; height: 26px; }
+
+.tour-title {
+  margin: 0 0 5px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+.is-welcome .tour-title {
+  margin-bottom: 8px;
+  font-family: var(--t-serif);
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.tour-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--t-ink) 84%, transparent);
+}
+.is-welcome .tour-body { font-size: 15px; }
+
+.tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 14px;
+}
+.tour-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+}
+.tour-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--t-fill);
+  transition: width 220ms ease, background 220ms ease;
+}
+.tour-dots .is-past { background: var(--t-line-strong); }
+.tour-dots .is-on { width: 18px; background: var(--t-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring,
+  .tour-card,
+  .tour-dots span { transition: none; }
+}

@@ -27,7 +27,7 @@ import {
   Triangle,
   type LucideIcon,
 } from "lucide-react";
-import { appLink } from "@/components/landing/app-url";
+import { appLink, DEMO_URL } from "@/components/landing/app-url";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { LANDING_COPY, type LandingLocale, type SubjectKey } from "@/components/landing/copy";
 import { Faq } from "@/components/landing/faq";
@@ -208,6 +208,11 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
             <a href="#faq" className={styles.navLink}>
               {copy.nav.faq}
             </a>
+            {DEMO_URL ? (
+              <a href={DEMO_URL} className={styles.navLink}>
+                {copy.nav.demo}
+              </a>
+            ) : null}
           </nav>
           <div className={styles.headerActions}>
             <LangSwitch locale={locale} label={copy.lang.label} names={copy.lang} />
@@ -478,6 +483,11 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
                       {copy.cta.open}
                       <ArrowUpRight size={17} strokeWidth={2.2} aria-hidden="true" />
                     </Link>
+                    {DEMO_URL ? (
+                      <a href={DEMO_URL} className={styles.lightButton}>
+                        {copy.cta.demo}
+                      </a>
+                    ) : null}
                     <Link href={appLink("/auth/register")} className={styles.lightButton}>
                       {copy.cta.register}
                     </Link>

@@ -3,11 +3,24 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
 import { SESSION_COOKIE_NAME, USE_SECURE_COOKIES } from "./auth-cookies"
+import { isDemoServer, newDemoVisitor, SIGN_IN_PATH } from "./demo-mode"
+
+// Демо: единственный способ войти — стать новым гостем. Без полей и пароля, каждый
+// вход даёт новую личность, а данные ей собирает демо-бэкенд (`/api/demo/start/`).
+// Google и пароль в демо выключены: там нет настоящих учеников.
+const demoProvider = CredentialsProvider({
+  id: "demo",
+  name: "Demo",
+  credentials: {},
+  async authorize() {
+    return newDemoVisitor()
+  },
+})
 
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
 
-  providers: [
+  providers: isDemoServer() ? [demoProvider] : [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -93,7 +106,7 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    signIn: '/auth/signin',
+    signIn: SIGN_IN_PATH,
     error: '/auth/error',
   },
 

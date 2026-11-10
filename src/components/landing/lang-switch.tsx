@@ -13,7 +13,8 @@ const LOCALES: LandingLocale[] = ["ru", "en"];
 /**
  * Переключатель RU/EN в шапке лендинга. Выбор запоминается в куке, и middleware
  * больше не угадывает язык по браузеру. Переход — обычной ссылкой, без клиентской
- * навигации: так запрос с новой кукой точно дойдёт до middleware.
+ * навигации: так запрос с новой кукой точно дойдёт до middleware. Русская ссылка
+ * несёт ещё и `?lang=ru`: если кука не запишется, middleware поймёт выбор по адресу.
  */
 export function LangSwitch({
   locale,
@@ -35,7 +36,7 @@ export function LangSwitch({
         return (
           <a
             key={code}
-            href={LANDING_PATHS[code]}
+            href={code === "ru" ? `${LANDING_PATHS.ru}?lang=ru` : LANDING_PATHS[code]}
             hrefLang={code}
             lang={code}
             title={names[code]}

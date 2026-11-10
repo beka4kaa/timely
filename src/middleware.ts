@@ -11,8 +11,18 @@ import {
   resolveHostRouting,
   type HostRoutingConfig,
 } from "@/lib/host-routing"
-import { LANDING_LOCALE_COOKIE, resolveLandingLocale } from "@/lib/landing-locale"
+import {
+  LANDING_LOCALE_COOKIE,
+  LANDING_LOCALE_MAX_AGE,
+  explicitLandingLocale,
+  resolveLandingLocale,
+} from "@/lib/landing-locale"
 import { SESSION_COOKIE_NAME } from "@/lib/auth-cookies"
+import { IS_DEMO, SIGN_IN_PATH } from "@/lib/demo-mode"
+
+// В демо открыта только страница заведения гостя: вход, регистрация и прочее ведут
+// туда же, через обычный редирект на `pages.signIn`.
+const DEMO_PUBLIC_PATHS = ['/auth/demo', '/auth/error']
 
 // ===== TEMPORARY DEV BYPASS — REMOVE BEFORE PRODUCTION =====
 // Gated on NODE_ENV as well as the flag: NEXT_PUBLIC_ vars are inlined into
@@ -71,6 +81,16 @@ export default withAuth(
         response.headers.set("Cache-Control", "private, no-store")
         return response
       }
+      // Русская ссылка переключателя: запоминаем выбор, даже если его кука не записалась.
+      if (pathname === "/" && explicitLandingLocale(search) === "ru") {
+        const response = NextResponse.next()
+        response.cookies.set(LANDING_LOCALE_COOKIE, "ru", {
+          path: "/",
+          maxAge: LANDING_LOCALE_MAX_AGE,
+          sameSite: "lax",
+        })
+        return response
+      }
     }
 
     // ===== TEMPORARY: skip all auth redirects in dev mode =====
@@ -99,7 +119,7 @@ export default withAuth(
     // Without this, signInPage defaults to /api/auth/signin, adding a pointless
     // extra redirect hop before the real /auth/signin page.
     pages: {
-      signIn: '/auth/signin',
+      signIn: SIGN_IN_PATH,
     },
     callbacks: {
       authorized: ({ token, req }) => {
@@ -125,7 +145,8 @@ export default withAuth(
           '/auth/error',
           '/register',
         ]
-        const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
+        const isPublicPath = (IS_DEMO ? DEMO_PUBLIC_PATHS : publicPaths)
+          .some(path => pathname.startsWith(path))
 
         if (isPublicPath) return true
 

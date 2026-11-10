@@ -13,6 +13,8 @@ import { ActiveScheduleProvider } from "@/contexts/active-schedule"
 import { AskRailProvider } from "@/contexts/ask-rail"
 import { DashboardShellProvider } from "@/contexts/dashboard-shell"
 import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
+import { DemoMount } from "@/components/demo/demo-mount"
+import { IS_DEMO } from "@/lib/demo-mode"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
 import "@/styles/timely/index.css"
 
@@ -63,6 +65,8 @@ export default function DashboardLayout({
               страницах вопросы тьютору; выбор режима внутри. */}
           <SubjectAskRail />
           <TabBar />
+          {/* Демо для проверяющих: плашка и тур. Вне сборки демо не рендерится. */}
+          {IS_DEMO ? <DemoMount /> : null}
         </div>
         </DashboardShellProvider>
         </QuickProvider>

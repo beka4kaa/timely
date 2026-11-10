@@ -30,6 +30,17 @@ export function parseLandingLocale(value: string | null | undefined): LandingLoc
   return value === "ru" || value === "en" ? value : null;
 }
 
+/**
+ * Явный выбор в адресе: переключатель ведёт на «/?lang=ru». Нужен, когда кука не
+ * запишется — ссылку открыли в новой вкладке колёсиком или куки заблокированы, —
+ * иначе английский браузер не попал бы на русскую версию никак.
+ */
+export function explicitLandingLocale(search: string | null | undefined): LandingLocale | null {
+  if (!search) return null;
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  return parseLandingLocale(params.get("lang"));
+}
+
 /** Робот, сборщик превью или автоматический браузер. */
 export function isBotUserAgent(userAgent: string | null | undefined): boolean {
   return !!userAgent && BOT_PATTERN.test(userAgent);
@@ -79,6 +90,8 @@ export function resolveLandingLocale(input: LandingLocaleInput): LandingLocaleAc
     destination: `${LANDING_PATHS.en}${search}`,
     status: 302,
   };
+
+  if (explicitLandingLocale(input.search) === "ru") return null;
 
   const chosen = parseLandingLocale(input.cookie);
   if (chosen) return chosen === "en" ? toEnglish : null;

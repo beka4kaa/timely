@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 
 import { LoadingMark } from "@/components/ui/loading-mark"
+import { SIGN_IN_PATH } from "@/lib/demo-mode"
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -22,7 +23,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
     if (DEV_BYPASS_AUTH) return // Skip checks if bypassing auth
 
     if (requireAuth && !session) {
-      router.push("/auth/signin")
+      router.push(SIGN_IN_PATH)
       return
     }
 

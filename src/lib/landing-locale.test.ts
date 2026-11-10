@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { isMarketingOnlyPath, marketingOriginFromEnv, resolveHostRouting } from "./host-routing";
 import {
   acceptsRussianReaderLanguage,
+  explicitLandingLocale,
   isBotUserAgent,
   resolveLandingLocale,
 } from "./landing-locale";
@@ -159,4 +160,24 @@ test("only /en itself is a marketing-only path, not app sections that start with
     type: "rewrite",
     pathname: "/dashboard/entries",
   });
+});
+
+test("the switch's ?lang=ru reaches the Russian page even when its cookie was not written", () => {
+  assert.equal(
+    resolveLandingLocale({
+      pathname: "/",
+      search: "?lang=ru",
+      acceptLanguage: "en-US,en;q=0.9",
+      userAgent: CHROME,
+    }),
+    null,
+  );
+  // A stale English cookie loses to the explicit choice in the address too.
+  assert.equal(
+    resolveLandingLocale({ pathname: "/", search: "lang=ru", cookie: "en", userAgent: CHROME }),
+    null,
+  );
+  assert.equal(explicitLandingLocale("?lang=ru&utm=x"), "ru");
+  assert.equal(explicitLandingLocale("?lang=de"), null);
+  assert.equal(explicitLandingLocale(""), null);
 });

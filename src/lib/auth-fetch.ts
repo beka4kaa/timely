@@ -5,6 +5,8 @@
 // token, and every call carries it as a bearer token. The token stays in memory:
 // never in localStorage, a cookie or a URL.
 
+import { SIGN_IN_PATH } from './demo-mode'
+
 const TOKEN_ROUTE = '/api/auth/backend-token'
 
 // Renew early, so that a token cannot expire on its way to the backend.
@@ -63,7 +65,7 @@ function redirectToSignIn() {
     if (typeof window === 'undefined') return
     const { pathname, search } = window.location
     if (pathname.startsWith('/auth/')) return
-    window.location.assign(`/auth/signin?callbackUrl=${encodeURIComponent(pathname + search)}`)
+    window.location.assign(`${SIGN_IN_PATH}?callbackUrl=${encodeURIComponent(pathname + search)}`)
 }
 
 // Signing out or in from another tab changes who this tab is.
