@@ -31,6 +31,15 @@ class FocusSession(models.Model):
     class Meta:
         ordering = ['-started_at']
         indexes = [models.Index(fields=['user_email', '-started_at'])]
+        constraints = [
+            # Одна фаза — одна запись. Её могут прислать дважды: две вкладки сразу или
+            # повтор после потерянного ответа. Иначе время фокуса удвоилось бы в
+            # статистике и у тьютора.
+            models.UniqueConstraint(
+                fields=['user_email', 'kind', 'started_at'],
+                name='pomodoro_session_once',
+            ),
+        ]
 
     def __str__(self) -> str:
         return f'{self.user_email} · {self.kind} · {self.seconds}s'

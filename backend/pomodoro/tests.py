@@ -8,12 +8,15 @@
 
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+from unittest.mock import patch
 
-from django.test import Client, TestCase
+from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
+from django.test import Client, TestCase, TransactionTestCase
 from django.utils import timezone
 
 from .models import FocusSession
-from .views import _compute_streak, _local_day
+from .views import FocusSessionViewSet, _compute_streak, _local_day
 from config.testing import auth_headers
 
 
@@ -141,6 +144,42 @@ class FocusSessionApiTests(TestCase):
         self.assertEqual(other.status_code, 201)
         self.assertEqual(FocusSession.objects.count(), 3)
 
+    def test_send_racing_another_tab_returns_the_stored_session(self):
+        # Две вкладки отправили одну фазу одновременно: проверка «уже записана?» у второй
+        # прошла раньше, чем первая записала. Вставку останавливает уникальный индекс, и
+        # вторая получает записанную сессию, а не ошибку.
+        started_at = timezone.now().isoformat()
+        first = self._create(started_at=started_at)
+        real_lookup = FocusSessionViewSet._stored
+        calls = []
+
+        def late_lookup(view, user_email, data):
+            calls.append(1)
+            return None if len(calls) == 1 else real_lookup(view, user_email, data)
+
+        with patch.object(FocusSessionViewSet, '_stored', late_lookup):
+            second = self._create(started_at=started_at)
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()['id'], first.json()['id'])
+        self.assertEqual(FocusSession.objects.count(), 1)
+
+    def test_database_refuses_a_second_copy(self):
+        started_at = timezone.now()
+        fields = {
+            'user_email': self.email,
+            'kind': FocusSession.FOCUS,
+            'started_at': started_at,
+            'seconds': 3000,
+            'planned_seconds': 3000,
+            'preset_focus_min': 50,
+            'preset_break_min': 10,
+        }
+        FocusSession.objects.create(**fields)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            FocusSession.objects.create(**fields)
+
     def test_create_without_user_is_rejected(self):
         response = self.client.post(
             '/api/pomodoro/sessions/',
@@ -200,8 +239,9 @@ class FocusSessionApiTests(TestCase):
             seconds=1800, planned_seconds=1800,
             preset_focus_min=30, preset_break_min=5,
         )
+        # Разные фазы начинаются в разные моменты: одну и ту же дважды база не примет.
         FocusSession.objects.create(
-            user_email=self.email, kind='focus', started_at=now,
+            user_email=self.email, kind='focus', started_at=now - timedelta(milliseconds=1),
             seconds=1200, planned_seconds=1200,
             preset_focus_min=20, preset_break_min=5,
         )
@@ -284,3 +324,71 @@ class FocusSessionApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['deleted'], 0)
         self.assertEqual(FocusSession.objects.filter(user_email=self.other).count(), 1)
+
+
+class DuplicateCleanupMigrationTests(TransactionTestCase):
+    """
+    Миграция с уникальным индексом сначала убирает копии, накопившиеся до неё: одна
+    и та же фаза, записанная двумя вкладками или повторной отправкой. Остаётся первая.
+    """
+
+    before = [('pomodoro', '0001_initial')]
+    after = [('pomodoro', '0002_focussession_once')]
+
+    def _migrate(self, targets):
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(targets)
+        return executor.loader.project_state(targets).apps
+
+    def tearDown(self):
+        # Остальные тесты ждут схему с индексом.
+        self._migrate(self.after)
+
+    def test_copies_are_removed_and_the_first_one_stays(self):
+        old_apps = self._migrate(self.before)
+        Session = old_apps.get_model('pomodoro', 'FocusSession')
+        start = _utc(2026, 11, 10, 9, 0)
+
+        def add(**overrides):
+            fields = {
+                'user_email': 'student@timelyplan.me',
+                'kind': 'focus',
+                'started_at': start,
+                'seconds': 3000,
+                'planned_seconds': 3000,
+                'preset_focus_min': 50,
+                'preset_break_min': 10,
+            }
+            fields.update(overrides)
+            return Session.objects.create(**fields).pk
+
+        first = add()
+        add(seconds=2990)
+        add(seconds=3000)
+        other_kind = add(kind='break', seconds=600, planned_seconds=600)
+        other_user = add(user_email='someone-else@timelyplan.me')
+        other_time = add(started_at=start + timedelta(milliseconds=1))
+
+        new_apps = self._migrate(self.after)
+        Session = new_apps.get_model('pomodoro', 'FocusSession')
+        self.assertEqual(
+            sorted(Session.objects.values_list('pk', flat=True)),
+            sorted([first, other_kind, other_user, other_time]),
+        )
+        self.assertEqual(Session.objects.get(pk=first).seconds, 3000)
+
+    def test_migration_without_copies_changes_nothing(self):
+        old_apps = self._migrate(self.before)
+        Session = old_apps.get_model('pomodoro', 'FocusSession')
+        Session.objects.create(
+            user_email='student@timelyplan.me',
+            kind='focus',
+            started_at=_utc(2026, 11, 10, 9, 0),
+            seconds=3000,
+            planned_seconds=3000,
+            preset_focus_min=50,
+            preset_break_min=10,
+        )
+        new_apps = self._migrate(self.after)
+        self.assertEqual(new_apps.get_model('pomodoro', 'FocusSession').objects.count(), 1)

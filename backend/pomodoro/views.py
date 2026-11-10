@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -60,6 +61,14 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
         cutoff = timezone.now() - timedelta(days=days)
         return queryset.filter(started_at__gte=cutoff)
 
+    def _stored(self, user_email, data):
+        """Та же фаза, записанная раньше: тот же ученик, вид и момент начала."""
+        return FocusSession.objects.filter(
+            user_email=user_email,
+            kind=data.get('kind', FocusSession.FOCUS),
+            started_at=data['started_at'],
+        ).first()
+
     def create(self, request, *args, **kwargs):
         user_email = self._user_email()
         if not user_email:
@@ -69,17 +78,24 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         # Та же фаза уже записана: ответ на первую отправку потерялся, или её отправила
-        # и другая вкладка. Отдаём записанную, а не создаём копию, иначе время фокуса
-        # в статистике и у тьютора удвоилось бы.
-        existing = FocusSession.objects.filter(
-            user_email=user_email,
-            kind=serializer.validated_data.get('kind', FocusSession.FOCUS),
-            started_at=serializer.validated_data['started_at'],
-        ).first()
+        # и другая вкладка. Отдаём записанную, а не создаём копию.
+        existing = self._stored(user_email, serializer.validated_data)
         if existing is not None:
             return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
 
-        self.perform_create(serializer)
+        try:
+            # Во вложенной транзакции: если вставку остановит уникальный индекс,
+            # соединение останется рабочим для запроса ниже.
+            with transaction.atomic():
+                self.perform_create(serializer)
+        except IntegrityError:
+            # Проверку выше обогнала одновременная отправка той же фазы: та запись уже
+            # есть, её и отдаём. Если записи нет, ошибка о другом, и прятать её нельзя.
+            existing = self._stored(user_email, serializer.validated_data)
+            if existing is None:
+                raise
+            return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
