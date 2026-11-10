@@ -100,6 +100,9 @@
 /* «Что изучаю». Название предмета бывает целой фразой ученика, а Tailwind знает класс .ring */
 .gl-sec .pf-course .ring { box-shadow: none; }
 .gl-sec .pf-course .nm { min-width: 0; }
+/* Меню предмета стоит рядом с плашкой, а не внутри ссылки */
+.gl-sec .pf-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
+.gl-sec .pf-more { display: grid; }
 .gl-sec .pf-course .nm b { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 /* Достигнутые: маленькие плашки, слайм уже у флага */

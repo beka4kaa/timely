@@ -150,3 +150,23 @@
 .plan-setup .i { width: 14px; height: 14px; color: var(--t-muted); }
 .plan-setup-menu { min-width: 210px; }
 .plan-videos { max-width: 640px; max-height: calc(100dvh - 48px); overflow: auto; }
+
+/* ══════════════════ «Неделя» без прокрутки страницы ══════════════════
+   Колонка шире телефонной и экран не совсем низкий: страница ровно во весь экран, часы
+   прокручиваются в календаре, а «Задано» само, если не помещается. На телефоне и в
+   низком окне колонки идут друг под другом, и страница прокручивается как раньше. */
+@media (min-height: 560px) {
+  @container main (min-width: 621px) {
+    .plan-view { display: flex; flex-direction: column; height: 100%; padding-bottom: 24px; overflow: hidden; }
+    .plan-view > * { flex: none; }
+    .plan-view > .cal-wrap { flex: 1 1 0; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; align-items: stretch; }
+    .plan-view .cal-wrap .plan-cal { min-height: 0; }
+    .plan-view .cal-wrap .plan-cal .cal-body { flex: 1 1 0; height: auto; min-height: 140px; }
+    .plan-view .cal-side { min-height: 0; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  }
+  /* Рядом: «Задано» занимает всю высоту колонки */
+  @container main (min-width: 1020px) {
+    .plan-view > .cal-wrap { grid-template-rows: minmax(0, 1fr); }
+    .plan-view .cal-side { max-height: none; }
+  }
+}

@@ -46,6 +46,7 @@ import { invalidateResources, useResource, type ResourceState } from "@/lib/reso
 import { STOPPED_ERROR } from "./ask-stages";
 import { AskTurn } from "./ask-turn";
 import { ChatList } from "./chat-list";
+import { chatTitle } from "./chat-title";
 import {
   DEFAULT_MODE,
   formatDue,
@@ -88,7 +89,6 @@ const NO_BOOK = "none";
 const MODE_KEY = "timely.chat.mode";
 const GOALS_KEY = "chat:goals";
 
-const NEW_CHAT_TITLE = "Новый чат";
 /** Ближе к низу, чем на столько, значит ученик читает конец и лента едет за ответом. */
 const FOLLOW_GAP = 96;
 
@@ -490,7 +490,6 @@ export function ChatPage() {
   const empty = !turns.length && !opening;
   const answered =
     !busy && lastTurn?.role === "assistant" && Boolean(lastTurn.content) && !lastTurn.error;
-  const firstQuestion = turns.find((turn) => turn.role === "user")?.content;
   const openRow = chats.find((row) => row.id === chatId);
   const placeholder = modeKey === "plain" && current?.books ? "Спроси по книге" : mode.hint;
 
@@ -548,7 +547,7 @@ export function ChatPage() {
             <Icon name="chats" />
           </button>
           <div className="chat-bar">
-            <span className="chat-now">{openRow?.title || firstQuestion || NEW_CHAT_TITLE}</span>
+            <span className="chat-now">{chatTitle(openRow?.title)}</span>
           </div>
 
           <div

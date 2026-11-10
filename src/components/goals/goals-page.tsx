@@ -21,8 +21,12 @@ import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
+import { ConfirmingAction, OverflowMenu } from "@/components/curriculum/catalog-menu";
+import { invalidatePlan } from "@/components/now/now-resources";
+import { deleteGoal as deleteSubjectGoal } from "@/lib/curriculum-api";
 import { coverClass } from "@/lib/curriculum-cover";
-import { useDataChanged } from "@/lib/data-changed";
+import { dataChanged, useDataChanged } from "@/lib/data-changed";
+import { subjectsChanged, topicsChanged } from "@/lib/weak-topics-api";
 import { parseGoal, type Understood } from "@/lib/understand";
 
 // Цвета обложек предметов лежат там же, где сами книги: физика везде одного цвета.
@@ -36,6 +40,7 @@ import {
   habitIdeasFor,
   isOpenGoal,
   isShownGoal,
+  deleteSubjectWarning,
   matchLessons,
   nextStepText,
   suggestGoalFor,
@@ -318,6 +323,17 @@ export function GoalsPage() {
 
   const removeGoal = (goal: Goal) => {
     void changeWithUndo(goal, { status: "archived" }, "Цель удалена", "Не получилось удалить цель");
+  };
+
+  /** Предмет уходит со всем, что к нему привязано. Кэши, где он лежал, перечитываются как после удаления помощником. */
+  const removeSubject = async (lesson: Lesson) => {
+    await deleteSubjectGoal(lesson.id);
+    setLessons((rows) => rows?.filter((row) => row.id !== lesson.id) ?? rows);
+    subjectsChanged();
+    topicsChanged();
+    dataChanged("subjects");
+    invalidatePlan();
+    toast("Предмет удалён");
   };
 
   const reopenGoal = (goal: Goal) => {
@@ -618,7 +634,7 @@ export function GoalsPage() {
         ) : (
           <ul className="pf-now">
             {lessons.map((lesson) => (
-              <li key={lesson.id}>
+              <li key={lesson.id} className="pf-item">
                 <Link className="pf-course card" href={lesson.href} data-attach={`Курс: ${lesson.subject}`}>
                   <span className={`book mini ${coverClass(lesson.subject)}`} aria-hidden="true" />
                   <span className="nm">
@@ -641,6 +657,20 @@ export function GoalsPage() {
                     <span />
                   )}
                 </Link>
+                <div className="pf-more">
+                  <OverflowMenu label={`Меню предмета: ${lesson.subject}`} triggerClassName="icon-btn">
+                    {() => (
+                      <>
+                        <p className="cur-menu-note">{deleteSubjectWarning(lesson.subject)}</p>
+                        <ConfirmingAction
+                          label="Удалить предмет"
+                          confirm="Да, удалить"
+                          onRun={() => removeSubject(lesson)}
+                        />
+                      </>
+                    )}
+                  </OverflowMenu>
+                </div>
               </li>
             ))}
           </ul>

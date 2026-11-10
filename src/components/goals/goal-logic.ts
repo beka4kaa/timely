@@ -356,3 +356,10 @@ export function habitIdeasFor(title: string, scope: GoalScope): string[] {
   if (/физик|алгебр|математ|геометр/.test(title.toLowerCase())) return ["Решать 3 задачи", "Повторять формулы"];
   return ["Повторять темы"];
 }
+
+/** Что сказать перед удалением предмета. Сервер уносит с ним всё, что к нему привязано. */
+export function deleteSubjectWarning(name: string): string {
+  const title = name.trim();
+  const head = title ? `Удалить предмет «${title}»?` : "Удалить предмет?";
+  return `${head} Вместе с ним удалятся книги, конспекты, программы, расписание занятий и чаты по предмету. Вернуть не получится.`;
+}

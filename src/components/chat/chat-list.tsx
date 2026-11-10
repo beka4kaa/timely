@@ -12,7 +12,8 @@ import { Icon } from "@/components/shell/icons";
 import { buildChatFolders, type FolderSubject } from "@/lib/chat-folders";
 import type { SubjectChatSummary } from "@/lib/curriculum-api";
 
-const NEW_TITLE = "Новый чат";
+import { NEW_CHAT_TITLE as NEW_TITLE, chatTitle } from "./chat-title";
+
 
 export function ChatList({
   chats,
@@ -129,7 +130,7 @@ function ChatRow({
   onAsk: () => void;
   onAskEnd: (confirmed: boolean) => void;
 }) {
-  const title = chat.title || NEW_TITLE;
+  const title = chatTitle(chat.title);
   const noRef = useRef<HTMLButtonElement>(null);
 
   // Разговор не восстановить, поэтому удаление в два шага, и фокус на безопасном ответе.

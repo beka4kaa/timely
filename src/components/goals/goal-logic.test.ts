@@ -7,6 +7,7 @@ import {
   daysUntil,
   dueLine,
   dueOptions,
+  deleteSubjectWarning,
   dueStub,
   formatDay,
   habitIdeasFor,
@@ -201,4 +202,15 @@ test("идеи привычек зависят от цели", () => {
   assert.deepEqual(habitIdeasFor("Сдать физику на 9", "study"), ["Решать 3 задачи", "Повторять формулы"]);
   assert.deepEqual(habitIdeasFor("Сдать историю", "study"), ["Повторять темы"]);
   assert.deepEqual(habitIdeasFor("Пробежать 5 км", "general"), ["Каждый день по шагу"]);
+});
+
+test("предупреждение об удалении предмета называет его и всё, что уйдёт вместе с ним", () => {
+  const text = deleteSubjectWarning("Физика");
+  assert.match(text, /^Удалить предмет «Физика»\?/);
+  for (const part of ["книги", "конспекты", "программы", "расписание", "чаты"]) assert.ok(text.includes(part), part);
+  assert.match(text, /Вернуть не получится/);
+});
+
+test("у предмета без названия предупреждение не ломается", () => {
+  assert.match(deleteSubjectWarning("  "), /^Удалить предмет\?/);
 });
