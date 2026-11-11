@@ -358,6 +358,16 @@ BOARD_ENABLED = "test" in sys.argv or os.getenv("BOARD_ENABLED", "false").lower(
     "on",
 }
 
+# Книги: загрузка и разбор (OCR, эмбеддинги, программа по книге). На MVP выключены ради
+# цены, предметы и программы остаются. Вернуть можно этой переменной и
+# NEXT_PUBLIC_BOOKS_ENABLED на фронтенде. Тесты проверяют её логику.
+BOOKS_ENABLED = "test" in sys.argv or os.getenv("BOOKS_ENABLED", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
 # Разбор «что человек написал»: быстрый и дешёвый вызов, ученик ждёт его перед ответом.
 UNDERSTAND_MODEL = os.getenv("UNDERSTAND_MODEL", "z-ai/glm-5.3-flash")
 UNDERSTAND_TIMEOUT = int(os.getenv("UNDERSTAND_TIMEOUT", "8"))

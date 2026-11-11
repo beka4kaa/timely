@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 
+import { BOOKS_ENABLED } from "@/config/features";
 import type { Balance, Level } from "@/lib/curriculum-api";
 import type { LevelPair } from "@/lib/curriculum-levels";
 import { useCurriculumStore } from "@/stores/curriculum-store";
@@ -35,7 +36,9 @@ export function GoalStep() {
   return (
     <>
       <WizardHead title="Что хочешь выучить?">
-        Напиши своими словами. Программу составлю по твоему учебнику, со ссылками на страницы.
+        {BOOKS_ENABLED
+          ? "Напиши своими словами. Программу составлю по твоему учебнику, со ссылками на страницы."
+          : "Напиши своими словами, что хочешь выучить. Предмет появится на полке."}
       </WizardHead>
 
       <form

@@ -4,3 +4,8 @@
 // генерация картинки. На старте её в продакшене нет; вернуть можно одной
 // переменной окружения, и серверу тогда нужен свой BOARD_ENABLED.
 export const BOARD_ENABLED = process.env.NEXT_PUBLIC_BOARD_ENABLED === "true";
+
+// Книги выключены на MVP: загрузка и разбор учебника — это OCR, эмбеддинги и несколько
+// проходов модели. Предметы и программы остаются. Вернуть можно одной переменной
+// окружения, и серверу тогда нужен свой BOOKS_ENABLED.
+export const BOOKS_ENABLED = process.env.NEXT_PUBLIC_BOOKS_ENABLED === "true";

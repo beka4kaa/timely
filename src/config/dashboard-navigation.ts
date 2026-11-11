@@ -1,5 +1,6 @@
 import type { IconName } from "../components/shell/icons";
 import { BOARD_ENABLED } from "./features.ts";
+import { SECTION_LABEL } from "../lib/curriculum-books.ts";
 
 export interface DashboardNavigationAccess {
   is_admin?: boolean;
@@ -243,7 +244,7 @@ const dashboardSections: DashboardSection[] = [
     title: "Библиотека",
     icon: "book",
     url: "/dashboard/curriculum",
-    items: [{ title: "Курсы и книги", url: "/dashboard/curriculum", icon: "book" }],
+    items: [{ title: SECTION_LABEL, url: "/dashboard/curriculum", icon: "book" }],
   },
   {
     key: "contests",

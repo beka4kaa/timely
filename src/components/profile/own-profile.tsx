@@ -16,6 +16,7 @@ import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { updateMe, useMe } from "@/lib/contest-api";
 import { ownSubmissions, ru } from "@/lib/contest-view";
+import { SECTION_LABEL } from "@/lib/curriculum-books";
 import { coverClass } from "@/lib/curriculum-cover";
 import { EMPTY_SUMMARY } from "@/lib/pomodoro";
 import { computeBadges, hoursStat, mergeActivity, solvedTasks, streaksOf } from "@/lib/profile-view";
@@ -336,7 +337,7 @@ export function OwnProfile() {
             <h2>Курсов пока нет</h2>
             <p>Добавь предмет в библиотеке, и он появится здесь.</p>
             <Link className="btn btn-line" href="/dashboard/curriculum">
-              Курсы и книги
+              {SECTION_LABEL}
             </Link>
           </section>
         )}

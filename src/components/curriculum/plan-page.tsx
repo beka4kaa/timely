@@ -19,6 +19,7 @@ import { usePageSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import type { CoursePlan } from "@/lib/curriculum-api";
 import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
+import { SECTION_LABEL } from "@/lib/curriculum-books";
 import { isCourseDone, locateInCourse } from "@/lib/curriculum-course-progress";
 import {
   courseLede,
@@ -193,7 +194,7 @@ function PlanPageBody({
   return (
     <div className="content view cur-page">
       <Link className="back" href="/dashboard/curriculum">
-        Курсы и книги
+        {SECTION_LABEL}
       </Link>
 
       <header className="head">

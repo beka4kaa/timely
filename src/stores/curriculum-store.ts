@@ -35,6 +35,8 @@ import {
   updateGoal,
   uploadDocument,
 } from "@/lib/curriculum-api";
+import { BOOKS_ENABLED } from "@/config/features";
+import { type WizardStep, stepAfterGoal } from "@/lib/curriculum-books";
 import { isTerminal } from "@/lib/curriculum-progress";
 
 /**
@@ -59,14 +61,7 @@ import { isTerminal } from "@/lib/curriculum-progress";
  */
 const PLAN_TIMEOUT_MS = 420_000;
 
-export type WizardStep =
-  | "goal"
-  | "goal_confirm"
-  | "upload"
-  | "processing"
-  | "planning"
-  | "plan_review"
-  | "done";
+export type { WizardStep };
 
 export const STEP_ORDER: readonly WizardStep[] = [
   "goal",
@@ -207,12 +202,15 @@ export const useCurriculumStore = create<CurriculumState>()((set, get) => ({
    * книги (документ, прогресс обработки, план), обнуляется: иначе мастер
    * покажет чужой прогресс, пока не придёт первый ответ сервера.
    */
-  addBookToSubject: (goalId) =>
+  addBookToSubject: (goalId) => {
+    // Без книг загружать нечего: вход в мастер на шаге загрузки закрыт.
+    if (!BOOKS_ENABLED) return;
     set({
       ...INITIAL,
       goalId,
       step: "upload",
-    }),
+    });
+  },
 
   // Объект цели передаётся из каталога, а не запрашивается заново: он там
   // уже загружен, и лишний round-trip дал бы пустой экран на его время.
@@ -262,7 +260,7 @@ export const useCurriculumStore = create<CurriculumState>()((set, get) => ({
     try {
       await updateGoal(goalId, patch);
       const goal = await confirmGoal(goalId, edits);
-      set({ goal, step: "upload", busy: false });
+      set({ goal, step: stepAfterGoal(BOOKS_ENABLED), busy: false });
     } catch (error) {
       set({ busy: false, error: toWizardError(error) });
     }

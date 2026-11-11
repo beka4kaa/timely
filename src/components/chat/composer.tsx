@@ -22,6 +22,7 @@ import {
 
 import { Icon } from "@/components/shell/icons";
 import { useSmoothInput } from "@/components/shell/smooth-input";
+import { BOOKS_ENABLED } from "@/config/features";
 import type { AskOptions } from "@/lib/curriculum-api";
 
 import { CHAT_MODES, type ChatMode, type ChatModeKey } from "./chat-modes";
@@ -401,9 +402,11 @@ export function BookPicker({
             </button>
           ))}
           {failed ? <p className="book-note">Книги не загрузились</p> : null}
-          <Link className="book-add" href="/dashboard/curriculum">
-            Добавить книгу
-          </Link>
+          {BOOKS_ENABLED ? (
+            <Link className="book-add" href="/dashboard/curriculum">
+              Добавить книгу
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </div>

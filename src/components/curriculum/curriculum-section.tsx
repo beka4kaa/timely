@@ -19,6 +19,7 @@ import { useState } from "react";
 
 import { CurriculumCatalog } from "@/components/curriculum/catalog";
 import { CurriculumWizard } from "@/components/curriculum/curriculum-wizard";
+import { BOOKS_ENABLED } from "@/config/features";
 import { useCurriculumStore } from "@/stores/curriculum-store";
 
 type Mode = "catalog" | "wizard";
@@ -49,6 +50,8 @@ export function CurriculumSection() {
         setMode("wizard");
       }}
       onShowProgress={(goalId, document) => {
+        // Без книг их обработка закрыта: прогресс и программа по книге не открываются.
+        if (!BOOKS_ENABLED) return;
         openBookProgress(goalId, document);
         setMode("wizard");
       }}

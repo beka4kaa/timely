@@ -24,6 +24,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from curriculum.books_gate import require_books
 from ai_engine.usage import (
     AIUsageLimitExceeded,
     release_usage_reservation,
@@ -167,6 +168,10 @@ class DocumentViewSet(_UserScopedViewSet):
     def perform_create(self, serializer):
         serializer.save(user_email=self._user_email())
 
+    def create(self, request, *args, **kwargs):
+        require_books()
+        return super().create(request, *args, **kwargs)
+
     # multipart объявлен ТОЧЕЧНО на upload, а не на классе. На классе он отбирал
     # JSON у остальных actions: `PATCH`/`PUT` по документу отвечали 415, потому что
     # сериализатор читает `request.data`. Django test client content-type не ставит,
@@ -183,6 +188,7 @@ class DocumentViewSet(_UserScopedViewSet):
     )
     def upload(self, request):
         """Принимает PDF/EPUB: валидация содержимого → storage → Document."""
+        require_books()
         email = self._user_email()
         if not email:
             return _no_user()
@@ -293,6 +299,7 @@ class DocumentViewSet(_UserScopedViewSet):
         Провал обработки — это НЕ ошибка постановки: 202 отдаётся и в этом случае,
         а причина приезжает в `job.error_code` при первом же опросе статуса.
         """
+        require_books()
         document = self.get_object()
         if document.ingestion_status == Document.Status.READY:
             # Повторная обработка пересоздаёт куски книги, а программа на них
@@ -618,6 +625,8 @@ class CoursePlanViewSet(_UserScopedViewSet):
 
     @action(detail=False, methods=["post"])
     def generate(self, request):
+        # Программа строится только по книге, поэтому без книг её нет.
+        require_books()
         email = self._user_email()
         if not email:
             return _no_user()
@@ -668,6 +677,7 @@ class CoursePlanViewSet(_UserScopedViewSet):
     @action(detail=True, methods=["post"])
     def rebuild(self, request, pk=None):
         """Строит программу заново по той же книге, прежнюю — в архив."""
+        require_books()
         plan = self.get_object()
         try:
             outcome = plans_service.rebuild_plan(plan)

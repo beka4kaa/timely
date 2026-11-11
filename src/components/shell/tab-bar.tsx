@@ -14,13 +14,14 @@ import {
   type DashboardView,
   itemMatches,
 } from "@/config/dashboard-navigation";
+import { TAB_LABEL } from "@/lib/curriculum-books";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 const TABS: Array<{ key: string; title: string; icon: IconName; href: string }> = [
   { key: "now", title: "Сейчас", icon: "now", href: "/dashboard" },
   { key: "chat", title: "Тьютор", icon: "chat", href: "/dashboard/chat" },
   { key: "diary", title: "Учёба", icon: "diary", href: "/dashboard/plan" },
-  { key: "library", title: "Книги", icon: "book", href: "/dashboard/curriculum" },
+  { key: "library", title: TAB_LABEL, icon: "book", href: "/dashboard/curriculum" },
 ];
 
 const TAB_OF: Partial<Record<DashboardView, string>> = {

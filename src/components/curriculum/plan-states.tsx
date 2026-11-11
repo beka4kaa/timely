@@ -4,12 +4,14 @@
 
 import Link from "next/link";
 
+import { SECTION_LABEL } from "@/lib/curriculum-books";
+
 import type { PlanPageErrorKind } from "./use-plan-page-data";
 
 export function PlanPageSkeleton() {
   return (
     <div className="content view cur-page" aria-busy="true" aria-label="Загружаю программу">
-      <span className="back">Курсы и книги</span>
+      <span className="back">{SECTION_LABEL}</span>
       <div className="course-skel" aria-hidden="true">
         <span className="cur-skel skel-t" />
         <span className="cur-skel skel-l" />
@@ -40,7 +42,7 @@ export function PlanPageError({
   return (
     <div className="content view cur-page">
       <Link className="back" href="/dashboard/curriculum">
-        Курсы и книги
+        {SECTION_LABEL}
       </Link>
       <header className="head">
         <h1 className="title">{TITLES[kind]}</h1>

@@ -12,7 +12,7 @@ import { useEffect } from "react";
 
 import { primeAlerts } from "@/components/pomodoro/pomodoro-alerts";
 import { mascot } from "@/components/shell/mascot/mascot";
-import { BOARD_ENABLED } from "@/config/features";
+import { BOARD_ENABLED, BOOKS_ENABLED } from "@/config/features";
 import { useAskRail } from "@/contexts/ask-rail";
 import { bookLabel } from "@/lib/book-label";
 import type { CoursePlan, CurriculumDocument } from "@/lib/curriculum-api";
@@ -467,9 +467,11 @@ function quietContent(
       };
     case "no-plans":
       return {
-        title: "Начнём с учебника",
-        text: "Загрузи учебник или добавь материал. Timely разложит его по темам и дням, и здесь появится первый шаг.",
-        action: "Добавить учебник",
+        title: BOOKS_ENABLED ? "Начнём с учебника" : "Начнём с предмета",
+        text: BOOKS_ENABLED
+          ? "Загрузи учебник или добавь материал. Timely разложит его по темам и дням, и здесь появится первый шаг."
+          : "Добавь предмет и поставь по нему занятия. Здесь появится первый шаг.",
+        action: BOOKS_ENABLED ? "Добавить учебник" : "Добавить предмет",
         href: "/dashboard/curriculum",
         primary: true,
       };

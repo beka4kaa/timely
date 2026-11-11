@@ -18,7 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { BOOKS_ENABLED } from "@/config/features";
 import { limitMessage } from "@/lib/ai-limit";
+import { SECTION_LABEL } from "@/lib/curriculum-books";
 import {
   CurriculumApiError,
   type CoursePlanSummary,
@@ -153,16 +155,18 @@ export function CurriculumCatalog({
 
   const head = (
     <header className="head">
-      <h1 className="title">Курсы и книги</h1>
+      <h1 className="title">{SECTION_LABEL}</h1>
       <div className="head-tools">
         <button type="button" className="btn btn-text" onClick={onAddSubject}>
           Добавить предмет
         </button>
-        <AddBookButton
-          subjects={subjects ?? []}
-          onAddBook={onAddBook}
-          onAddSubject={onAddSubject}
-        />
+        {BOOKS_ENABLED ? (
+          <AddBookButton
+            subjects={subjects ?? []}
+            onAddBook={onAddBook}
+            onAddSubject={onAddSubject}
+          />
+        ) : null}
       </div>
     </header>
   );
@@ -244,11 +248,12 @@ function EmptyLibrary({ onStart }: { onStart: () => void }) {
       <div>
         <h2>Полка пока пустая</h2>
         <p>
-          Загрузи первый учебник. Timely прочитает его, разобьёт на главы и составит программу со
-          ссылками на страницы.
+          {BOOKS_ENABLED
+            ? "Загрузи первый учебник. Timely прочитает его, разобьёт на главы и составит программу со ссылками на страницы."
+            : "Добавь первый предмет, а занятия по нему поможет поставить слайм."}
         </p>
         <button type="button" className="btn btn-main" onClick={onStart}>
-          Загрузить первую книгу
+          {BOOKS_ENABLED ? "Загрузить первую книгу" : "Добавить предмет"}
         </button>
       </div>
     </div>
@@ -479,7 +484,9 @@ function emptyCourseLine(subject: CatalogSubject, ingestion: IngestionMap): stri
   if (books.some((book) => isSourceBusy(effectiveStatus(book.document, ingestion)))) {
     return "Программа появится, когда дочитаю книгу";
   }
-  if (subject.sources.length === 0) return "Пока нет ни одной книги";
+  if (subject.sources.length === 0) {
+    return BOOKS_ENABLED ? "Пока нет ни одной книги" : "Программы пока нет";
+  }
   if (
     books.length === subject.sources.length &&
     books.every((book) => effectiveStatus(book.document, ingestion) === "failed")
@@ -597,9 +604,11 @@ function SubjectMenu({
           <AddSourceForm goalId={goalId} onAdded={onChanged} onClose={close} />
         ) : (
           <div className="cur-menu">
-            <button type="button" onClick={() => onAddBook(goalId)}>
-              Загрузить книгу
-            </button>
+            {BOOKS_ENABLED ? (
+              <button type="button" onClick={() => onAddBook(goalId)}>
+                Загрузить книгу
+              </button>
+            ) : null}
             <button type="button" onClick={() => setAdding(true)}>
               Добавить ссылку или задачник
             </button>
@@ -641,7 +650,7 @@ function EmptyShelf({
   subject: CatalogSubject;
   onAddBook: (goalId: string) => void;
 }) {
-  if (!subject.goalId) return null;
+  if (!subject.goalId || !BOOKS_ENABLED) return null;
   const goalId = subject.goalId;
   return (
     <div>
@@ -875,20 +884,25 @@ function SourceNotes({
       return [
         <li key={document.id} className="is-bad">
           <span>{single ? reason : `«${title}»: ${reason}`}</span>
-          <button
-            type="button"
-            className="btn btn-line"
-            onClick={() => onShowProgress(subject.goalId, document)}
-          >
-            Разобраться
-          </button>
+          {BOOKS_ENABLED ? (
+            <button
+              type="button"
+              className="btn btn-line"
+              onClick={() => onShowProgress(subject.goalId, document)}
+            >
+              Разобраться
+            </button>
+          ) : null}
         </li>,
       ];
     }
     const named = (line: string) => (single ? line : `«${title}»: ${line}`);
     const rawScan =
       status === "ready"
-        ? ocrNotice(document.ocr_summary, { hasProgram: source.plans.length > 0 })
+        ? // Без книг повторной обработки нет, поэтому и строки «тогда нажми» тоже.
+          ocrNotice(document.ocr_summary, {
+            hasProgram: !BOOKS_ENABLED || source.plans.length > 0,
+          })
         : null;
     const scanLine = rawScan === null ? null : named(rawScan);
     if (status === "ready" && source.plans.length > 0) {
@@ -906,7 +920,7 @@ function SourceNotes({
           key={`${document.id}-scans`}
           document={document}
           line={scanLine}
-          canRetry={canRecognizeLater(document.ocr_summary)}
+          canRetry={BOOKS_ENABLED && canRecognizeLater(document.ocr_summary)}
           onChanged={onChanged}
         />
       ) : null;
@@ -916,13 +930,15 @@ function SourceNotes({
         ...(redo ? [redo] : []),
         <li key={document.id}>
           <span>{single ? "Книга прочитана." : `Книга «${title}» прочитана.`}</span>
-          <button
-            type="button"
-            className="btn btn-line"
-            onClick={() => onShowProgress(subject.goalId, document)}
-          >
-            Построить программу
-          </button>
+          {BOOKS_ENABLED ? (
+            <button
+              type="button"
+              className="btn btn-line"
+              onClick={() => onShowProgress(subject.goalId, document)}
+            >
+              Построить программу
+            </button>
+          ) : null}
         </li>,
       ];
     }

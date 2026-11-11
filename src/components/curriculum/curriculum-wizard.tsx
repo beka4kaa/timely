@@ -11,19 +11,18 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { BOOKS_ENABLED } from "@/config/features";
+
 import { GoalConfirmStep, GoalStep } from "@/components/curriculum/goal-steps";
 import { IngestionProgress } from "@/components/curriculum/ingestion-progress";
 import { PlanGenerationStep } from "@/components/curriculum/plan-review";
 import { UploadStep } from "@/components/curriculum/upload-step";
 import { Icon } from "@/components/shell/icons";
-import { type WizardStep, useCurriculumStore } from "@/stores/curriculum-store";
+import { SECTION_LABEL, wizardRail } from "@/lib/curriculum-books";
+import { useCurriculumStore } from "@/stores/curriculum-store";
 
 /** Крупные вехи для полоски вверху. Внутренние шаги в неё не выносим. */
-const RAIL: { key: string; label: string; steps: WizardStep[] }[] = [
-  { key: "goal", label: "Цель", steps: ["goal", "goal_confirm"] },
-  { key: "book", label: "Учебник", steps: ["upload", "processing"] },
-  { key: "plan", label: "Программа", steps: ["planning", "plan_review", "done"] },
-];
+const RAIL = wizardRail(BOOKS_ENABLED);
 
 export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   const router = useRouter();
@@ -38,6 +37,17 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
   useEffect(() => {
     if (readyToRedirect) router.replace(`/dashboard/curriculum/plan/${planId}`);
   }, [readyToRedirect, planId, router]);
+
+  // Без книг мастер заканчивается на предмете: закрываем его, предмет уже на полке.
+  const toShelf = step === "shelf";
+  useEffect(() => {
+    if (toShelf) {
+      reset();
+      onClose?.();
+    }
+  }, [toShelf, reset, onClose]);
+
+  if (toShelf) return null;
 
   if (readyToRedirect) {
     return (
@@ -71,7 +81,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
             // стеллаж, где то же самое видно с сервера.
             onClick={close}
           >
-            Курсы и книги
+            {SECTION_LABEL}
           </button>
         ) : (
           <span />
