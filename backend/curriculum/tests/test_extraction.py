@@ -12,7 +12,11 @@ from curriculum.extraction import (
     render_page_png,
 )
 from curriculum.tests.pdf_fixtures import (
+    SCAN,
     TEXTBOOK_PAGE_ONE,
+    TEXTBOOK_PAGE_TWO,
+    ScanPage,
+    VectorPage,
     build_text_pdf,
     scanned_pdf,
     textbook_pdf,
@@ -37,18 +41,6 @@ class PageExtractionTests(SimpleTestCase):
         page = extract_pages(textbook_pdf())[0]
         self.assertNotIn("\r", page.native_text)
 
-    def test_blank_page_needs_ocr(self):
-        pages = extract_pages(scanned_pdf())
-        self.assertFalse(pages[0].needs_ocr)
-        self.assertTrue(pages[1].needs_ocr)
-        self.assertEqual(pages[1].native_text_length, 0)
-
-    def test_short_page_needs_ocr(self):
-        pdf = build_text_pdf(["x"])
-        page = extract_pages(pdf)[0]
-        self.assertLess(page.native_text_length, NATIVE_TEXT_MIN_CHARS)
-        self.assertTrue(page.needs_ocr)
-
     def test_max_pages_caps_work(self):
         pages = extract_pages(build_text_pdf(["a" * 200] * 5), max_pages=2)
         self.assertEqual(len(pages), 2)
@@ -66,6 +58,91 @@ class PageExtractionTests(SimpleTestCase):
         first = [p.native_text for p in extract_pages(pdf)]
         second = [p.native_text for p in extract_pages(pdf)]
         self.assertEqual(first, second)
+
+
+class ScanDetectionTests(SimpleTestCase):
+    """Скан — страница почти без текста, которую закрывает растровая картинка.
+
+    Решение 12: лимит ученика тратится только на сканы. Пустой оборот, титул
+    главы и разделитель тоже бедны текстом, но картинки на них нет, и
+    распознавать там нечего.
+    """
+
+    def _needs_ocr(self, *pages) -> list[bool]:
+        return [page.needs_ocr for page in extract_pages(build_text_pdf(list(pages)))]
+
+    def test_blank_page_is_not_a_scan(self):
+        page = extract_pages(build_text_pdf([""]))[0]
+        self.assertEqual(page.native_text_length, 0)
+        self.assertFalse(page.needs_ocr)
+
+    def test_full_page_raster_image_is_a_scan(self):
+        page = extract_pages(build_text_pdf([SCAN]))[0]
+        self.assertEqual(page.native_text_length, 0)
+        self.assertTrue(page.needs_ocr)
+
+    def test_short_title_without_images_is_not_a_scan(self):
+        page = extract_pages(build_text_pdf(["Chapter 2. Dynamics"]))[0]
+        self.assertLess(page.native_text_length, NATIVE_TEXT_MIN_CHARS)
+        self.assertFalse(page.needs_ocr)
+
+    def test_text_page_is_not_a_scan(self):
+        page = extract_pages(build_text_pdf([TEXTBOOK_PAGE_ONE]))[0]
+        self.assertGreaterEqual(page.native_text_length, NATIVE_TEXT_MIN_CHARS)
+        self.assertFalse(page.needs_ocr)
+
+    def test_the_image_must_cover_half_of_the_page(self):
+        self.assertEqual(
+            self._needs_ocr(ScanPage(coverage=0.5), ScanPage(coverage=0.4)),
+            [True, False],
+        )
+
+    def test_only_the_part_of_an_image_on_the_page_counts(self):
+        # Картинка втрое выше листа, но на лист попадает только 40 % его высоты.
+        self.assertEqual(
+            self._needs_ocr(ScanPage(coverage=3.0, bottom=-2.6)), [False]
+        )
+
+    def test_an_image_drawn_through_a_form_counts_on_the_page(self):
+        # Рамку такой картинки pdfium отдаёт в координатах формы: единичный
+        # квадрат, а не весь лист.
+        self.assertEqual(self._needs_ocr(ScanPage(in_form=True)), [True])
+
+    def test_a_page_drawn_in_vector_outlines_is_a_scan(self):
+        # Текст кривыми или векторизованный скан: ни текста, ни картинки.
+        self.assertEqual(self._needs_ocr(VectorPage(paths=250)), [True])
+
+    def test_two_hundred_outlines_make_a_scan(self):
+        self.assertEqual(
+            self._needs_ocr(VectorPage(paths=200), VectorPage(paths=199)),
+            [True, False],
+        )
+
+    def test_a_title_with_a_few_rules_is_not_a_scan(self):
+        self.assertEqual(
+            self._needs_ocr(VectorPage(paths=10, text="Chapter 2. Dynamics")),
+            [False],
+        )
+
+    def test_a_page_pdfium_cannot_walk_counts_as_a_scan(self):
+        # У пустого оборота нет /Type /Page: pdfium читает и рендерит такую
+        # страницу, но её объекты не перечисляет. Книга не падает, а страница
+        # идёт в распознавание, как до правила о картинке.
+        pdf = build_text_pdf(
+            [TEXTBOOK_PAGE_ONE, "", TEXTBOOK_PAGE_TWO],
+            untyped_pages=frozenset({2}),
+        )
+
+        with self.assertLogs("curriculum.extraction", level="WARNING") as logs:
+            pages = extract_pages(pdf)
+
+        self.assertEqual([page.needs_ocr for page in pages], [False, True, False])
+        self.assertIn("Страница 2", "\n".join(logs.output))
+        self.assertTrue(render_page_png(pdf, 2).startswith(b"\x89PNG"))
+
+    def test_scanned_fixture_has_one_scan(self):
+        pages = extract_pages(scanned_pdf())
+        self.assertEqual([page.needs_ocr for page in pages], [False, True])
 
 
 class PageCountReconciliationTests(SimpleTestCase):

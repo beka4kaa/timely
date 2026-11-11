@@ -95,6 +95,16 @@ class TiktokenTests(SimpleTestCase):
         tail = self.tokenizer.tail(text, 30)
         self.assertEqual(self.tokenizer.count(tail), 30)
 
+    def test_служебная_строка_tiktoken_не_роняет_счёт_и_нарезку(self):
+        text = "Токен конца текста пишется так: <|endoftext|> и так далее."
+        self.assertGreater(self.tokenizer.count(text), 0)
+        self.assertTrue(self.tokenizer.tail(text, 5))
+        chunks = chunk_blocks(
+            [block("b1", "paragraph", text, 1)], processing_version=VERSION
+        )
+        self.assertTrue(chunks)
+        self.assertGreater(chunks[0].token_count, 0)
+
 
 class TokenizerFactoryTests(SimpleTestCase):
     def tearDown(self):

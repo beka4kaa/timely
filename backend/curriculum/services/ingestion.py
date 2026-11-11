@@ -18,15 +18,26 @@ docstring'а `IngestionJob`: контейнер эфемерный, воркер
 from __future__ import annotations
 
 import logging
+import math
 import time
-from dataclasses import dataclass
-from uuid import UUID
+from dataclasses import dataclass, field
+from uuid import UUID, uuid4
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ai_engine.usage import AIUsageLimitExceeded
+from ai_engine.usage import (
+    AIUsageLimitExceeded,
+    prepaid_usage,
+    release_usage_reservation,
+    reservations_block_until,
+    reserve_usage_capacity,
+    resolve_usage_plan,
+    usage_scope,
+    usage_window_limit,
+)
 
 from .. import extraction
 from ..blocks import PageText, SectionNode, classify_pages
@@ -53,9 +64,15 @@ from ..outline.builder import build_outline
 from ..outline.contracts import Source as OutlineSource
 from ..outline.embedded import nodes_from_bookmarks
 from ..epub_extraction import EpubExtractionError
-from ..ocr import MAX_OCR_PAGES_PER_RUN, get_ocr_provider
+from ..model_registry import ROLE_OCR, resolve_model
+from ..ocr import (
+    MAX_OCR_PAGES_PER_RUN,
+    NullOcrProvider,
+    OcrProvider,
+    get_ocr_provider,
+)
 from ..parsers import UnsupportedDocumentType, resolve_parser
-from ..storage import get_storage
+from ..storage import get_storage_for
 from ..tokenizer import get_tokenizer
 from ..upload_validation import MAX_PAGES as MAX_UPLOAD_PAGES
 from .embedding_index import index_document_chunks
@@ -86,6 +103,31 @@ CYRILLIC_SHARE_FOR_RU = 0.15
 # Сколько символов хватает для решения. Первые страницы — это титул и
 # оглавление, они на языке книги.
 LANGUAGE_SAMPLE_CHARS = 20_000
+
+# Задачу воркера остановил предел часа (`CELERY_TASK_SOFT_TIME_LIMIT`). Тот же
+# код вьюха статуса ставит джобу, который убил жёсткий предел.
+TIMED_OUT_ERROR_CODE = "timed_out"
+TIMED_OUT_MESSAGE = "Обработка заняла больше часа и остановлена."
+
+# В книге нет текста, а резерв на распознавание сканов не взялся (решение 13).
+# Файл остаётся в хранилище: книгу обработают заново, когда лимита хватит.
+OCR_QUOTA_ERROR_CODE = "ocr_quota"
+OCR_QUOTA_MESSAGE = (
+    "В книге одни сканы, а лимита на их распознавание не хватило. Файл сохранён."
+)
+
+# В книге нет текста, резерв взят, а ни одна страница-скан не распознана:
+# модель не ответила или вернула пустое. Не `no_content`: распознавание
+# настроено и было оплачено. Сам воркер обработку не повторяет.
+OCR_FAILED_ERROR_CODE = "ocr_failed"
+OCR_FAILED_MESSAGE = (
+    "Сканы не распознались: сервис распознавания не ответил. "
+    "Попробуй ещё раз позже."
+)
+
+# Запас срока резерва сканов сверх последней возможной страницы: рендер, запись
+# расхода и снятие резерва.
+OCR_RESERVE_MARGIN_SECONDS = 120
 
 
 def detect_language(text: str) -> str:
@@ -134,6 +176,9 @@ class IngestionOutcome:
     solutions: int = 0
     chunks: int = 0
     warnings: list[str] = None  # type: ignore[assignment]
+    # Сводка сканов (`OcrSummary.as_dict()`). Пусто, если обработка до
+    # распознавания не дошла.
+    ocr_summary: dict[str, int | str] = field(default_factory=dict)
     # False означает, что Celery-запуск не захватил job: его уже
     # заменило другое поколение. Задача не должна ретраить чужую
     # ошибку из просто перечитанного outcome.
@@ -146,6 +191,48 @@ class IngestionOutcome:
     @property
     def succeeded(self) -> bool:
         return self.job.status == Document.Status.READY
+
+
+@dataclass(frozen=True)
+class OcrSummary:
+    """Что стало со сканами книги: по ней ученик видит строку у книги.
+
+    - `scanned` — страниц-сканов среди обработанных страниц;
+    - `attempted` — сколько ушло в распознавание (не больше `max_ocr_pages`),
+      если резерв взят и цикл начался, даже когда он оборвался посреди;
+      0, если распознавание не запускалось;
+    - `recognized` — сколько вернулись с текстом;
+    - `skipped` — `"quota"` (не хватает сейчас) или `"window"` (сумма больше
+      окна тарифа), если резерв не взялся, иначе пусто;
+    - `reset_at` — когда лимит восстановится, только для `"quota"`;
+    - `plan` — тариф ученика, только при отказе;
+    - `stopped` — `"time"`, если распознавание остановилось по своему времени
+      (`_ocr_time_is_up`), только в этом случае: повтор оборвался бы на той же
+      странице и заплатил бы за неё снова.
+    """
+
+    scanned: int = 0
+    attempted: int = 0
+    recognized: int = 0
+    skipped: str = ""
+    reset_at: str = ""
+    plan: str = ""
+    stopped: str = ""
+
+    def as_dict(self) -> dict[str, int | str]:
+        data: dict[str, int | str] = {
+            "scanned": self.scanned,
+            "attempted": self.attempted,
+            "recognized": self.recognized,
+            "skipped": self.skipped,
+        }
+        if self.skipped == "quota":
+            data["reset_at"] = self.reset_at
+        if self.skipped:
+            data["plan"] = self.plan
+        if self.stopped:
+            data["stopped"] = self.stopped
+        return data
 
 
 class _Recorder:
@@ -163,7 +250,9 @@ class _Recorder:
             jobs = jobs.filter(celery_task_id=self._run_token)
         return jobs
 
-    def advance(self, to_status: str) -> None:
+    def advance(
+        self, to_status: str, *, document_fields: dict | None = None
+    ) -> None:
         elapsed_ms = int((time.monotonic() - self._started) * 1000)
         attempt_from = self._previous
         now = timezone.now()
@@ -184,6 +273,7 @@ class _Recorder:
             Document.objects.filter(pk=self.job.document_id).update(
                 ingestion_status=to_status,
                 updated_at=now,
+                **(document_fields or {}),
             )
         self.job.status = to_status
         self.job.updated_at = now
@@ -206,12 +296,18 @@ class _Recorder:
         now = timezone.now()
         with transaction.atomic():
             Document.objects.select_for_update().get(pk=self.job.document_id)
-            changed = self._jobs().update(
-                status=Document.Status.FAILED,
-                error_code=code,
-                error_message=message,
-                finished_at=now,
-                updated_at=now,
+            # Готовую книгу ничто не переписывает в провал, даже предел часа,
+            # пришедший сразу после READY: такой запуск считается уже не своим.
+            changed = (
+                self._jobs()
+                .exclude(status=Document.Status.READY)
+                .update(
+                    status=Document.Status.FAILED,
+                    error_code=code,
+                    error_message=message,
+                    finished_at=now,
+                    updated_at=now,
+                )
             )
             if not changed:
                 raise SupersededIngestion
@@ -376,6 +472,16 @@ def ingest_document(
         # Worker wrapper owns the fenced terminal quota transition. Turning
         # this into internal_error here would hide a deterministic 429 reason.
         raise
+    except SoftTimeLimitExceeded:
+        # Предел часа. До жёсткого убийства остаётся минута, и её хватает,
+        # чтобы закрыть джоб понятной ошибкой и записать предупреждения.
+        logger.warning(
+            "Ingestion документа %s остановлена по пределу времени", document.pk
+        )
+        try:
+            recorder.fail(TIMED_OUT_ERROR_CODE, TIMED_OUT_MESSAGE)
+        except SupersededIngestion:
+            return _refresh_outcome(outcome, claimed=False)
     except Exception as exc:  # noqa: BLE001 — наружу не отдаём ничего сырого
         logger.exception("Непредвиденная ошибка ingestion документа %s", document.pk)
         try:
@@ -383,14 +489,24 @@ def ingest_document(
         except SupersededIngestion:
             return _refresh_outcome(outcome, claimed=False)
 
-    # Предупреждения переживают запрос: при асинхронном запуске ответ на POST уходит
-    # раньше, чем они появятся, и опрос статуса — единственный способ их показать.
+    # Предупреждения и сводка сканов переживают запрос: при асинхронном запуске
+    # ответ на POST уходит раньше, чем они появятся, и опрос статуса — единственный
+    # способ их показать. Пишутся и при успехе, и при провале. Сводку пишет только
+    # своё поколение: ожившее старое не перепишет строку новой обработки.
+    # Блокировки в том же порядке, что везде: document → job.
     warnings = list(outcome.warnings)
-    jobs = IngestionJob.objects.filter(pk=job.pk)
-    if run_token:
-        jobs = jobs.filter(celery_task_id=run_token)
     now = timezone.now()
-    if not jobs.update(warnings=warnings, updated_at=now):
+    with transaction.atomic():
+        Document.objects.select_for_update().get(pk=document.pk)
+        jobs = IngestionJob.objects.filter(pk=job.pk)
+        if run_token:
+            jobs = jobs.filter(celery_task_id=run_token)
+        claimed = bool(jobs.update(warnings=warnings, updated_at=now))
+        if claimed:
+            Document.objects.filter(pk=document.pk).update(
+                ocr_summary=outcome.ocr_summary, updated_at=now
+            )
+    if not claimed:
         return _refresh_outcome(outcome, claimed=False)
     job.warnings = warnings
     job.updated_at = now
@@ -495,36 +611,29 @@ def _run_pipeline(
     recorder.advance(Document.Status.CLASSIFYING)
     scanned = [p for p in pages if p.needs_ocr]
 
-    # 4. ocr — только для сканов и только под лимитом стоимости.
+    # 4. ocr — только сканы, всё или ничего, под одним резервом (решение 13).
     recorder.advance(Document.Status.OCR)
-    ocr_texts: dict[int, tuple[str, str]] = {}
+    if isinstance(ocr_provider, NullOcrProvider) and scanned[:max_ocr_pages]:
+        # Один раз на документ, а не на каждую страницу.
+        outcome.warnings.append("ocr_not_configured")
     try:
-        if scanned:
-            if len(scanned) > max_ocr_pages:
-                outcome.warnings.append(
-                    f"ocr_limited_to_{max_ocr_pages}_of_{len(scanned)}_pages"
-                )
-            for page in scanned[:max_ocr_pages]:
-                png = extraction.render_page_png(pdf_bytes, page.page_number)
-                try:
-                    result = ocr_provider.transcribe_page(png)
-                finally:
-                    # Растр страницы может быть мегабайтным; между OCR-вызовами
-                    # держать предыдущую страницу незачем.
-                    del png
-                if result.succeeded and not result.is_empty:
-                    ocr_texts[page.page_number] = (result.text, result.model)
-                elif result.error == "ocr_not_configured":
-                    # Один раз на документ, а не на каждую страницу.
-                    if "ocr_not_configured" not in outcome.warnings:
-                        outcome.warnings.append("ocr_not_configured")
-                _touch_job(job, run_token=run_token)
-                del result
+        ocr_texts, ocr_summary = _recognize_scans(
+            document,
+            job,
+            pdf_bytes,
+            scanned,
+            max_ocr_pages=max_ocr_pages,
+            ocr_provider=ocr_provider,
+            run_token=run_token,
+        )
     finally:
         # После последнего возможного render_page_png исходный файл больше не
         # нужен. Не держим PDF одновременно со страницами, блоками и чанками.
         del pdf_bytes
         del scanned
+    # Сразу в итог: сводку запишут и ветки провала ниже (`ocr_quota`, предел
+    # часа, внутренняя ошибка), а не только готовая книга.
+    outcome.ocr_summary = ocr_summary.as_dict()
     outcome.ocr_pages = len(ocr_texts)
 
     # Язык книги. Определяется по уже извлечённому тексту, до разбора структуры:
@@ -603,10 +712,12 @@ def _run_pipeline(
     # 7. indexing — единственная транзакция на всю запись.
     recorder.advance(Document.Status.INDEXING)
     with transaction.atomic():
-        # Сериализуем перезапуск с удалением/перезаписью строк.
-        # После смены token старое поколение сюда не проходит.
+        # Поколение защищает блокировка документа: её берут все, кто меняет
+        # `celery_task_id`, поэтому после смены token старое поколение сюда не
+        # проходит. Строку джоба не блокируем, чтобы пульс писал `updated_at` и
+        # во время записи.
         Document.objects.select_for_update().get(pk=document.pk)
-        if run_token and not IngestionJob.objects.select_for_update().filter(
+        if run_token and not IngestionJob.objects.filter(
             pk=job.pk,
             celery_task_id=run_token,
         ).exists():
@@ -653,14 +764,39 @@ def _run_pipeline(
     # это сетевой вызов, и держать им открытую транзакцию — значит блокировать
     # строки на всё время работы внешнего провайдера.
     #
-    # `index_document_chunks` не бросает ни при каких обстоятельствах: провал
+    # На сбоях провайдера `index_document_chunks` не бросает: провал
     # эмбеддингов не превращает разобранную книгу в проваленную загрузку. Он
-    # возвращает предупреждения, и они видны в диагностике.
+    # возвращает предупреждения, и они видны в диагностике. Наружу проходят
+    # только предел часа и отказ лимита.
+    embedding_stop = _EmbeddingStop(job)
     index_outcome = index_document_chunks(
         document,
         heartbeat=lambda: _touch_job(job, run_token=run_token),
         chunk_ids=written_chunk_ids,
+        should_stop=embedding_stop,
     )
+    if embedding_stop.reason:
+        # Куски, не дошедшие до провайдера, остались PENDING: их векторы потом
+        # возьмёт починка. Книга при этом остаётся готовой (решение 11).
+        logger.warning(
+            "Документ %s: векторы остановлены раньше срока (%s), "
+            "книга остаётся готовой",
+            document.pk,
+            embedding_stop.reason,
+        )
+        if "embedding_stopped_early" not in index_outcome.warnings:
+            index_outcome.warnings.append("embedding_stopped_early")
+    if index_outcome.failed:
+        # Решение 11: книга готова и без части векторов, по словам её куски
+        # находятся. Недостающие векторы снова поставит в очередь поиск.
+        logger.warning(
+            "Документ %s: не записаны векторы %s из %s кусков (%s), "
+            "книга остаётся готовой",
+            document.pk,
+            index_outcome.failed,
+            index_outcome.considered,
+            ", ".join(index_outcome.warnings),
+        )
     del written_chunk_ids
     for warning in index_outcome.warnings:
         if warning not in outcome.warnings:
@@ -668,6 +804,14 @@ def _run_pipeline(
 
     # 8. quality_check — пустая книга не «готова».
     recorder.advance(Document.Status.QUALITY_CHECK)
+    if chunk_count == 0 and ocr_summary.skipped in ("quota", "window"):
+        # Текста нет, потому что сканы не распознаны из-за лимита. Причина своя,
+        # а не «пустой документ»: книгу обработают заново, когда лимита хватит.
+        raise IngestionError(OCR_QUOTA_ERROR_CODE, OCR_QUOTA_MESSAGE)
+    if chunk_count == 0 and ocr_summary.attempted and not ocr_summary.recognized:
+        # Резерв взят, страницы ушли в распознавание, и ни одна не вернулась с
+        # текстом. Распознавание настроено, так что это не `no_content`.
+        raise IngestionError(OCR_FAILED_ERROR_CODE, OCR_FAILED_MESSAGE)
     if chunk_count == 0:
         raise IngestionError(
             "no_content",
@@ -675,7 +819,12 @@ def _run_pipeline(
             "возможно, это скан, а OCR не настроен",
         )
 
-    recorder.advance(Document.Status.READY)
+    # Сводка сканов пишется в той же транзакции, что и READY: иначе книгу уже
+    # видно готовой, а сводка ещё от прошлого прогона.
+    recorder.advance(
+        Document.Status.READY,
+        document_fields={"ocr_summary": ocr_summary.as_dict()},
+    )
     finished_at = timezone.now()
     with transaction.atomic():
         Document.objects.select_for_update().get(pk=document.pk)
@@ -698,15 +847,220 @@ def _run_pipeline(
     job.updated_at = finished_at
 
 
+def _recognize_scans(
+    document: Document,
+    job: IngestionJob,
+    pdf_bytes: bytes,
+    scanned: list[extraction.ExtractedPage],
+    *,
+    max_ocr_pages: int,
+    ocr_provider: OcrProvider,
+    run_token: str,
+) -> tuple[dict[int, tuple[str, str]], OcrSummary]:
+    """Распознаёт сканы всё или ничего, под одним резервом на всю обработку.
+
+    Решение 13. До первой платной страницы резервируется цена всех сканов этой
+    обработки (не больше `max_ocr_pages`). Не хватает — не распознаётся ни одна:
+    продолжения нет, а повторная обработка распознала бы всё заново и снова
+    списала бы лимит. Страницы расходуют этот резерв (`prepaid_usage`) и сверх
+    него не резервируют, поэтому параллельный чат его не съест.
+
+    Обрыв посреди (отказ лимита на странице или конец времени на распознавание)
+    оставляет распознанное. Сбой страницы провайдер возвращает неуспехом, а не
+    исключением. Всё остальное, предел часа тоже, уходит наверх, а резерв
+    снимается в `finally`.
+    """
+    to_ocr = scanned[:max_ocr_pages]
+    if not to_ocr or isinstance(ocr_provider, NullOcrProvider):
+        # Платить не за что: страницы не рендерятся и ничего не резервируется.
+        return {}, OcrSummary(scanned=len(scanned))
+
+    email = document.user_email
+    need = len(to_ocr) * ocr_provider.page_token_bound()
+    try:
+        reservation = reserve_usage_capacity(
+            email,
+            reserved_tokens=need,
+            feature="curriculum_ocr",
+            ttl_seconds=_ocr_reserve_ttl_seconds(),
+        )
+    except AIUsageLimitExceeded as denied:
+        window_limit = usage_window_limit(email)
+        # Больше окна тарифа сумма не поместится никогда, и время восстановления
+        # тут ни при чём.
+        beyond_window = window_limit is not None and need > window_limit
+        skipped = "window" if beyond_window else "quota"
+        reset_at = ""
+        if skipped == "quota":
+            # Если расход оставляет место, а мешают только живые брони (вызов
+            # чата, остаток резерва упавшего воркера), лимит освободится вместе
+            # с ними, а не со сбросом окна через несколько часов.
+            blocked_until = reservations_block_until(email, need)
+            reset_at = (
+                blocked_until.isoformat().replace("+00:00", "Z")
+                if blocked_until is not None
+                else denied.reset_at
+            )
+        logger.info(
+            "Сканы документа %s не распознаются: на %s страниц нужно %s токенов (%s)",
+            document.pk,
+            len(to_ocr),
+            need,
+            skipped,
+        )
+        return {}, OcrSummary(
+            scanned=len(scanned),
+            skipped=skipped,
+            reset_at=reset_at,
+            plan=resolve_usage_plan(email)["id"],
+        )
+
+    ocr_texts: dict[int, tuple[str, str]] = {}
+    stopped = ""
+    try:
+        # Почта явно: прямой вызов `ingest_document` (тесты, команда) идёт без
+        # контекста воркера, и расход страниц иначе никому бы не записался.
+        with usage_scope(user_email=email), prepaid_usage(reservation):
+            started = time.monotonic()
+            for page in to_ocr:
+                if _ocr_time_is_up(started):
+                    logger.warning(
+                        "Распознавание документа %s остановлено по времени: "
+                        "распознано %s из %s страниц-сканов",
+                        document.pk,
+                        len(ocr_texts),
+                        len(to_ocr),
+                    )
+                    stopped = "time"
+                    break
+                png = extraction.render_page_png(pdf_bytes, page.page_number)
+                try:
+                    result = ocr_provider.transcribe_page(png)
+                except AIUsageLimitExceeded:
+                    logger.info(
+                        "Распознавание документа %s остановлено отказом лимита: "
+                        "распознано %s из %s страниц-сканов",
+                        document.pk,
+                        len(ocr_texts),
+                        len(to_ocr),
+                    )
+                    break
+                finally:
+                    # Растр страницы может быть мегабайтным; между OCR-вызовами
+                    # держать предыдущую страницу незачем.
+                    del png
+                if result.succeeded and not result.is_empty:
+                    ocr_texts[page.page_number] = (result.text, result.model)
+                _touch_job(job, run_token=run_token)
+                del result
+    finally:
+        release_usage_reservation(reservation)
+
+    return ocr_texts, OcrSummary(
+        scanned=len(scanned),
+        attempted=len(to_ocr),
+        recognized=len(ocr_texts),
+        stopped=stopped,
+    )
+
+
+def _ocr_deadline_seconds() -> float:
+    """Сколько секунд от начала распознавания ещё начинаются новые страницы."""
+    return settings.CELERY_TASK_SOFT_TIME_LIMIT / 2
+
+
+def _ocr_time_is_up(started: float) -> bool:
+    """Новую страницу не начинаем после половины мягкого предела задачи.
+
+    Вторая половина часа нужна структуре, записи и векторам. Если час кончится
+    посреди распознавания, джоб закроется по пределу и оплаченные страницы
+    пропадут.
+    """
+    return time.monotonic() - started >= _ocr_deadline_seconds()
+
+
+def _ocr_reserve_ttl_seconds() -> int:
+    """Срок резерва всех сканов: он переживает последнюю возможную страницу.
+
+    Новых страниц нет после дедлайна `_ocr_time_is_up`, а последняя идёт не
+    дольше таймаута страницы: `OCR_TIMEOUT` роли, с которым `get_ocr_provider`
+    создаёт провайдера. Если воркер умер и `finally` резерв не снял, лимит
+    ученика освобождается вскоре после этого, а не через общий срок резерва
+    (`AI_USAGE_RESERVATION_TTL_SECONDS`, 65 минут).
+    """
+    page_timeout = resolve_model(ROLE_OCR).timeout_seconds
+    return math.ceil(
+        _ocr_deadline_seconds() + page_timeout + OCR_RESERVE_MARGIN_SECONDS
+    )
+
+
 def _read_file(document: Document) -> bytes:
     file_row = getattr(document, "file", None)
     if file_row is None:
         raise IngestionError("no_file", "У документа нет привязанного файла")
     try:
         # storage.open() отдаёт bytes, а не файловый объект.
-        return get_storage().open(file_row.storage_key)
+        return get_storage_for(file_row.storage_backend).open(file_row.storage_key)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise IngestionError("storage_unavailable", str(exc)) from exc
+
+
+# Худшая пачка векторов при загрузке: 180 с × 3 попытки и паузы между ними
+# (543 с), округлено вверх. Новую пачку после этой границы не начинаем.
+EMBEDDING_DEADLINE_MARGIN_SECONDS = 600
+# Столько упавших пачек подряд считается болезнью провайдера.
+EMBEDDING_MAX_FAILED_BATCHES_IN_A_ROW = 2
+
+
+class _EmbeddingStop:
+    """`should_stop` векторов при загрузке: когда бросить платные пачки.
+
+    Спрашивается перед каждой пачкой, причина остаётся в `reason`:
+
+    * `batches_failed` — две пачки подряд упали. Провайдер болеет, остаток
+      заберёт починка.
+    * `deadline` — с начала запуска прошло столько, что худшая пачка не
+      уложилась бы в мягкий предел часа. Иначе предел оборвал бы книгу,
+      у которой уже записаны куски и оплачены сканы, и она стала бы
+      `timed_out`.
+
+    Время берётся из `timezone.now()`: `started_at` лежит в базе, а
+    `monotonic` у другого процесса не сравнить.
+    """
+
+    def __init__(self, job: IngestionJob) -> None:
+        self.reason = ""
+        self._started_at = job.started_at
+        self._seen: tuple[int, int, int] | None = None
+        self._failed_in_a_row = 0
+
+    def __call__(self, outcome) -> bool:
+        snapshot = (outcome.failed, outcome.embedded, outcome.reused)
+        if self._seen is not None:
+            failed, embedded, reused = self._seen
+            if (
+                outcome.failed > failed
+                and outcome.embedded == embedded
+                and outcome.reused == reused
+            ):
+                self._failed_in_a_row += 1
+            else:
+                self._failed_in_a_row = 0
+        self._seen = snapshot
+        if self._failed_in_a_row >= EMBEDDING_MAX_FAILED_BATCHES_IN_A_ROW:
+            self.reason = "batches_failed"
+            return True
+        if self._started_at is not None:
+            limit = (
+                settings.CELERY_TASK_SOFT_TIME_LIMIT
+                - EMBEDDING_DEADLINE_MARGIN_SECONDS
+            )
+            if (timezone.now() - self._started_at).total_seconds() >= limit:
+                self.reason = "deadline"
+                return True
+        return False
 
 
 def _touch_job(job: IngestionJob, *, run_token: str = "") -> None:
@@ -931,7 +1285,6 @@ def _write_blocks(
                     section=section_rows.resolve(block.page, block.section_path),
                     kind=block.kind,
                     reading_order=block.reading_order,
-                    raw_text=block.text,
                     normalized_text=normalized,
                     extraction_method=(
                         page_row.extraction_method if page_row else "structured"
@@ -994,9 +1347,8 @@ def _write_tasks_and_solutions(
 def _row_pk(row):
     """Первичный ключ строки или `None`.
 
-    Нужен там, где раньше присваивался объект: у чанков больше нет внешних
-    ключей на раздел и задачу — они живут в другой базе (см. `routers.py`), и
-    хранится только UUID.
+    Нужен там, где раньше присваивался объект: у кусков нет внешних ключей на
+    раздел и задачу, хранится только UUID.
     """
     return row.pk if row is not None else None
 
@@ -1008,8 +1360,16 @@ def _write_chunks(
     task_rows: dict[str, ExtractedTask],
     processing_version: str,
 ) -> tuple[int, tuple[UUID, ...]]:
+    chunks = list(chunks)
+    # Идентификаторы заранее: ссылки parent/previous/next ставятся по индексам
+    # до вставки. Внешние ключи отложенные, запись идёт в одной транзакции.
+    ids = [uuid4() for _ in chunks]
+
+    def _linked(index: int | None):
+        return ids[index] if index is not None else None
+
     created: list[KnowledgeChunk] = []
-    for chunk in chunks:
+    for chunk_id, chunk in zip(ids, chunks, strict=True):
         # У чанка-решения `task_block_id` указывает на блок задачи. У самого
         # чанка-задачи его нет — там задача это он сам, поэтому FK ищется по
         # собственному block_id. Связь нужна обеим сторонам: по ней политика
@@ -1018,7 +1378,8 @@ def _write_chunks(
         if task_row is None and chunk.chunk_type == "task" and chunk.block_ids:
             task_row = task_rows.get(chunk.block_ids[0])
         created.append(
-            KnowledgeChunk.objects.create(
+            KnowledgeChunk(
+                id=chunk_id,
                 document_id=document.pk,
                 section_id=_row_pk(
                     section_rows.resolve(chunk.page_start, chunk.section_path)
@@ -1039,22 +1400,10 @@ def _write_chunks(
                 ),
                 solution_visibility=chunk.solution_visibility,
                 task_id=_row_pk(task_row),
+                parent_id=_linked(chunk.parent_index),
+                previous_id=_linked(chunk.previous_index),
+                next_id=_linked(chunk.next_index),
             )
         )
-
-    # Связи parent/previous/next проставляем вторым проходом: на момент создания
-    # соседа ещё нет.
-    for chunk, row in zip(chunks, created, strict=False):
-        updates: list[str] = []
-        if chunk.parent_index is not None:
-            row.parent = created[chunk.parent_index]
-            updates.append("parent")
-        if chunk.previous_index is not None:
-            row.previous = created[chunk.previous_index]
-            updates.append("previous")
-        if chunk.next_index is not None:
-            row.next = created[chunk.next_index]
-            updates.append("next")
-        if updates:
-            row.save(update_fields=updates)
+    KnowledgeChunk.objects.bulk_create(created, batch_size=500)
     return len(created), tuple(row.pk for row in created)

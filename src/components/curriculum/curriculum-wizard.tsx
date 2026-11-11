@@ -49,6 +49,13 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
     );
   }
 
+  const close = onClose
+    ? () => {
+        reset();
+        onClose();
+      }
+    : undefined;
+
   const activeRail = RAIL.findIndex((item) => item.steps.includes(step));
   // Ошибку генерации показывает сам экран генерации: дублировать её сверху не нужно.
   const showBanner = error && step !== "planning";
@@ -60,12 +67,9 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
           <button
             type="button"
             className="back"
-            onClick={() => {
-              // Сеанс сбрасывается вместе с уходом: он нужен ровно до возвращения на
-              // стеллаж, где то же самое видно с сервера.
-              reset();
-              onClose();
-            }}
+            // Сеанс сбрасывается вместе с уходом: он нужен ровно до возвращения на
+            // стеллаж, где то же самое видно с сервера.
+            onClick={close}
           >
             Курсы и книги
           </button>
@@ -100,7 +104,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
       {step === "goal_confirm" ? <GoalConfirmStep /> : null}
       {step === "upload" ? <UploadStep /> : null}
       {step === "processing" ? <IngestionProgress /> : null}
-      {step === "planning" ? <PlanGenerationStep /> : null}
+      {step === "planning" ? <PlanGenerationStep onClose={close} /> : null}
 
       {step !== "goal" ? (
         <p className="wz-again">

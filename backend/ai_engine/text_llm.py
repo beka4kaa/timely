@@ -464,7 +464,17 @@ class TextModel:
                 feature=feature,
             ),
         )
-        return _TextResponse(future.result(timeout=timeout + _WALL_CLOCK_GRACE_SECONDS))
+        try:
+            return _TextResponse(
+                future.result(timeout=timeout + _WALL_CLOCK_GRACE_SECONDS)
+            )
+        except concurrent.futures.TimeoutError:
+            # Вызов, который так и не дождался свободного слота, не должен
+            # стартовать потом: ответ уже никому не нужен, а допуск по лимиту
+            # снят. Начатый вызов отменить нельзя: он доработает и сам запишет
+            # расход.
+            future.cancel()
+            raise
 
     def _create_json_completion(
         self,

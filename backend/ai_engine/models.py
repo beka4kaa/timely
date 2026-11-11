@@ -197,6 +197,11 @@ class AIUsageEvent(models.Model):
         blank=True,
     )
     is_estimated = models.BooleanField(default=False)
+    # False: расход записан, но в окна лимита ученика не входит. Так пишутся
+    # эмбеддинги книги и вектор вопроса. `db_default` держит DEFAULT true в
+    # базе: миграцию применяет новый веб-контейнер, пока старый ещё пишет
+    # события без этой колонки. `default` нужен для объектов в Python.
+    metered = models.BooleanField(default=True, db_default=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

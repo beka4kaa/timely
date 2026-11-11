@@ -25,7 +25,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from ..models import PROCESSING_VERSION, Document, IngestionJob
@@ -38,10 +38,26 @@ MODE_AUTO = "auto"
 MODE_INLINE = "inline"
 MODE_CELERY = "celery"
 
-# Сколько job считается живым без смены статуса. Контейнер эфемерный: воркер
-# может быть убит в любой момент, и «вечно выполняющийся» джоб заблокировал бы
-# документ навсегда.
-DEFAULT_STALE_AFTER_SECONDS = 1800
+# Через столько секунд без пульса джоб считается зависшим. Контейнер
+# эфемерный: воркер может быть убит в любой момент, и «вечно выполняющийся»
+# джоб заблокировал бы документ навсегда. Работающий джоб шлёт пульс раз в
+# `CURRICULUM_INGEST_PULSE_SECONDS` (`services.pulse`).
+DEFAULT_STALE_AFTER_SECONDS = 300
+# Работающая обработка: от захвата задачи воркером до проверки качества. Такой
+# джоб шлёт пульс, и зависшим его делает только молчание пульса.
+RUNNING_STATUSES: frozenset[str] = frozenset(
+    {
+        Document.Status.VALIDATING,
+        Document.Status.EXTRACTING,
+        Document.Status.CLASSIFYING,
+        Document.Status.OCR,
+        Document.Status.RECONSTRUCTING,
+        Document.Status.EXTRACTING_BLOCKS,
+        Document.Status.CHUNKING,
+        Document.Status.INDEXING,
+        Document.Status.QUALITY_CHECK,
+    }
+)
 QUEUE_UNAVAILABLE_ERROR_CODE = "queue_unavailable"
 QUEUE_UNAVAILABLE_MESSAGE = (
     "Очередь обработки сейчас недоступна. Файл сохранён — попробуйте позже."
@@ -86,12 +102,39 @@ def resolve_mode(mode: str | None = None) -> str:
 
 
 def is_stale(job: IngestionJob, *, now=None) -> bool:
-    """Джоб завис: не терминальный и давно не менялся."""
+    """Джоб завис: не терминальный и дольше порога не подавал признаков жизни.
+
+    Работающий джоб (`RUNNING_STATUSES`) судится только по пульсу, сколько бы
+    ни шла сама обработка. Джоб в очереди или только загруженный зависшим не
+    считается, пока воркер жив: другой джоб работает и шлёт пульс или закончил
+    в пределах порога (между двумя книгами воркер на миг никого не ведёт).
+    Воркер обрабатывает по одной книге, и ожидание за чужой книгой — не
+    зависание. Исключение — джоб в очереди без токена: сообщение в брокер не
+    уходило (`_send` ставит токен до публикации), и ждать его некому.
+    """
     if job.status in (Document.Status.READY, Document.Status.FAILED):
         return False
     moment = now or timezone.now()
+    stale_after = _stale_after()
     last_change = job.updated_at or job.started_at or job.created_at
-    return bool(last_change and moment - last_change > _stale_after())
+    if not (last_change and moment - last_change > stale_after):
+        return False
+    if job.status in RUNNING_STATUSES:
+        return True
+    if job.status == Document.Status.QUEUED and not job.celery_task_id:
+        return True
+    alive_since = moment - stale_after
+    return not (
+        IngestionJob.objects.filter(
+            Q(status__in=RUNNING_STATUSES, updated_at__gte=alive_since)
+            | Q(
+                status__in=(Document.Status.READY, Document.Status.FAILED),
+                finished_at__gte=alive_since,
+            )
+        )
+        .exclude(pk=job.pk)
+        .exists()
+    )
 
 
 def enqueue_ingestion(
@@ -240,6 +283,13 @@ def _dispatch_celery(
                 args=[str(document.pk)],
                 kwargs={"processing_version": processing_version},
                 task_id=task_id,
+                retry=True,
+                retry_policy={
+                    "max_retries": 1,
+                    "interval_start": 0,
+                    "interval_step": 0.5,
+                    "interval_max": 1,
+                },
             )
         except Exception:  # noqa: BLE001 — ошибка публикации не должна дать 500
             logger.exception(

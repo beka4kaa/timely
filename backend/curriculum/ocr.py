@@ -21,6 +21,11 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
+from celery.exceptions import SoftTimeLimitExceeded
+from django.conf import settings
+
+from ai_engine.time_limit import hit_time_limit
+
 from .model_registry import ROLE_OCR, resolve_model
 
 logger = logging.getLogger(__name__)
@@ -70,6 +75,13 @@ class OcrResult:
 class OcrProvider(Protocol):
     name: str
 
+    def page_token_bound(self) -> int:
+        """Верхняя граница цены одной страницы в токенах лимита.
+
+        По ней обработка книги резервирует распознавание всех сканов заранее.
+        """
+        ...
+
     def transcribe_page(self, png_bytes: bytes) -> OcrResult: ...
 
 
@@ -83,6 +95,10 @@ class NullOcrProvider:
 
     name = "null-ocr"
 
+    def page_token_bound(self) -> int:
+        # Платных вызовов нет, резервировать нечего.
+        return 0
+
     def transcribe_page(self, png_bytes: bytes) -> OcrResult:
         return OcrResult(
             text="", model="", succeeded=False, error="ocr_not_configured"
@@ -95,13 +111,37 @@ class VisionOcrProvider:
     name = "vision-ocr"
 
     def __init__(
-        self, *, model: str, timeout_seconds: int = 180, max_tokens: int = 8000
+        self,
+        *,
+        model: str,
+        timeout_seconds: int = 180,
+        max_tokens: int = 8000,
+        image_tokens: int = 0,
     ) -> None:
         if not model:
             raise ValueError("VisionOcrProvider требует непустое имя модели")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_tokens = max_tokens
+        # Сколько токенов модель насчитает за саму картинку страницы. Локальный
+        # счёт видит только текст промптов, поэтому запас задаётся числом.
+        self.image_tokens = image_tokens
+
+    def page_token_bound(self) -> int:
+        """Та же граница, что бронирует вызов страницы вне резерва книги.
+
+        `max(вход + картинка + потолок ответа, счёт картинки)`: без запаса на
+        картинку и при потолке ответа из `CURRICULUM_OCR_MAX_OUTPUT_TOKENS` это
+        ровно `AI_IMAGE_TOKEN_CHARGE`.
+        """
+        from ai_engine.usage import provider_call_token_upper_bound
+
+        return provider_call_token_upper_bound(
+            {"system_prompt": OCR_SYSTEM_PROMPT, "user_prompt": OCR_USER_PROMPT},
+            max_output_tokens=self.max_tokens,
+            image_count=1,
+            image_input_tokens=self.image_tokens,
+        )
 
     def transcribe_page(self, png_bytes: bytes) -> OcrResult:
         # Импорт внутри метода: `ai_engine.glm_client` при импорте читает
@@ -124,6 +164,7 @@ class VisionOcrProvider:
                     },
                     max_output_tokens=self.max_tokens,
                     image_count=1,
+                    image_input_tokens=self.image_tokens,
                     feature="curriculum_ocr",
                 ):
                     text = glm_chat_image(
@@ -137,7 +178,13 @@ class VisionOcrProvider:
                     )
         except AIUsageLimitExceeded:
             raise
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001 — наружу OCR не роняем
+            if hit_time_limit(exc):
+                # SDK отдаёт предел, пришедший посреди запроса, обёрнутым в
+                # `APIConnectionError`: это не сбой модели.
+                raise SoftTimeLimitExceeded() from exc
             logger.warning("OCR страницы не удался (%s): %s", self.model, exc)
             return OcrResult(text="", model=self.model, succeeded=False, error=str(exc))
 
@@ -163,6 +210,10 @@ def get_ocr_provider() -> OcrProvider:
     Реальная модель берётся только при заданном `OCR_MODEL`. Обрати внимание:
     `model_registry` читает переменные процесса через `os.getenv` и НЕ смотрит в
     настройки Django, поэтому `OCR_MODEL` надо экспортировать серверу.
+
+    Потолок ответа страницы книги — `CURRICULUM_OCR_MAX_OUTPUT_TOKENS`, а не
+    `OCR_MAX_TOKENS` роли, запас на картинку — `CURRICULUM_OCR_PAGE_IMAGE_TOKENS`:
+    по ним считается резерв всех сканов (решение 13).
     """
     binding = resolve_model(ROLE_OCR)
     if not binding.configured:
@@ -170,5 +221,6 @@ def get_ocr_provider() -> OcrProvider:
     return VisionOcrProvider(
         model=binding.model,
         timeout_seconds=binding.timeout_seconds,
-        max_tokens=binding.max_tokens,
+        max_tokens=settings.CURRICULUM_OCR_MAX_OUTPUT_TOKENS,
+        image_tokens=settings.CURRICULUM_OCR_PAGE_IMAGE_TOKENS,
     )

@@ -134,6 +134,14 @@ class S3StorageContractTests(TestCase):
             storage.open(KEY)
         self.assertIn("не найден", str(ctx.exception).lower())
 
+    def test_мягкий_предел_при_чтении_не_становится_ошибкой_хранилища(self):
+        from celery.exceptions import SoftTimeLimitExceeded
+
+        storage, client = make_storage()
+        client.raise_on["get_object"] = SoftTimeLimitExceeded()
+        with self.assertRaises(SoftTimeLimitExceeded):
+            storage.open(KEY)
+
     def test_повторное_удаление_не_ошибка(self):
         # Идемпотентность: второй вызов обязан приводить к тому же состоянию.
         storage, client = make_storage()

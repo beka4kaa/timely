@@ -140,7 +140,7 @@ class Command(BaseCommand):
 
         if options["reset_failed"] and not options["reindex_all"]:
             reset = KnowledgeChunk.objects.filter(
-                document__in=documents,
+                document_id__in=[d.pk for d in documents],
                 embedding_status__in=[
                     KnowledgeChunk.EmbeddingStatus.FAILED,
                     KnowledgeChunk.EmbeddingStatus.SKIPPED,

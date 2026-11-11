@@ -226,8 +226,15 @@ class EnumNormalizationTests(TestCase):
         self.assertEqual(result.all_topics()[0].difficulty, "medium")
 
 
-class _PlanBase(TestCase):
+class PlanFixtures:
+    """Цель и обработанная книга для тестов программы.
+
+    Примесь, а не базовый класс: её берут и `TestCase`, и `TransactionTestCase`
+    (тесты, где потоки пула пишут в базу своим соединением).
+    """
+
     def setUp(self):
+        super().setUp()
         storage_module.set_storage(
             storage_module.LocalFileStorage(tempfile.mkdtemp())
         )
@@ -264,6 +271,10 @@ class _PlanBase(TestCase):
         kwargs.setdefault("planning_provider", FakeCoursePlanningProvider())
         kwargs.setdefault("review_provider", FakeCourseReviewProvider())
         return plans_service.generate_plan(self.goal, self.document, **kwargs)
+
+
+class _PlanBase(PlanFixtures, TestCase):
+    pass
 
 
 class PlanningContextTests(_PlanBase):
@@ -452,6 +463,9 @@ class PlanGenerationTests(_PlanBase):
         class Hallucinating:
             name = "hallucinating"
 
+            def estimate_tokens(self, request, context):
+                return 0
+
             def generate_plan(self, request, context):
                 return CoursePlanningResult(
                     title="Курс",
@@ -487,6 +501,9 @@ class PlanGenerationTests(_PlanBase):
         class Broken:
             name = "broken"
 
+            def estimate_tokens(self, request, context):
+                return 0
+
             def generate_plan(self, request, context):
                 raise RuntimeError("нет сети")
 
@@ -499,6 +516,9 @@ class PlanGenerationTests(_PlanBase):
     def test_planner_quota_denial_is_not_converted_to_plan_rejected(self):
         class Denied:
             name = "denied"
+
+            def estimate_tokens(self, request, context):
+                return 0
 
             def generate_plan(self, request, context):
                 raise AIUsageLimitExceeded(
@@ -514,6 +534,9 @@ class PlanGenerationTests(_PlanBase):
         class Denied:
             name = "denied"
 
+            def estimate_tokens(self, context):
+                return 0
+
             def review_plan(self, plan, request):
                 raise AIUsageLimitExceeded(
                     window="weekly",
@@ -528,6 +551,9 @@ class PlanGenerationTests(_PlanBase):
     def test_reviewer_blocker_marks_rejected(self):
         class Blocking:
             name = "blocking-reviewer"
+
+            def estimate_tokens(self, context):
+                return 0
 
             def review_plan(self, plan, request):
                 from curriculum.planning.contracts import (
@@ -680,6 +706,9 @@ class PlanStructureTests(_PlanBase):
         class Broken:
             name = "broken"
 
+            def estimate_tokens(self, request):
+                return 0
+
             def enrich(self, request):
                 raise RuntimeError("провайдер лёг")
 
@@ -708,6 +737,9 @@ class PlanRepairTests(_PlanBase):
         """Первый раз возвращает план с блокером, второй — исправленный."""
 
         name = "repairable"
+
+        def estimate_tokens(self, request, context):
+            return 0
 
         def __init__(self, chunk_id_source=None):
             self.calls: list[tuple[str, ...]] = []
@@ -794,6 +826,9 @@ class PlanRepairTests(_PlanBase):
         class AlwaysBroken:
             name = "always-broken"
 
+            def estimate_tokens(self, request, context):
+                return 0
+
             def __init__(self):
                 self.calls = 0
 
@@ -814,6 +849,9 @@ class PlanRepairTests(_PlanBase):
 
         class DiesOnRetry:
             name = "dies-on-retry"
+
+            def estimate_tokens(self, request, context):
+                return 0
 
             def __init__(self):
                 self.calls = 0

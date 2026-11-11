@@ -25,6 +25,8 @@ import re
 import tempfile
 import warnings
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from .blocks import SectionNode, classify_text_run
 from .chunking import SourceBlock
 
@@ -142,6 +144,8 @@ def extract_epub(
             # логах обработки она превращается в шум на ровном месте.
             warnings.simplefilter("ignore", FutureWarning)
             book = epub.read_epub(path, options={"ignore_ncx": True})
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001 — наружу только свой тип
         raise EpubExtractionError(f"EPUB не открывается: {exc}") from exc
     finally:
@@ -171,6 +175,8 @@ def extract_epub(
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 soup = BeautifulSoup(item.get_content(), "lxml")
+        except SoftTimeLimitExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001 — одна битая глава не роняет книгу
             logger.warning("Глава %s не разобрана: %s", idref, exc)
             continue

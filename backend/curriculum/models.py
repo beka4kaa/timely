@@ -27,7 +27,7 @@ from __future__ import annotations
 import uuid
 
 from django.db import models
-from pgvector.django import VectorField
+from pgvector.django import HalfVectorField
 
 from .outline.contracts import ALL_ROLES as _ALL_ROLES
 from .outline.contracts import SOURCE_CONFIDENCE as _SOURCE_CONFIDENCE
@@ -35,7 +35,7 @@ from .outline.contracts import Role as _Role
 from .outline.contracts import Source as _Source
 
 # Размерность эмбеддинга. Константа, а НЕ переменная окружения: она попадает в
-# миграцию (`vector(1536)`), и вычислять её из окружения значило бы получать
+# миграцию (`halfvec(1536)`), и вычислять её из окружения значило бы получать
 # разную схему на разных машинах. Смена размерности — это отдельная миграция
 # плюс переиндексация всех чанков, а не правка конфига.
 #
@@ -312,6 +312,11 @@ class Document(TimestampedModel):
         max_length=32, choices=Status.choices, default=Status.UPLOADED, db_index=True
     )
     processing_version = models.CharField(max_length=16, default=PROCESSING_VERSION)
+    # Что стало со сканами при последней обработке: `OcrSummary.as_dict()` из
+    # `services/ingestion.py`. По ней фронт строит строку у книги (решение 17).
+    # `db_default` держит DEFAULT в базе: миграцию применяет новый веб-контейнер,
+    # пока старый ещё создаёт книги без этой колонки.
+    ocr_summary = models.JSONField(default=dict, blank=True, db_default={})
     visibility = models.CharField(
         max_length=16, choices=Visibility.choices, default=Visibility.PRIVATE
     )
@@ -566,7 +571,8 @@ class IngestionJob(TimestampedModel):
     error_code = models.CharField(max_length=64, blank=True, default="")
     # Текст для пользователя: без путей, стектрейсов и содержимого документа.
     error_message = models.CharField(max_length=400, blank=True, default="")
-    # Предупреждения обработки (`ocr_not_configured`, `ocr_limited_to_N_of_M_pages`).
+    # Предупреждения обработки (`ocr_not_configured`, `processed_only_N_of_M_pages`).
+    # Потолок сканов за обработку теперь видно в `Document.ocr_summary`.
     # Хранить обязательно: при асинхронном запуске ответ на POST уходит раньше, чем
     # они появятся, и без этого поля пользователь их никогда не увидит.
     warnings = models.JSONField(default=list, blank=True)
@@ -748,20 +754,15 @@ class KnowledgeChunk(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # ── Ссылки в ДРУГУЮ базу ─────────────────────────────────────────────────
+    # ── Ссылки на документ, раздел и задачу ──────────────────────────────────
     #
-    # Это UUID без внешнего ключа, и не по небрежности: таблица чанков живёт в
-    # отдельной базе на своём железе (см. `curriculum/routers.py`), а Django не
-    # поддерживает связи между базами. Внешний ключ здесь означал бы, что
-    # `chunk.document` идёт искать таблицу документов в векторной базе, где её
-    # нет.
+    # Это UUID без внешнего ключа: ключи сняты миграцией `0007`. Целостность
+    # держат сигналы в `curriculum/signals.py`. Удаление документа уносит его
+    # куски, удаление раздела или задачи обнуляет ссылку.
     #
     # Имена полей оставлены такими же, какие Django давал колонкам FK
     # (`document_id`), поэтому запросы вида `filter(document_id__in=...)`
     # продолжают работать без правок.
-    #
-    # Целостность теперь держит не база, а сигнал в `curriculum/signals.py`:
-    # удаление документа уносит его чанки. Раньше это делал каскад.
     document_id = models.UUIDField(db_index=True)
     section_id = models.UUIDField(null=True, blank=True, db_index=True)
 
@@ -786,7 +787,7 @@ class KnowledgeChunk(models.Model):
     )
 
     # Связь с задачей/решением — чтобы политика могла отсечь решение по task_id.
-    # Тоже UUID без внешнего ключа: задача осталась в основной базе.
+    # Тоже UUID без внешнего ключа, ссылку на удалённую задачу обнуляет сигнал.
     task_id = models.UUIDField(null=True, blank=True, db_index=True)
 
     content_hash = models.CharField(max_length=64, db_index=True)
@@ -813,7 +814,12 @@ class KnowledgeChunk(models.Model):
     # Колонка существует на всех бэкендах, а векторными операторами и HNSW
     # пользуется только Postgres — см. гейт в миграции. На SQLite (тесты) она
     # остаётся обычной колонкой, и плотный поиск туда не ходит.
-    embedding = VectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
+    #
+    # Половинная точность (`halfvec`, миграция `0018`): 2 байта на измерение
+    # вместо 4, места вдвое меньше, качество поиска то же. Из базы приходит
+    # `HalfVector`, он не итерируется, поэтому читать его через
+    # `embeddings.vector_as_list`.
+    embedding = HalfVectorField(dimensions=EMBEDDING_DIMENSIONS, null=True, blank=True)
     # Какой моделью посчитан вектор. Без этого нельзя понять, можно ли сравнивать
     # два чанка между собой: векторы разных моделей несопоставимы.
     embedding_model = models.CharField(max_length=120, blank=True, default="")
@@ -859,9 +865,9 @@ class StudyMaterial(TimestampedModel):
     ПОЧЕМУ ОТДЕЛЬНАЯ МОДЕЛЬ, А НЕ `kind` В `Document`
     -------------------------------------------------
     `Document` — это контракт ingestion от начала до конца: `DocumentFile`,
-    `DocumentPage`, двенадцать значений `ingestion_status`, `KnowledgeChunk` в
-    отдельной базе и `CourseSourceBinding`, у которого `page_start`/`page_end`
-    обязательны в каждой цитате. Строка без файла внутри `Document` добавила бы
+    `DocumentPage`, двенадцать значений `ingestion_status`, `KnowledgeChunk` и
+    `CourseSourceBinding`, у которого `page_start`/`page_end` обязательны в
+    каждой цитате. Строка без файла внутри `Document` добавила бы
     `if` в каждый запрос пайплайна, в каждый опрос статуса и в каждый путь
     цитирования — то есть в код, который сейчас не знает исключений. Соседняя
     модель не трогает RAG вообще.
@@ -1007,6 +1013,11 @@ class CoursePlan(TimestampedModel):
 
     approved_at = models.DateTimeField(null=True, blank=True)
     current_version = models.PositiveIntegerField(default=0)
+    # Чего не хватило при составлении (решение 14): `plan_profiling_skipped`,
+    # `plan_profiling_partial`. По ним фронт пишет, что программа составлена
+    # без подробного разбора глав. `db_default` держит DEFAULT в базе: миграцию
+    # применяет новый веб-контейнер, пока старый ещё создаёт программы.
+    generation_warnings = models.JSONField(default=list, blank=True, db_default=[])
 
     class Meta:
         ordering = ["-created_at"]

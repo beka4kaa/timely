@@ -68,9 +68,10 @@ class Command(BaseCommand):
 
         chunks = [
             as_retrievable(chunk, document)
-            for chunk in KnowledgeChunk.objects.filter(document_id=document.pk)
-            # select_related("task") убран: задача в основной базе,
-            # а JOIN между базами невозможен — task_id лежит в самом чанке.
+            for chunk in KnowledgeChunk.objects.defer("embedding")
+            .filter(document_id=document.pk)
+            # `select_related("task")` не нужен: у куска нет внешнего ключа на
+            # задачу, а `task_id` лежит в самом куске.
             .order_by("page_start", "id")
         ]
         candidates = apply_access_policy(

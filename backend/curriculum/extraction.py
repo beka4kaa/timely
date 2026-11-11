@@ -31,13 +31,24 @@ from dataclasses import dataclass
 
 import cv2
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_c
+from celery.exceptions import SoftTimeLimitExceeded
 
 logger = logging.getLogger(__name__)
 
-# Ниже этого числа символов нативного текста страница считается сканом и
-# отправляется в OCR. Ноль символов — очевидный скан; несколько десятков это,
-# как правило, колонтитул и номер страницы поверх картинки, то есть тоже скан.
+# Скан — страница, где нативного текста меньше этого числа символов И растровые
+# картинки закрывают не меньше `SCAN_IMAGE_MIN_SHARE` листа или на ней не меньше
+# `SCAN_MIN_PATHS` векторных контуров (текст, нарисованный кривыми, и
+# векторизованный скан). Несколько десятков символов поверх такой страницы —
+# это, как правило, колонтитул и номер страницы, то есть тоже скан. Бедная
+# текстом страница без этого (пустой оборот, титул главы, разделитель) сканом не
+# считается: распознавать на ней нечего, а каждая страница в OCR стоит ученику
+# лимита (решение 12).
 NATIVE_TEXT_MIN_CHARS = 60
+SCAN_IMAGE_MIN_SHARE = 0.5
+SCAN_MIN_PATHS = 200
+# Глубина вложенных Form XObject, в которых ищем картинки и контуры.
+_MAX_FORM_DEPTH = 8
 
 # Масштаб рендера для OCR. 2.0 к 72 dpi даёт ~144 dpi — этого хватает VLM и это
 # вдвое дешевле по числу пикселей, чем «полиграфические» 300 dpi.
@@ -61,8 +72,9 @@ class PdfExtractionError(RuntimeError):
 class ExtractedPage:
     """Одна страница после извлечения нативного текста.
 
-    `needs_ocr` — это решение, принятое по объёму текста, а не результат OCR.
-    Сам OCR запускается позже и только для тех страниц, где флаг поднят.
+    `needs_ocr` — это решение, принятое по объёму текста и растровой картинке
+    на странице, а не результат OCR. Сам OCR запускается позже и только для тех
+    страниц, где флаг поднят.
     """
 
     page_number: int  # 1-based, как в DocumentPage.page_number
@@ -104,6 +116,8 @@ def _open(pdf_bytes: bytes) -> pdfium.PdfDocument:
         raise PdfExtractionError("Пустой PDF")
     try:
         return pdfium.PdfDocument(pdf_bytes)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:  # pdfium бросает свои типы, не только ValueError
         raise PdfExtractionError(f"PDF не открывается: {exc}") from exc
 
@@ -146,18 +160,22 @@ def extract_pages(
                     raw = textpage.get_text_bounded()
                 finally:
                     textpage.close()
+                text = _normalize_newlines(raw)
+                length = len(text.strip())
+                needs_ocr = False
+                if length < min_chars:
+                    # Геометрию бедной текстом страницы проверяем, как и раньше,
+                    # до разбора её картинок: площадь листа нужна конечная, а
+                    # скан потом рендерится.
+                    _validate_render_geometry(
+                        float(width),
+                        float(height),
+                        scale=OCR_RENDER_SCALE,
+                    )
+                    needs_ocr = _looks_scanned(page, index + 1)
             finally:
                 page.close()
 
-            text = _normalize_newlines(raw)
-            length = len(text.strip())
-            needs_ocr = length < min_chars
-            if needs_ocr:
-                _validate_render_geometry(
-                    float(width),
-                    float(height),
-                    scale=OCR_RENDER_SCALE,
-                )
             pages.append(
                 ExtractedPage(
                     page_number=index + 1,
@@ -172,6 +190,70 @@ def extract_pages(
     finally:
         doc.close()
     return pages
+
+
+def _looks_scanned(page: pdfium.PdfPage, page_number: int) -> bool:
+    """Скан ли бедная текстом страница.
+
+    Да, если растровые картинки закрывают не меньше `SCAN_IMAGE_MIN_SHARE`
+    листа или на странице не меньше `SCAN_MIN_PATHS` векторных контуров.
+    Площади картинок складываются: скан бывает нарезан полосами. Рамка каждой
+    обрезается по листу, то есть по пересечению MediaBox и CropBox.
+
+    Если pdfium не может разобрать объекты страницы (например, в её словаре нет
+    `/Type /Page`), она считается сканом, как до этого правила: лучше
+    заплатить за возможный скан, чем потерять содержание.
+    """
+    left, bottom, right, top = page.get_bbox()
+    needed = SCAN_IMAGE_MIN_SHARE * (right - left) * (top - bottom)
+    covered = 0.0
+    paths = 0
+    try:
+        for kind, rect in _page_objects(page):
+            if kind == pdfium_c.FPDF_PAGEOBJ_PATH:
+                paths += 1
+                if paths >= SCAN_MIN_PATHS:
+                    return True
+                continue
+            x0, y0, x1, y1 = rect
+            width = min(x1, right) - max(x0, left)
+            height = min(y1, top) - max(y0, bottom)
+            if width > 0 and height > 0:
+                covered += width * height
+                if covered >= needed:
+                    return True
+    except pdfium.PdfiumError as exc:
+        logger.warning(
+            "Страница %s: pdfium не разобрал её объекты (%s), считаем её сканом",
+            page_number,
+            exc,
+        )
+        return True
+    return False
+
+
+def _page_objects(page: pdfium.PdfPage, form=None, matrix=None, depth: int = 0):
+    """Картинки и векторные контуры страницы: пары `(вид объекта, рамка)`.
+
+    Рамка есть только у картинки, в координатах листа. Картинку внутри Form
+    XObject pdfium отдаёт в координатах формы, без матрицы, которой форму
+    нарисовали на листе, поэтому рамка переводится на лист матрицами всех форм
+    по пути. У контура рамка не нужна: считается только их число.
+    """
+    for obj in page.get_objects(max_depth=1, form=form):
+        if obj.type == pdfium_c.FPDF_PAGEOBJ_IMAGE:
+            rect = obj.get_pos()
+            yield obj.type, (rect if matrix is None else matrix.on_rect(*rect))
+        elif obj.type == pdfium_c.FPDF_PAGEOBJ_PATH:
+            yield obj.type, None
+        elif obj.type == pdfium_c.FPDF_PAGEOBJ_FORM and depth < _MAX_FORM_DEPTH:
+            form_matrix = obj.get_matrix()
+            yield from _page_objects(
+                page,
+                obj,
+                form_matrix if matrix is None else form_matrix.multiply(matrix),
+                depth + 1,
+            )
 
 
 def extract_page_range(
@@ -245,6 +327,8 @@ def read_bookmarks(pdf_bytes: bytes) -> tuple[list[tuple[int, str, int]], int]:
                 # нельзя — раздел открылся бы не там.
                 continue
             items.append((int(item.level), title, int(page_index) + 1))
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as exc:  # noqa: BLE001 — битое дерево закладок не фатально
         logger.warning("Закладки PDF не прочитаны: %s", exc)
         return [], 0

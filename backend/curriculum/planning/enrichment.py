@@ -99,6 +99,8 @@ SYSTEM_PROMPT = """Ты методист. Тебе дана ОДНА глава 
 class ChapterEnrichmentProvider(Protocol):
     name: str
 
+    def estimate_tokens(self, request: "ChapterRequest") -> int: ...
+
     def enrich(self, request: "ChapterRequest") -> "ChapterEnrichment": ...
 
 
@@ -218,6 +220,10 @@ class FakeChapterEnrichmentProvider:
 
     name = "fake-enrichment"
 
+    def estimate_tokens(self, request: ChapterRequest) -> int:
+        """Fake в модель не ходит и лимит не тратит."""
+        return 0
+
     def enrich(self, request: ChapterRequest) -> ChapterEnrichment:
         topics = {}
         previous = ""
@@ -261,20 +267,28 @@ class OpenRouterChapterEnrichmentProvider:
                 "COURSE_PLANNING_MODEL и TEXT_LLM_MODEL не заданы."
             )
 
+    def estimate_tokens(self, request: ChapterRequest) -> int:
+        """Цена одного вызова для резерва программы: тот же вход, что уходит в модель."""
+        from ai_engine.usage import provider_call_token_estimate
+
+        return provider_call_token_estimate(
+            _call_input(request), max_output_tokens=self.binding.max_tokens
+        )
+
     def enrich(self, request: ChapterRequest) -> ChapterEnrichment:
         from ai_engine.text_llm import TextModel
         from ai_engine.usage import provider_call_reservation, usage_scope
 
-        payload = request.payload()
+        call_input = _call_input(request)
         with usage_scope(feature=self.feature):
             with provider_call_reservation(
-                input_payload={"system_prompt": SYSTEM_PROMPT, "payload": payload},
+                input_payload=call_input,
                 max_output_tokens=self.binding.max_tokens,
                 feature=self.feature,
             ):
                 response = TextModel(self.model, temperature=0.2).generate_json_content(
                     system_prompt=SYSTEM_PROMPT,
-                    payload=payload,
+                    payload=call_input["payload"],
                     timeout=self.binding.timeout_seconds,
                     max_tokens=self.binding.max_tokens,
                     reasoning_effort=self.binding.reasoning_effort,
@@ -284,6 +298,11 @@ class OpenRouterChapterEnrichmentProvider:
                     providers=self.binding.providers,
                 )
         return parse_enrichment_response(response.text, model=self.model)
+
+
+def _call_input(request: ChapterRequest) -> dict:
+    """Что уходит в модель. По нему считаются и резерв вызова, и оценка программы."""
+    return {"system_prompt": SYSTEM_PROMPT, "payload": request.payload()}
 
 
 def parse_enrichment_response(raw: str, *, model: str) -> ChapterEnrichment:

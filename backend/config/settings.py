@@ -176,43 +176,7 @@ DATABASES = {
     )
 }
 
-# Отдельная база под векторы (`curriculum.KnowledgeChunk`).
-#
-# Зачем: рост базы идёт почти целиком в чанках — 897 штук это 23 МБ таблицы плюс
-# 7 МБ HNSW и 5 МБ русского FTS, около 40 МБ на учебник. Управляемый аддон
-# Northflank отдаёт 6 ГБ, и на сотне книг место кончится, а расширение стоит
-# денег. Векторы уезжают на своё железо.
-#
-# ПУСТАЯ переменная — это не «сломано», а однобазовый режим: `vector_db`
-# становится копией `default`, роутер молчит, и всё работает как раньше. Иначе
-# каждый прогон тестов и любая локальная разработка требовали бы включённого
-# домашнего ПК. Тот же приём в проекте уже применён для S3 и эмбеддингов.
-VECTOR_DB_URL = os.getenv("VECTOR_DB_URL", "").strip()
-VECTOR_DB_ALIAS = "vector_db"
-VECTOR_DB_CONFIGURED = bool(VECTOR_DB_URL)
-
-# Под тест-раннером вторая база выключается ВСЕГДА — четвёртый рубильник того же
-# рода, что `CURRICULUM_EMBEDDINGS_ENABLED`, `CURRICULUM_S3_ENABLED` и обнуление
-# `CELERY_BROKER_URL`. Иначе прогон тестов уходит в боевую векторную базу на
-# домашнем ПК: медленно, по сети через DERP-релей и с записью мусора в реальные
-# данные. Тесты роутера включают флаг обратно через `@override_settings`.
-if "test" in sys.argv:
-    VECTOR_DB_CONFIGURED = False
-
-if VECTOR_DB_CONFIGURED:
-    DATABASES[VECTOR_DB_ALIAS] = dj_database_url.parse(
-        VECTOR_DB_URL, conn_max_age=600
-    )
-else:
-    # Ссылка на ту же конфигурацию, а не на тот же объект: Django дописывает в
-    # словарь свои ключи (`TEST`, `AUTOCOMMIT`, `TIME_ZONE`), и общий объект
-    # означал бы, что настройки двух алиасов молча меняют друг друга.
-    DATABASES[VECTOR_DB_ALIAS] = dict(DATABASES["default"])
-    # Тестовый раннер иначе создаёт ВТОРУЮ тестовую базу и гоняет миграции
-    # дважды. `MIRROR` говорит Django, что это то же самое соединение.
-    DATABASES[VECTOR_DB_ALIAS]["TEST"] = {**DATABASES["default"].get("TEST", {}), "MIRROR": "default"}
-
-DATABASE_ROUTERS = ["curriculum.routers.VectorDatabaseRouter"]
+# Куски книг (`curriculum.KnowledgeChunk`) лежат в основной базе вместе со всем остальным.
 
 
 # Password validation
@@ -321,11 +285,29 @@ CURRICULUM_S3_SSE = os.getenv("CURRICULUM_S3_SSE", "")
 _default_ingest_mode = "auto" if "test" in sys.argv else "celery"
 CURRICULUM_INGEST_MODE = os.getenv("CURRICULUM_INGEST_MODE", _default_ingest_mode)
 
-# Через сколько секунд без смены статуса джоб считается зависшим и документ можно
+# Через сколько секунд без пульса джоб считается зависшим и документ можно
 # ставить в обработку заново. Контейнер эфемерный: воркер может быть убит в любой
-# момент, и без этого таймаута документ блокируется навсегда.
+# момент, и без этого таймаута документ блокируется навсегда. Книга в очереди за
+# другой работающей книгой зависшей не считается (`dispatch.is_stale`).
 CURRICULUM_INGEST_STALE_AFTER_SECONDS = int(
-    os.getenv("CURRICULUM_INGEST_STALE_AFTER_SECONDS", "1800")
+    os.getenv("CURRICULUM_INGEST_STALE_AFTER_SECONDS", "300")
+)
+
+
+def _clamped_pulse_seconds(pulse_seconds: int, stale_after_seconds: int) -> int:
+    """Пульс не чаще раза в 5 с и не реже трети порога зависания.
+
+    Ноль бил бы по строке джоба без паузы весь час, а пульс не реже порога
+    делал бы любую живую книгу «зависшей» между ударами.
+    """
+    return max(5, min(pulse_seconds, stale_after_seconds // 3))
+
+
+# Как часто работающая обработка двигает `updated_at` своего джоба из фонового
+# потока (`services.pulse`).
+CURRICULUM_INGEST_PULSE_SECONDS = _clamped_pulse_seconds(
+    int(os.getenv("CURRICULUM_INGEST_PULSE_SECONDS", "60")),
+    CURRICULUM_INGEST_STALE_AFTER_SECONDS,
 )
 
 # Размер фрагмента книги в токенах. Считает настоящий токенайзер
@@ -396,6 +378,10 @@ if "test" in sys.argv:
         "COURSE_PLANNING_MODEL",
         "COURSE_PLANNING_PROVIDERS",
         "COURSE_REVIEW_MODEL",
+        # Разбор глав идёт внутри генерации программы (решение 14): без этого
+        # настроенная в `.env` роль увела бы в сеть любой тест программы.
+        "SECTION_PROFILING_MODEL",
+        "SECTION_PROFILING_PROVIDERS",
         # Пятый внешний сервис — пятый рубильник, по правилу из
         # `curriculum/ROADMAP.md`. Без него настроенный в `.env` ритм-планировщик
         # увёл бы в сеть и в оплату любой тест генерации расписания, который не
@@ -412,6 +398,14 @@ if "test" in sys.argv:
 # 1500 страниц, и вырожденная разбивка способна дать десятки тысяч фрагментов.
 CURRICULUM_MAX_EMBEDDED_CHUNKS = int(
     os.getenv("CURRICULUM_MAX_EMBEDDED_CHUNKS", "4000")
+)
+
+# Таймаут вектора вопроса ученика, в секундах. Попытка одна
+# (`curriculum.embeddings.QUERY_MAX_ATTEMPTS`): ученик ждёт ответа, а воркеры
+# gunicorn `gthread` время запроса не ограничивают. Индексация книги оставляет
+# `EMBEDDING_TIMEOUT` (180 с) и три попытки.
+CURRICULUM_QUERY_EMBEDDING_TIMEOUT_SECONDS = int(
+    os.getenv("CURRICULUM_QUERY_EMBEDDING_TIMEOUT_SECONDS", "12")
 )
 
 # Брокер очереди. Пустой URL даёт inline только в явном `auto`;
@@ -509,10 +503,28 @@ CELERY_RESULT_SERIALIZER = "json"
 
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# У Redis-канала kombu таймаутов по умолчанию нет вовсе: недоступный Redis держал
+# бы поток веба минутами (публикация из поиска и из загрузки книги). Опрос
+# воркера (BRPOP) длится секунду, поэтому `socket_timeout` обязан быть больше.
+# `visibility_timeout` остаётся по умолчанию (3600 с).
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": 3,
+    "socket_timeout": 10,
+}
 # Жёсткий потолок на книгу: 1500 страниц с OCR не должны висеть вечно. Мягкий
 # лимит на минуту раньше даёт задаче шанс записать в джоб причину остановки.
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3540"))
+# Для страниц книги эта настройка заменяет `OCR_MAX_TOKENS` роли OCR, а
+# `OCR_TIMEOUT` по-прежнему берётся из роли.
+CURRICULUM_OCR_MAX_OUTPUT_TOKENS = int(
+    os.getenv("CURRICULUM_OCR_MAX_OUTPUT_TOKENS", "3500")
+)
+# Запас на токены самой картинки в границе цены страницы книги; при 0 граница
+# остаётся `AI_IMAGE_TOKEN_CHARGE`.
+CURRICULUM_OCR_PAGE_IMAGE_TOKENS = int(
+    os.getenv("CURRICULUM_OCR_PAGE_IMAGE_TOKENS", "0")
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Adaptive lesson planning intake (existing OpenRouter text client)
@@ -692,17 +704,18 @@ AI_USAGE_ENFORCE_LIMITS = os.getenv("AI_USAGE_ENFORCE_LIMITS", "true").lower() i
     "yes",
     "on",
 }
-# Fixed admission/concurrency lease for a curriculum worker. It is deliberately
-# not a cost prediction or charge: actual usage stays in AIUsageEvent.
-CURRICULUM_INGESTION_AI_RESERVATION_TOKENS = int(
-    os.getenv("CURRICULUM_INGESTION_AI_RESERVATION_TOKENS", "8000")
-)
 # Общий дедлайн на генерацию программы курса. В отличие от ingestion, она идёт
 # внутри HTTP-запроса, поэтому обязана уложиться в `gunicorn --timeout` (360 с в
 # Dockerfile) с запасом. Шаги, на которые времени не осталось, пропускаются с
 # предупреждением — см. `curriculum.services.plans.generate_plan`.
 CURRICULUM_PLAN_DEADLINE_SECONDS = int(
     os.getenv("CURRICULUM_PLAN_DEADLINE_SECONDS", "300")
+)
+# Разбор глав идёт в начале составления программы (решение 14). Новые разделы
+# стартуют только первые столько секунд от его начала, и вызов модели на разбор
+# не длится дольше этого окна: иначе разбор съел бы общий дедлайн программы.
+CURRICULUM_PLAN_PROFILING_SECONDS = int(
+    os.getenv("CURRICULUM_PLAN_PROFILING_SECONDS", "60")
 )
 AI_USAGE_RESERVATION_TTL_SECONDS = max(
     CELERY_TASK_TIME_LIMIT + 300,
@@ -712,6 +725,14 @@ AI_USAGE_RESERVATION_TTL_SECONDS = max(
             str(CELERY_TASK_TIME_LIMIT + 300),
         )
     ),
+)
+# Claim of one model call (`provider_call_reservation`). It outlives one call,
+# which `gunicorn --timeout` caps at 360 s, and stays short on purpose: a call
+# cut off by a redeploy or that timeout keeps its claim until it expires, and
+# the request pre-check counts live claims, so a long expiry would hold the
+# student's chat closed near the limit.
+AI_USAGE_CALL_RESERVATION_TTL_SECONDS = int(
+    os.getenv("AI_USAGE_CALL_RESERVATION_TTL_SECONDS", "600")
 )
 
 

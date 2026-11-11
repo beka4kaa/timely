@@ -1,23 +1,32 @@
 """Индексация фрагментов книги векторами.
 
 Главное свойство модуля: обычная ошибка embedding-провайдера не бросается. Она
-не должна превращать успешно разобранный учебник в проваленную загрузку. Одно
-исключение — `AIUsageLimitExceeded`: скрыть его как warning означало бы сделать
-hard quota фиктивной, поэтому оно доходит до worker wrapper.
+не должна превращать успешно разобранный учебник в проваленную загрузку.
+
+Векторы книги лимит ученика не тратят (решение 12): `embed` пишет расход, но
+не резервирует и отказа по лимиту не получает. Наружу проходит предел часа
+(`SoftTimeLimitExceeded`): спрятанный как упавший батч, он дал бы книге идти
+дальше до жёсткого убийства процесса.
 
 Второе свойство: повторная загрузка той же книги стоит $0. Вектор привязан к
 `content_hash` фрагмента и модели, поэтому уже посчитанный фрагмент
 переиспользуется, а не пересчитывается.
+
+Третье: книга без части векторов остаётся готовой (решение 11). Когда поиск
+задевает такую книгу, `request_vector_repair` ставит недостающие векторы в
+очередь, не чаще раза в 10 минут на книгу.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Collection
+from typing import Callable, Collection, Iterable
 from uuid import UUID
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
@@ -28,15 +37,32 @@ from ..embeddings import (
     EmbeddingProvider,
     estimate_tokens,
     get_embedding_provider,
+    vector_as_list,
 )
 from ..models import Document, KnowledgeChunk
 
 logger = logging.getLogger(__name__)
 
-# Один готовый vector(1536), материализованный как Python floats, заметно
-# тяжелее своих 6 КБ в PostgreSQL. Ограничиваем reuse-выборку, чтобы 4000
+# Один готовый halfvec(1536), материализованный как Python floats, заметно
+# тяжелее своих 3 КБ в PostgreSQL. Ограничиваем reuse-выборку, чтобы 4000
 # совпадений не превратились в сотни мегабайт одновременно.
 REUSE_BATCH_SIZE = 100
+
+# Недостающие векторы книги ставятся в очередь не чаще раза в столько секунд:
+# столько живёт ключ `curriculum:vector-repair:<id>`.
+VECTOR_REPAIR_INTERVAL_SECONDS = 600
+# Что дописывает починка. SKIPPED не трогается: это потолок или выключенный
+# провайдер, такие куски забирает команда `curriculum_embed`.
+VECTOR_REPAIR_STATUSES = (
+    KnowledgeChunk.EmbeddingStatus.PENDING,
+    KnowledgeChunk.EmbeddingStatus.FAILED,
+)
+# Пачка починки ждёт провайдера столько секунд и пробует один раз. Это не
+# обработка книги при загрузке (там 180 с и три попытки): у починки нет пульса,
+# а воркер один, и зависший провайдер не должен держать его дольше порога
+# зависания книги в очереди. Повтор даст следующий вопрос или продолжение.
+VECTOR_REPAIR_EMBEDDING_TIMEOUT_SECONDS = 60
+VECTOR_REPAIR_EMBEDDING_ATTEMPTS = 1
 
 
 @dataclass
@@ -88,7 +114,7 @@ def _reuse_map(
     # в тысячах ранее проиндексированных строк.
     for content_hash, embedding in rows.iterator(chunk_size=REUSE_BATCH_SIZE):
         if content_hash not in found and embedding is not None:
-            found[content_hash] = list(embedding)
+            found[content_hash] = vector_as_list(embedding)
     return found
 
 
@@ -118,12 +144,24 @@ def index_document_chunks(
     heartbeat: Callable[[], None] | None = None,
     chunk_ids: Collection[UUID] | None = None,
     force_reindex: bool = False,
+    only_statuses: Collection[str] | None = None,
+    should_stop: Callable[[IndexOutcome], bool] | None = None,
 ) -> IndexOutcome:
-    """Считает и записывает векторы; наружу проходит только quota denial.
+    """Считает и записывает векторы. Наружу проходят предел часа и отказ лимита.
+
+    Встроенные провайдеры лимит не тратят, поэтому отказ лимита может прийти
+    лишь от переданного ``provider``, который резервирует свои вызовы сам.
 
     ``chunk_ids`` привязывает вызов к строкам конкретного ingestion-запуска.
     Без этого оживший старый воркер мог после перезапуска выбрать уже новые
     фрагменты того же документа и записать в них результат своего провайдера.
+
+    ``only_statuses`` оставляет в работе только куски с этими
+    `embedding_status`: так починка берёт PENDING и FAILED, а SKIPPED и READY
+    чужой модели оставляет команде `curriculum_embed`.
+
+    ``should_stop`` спрашивается перед каждой платной пачкой. `True` кончает
+    работу: куски, не дошедшие до провайдера, сохраняют свой статус.
     """
     outcome = IndexOutcome()
     try:
@@ -134,8 +172,14 @@ def index_document_chunks(
             heartbeat=heartbeat,
             chunk_ids=chunk_ids,
             force_reindex=force_reindex,
+            only_statuses=only_statuses,
+            should_stop=should_stop,
         )
     except AIUsageLimitExceeded:
+        # Только от переданного провайдера с собственным резервом: встроенные
+        # с решения 12 не резервируют. Прятать отказ в предупреждение нельзя.
+        raise
+    except SoftTimeLimitExceeded:
         raise
     except Exception:  # noqa: BLE001 — индексация не роняет обработку книги
         logger.exception("Индексация векторов упала для документа %s", document.pk)
@@ -151,6 +195,8 @@ def _index(
     heartbeat: Callable[[], None] | None,
     chunk_ids: Collection[UUID] | None,
     force_reindex: bool,
+    only_statuses: Collection[str] | None = None,
+    should_stop: Callable[[IndexOutcome], bool] | None = None,
 ) -> IndexOutcome:
     model = getattr(provider, "model", "") or provider.name
     outcome.model = model
@@ -175,6 +221,8 @@ def _index(
                 embedding_model=model,
             )
         )
+    if only_statuses is not None:
+        pending_query = pending_query.filter(embedding_status__in=list(only_statuses))
     # Старый READY-вектор нужен только базе как fallback при force-reindex;
     # тащить его в Python вместе с каждым кандидатом незачем.
     pending_query = pending_query.defer("embedding").order_by("page_start", "id")
@@ -250,6 +298,8 @@ def _index(
 
     # 2. За деньги: всё остальное, батчами.
     for start in range(0, len(remaining), EMBEDDING_BATCH_SIZE):
+        if should_stop is not None and should_stop(outcome):
+            break
         batch = remaining[start : start + EMBEDDING_BATCH_SIZE]
         texts = [chunk.normalized_text for chunk in batch]
         result = provider.embed(texts)
@@ -362,4 +412,100 @@ def estimate_document_index(
             c.token_count or estimate_tokens(c.normalized_text) for c in billable
         ),
         capped=capped,
+    )
+
+
+def request_vector_repair(document_ids: Iterable[str]) -> list[str]:
+    """Ставит в очередь недостающие векторы готовых книг (решение 11).
+
+    Зовётся из поиска, поэтому проверки идут от дешёвых к дорогим: без очереди
+    или провайдера до базы дело не доходит, а без кусков в PENDING и FAILED —
+    до кэша и брокера. Запросы читают только id и статусы, векторы в поиск не
+    возвращаются.
+
+    Книга ставится не чаще раза в `VECTOR_REPAIR_INTERVAL_SECONDS`: ключ берёт
+    `cache.add` до публикации, а занятый ключ видно уже по `cache.get`, без
+    записи в кэш. Публикация идёт одной попыткой, но и её ограничивает только
+    таймаут соединения с брокером (`broker_connection_timeout`, 4 с по
+    умолчанию; хост, который не отвечает вовсе, держит до таймаута соединения
+    ОС). Поэтому на лежащем брокере вызов пробует одну книгу: ошибка пишется
+    предупреждением, взятый ключ живёт свои 10 минут, остальные книги этого
+    вызова не публикуются и ждут следующего вопроса. Возвращает id поставленных
+    книг.
+    """
+    # Внутри функции, как в `dispatch._dispatch_celery`: модуль задач и
+    # `dispatch` сами импортируют этот модуль через `ingestion`.
+    from ..tasks import embed_missing_chunks_task
+    from .dispatch import MODE_CELERY, resolve_mode
+
+    if resolve_mode() != MODE_CELERY or not getattr(settings, "CELERY_BROKER_URL", ""):
+        return []
+    if get_embedding_provider().name == "null-embedding":
+        return []
+    wanted = list(dict.fromkeys(str(document_id) for document_id in document_ids))
+    if not wanted:
+        return []
+    missing = {str(document_id) for document_id in _books_missing_vectors(wanted)}
+
+    queued: list[str] = []
+    for document_id in wanted:
+        if document_id not in missing:
+            continue
+        key = f"curriculum:vector-repair:{document_id}"
+        # Занятый ключ — частый случай: каждый вопрос по книге в течение
+        # 10 минут. `cache.add` на нём пишет INSERT, который падает на ключе и
+        # оставляет ошибку в логе Postgres. Гонку двух вопросов решает `add`.
+        if cache.get(key) is not None:
+            continue
+        if not cache.add(key, "1", timeout=VECTOR_REPAIR_INTERVAL_SECONDS):
+            continue
+        try:
+            # Без повторов публикации: одна попытка, которую ограничивает
+            # таймаут соединения с брокером, а не четыре таких.
+            embed_missing_chunks_task.apply_async(args=[document_id], retry=False)
+        except SoftTimeLimitExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 — поиск отвечает и без починки
+            logger.warning(
+                "Недостающие векторы документа %s не поставлены в очередь: %s",
+                document_id,
+                exc,
+            )
+            # Брокер лежит: следующая книга ждала бы того же таймаута.
+            break
+        logger.info("Недостающие векторы документа %s поставлены в очередь", document_id)
+        queued.append(document_id)
+    return queued
+
+
+def _books_missing_vectors(document_ids: list[str]):
+    """Id готовых книг из `document_ids`, у которых есть куски в PENDING или FAILED.
+
+    Читает только `document_id`: векторы в поиск не возвращаются. Пустой
+    `order_by()` снимает порядок модели (`page_start`, `id`): иначе Django
+    добавил бы эти колонки в `SELECT DISTINCT`, и строка шла бы на кусок, а не
+    на книгу.
+    """
+    return (
+        KnowledgeChunk.objects.filter(
+            document_id__in=Document.objects.filter(
+                pk__in=document_ids, ingestion_status=Document.Status.READY
+            ).values("pk"),
+            embedding_status__in=VECTOR_REPAIR_STATUSES,
+        )
+        .values_list("document_id", flat=True)
+        .order_by()
+        .distinct()
+    )
+
+
+def repair_embedding_provider() -> EmbeddingProvider:
+    """Провайдер починки: `VECTOR_REPAIR_EMBEDDING_TIMEOUT_SECONDS` и одна попытка.
+
+    Берётся через имя модуля `get_embedding_provider`, как и в остальной
+    починке: так его подменяют тесты.
+    """
+    return get_embedding_provider(
+        timeout_seconds=VECTOR_REPAIR_EMBEDDING_TIMEOUT_SECONDS,
+        max_attempts=VECTOR_REPAIR_EMBEDDING_ATTEMPTS,
     )

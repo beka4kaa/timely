@@ -183,6 +183,122 @@ class DoubleClickGuardTests(_DispatchBase):
         self.assertFalse(dispatch.is_stale(job))
 
 
+@override_settings(CURRICULUM_INGEST_STALE_AFTER_SECONDS=300)
+class StaleByPulseTests(TestCase):
+    """Зависание считается по пульсу, а очередь за чужой книгой — не зависание.
+
+    Воркер обрабатывает по одной книге: книга в очереди может честно ждать
+    дольше порога, пока другая книга работает и шлёт пульс (решение 15).
+    """
+
+    def _job(
+        self,
+        status: str,
+        *,
+        updated_ago: timedelta,
+        started_ago: timedelta | None = None,
+        email: str = EMAIL,
+        celery_task_id: str = "",
+    ) -> IngestionJob:
+        document = Document.objects.create(user_email=email, title="Механика")
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=email,
+            status=status,
+            started_at=timezone.now() - started_ago if started_ago else None,
+            celery_task_id=celery_task_id,
+        )
+        # `updated_at` — auto_now: прошлое время ставится только через update().
+        IngestionJob.objects.filter(pk=job.pk).update(
+            updated_at=timezone.now() - updated_ago
+        )
+        job.refresh_from_db()
+        return job
+
+    def _waiting(self, *, updated_ago: timedelta) -> IngestionJob:
+        """Книга в очереди, чьё сообщение ушло в брокер, но воркер его не взял."""
+        return self._job(
+            Document.Status.QUEUED,
+            updated_ago=updated_ago,
+            celery_task_id="queued-run",
+        )
+
+    def test_a_book_waiting_behind_another_is_not_stale(self):
+        self._job(
+            Document.Status.OCR,
+            email="other@example.com",
+            started_ago=timedelta(minutes=40),
+            updated_ago=timedelta(seconds=20),
+        )
+        waiting = {
+            Document.Status.QUEUED: self._waiting(updated_ago=timedelta(hours=1)),
+            Document.Status.UPLOADED: self._job(
+                Document.Status.UPLOADED, updated_ago=timedelta(hours=1)
+            ),
+        }
+        for status, job in waiting.items():
+            with self.subTest(status=status):
+                self.assertFalse(dispatch.is_stale(job))
+
+    def test_a_queued_book_with_an_idle_worker_goes_stale(self):
+        # Умерший воркер очередь не держит: его пульс давно молчит.
+        self._job(
+            Document.Status.OCR,
+            email="other@example.com",
+            started_ago=timedelta(hours=2),
+            updated_ago=timedelta(hours=1),
+        )
+        waiting = self._waiting(updated_ago=timedelta(hours=1))
+        self.assertTrue(dispatch.is_stale(waiting))
+
+    def test_a_book_finished_just_now_still_shields_the_queue(self):
+        # Между двумя книгами воркер на долю секунды никого не ведёт: прошлая
+        # уже готова, следующую он ещё не взял. Это не простой воркера.
+        finished = self._job(
+            Document.Status.READY,
+            email="other@example.com",
+            started_ago=timedelta(minutes=30),
+            updated_ago=timedelta(seconds=10),
+        )
+        IngestionJob.objects.filter(pk=finished.pk).update(
+            finished_at=timezone.now() - timedelta(seconds=10)
+        )
+        waiting = self._waiting(updated_ago=timedelta(seconds=400))
+        self.assertFalse(dispatch.is_stale(waiting))
+
+        IngestionJob.objects.filter(pk=finished.pk).update(
+            finished_at=timezone.now() - timedelta(seconds=400),
+            updated_at=timezone.now() - timedelta(seconds=400),
+        )
+        self.assertTrue(dispatch.is_stale(waiting))
+
+    def test_a_queued_book_that_was_never_published_goes_stale(self):
+        # Токен ставится до публикации. Книга в очереди без токена в брокер не
+        # уходила, и чужая работающая книга её не дождётся.
+        self._job(
+            Document.Status.OCR,
+            email="other@example.com",
+            started_ago=timedelta(minutes=40),
+            updated_ago=timedelta(seconds=20),
+        )
+        lost = self._job(Document.Status.QUEUED, updated_ago=timedelta(seconds=400))
+        self.assertTrue(dispatch.is_stale(lost))
+
+    def test_a_running_book_is_stale_only_by_its_pulse(self):
+        job = self._job(
+            Document.Status.OCR,
+            started_ago=timedelta(hours=2),
+            updated_ago=timedelta(minutes=1),
+        )
+        self.assertFalse(dispatch.is_stale(job))
+
+        IngestionJob.objects.filter(pk=job.pk).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+        job.refresh_from_db()
+        self.assertTrue(dispatch.is_stale(job))
+
+
 class ModeSelectionTests(TestCase):
     """Выбор исполнителя. Дефолт обязан быть работающим, а не «правильным»."""
 

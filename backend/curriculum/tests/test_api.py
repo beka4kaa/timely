@@ -1,7 +1,7 @@
 """HTTP-слой: изоляция пользователей и запрет на выдачу решений."""
 
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest import mock
 
 from django.db import models
@@ -9,6 +9,8 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from ai_engine.models import AIUsageEvent, AIUsageQuotaState
+from ai_engine.usage import release_usage_reservation, reserve_usage_capacity
 from curriculum import storage as storage_module
 from curriculum.models import (
     CourseEnrollment,
@@ -17,6 +19,7 @@ from curriculum.models import (
     CourseTopic,
     Document,
     DocumentFile,
+    DocumentPage,
     ExtractedSolution,
     IngestionJob,
     KnowledgeChunk,
@@ -28,8 +31,10 @@ from curriculum.planning.providers import (
     FakeCourseReviewProvider,
 )
 from curriculum.services import goals as goals_service
+from curriculum.services import ingestion as ingestion_module
 from curriculum.services.ingestion import ingest_document
-from curriculum.tests.pdf_fixtures import textbook_pdf
+from curriculum.tests.pdf_fixtures import scanned_pdf, textbook_pdf
+from curriculum.tests.test_ingestion import StubOcrProvider
 from curriculum.tests.test_upload import minimal_pdf
 from config.testing import auth_headers
 
@@ -44,6 +49,39 @@ SOLUTION_MARKERS = ("s = v0 t", "F = m a")
 def _auth(email: str) -> dict:
     """Заголовок, который проставляет `config.middleware`."""
     return auth_headers(email)
+
+
+class _PricedPlanner(FakeCoursePlanningProvider):
+    """Фейк с ценой: программа стоит 1000 + 500."""
+
+    def estimate_tokens(self, request, context):
+        return 1000
+
+
+class _PricedReviewer(FakeCourseReviewProvider):
+    def estimate_tokens(self, context):
+        return 500
+
+
+# Окно тарифа меньше цены программы (1500).
+_WINDOW_20K = {"free": {"context": 20000, "five_hour": 20000, "weekly": 20000}}
+_SMALL_WINDOW = {"free": {"context": 1200, "five_hour": 1200, "weekly": 1200}}
+_PLAN_EXCEEDS_WINDOW = (
+    "Программа по этой книге не помещается в лимит твоего тарифа, "
+    "даже когда он полностью свободен."
+)
+
+
+class _PricedOcr:
+    """Провайдер распознавания с ценой страницы: платный, но без вызовов."""
+
+    name = "priced-ocr"
+
+    def __init__(self, price: int = 4000):
+        self.price = price
+
+    def page_token_bound(self) -> int:
+        return self.price
 
 
 class _ApiBase(TestCase):
@@ -413,6 +451,278 @@ class UploadEndpointTests(_ApiBase):
         self.assertEqual(body["ingestion_status"], Document.Status.QUEUED)
         self.assertEqual(body["job"]["status"], Document.Status.QUEUED)
         self.assertEqual(body["step_index"], 1)
+
+    def test_ready_book_without_a_program_can_be_reprocessed(self):
+        document = self._make_document(OWNER)
+        before = IngestionJob.objects.get(document=document).started_at
+
+        response = self.client.post(
+            f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 202, response.content)
+        job = IngestionJob.objects.get(document=document)
+        self.assertGreater(job.started_at, before)
+        self.assertEqual(job.status, Document.Status.READY)
+
+    def test_status_and_list_carry_the_ocr_summary(self):
+        document = self._make_document(OWNER)
+        summary = {"scanned": 3, "attempted": 0, "recognized": 0, "skipped": "quota"}
+        Document.objects.filter(pk=document.pk).update(ocr_summary=summary)
+
+        status_body = self.client.get(
+            f"/api/curriculum/documents/{document.pk}/status/", **_auth(OWNER)
+        ).json()
+        listing = self.client.get("/api/curriculum/documents/", **_auth(OWNER)).json()
+        rows = listing["results"] if isinstance(listing, dict) else listing
+        row = next(r for r in rows if r["id"] == str(document.pk))
+
+        self.assertEqual(status_body["ocr_summary"], summary)
+        self.assertEqual(row["ocr_summary"], summary)
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_reprocessing_a_book_with_scans_needs_room_for_them(self):
+        document = self._make_document(OWNER)
+        DocumentPage.objects.filter(
+            document=document, page_number__in=[1, 2]
+        ).update(needs_ocr=True)
+        self.assertEqual(document.pages.filter(needs_ocr=True).count(), 2)
+        before = IngestionJob.objects.get(document=document)
+        pages_before = document.pages.count()
+        chunks_before = KnowledgeChunk.objects.filter(document_id=document.pk).count()
+        claim = reserve_usage_capacity(
+            OWNER, reserved_tokens=15000, feature="chat", ttl_seconds=600
+        )
+
+        with mock.patch("curriculum.views.get_ocr_provider", return_value=_PricedOcr()):
+            refused = self.client.post(
+                f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
+            )
+
+            self.assertEqual(refused.status_code, 429, refused.content)
+            body = refused.json()
+            self.assertEqual(body["code"], "ai_usage_limit_exceeded")
+            reset_at = datetime.fromisoformat(body["reset_at"].replace("Z", "+00:00"))
+            self.assertLessEqual(
+                reset_at, timezone.now() + timedelta(seconds=600 + 5)
+            )
+            self.assertGreater(reset_at, timezone.now())
+            job = IngestionJob.objects.get(document=document)
+            self.assertEqual(job.pk, before.pk)
+            self.assertEqual(job.started_at, before.started_at)
+            self.assertEqual(document.pages.count(), pages_before)
+            self.assertEqual(
+                KnowledgeChunk.objects.filter(document_id=document.pk).count(),
+                chunks_before,
+            )
+
+            release_usage_reservation(claim)
+            accepted = self.client.post(
+                f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
+            )
+        self.assertEqual(accepted.status_code, 202, accepted.content)
+
+    def _scanned_book(self):
+        document = self._make_document(OWNER)
+        DocumentPage.objects.filter(
+            document=document, page_number__in=[1, 2]
+        ).update(needs_ocr=True)
+        return document
+
+    def _post_ingest(self, document):
+        return self.client.post(
+            f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
+        )
+
+    def _live_claims(self):
+        state = AIUsageQuotaState.objects.filter(user_email=OWNER).first()
+        return dict(state.reservations) if state else {}
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_the_momentary_claim_expires_within_a_minute(self):
+        document = self._scanned_book()
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=_PricedOcr()
+        ), mock.patch("curriculum.views.release_usage_reservation"):
+            response = self._post_ingest(document)
+
+        self.assertEqual(response.status_code, 202, response.content)
+        claims = [
+            c for c in self._live_claims().values()
+            if c.get("feature") == "curriculum_ocr"
+        ]
+        self.assertEqual(len(claims), 1)
+        self.assertLessEqual(
+            claims[0]["expires_at"], timezone.now().timestamp() + 60 + 5
+        )
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_scans_that_never_fit_the_window_say_so_without_a_time(self):
+        document = self._scanned_book()
+        before = IngestionJob.objects.get(document=document)
+        pages_before = document.pages.count()
+        chunks_before = KnowledgeChunk.objects.filter(document_id=document.pk).count()
+
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=_PricedOcr(12000)
+        ):
+            response = self._post_ingest(document)
+
+        self.assertEqual(response.status_code, 429, response.content)
+        self.assertEqual(
+            response.json(),
+            {
+                "error": (
+                    "Сканы этой книги не помещаются в лимит твоего тарифа, "
+                    "даже когда он полностью свободен."
+                ),
+                "code": "ocr_exceeds_window",
+            },
+        )
+        job = IngestionJob.objects.get(document=document)
+        self.assertEqual(job.pk, before.pk)
+        self.assertEqual(job.started_at, before.started_at)
+        self.assertEqual(document.pages.count(), pages_before)
+        self.assertEqual(
+            KnowledgeChunk.objects.filter(document_id=document.pk).count(),
+            chunks_before,
+        )
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_a_full_window_does_not_stop_books_without_paid_scans(self):
+        plain = self._make_document(OWNER)
+        scanned = self._scanned_book()
+        reserve_usage_capacity(
+            OWNER, reserved_tokens=20000, feature="chat", ttl_seconds=600
+        )
+
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=_PricedOcr()
+        ):
+            self.assertEqual(self._post_ingest(plain).status_code, 202)
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=NullOcrProvider()
+        ):
+            self.assertEqual(self._post_ingest(scanned).status_code, 202)
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_no_claim_remains_after_an_accepted_reprocess(self):
+        document = self._scanned_book()
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=_PricedOcr()
+        ):
+            response = self._post_ingest(document)
+
+        self.assertEqual(response.status_code, 202, response.content)
+        self.assertEqual(self._live_claims(), {})
+
+    def test_the_scan_summary_is_saved_together_with_ready(self):
+        document = self._make_document(OWNER, ingest=False)
+        pdf = scanned_pdf()
+        key = document.file.storage_key
+        storage_module.get_storage().save(key, pdf)
+        seen = []
+
+        real = ingestion_module.log_ingestion_event
+
+        def spy(event, **kwargs):
+            if event == "transition" and kwargs.get("to_status") == Document.Status.READY:
+                seen.append(
+                    dict(Document.objects.get(pk=document.pk).ocr_summary)
+                )
+            return real(event, **kwargs)
+
+        with mock.patch(
+            "curriculum.services.ingestion.log_ingestion_event", side_effect=spy
+        ):
+            ingest_document(document, ocr_provider=StubOcrProvider())
+
+        self.assertEqual(len(seen), 1)
+        self.assertGreater(seen[0].get("scanned", 0), 0)
+
+    def test_a_job_dead_after_the_time_limit_reads_as_timed_out(self):
+        # Пульс шёл почти до мягкого предела, потом процесс убили: это предел
+        # часа, а не случайная смерть воркера.
+        document = Document.objects.create(
+            user_email=OWNER,
+            title="Долгий учебник",
+            ingestion_status=Document.Status.OCR,
+        )
+        started_at = timezone.now() - timedelta(hours=2)
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=OWNER,
+            status=Document.Status.OCR,
+            started_at=started_at,
+        )
+        IngestionJob.objects.filter(pk=job.pk).update(
+            updated_at=started_at + timedelta(seconds=3540)
+        )
+
+        body = self.client.get(
+            f"/api/curriculum/documents/{document.pk}/status/", **_auth(OWNER)
+        ).json()
+
+        self.assertEqual(body["job"]["error_code"], "timed_out")
+        self.assertEqual(body["ocr_summary"], {})
+        self.assertEqual(
+            body["job"]["error_message"],
+            "Обработка заняла больше часа и остановлена.",
+        )
+        # Экраны сначала смотрят на `stalled`: при true они покажут «прервалась»
+        # вместо ошибки часа.
+        self.assertFalse(body["stalled"])
+        self.assertTrue(body["is_terminal"])
+        self.assertEqual(body["ingestion_status"], Document.Status.FAILED)
+        self.assertEqual(body["job"]["status"], Document.Status.FAILED)
+        # GET только читает.
+        job.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.OCR)
+
+    @override_settings(CURRICULUM_INGEST_STALE_AFTER_SECONDS=300)
+    def test_a_requeued_book_with_an_old_start_reads_as_stalled(self):
+        # `started_at` остался от прошлого запуска: книгу поставили заново, и
+        # больше часа она не работала.
+        document = Document.objects.create(
+            user_email=OWNER,
+            title="Учебник после повтора",
+            ingestion_status=Document.Status.QUEUED,
+        )
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=OWNER,
+            status=Document.Status.QUEUED,
+            started_at=timezone.now() - timedelta(hours=2),
+        )
+        IngestionJob.objects.filter(pk=job.pk).update(
+            updated_at=timezone.now() - timedelta(minutes=10)
+        )
+
+        body = self.client.get(
+            f"/api/curriculum/documents/{document.pk}/status/", **_auth(OWNER)
+        ).json()
+
+        self.assertEqual(body["job"]["error_code"], "stalled")
+
+    @override_settings(
+        AI_USAGE_ENFORCE_LIMITS=True,
+        AI_PLAN_LIMITS={"free": {"context": 1000, "five_hour": 1000, "weekly": 1000}},
+    )
+    def test_ingest_is_accepted_with_an_exhausted_window(self):
+        # Решение 12: книга с текстом лимит не тратит, и выбранное окно не
+        # мешает поставить её в обработку. Сканы защищает резерв воркера.
+        AIUsageEvent.objects.create(
+            user_email=OWNER, model_name="m", total_tokens=1000, billable_tokens=1000
+        )
+        document = self._make_document(ingest=False)
+
+        response = self.client.post(
+            f"/api/curriculum/documents/{document.pk}/ingest/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 202)
+        document.refresh_from_db()
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
 
     def test_heartbeat_between_stale_checks_keeps_status_nonterminal(self):
         document = Document.objects.create(
@@ -790,6 +1100,58 @@ class PlanEndpointTests(_ApiBase):
         response = self._generate(email=INTRUDER)
         self.assertEqual(response.status_code, 404)
 
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_SMALL_WINDOW)
+    def test_plan_too_large_for_the_window_is_a_429_with_its_code(self):
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=_PricedPlanner(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=_PricedReviewer(),
+        ):
+            response = self.client.post(
+                "/api/curriculum/plans/generate/",
+                {"goal_id": str(self.goal.pk), "document_id": str(self.document.pk)},
+                **_auth(OWNER),
+            )
+
+        self.assertEqual(response.status_code, 429, response.content)
+        body = response.json()
+        self.assertEqual(body["code"], "plan_exceeds_window")
+        self.assertEqual(body["error"], _PLAN_EXCEEDS_WINDOW)
+        self.assertFalse(CoursePlan.objects.exists())
+
+    @override_settings(
+        AI_USAGE_ENFORCE_LIMITS=True,
+        AI_PLAN_LIMITS={"free": {"context": 10_000, "five_hour": 10_000, "weekly": 10_000}},
+    )
+    def test_generate_refused_by_leftover_reserves_shows_when_they_end(self):
+        # Запрос, оборванный выкладкой, оставил резервы программы и разбора на
+        # всё окно. Лимит освободится вместе с ними, а не со сбросом окна.
+        for feature, tokens in (("curriculum_plan", 1500), ("curriculum_section_profiling", 8500)):
+            reserve_usage_capacity(OWNER, reserved_tokens=tokens, feature=feature, ttl_seconds=600)
+        latest = max(
+            claim["expires_at"]
+            for claim in AIUsageQuotaState.objects.get(user_email=OWNER).reservations.values()
+        )
+
+        response = self._generate()
+
+        self.assertEqual(response.status_code, 429, response.content)
+        body = response.json()
+        self.assertEqual(body["code"], "ai_usage_limit_exceeded")
+        self.assertAlmostEqual(
+            datetime.fromisoformat(body["reset_at"]).timestamp(), latest, delta=1
+        )
+
+    @override_settings(CURRICULUM_PLAN_PROFILING_SECONDS=0)
+    def test_generated_plan_carries_its_generation_warnings(self):
+        # Окно разбора глав кончилось сразу: программа без подробного разбора.
+        body = self._generate().json()
+
+        self.assertEqual(body["plan"]["generation_warnings"], ["plan_profiling_skipped"])
+        self.assertIn("plan_profiling_skipped", body["warnings"])
+
     def test_generate_on_unprocessed_document_is_422(self):
         raw = self._make_document(OWNER, ingest=False)
         with mock.patch(
@@ -910,6 +1272,72 @@ class PlanRebuildAndPaceTests(_ApiBase):
         self.assertNotEqual(fresh.pk, self.plan.pk)
         self.assertNotEqual(fresh.status, CoursePlan.Status.ARCHIVED)
 
+    def test_ready_book_with_a_program_is_not_reprocessed(self):
+        before = IngestionJob.objects.get(document=self.document)
+
+        response = self.client.post(
+            f"/api/curriculum/documents/{self.document.pk}/ingest/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(
+            response.json(),
+            {
+                "error": "У книги уже есть программа, поэтому обработать её заново нельзя.",
+                "code": "book_has_program",
+            },
+        )
+        job = IngestionJob.objects.get(document=self.document)
+        self.assertEqual(job.started_at, before.started_at)
+        self.assertEqual(job.updated_at, before.updated_at)
+        self.assertEqual(job.status, Document.Status.READY)
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_WINDOW_20K)
+    def test_a_book_with_a_program_gets_409_even_when_the_window_is_full(self):
+        DocumentPage.objects.filter(
+            document=self.document, page_number__in=[1, 2]
+        ).update(needs_ocr=True)
+        reserve_usage_capacity(
+            OWNER, reserved_tokens=20000, feature="chat", ttl_seconds=600
+        )
+
+        with mock.patch(
+            "curriculum.views.get_ocr_provider", return_value=_PricedOcr()
+        ):
+            response = self.client.post(
+                f"/api/curriculum/documents/{self.document.pk}/ingest/",
+                **_auth(OWNER),
+            )
+
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["code"], "book_has_program")
+
+    def test_ready_book_with_only_an_archived_program_can_be_reprocessed(self):
+        CoursePlan.objects.filter(pk=self.plan.pk).update(
+            status=CoursePlan.Status.ARCHIVED
+        )
+        before = IngestionJob.objects.get(document=self.document).started_at
+
+        response = self.client.post(
+            f"/api/curriculum/documents/{self.document.pk}/ingest/", **_auth(OWNER)
+        )
+
+        self.assertEqual(response.status_code, 202, response.content)
+        job = IngestionJob.objects.get(document=self.document)
+        self.assertGreater(job.started_at, before)
+        self.assertEqual(job.status, Document.Status.READY)
+
+    def test_plan_list_carries_generation_warnings(self):
+        CoursePlan.objects.filter(pk=self.plan.pk).update(
+            generation_warnings=["plan_profiling_partial"]
+        )
+
+        body = self.client.get("/api/curriculum/plans/", **_auth(OWNER)).json()
+        rows = body["results"] if isinstance(body, dict) else body
+
+        row = next(r for r in rows if r["id"] == str(self.plan.pk))
+        self.assertEqual(row["generation_warnings"], ["plan_profiling_partial"])
+
     def test_catalog_shows_only_the_current_plan(self):
         """Иначе по одной книге видно две записи и непонятно, какая живая."""
         self._rebuild()
@@ -944,6 +1372,9 @@ class PlanRebuildAndPaceTests(_ApiBase):
         class Broken:
             name = "broken"
 
+            def estimate_tokens(self, request, context):
+                return 0
+
             def generate_plan(self, request, context):
                 raise RuntimeError("модель недоступна")
 
@@ -955,6 +1386,28 @@ class PlanRebuildAndPaceTests(_ApiBase):
             )
 
         self.assertEqual(response.status_code, 422)
+        self.plan.refresh_from_db()
+        self.assertNotEqual(self.plan.status, CoursePlan.Status.ARCHIVED)
+        self.assertEqual(CoursePlan.objects.count(), 1)
+
+    @override_settings(AI_USAGE_ENFORCE_LIMITS=True, AI_PLAN_LIMITS=_SMALL_WINDOW)
+    def test_rebuild_too_large_for_the_window_is_a_429_and_keeps_the_plan(self):
+        with mock.patch(
+            "curriculum.services.plans.get_planning_provider",
+            return_value=_PricedPlanner(),
+        ), mock.patch(
+            "curriculum.services.plans.get_review_provider",
+            return_value=_PricedReviewer(),
+        ):
+            response = self.client.post(
+                f"/api/curriculum/plans/{self.plan.pk}/rebuild/", **_auth(OWNER)
+            )
+
+        self.assertEqual(response.status_code, 429, response.content)
+        self.assertEqual(
+            response.json(),
+            {"error": _PLAN_EXCEEDS_WINDOW, "code": "plan_exceeds_window"},
+        )
         self.plan.refresh_from_db()
         self.assertNotEqual(self.plan.status, CoursePlan.Status.ARCHIVED)
         self.assertEqual(CoursePlan.objects.count(), 1)

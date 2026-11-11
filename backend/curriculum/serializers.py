@@ -125,6 +125,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "visibility",
             "copyright_declaration",
             "file",
+            "ocr_summary",
             "created_at",
             "updated_at",
         ]
@@ -140,6 +141,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "processing_version",
             "source_type",
             "file",
+            "ocr_summary",
             "created_at",
             "updated_at",
         ]
@@ -408,6 +410,7 @@ class CoursePlanSerializer(serializers.ModelSerializer):
             "schema_version",
             "approved_at",
             "current_version",
+            "generation_warnings",
             "modules",
             "milestones",
             "coverage_ratio",
@@ -449,6 +452,7 @@ class CoursePlanListSerializer(serializers.ModelSerializer):
             "estimated_total_minutes",
             "forecast_finish_date",
             "current_version",
+            "generation_warnings",
             "created_at",
         ]
         read_only_fields = fields

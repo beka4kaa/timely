@@ -15,6 +15,8 @@ import json
 import re
 from typing import Protocol
 
+from django.conf import settings
+
 from ..model_registry import ROLE_SECTION_PROFILING, resolve_model
 from ..planning.providers import ProviderNotConfigured
 from ..planning.validation import ALLOWED_DIFFICULTY
@@ -25,7 +27,23 @@ from .schema import SCHEMA_NAME, SECTION_PROFILE_SCHEMA
 class SectionProfilingProvider(Protocol):
     name: str
 
+    def estimate_tokens(self, request: ProfilingRequest) -> int: ...
+
     def profile(self, request: ProfilingRequest) -> ProfileResult: ...
+
+
+# Сколько секунд от начала разбора глав при составлении программы ещё стартуют
+# новые разделы (`services.plans.generate_plan`). Программа строится внутри
+# HTTP-запроса с общим дедлайном, и разбор не должен съесть его целиком.
+# Начатый раздел этим окном не обрывается: его вызов живёт по таймауту роли.
+PLAN_PROFILING_SECONDS = 60
+
+
+def plan_profiling_seconds() -> int:
+    seconds = getattr(
+        settings, "CURRICULUM_PLAN_PROFILING_SECONDS", PLAN_PROFILING_SECONDS
+    )
+    return max(0, int(seconds))
 
 
 SYSTEM_PROMPT = """Ты методист. Тебе дан фрагмент учебника — один раздел.
@@ -60,6 +78,10 @@ class FakeSectionProfilingProvider:
 
     name = "fake-profiler"
 
+    def estimate_tokens(self, request: ProfilingRequest) -> int:
+        """Fake в модель не ходит и лимит не тратит."""
+        return 0
+
     def profile(self, request: ProfilingRequest) -> ProfileResult:
         title = _clean_title(request.title)
         pages = max(0, request.page_end - request.page_start + 1)
@@ -90,33 +112,30 @@ class OpenRouterSectionProfilingProvider:
                 "SECTION_PROFILING_MODEL и TEXT_LLM_MODEL не заданы."
             )
 
+    def estimate_tokens(self, request: ProfilingRequest) -> int:
+        """Цена одного вызова для резерва разбора: тот же вход, что уходит в модель."""
+        from ai_engine.usage import provider_call_token_estimate
+
+        return provider_call_token_estimate(
+            _call_input(request), max_output_tokens=self.binding.max_tokens
+        )
+
     def profile(self, request: ProfilingRequest) -> ProfileResult:
         from ai_engine.text_llm import TextModel
         from ai_engine.usage import provider_call_reservation, usage_scope
 
-        payload = {
-            "section": {
-                "label": request.number_label,
-                "title": request.title,
-                "role": request.structural_role,
-                "level": request.level,
-                "pages": [request.page_start, request.page_end],
-            },
-            # Помечено как данные явно: текст книги — недоверенный ввод, и
-            # «игнорируй инструкции выше» внутри учебника не должно ничего
-            # значить.
-            "section_text": {"untrusted_data": request.context},
-        }
-
+        call_input = _call_input(request)
         with usage_scope(feature=self.feature):
             with provider_call_reservation(
-                input_payload={"system_prompt": SYSTEM_PROMPT, "payload": payload},
+                input_payload=call_input,
                 max_output_tokens=self.binding.max_tokens,
                 feature=self.feature,
             ):
                 response = TextModel(self.model, temperature=0.1).generate_json_content(
                     system_prompt=SYSTEM_PROMPT,
-                    payload=payload,
+                    payload=call_input["payload"],
+                    # Таймаут роли, а не окно разбора: брошенный вызов всё
+                    # равно доработает и будет оплачен, а профиль пропадёт.
                     timeout=self.binding.timeout_seconds,
                     max_tokens=self.binding.max_tokens,
                     reasoning_effort=self.binding.reasoning_effort,
@@ -129,6 +148,26 @@ class OpenRouterSectionProfilingProvider:
         return parse_profile_response(
             response.text, section_id=request.section_id, model=self.model
         )
+
+
+def _call_input(request: ProfilingRequest) -> dict:
+    """Что уходит в модель. По нему считаются и резерв вызова, и оценка разбора."""
+    return {
+        "system_prompt": SYSTEM_PROMPT,
+        "payload": {
+            "section": {
+                "label": request.number_label,
+                "title": request.title,
+                "role": request.structural_role,
+                "level": request.level,
+                "pages": [request.page_start, request.page_end],
+            },
+            # Помечено как данные явно: текст книги — недоверенный ввод, и
+            # «игнорируй инструкции выше» внутри учебника не должно ничего
+            # значить.
+            "section_text": {"untrusted_data": request.context},
+        },
+    }
 
 
 def parse_profile_response(raw: str, *, section_id: str, model: str) -> ProfileResult:

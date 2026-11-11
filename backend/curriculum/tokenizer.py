@@ -82,12 +82,12 @@ class TiktokenTokenizer:
     def count(self, text: str) -> int:
         if not text:
             return 0
-        return len(self._encoding.encode(text))
+        return len(self._encoding.encode(text, disallowed_special=()))
 
     def tail(self, text: str, tokens: int) -> str:
         if tokens <= 0 or not text:
             return ""
-        ids = self._encoding.encode(text)
+        ids = self._encoding.encode(text, disallowed_special=())
         if len(ids) <= tokens:
             return text
         return self._encoding.decode(ids[-tokens:])

@@ -9,25 +9,79 @@
 import os
 import ssl
 import tempfile
+from contextlib import contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest import mock
+from unittest import mock, skipUnless
 
-from celery.exceptions import Retry
+import httpx
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 from django.core.exceptions import ImproperlyConfigured
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from openai import OpenAI
 
 import config.settings as project_settings
-from ai_engine.models import AIUsageQuotaState
+from ai_engine import glm_client
+from ai_engine.models import AIUsageEvent, AIUsageQuotaState
 from ai_engine.usage import AIUsageLimitExceeded, current_usage_context
+from curriculum import epub_extraction, extraction
 from curriculum import storage as storage_module
-from curriculum.models import Document, DocumentFile, IngestionJob
+from curriculum.embeddings import OpenAICompatibleEmbeddingProvider
+from curriculum.models import (
+    Document,
+    DocumentFile,
+    IngestionAttempt,
+    IngestionJob,
+    KnowledgeChunk,
+    SectionProfile,
+)
+from curriculum.ocr import NullOcrProvider, VisionOcrProvider
 from curriculum.services import dispatch
+from curriculum.services import ingestion as ingestion_service
+from curriculum.services.embedding_index import index_document_chunks
+from curriculum.services.ingestion import ingest_document
 from curriculum.tasks import MAX_RETRIES, _mark_quota_denied, ingest_document_task
 from curriculum.tests.pdf_fixtures import textbook_pdf
+from curriculum.tests.test_epub import SIMPLE as SIMPLE_EPUB
 
 EMAIL = "student@example.com"
+
+
+@contextmanager
+def _time_limit_inside_the_request(calls: list):
+    """Предел часа приходит, пока настоящий SDK `openai` ждёт ответа провайдера.
+
+    Сигнал мягкого предела бросает исключение там, где стоит главный поток, а у
+    книги на исходе часа это почти всегда сетевое ожидание внутри SDK. SDK
+    оборачивает любое исключение запроса в `APIConnectionError`, поэтому
+    подменяется только транспорт httpx, а клиенты создаёт код проекта со своими
+    настройками. Каждый запрос записывается в `calls`.
+    """
+
+    def handler(request):
+        calls.append(request.url.path)
+        raise SoftTimeLimitExceeded()
+
+    real_init = OpenAI.__init__
+
+    def init(client, *args, **kwargs):
+        kwargs["http_client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        real_init(client, *args, **kwargs)
+
+    # Клиент распознавания общий и кешируется: без сброса тест получил бы
+    # клиент, созданный до подмены, а следующий тест — клиент с подменой. Ключ
+    # нужен, чтобы SDK вообще собрал клиент: в окружении тестов его нет.
+    glm_client.get_glm_client.cache_clear()
+    try:
+        with mock.patch.object(OpenAI, "__init__", init), mock.patch.object(
+            glm_client, "VISION_API_KEY", "test-key"
+        ):
+            yield
+    finally:
+        glm_client.get_glm_client.cache_clear()
 
 
 class _TaskBase(TestCase):
@@ -106,42 +160,86 @@ class IngestTaskTests(_TaskBase):
 
     @override_settings(
         AI_USAGE_ENFORCE_LIMITS=True,
-        CURRICULUM_INGESTION_AI_RESERVATION_TOKENS=100,
         AI_PLAN_LIMITS={
             "free": {"context": 1000, "five_hour": 1000, "weekly": 1000}
         },
     )
-    def test_worker_releases_quota_reservation_after_pipeline_exit(self):
+    def test_text_book_is_processed_with_an_exhausted_window(self):
+        # Решение 12: книга с текстом лимит не тратит, поэтому и выбранное
+        # окно её не останавливает.
+        AIUsageEvent.objects.create(
+            user_email=EMAIL,
+            model_name="m",
+            total_tokens=1000,
+            billable_tokens=1000,
+        )
+        document = self._document()
+        IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="text-run",
+        )
+
+        ingest_document_task.apply(
+            args=[str(document.pk)], task_id="text-run"
+        ).get()
+
+        document.refresh_from_db()
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+
+    def test_ingestion_no_longer_queues_profiling(self):
+        # Решение 14: главы разбираются при составлении программы, а не после
+        # загрузки за счёт ученика.
+        document = self._document()
+        document.ingestion_status = Document.Status.QUEUED
+        document.save(update_fields=["ingestion_status", "updated_at"])
+        IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="no-profiling-run",
+        )
+        ingest_document_task.apply(args=[str(document.pk)], task_id="no-profiling-run").get()
+        document.refresh_from_db()
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertFalse(SectionProfile.objects.filter(document=document).exists())
+
+    def test_pipeline_runs_inside_the_pulse_of_its_run(self):
         document = self._document()
         job = IngestionJob.objects.create(
             document=document,
             user_email=EMAIL,
             status=Document.Status.QUEUED,
-            celery_task_id="quota-cleanup-generation",
+            celery_task_id="pulse-run",
         )
+        events = []
+
+        @contextmanager
+        def recording_pulse(job_id, *, run_token, interval_seconds=None):
+            events.append(("pulse", job_id, run_token))
+            yield
+            events.append(("pulse stopped",))
 
         def run(*args, **kwargs):
-            state = AIUsageQuotaState.objects.get(user_email=EMAIL)
-            self.assertEqual(len(state.reservations), 1)
-            return SimpleNamespace(job=job, claimed=True)
+            events.append(("pipeline",))
+            return SimpleNamespace(job=job, claimed=False)
 
-        with mock.patch("curriculum.tasks.ingest_document", side_effect=run):
+        with mock.patch("curriculum.tasks.job_pulse", new=recording_pulse), mock.patch(
+            "curriculum.tasks.ingest_document", side_effect=run
+        ):
             ingest_document_task.apply(
-                args=[str(document.pk)],
-                task_id="quota-cleanup-generation",
+                args=[str(document.pk)], task_id="pulse-run"
             ).get()
 
-        state = AIUsageQuotaState.objects.get(user_email=EMAIL)
-        self.assertEqual(state.reservations, {})
+        self.assertEqual(
+            events,
+            [("pulse", job.pk, "pulse-run"), ("pipeline",), ("pulse stopped",)],
+        )
 
-    @override_settings(
-        AI_USAGE_ENFORCE_LIMITS=True,
-        CURRICULUM_INGESTION_AI_RESERVATION_TOKENS=11,
-        AI_PLAN_LIMITS={
-            "free": {"context": 100, "five_hour": 10, "weekly": 10}
-        },
-    )
-    def test_worker_quota_denial_is_a_terminal_fenced_job_error(self):
+    def test_quota_denial_after_the_job_started_closes_it(self):
+        # Отказ лимита посреди работы раньше закрывал только джоб в очереди, а
+        # начатый висел, пока его не признают зависшим (решение 15).
         document = self._document()
         document.ingestion_status = Document.Status.QUEUED
         document.save(update_fields=["ingestion_status", "updated_at"])
@@ -149,16 +247,27 @@ class IngestTaskTests(_TaskBase):
             document=document,
             user_email=EMAIL,
             status=Document.Status.QUEUED,
-            celery_task_id="quota-denied-generation",
+            celery_task_id="started-run",
         )
 
-        with mock.patch("curriculum.tasks.ingest_document") as run:
+        def start_then_deny(*args, **kwargs):
+            IngestionJob.objects.filter(pk=job.pk).update(
+                status=Document.Status.OCR
+            )
+            Document.objects.filter(pk=document.pk).update(
+                ingestion_status=Document.Status.OCR
+            )
+            raise AIUsageLimitExceeded(
+                window="five_hour", reset_at="2026-08-09T12:00:00Z"
+            )
+
+        with mock.patch(
+            "curriculum.tasks.ingest_document", side_effect=start_then_deny
+        ):
             ingest_document_task.apply(
-                args=[str(document.pk)],
-                task_id="quota-denied-generation",
+                args=[str(document.pk)], task_id="started-run"
             ).get()
 
-        run.assert_not_called()
         job.refresh_from_db()
         document.refresh_from_db()
         self.assertEqual(job.status, Document.Status.FAILED)
@@ -169,13 +278,207 @@ class IngestTaskTests(_TaskBase):
         self.assertEqual(document.ingestion_status, Document.Status.FAILED)
         attempt = job.attempts.get()
         self.assertFalse(attempt.succeeded)
-        self.assertEqual(attempt.from_status, Document.Status.QUEUED)
+        self.assertEqual(attempt.from_status, Document.Status.OCR)
         self.assertEqual(attempt.to_status, Document.Status.FAILED)
         self.assertEqual(attempt.error_code, "ai_usage_limit_exceeded")
 
+    def test_soft_time_limit_closes_the_job_as_timed_out(self):
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="slow-run",
+        )
+
+        with mock.patch(
+            "curriculum.services.ingestion.chunk_blocks",
+            side_effect=SoftTimeLimitExceeded(),
+        ), self.assertLogs("curriculum", level="WARNING"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="slow-run"
+            ).get()
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.FAILED)
+        self.assertEqual(job.error_code, "timed_out")
+        self.assertEqual(
+            job.error_message, "Обработка заняла больше часа и остановлена."
+        )
+        self.assertEqual(document.ingestion_status, Document.Status.FAILED)
+        # Основной путь: джоб закрыл сам конвейер, со строкой попытки.
+        # Запасной путь обёртки такой строки не пишет.
+        self.assertTrue(
+            IngestionAttempt.objects.filter(
+                job=job,
+                to_status=Document.Status.FAILED,
+                error_code="timed_out",
+            ).exists()
+        )
+
+    @mock.patch("curriculum.embeddings.time.sleep")
+    def test_embedding_failure_does_not_hide_the_time_limit(self, sleep):
+        # Предел приходит посреди пачки векторов, внутри настоящего SDK.
+        calls = []
+        provider = OpenAICompatibleEmbeddingProvider(
+            model="model", base_url="https://example.test/v1", api_key="key"
+        )
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="vectors-run",
+        )
+
+        with _time_limit_inside_the_request(calls), mock.patch(
+            "curriculum.services.embedding_index.get_embedding_provider",
+            return_value=provider,
+        ), self.assertLogs("curriculum", level="WARNING"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="vectors-run"
+            ).get()
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        # Ни SDK, ни провайдер запрос не повторяли.
+        self.assertEqual(len(calls), 1)
+        sleep.assert_not_called()
+        self.assertEqual(job.status, Document.Status.FAILED)
+        self.assertEqual(job.error_code, "timed_out")
+        self.assertEqual(document.ingestion_status, Document.Status.FAILED)
+        self.assertTrue(
+            IngestionAttempt.objects.filter(
+                job=job,
+                to_status=Document.Status.FAILED,
+                error_code="timed_out",
+            ).exists()
+        )
+
+    def test_time_limit_outside_the_pipeline_still_closes_the_job(self):
+        # Запасной путь обёртки: предел сработал там, где конвейер его не
+        # ловит. Джоб всё равно закрыт понятной ошибкой, а не висит.
+        document = self._document()
+        document.ingestion_status = Document.Status.QUEUED
+        document.save(update_fields=["ingestion_status", "updated_at"])
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="late-run",
+        )
+
+        with mock.patch(
+            "curriculum.tasks.ingest_document",
+            side_effect=SoftTimeLimitExceeded(),
+        ), self.assertLogs("curriculum.tasks", level="WARNING"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="late-run"
+            ).get()
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.FAILED)
+        self.assertEqual(job.error_code, "timed_out")
+        self.assertEqual(
+            job.error_message, "Обработка заняла больше часа и остановлена."
+        )
+        self.assertIsNotNone(job.finished_at)
+        self.assertEqual(document.ingestion_status, Document.Status.FAILED)
+
+    def test_time_limit_right_after_ready_keeps_the_book_ready(self):
+        # Предел пришёл, когда конвейер уже записал READY: готовую книгу нельзя
+        # переписать в «не уложилась в час».
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="ready-run",
+        )
+        real_advance = ingestion_service._Recorder.advance
+
+        def advance_then_time_limit(recorder, to_status, **kwargs):
+            real_advance(recorder, to_status, **kwargs)
+            if to_status == Document.Status.READY:
+                raise SoftTimeLimitExceeded()
+
+        with mock.patch.object(
+            ingestion_service._Recorder, "advance", advance_then_time_limit
+        ), self.assertLogs("curriculum", level="WARNING"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="ready-run"
+            ).get()
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.READY)
+        self.assertEqual(job.error_code, "")
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertFalse(
+            job.attempts.filter(to_status=Document.Status.FAILED).exists()
+        )
+
+    def test_time_limit_after_the_pipeline_keeps_the_book_ready(self):
+        # Запасной путь обёртки: предел пришёл, пока останавливался пульс, а
+        # книга уже готова.
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="ready-run",
+        )
+
+        @contextmanager
+        def pulse_then_time_limit(job_id, *, run_token, interval_seconds=None):
+            yield
+            raise SoftTimeLimitExceeded()
+
+        with mock.patch(
+            "curriculum.tasks.job_pulse", new=pulse_then_time_limit
+        ), self.assertLogs("curriculum.tasks", level="WARNING"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="ready-run"
+            ).get()
+
+        job.refresh_from_db()
+        document.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.READY)
+        self.assertEqual(job.error_code, "")
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+
+    def test_unexpected_failure_keeps_a_precise_error(self):
+        # Конвейер уже закрыл джоб точной причиной, а потом что-то упало в
+        # обёртке: причина не должна стать «внутренней ошибкой».
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="broken-run",
+        )
+
+        def fail_then_crash(*args, **kwargs):
+            IngestionJob.objects.filter(pk=job.pk).update(
+                status=Document.Status.FAILED, error_code="pdf_unreadable"
+            )
+            raise RuntimeError("сбой после записи причины")
+
+        with mock.patch(
+            "curriculum.tasks.ingest_document", side_effect=fail_then_crash
+        ), self.assertLogs("curriculum.tasks", level="ERROR"):
+            ingest_document_task.apply(
+                args=[str(document.pk)], task_id="broken-run"
+            ).get()
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.FAILED)
+        self.assertEqual(job.error_code, "pdf_unreadable")
+
     @override_settings(
         AI_USAGE_ENFORCE_LIMITS=True,
-        CURRICULUM_INGESTION_AI_RESERVATION_TOKENS=1,
         AI_PLAN_LIMITS={
             "free": {"context": 1000, "five_hour": 1000, "weekly": 1000}
         },
@@ -208,42 +511,8 @@ class IngestTaskTests(_TaskBase):
         self.assertEqual(job.status, Document.Status.FAILED)
         self.assertEqual(job.error_code, "ai_usage_limit_exceeded")
         self.assertEqual(document.ingestion_status, Document.Status.FAILED)
-        self.assertEqual(
-            AIUsageQuotaState.objects.get(user_email=EMAIL).reservations,
-            {},
-        )
-
-    @override_settings(
-        AI_USAGE_ENFORCE_LIMITS=True,
-        CURRICULUM_INGESTION_AI_RESERVATION_TOKENS=11,
-        AI_PLAN_LIMITS={
-            "free": {"context": 100, "five_hour": 10, "weekly": 10}
-        },
-    )
-    def test_quota_denial_from_duplicate_does_not_fail_the_active_generation(self):
-        document = self._document()
-        document.ingestion_status = Document.Status.VALIDATING
-        document.save(update_fields=["ingestion_status", "updated_at"])
-        job = IngestionJob.objects.create(
-            document=document,
-            user_email=EMAIL,
-            status=Document.Status.VALIDATING,
-            celery_task_id="active-generation",
-        )
-
-        with mock.patch("curriculum.tasks.ingest_document") as run:
-            ingest_document_task.apply(
-                args=[str(document.pk)],
-                task_id="active-generation",
-            ).get()
-
-        run.assert_not_called()
-        job.refresh_from_db()
-        document.refresh_from_db()
-        self.assertEqual(job.status, Document.Status.VALIDATING)
-        self.assertEqual(job.celery_task_id, "active-generation")
-        self.assertEqual(document.ingestion_status, Document.Status.VALIDATING)
-        self.assertFalse(job.attempts.exists())
+        # Входного резерва больше нет: обёртка строку квоты не заводит вовсе.
+        self.assertFalse(AIUsageQuotaState.objects.filter(user_email=EMAIL).exists())
 
     def test_quota_denial_from_superseded_task_id_does_not_touch_new_generation(self):
         document = self._document()
@@ -544,6 +813,155 @@ class IngestTaskTests(_TaskBase):
         self.assertEqual(ingest_document_task.max_retries, MAX_RETRIES)
 
 
+class _TimeLimitedStorage:
+    """Хранилище, на чтении которого сработал предел часа."""
+
+    backend_name = "local"
+
+    def open(self, key: str) -> bytes:
+        raise SoftTimeLimitExceeded()
+
+
+class TimeLimitPassesThroughTests(_TaskBase):
+    """Предел часа проходит сквозь каждый широкий `except` на пути книги.
+
+    Celery бросает `SoftTimeLimitExceeded` там, где сейчас идёт работа, а это
+    обычное `Exception`. Широкий `except` иначе выдал бы предел за битый файл,
+    пропущенную главу или упавший батч, и книга шла бы дальше до жёсткого
+    убийства процесса.
+    """
+
+    def test_pdf_open(self):
+        with mock.patch.object(
+            extraction.pdfium, "PdfDocument", side_effect=SoftTimeLimitExceeded()
+        ), self.assertRaises(SoftTimeLimitExceeded):
+            extraction.real_page_count(textbook_pdf())
+
+    def test_pdf_bookmarks(self):
+        with mock.patch.object(
+            extraction.pdfium.PdfDocument,
+            "get_toc",
+            side_effect=SoftTimeLimitExceeded(),
+        ), self.assertRaises(SoftTimeLimitExceeded):
+            extraction.read_bookmarks(textbook_pdf())
+
+    def test_epub_open(self):
+        with mock.patch(
+            "ebooklib.epub.read_epub", side_effect=SoftTimeLimitExceeded()
+        ), self.assertRaises(SoftTimeLimitExceeded):
+            epub_extraction.extract_epub(SIMPLE_EPUB)
+
+    def test_epub_chapter(self):
+        with mock.patch(
+            "bs4.BeautifulSoup", side_effect=SoftTimeLimitExceeded()
+        ), self.assertRaises(SoftTimeLimitExceeded):
+            epub_extraction.extract_epub(SIMPLE_EPUB)
+
+    def test_ocr_page(self):
+        with mock.patch(
+            "ai_engine.glm_client.glm_chat_image",
+            side_effect=SoftTimeLimitExceeded(),
+        ), self.assertRaises(SoftTimeLimitExceeded):
+            VisionOcrProvider(model="vendor/vision").transcribe_page(b"png")
+
+    @mock.patch("curriculum.embeddings.time.sleep")
+    @mock.patch("openai.OpenAI")
+    def test_embedding_batch(self, openai, sleep):
+        create = openai.return_value.embeddings.create
+        create.side_effect = SoftTimeLimitExceeded()
+        provider = OpenAICompatibleEmbeddingProvider(
+            model="model", base_url="https://example.test/v1", api_key="key"
+        )
+
+        with self.assertRaises(SoftTimeLimitExceeded):
+            provider.embed(["текст"])
+
+        # Предел не повторяют и не пережидают.
+        create.assert_called_once()
+        sleep.assert_not_called()
+
+    @mock.patch("curriculum.embeddings.time.sleep")
+    def test_embedding_batch_inside_the_sdk(self, sleep):
+        # SDK отдаёт предел обёрнутым в `APIConnectionError`.
+        calls = []
+        provider = OpenAICompatibleEmbeddingProvider(
+            model="model", base_url="https://example.test/v1", api_key="key"
+        )
+
+        with _time_limit_inside_the_request(calls), self.assertRaises(
+            SoftTimeLimitExceeded
+        ):
+            provider.embed(["текст"])
+
+        # Клиент без повторов SDK: с ними предел пропал бы без следа.
+        self.assertEqual(len(calls), 1)
+        sleep.assert_not_called()
+
+    def test_ocr_page_inside_the_sdk(self):
+        calls = []
+
+        with _time_limit_inside_the_request(calls), self.assertRaises(
+            SoftTimeLimitExceeded
+        ):
+            VisionOcrProvider(model="vendor/vision").transcribe_page(b"png")
+
+        self.assertEqual(len(calls), 1)
+
+    def test_vector_index(self):
+        document = Document.objects.create(user_email=EMAIL, title="Механика")
+        KnowledgeChunk.objects.create(
+            document_id=document.pk, normalized_text="текст", content_hash="h" * 64
+        )
+
+        class TimeLimitedProvider:
+            name = "time-limited"
+            model = "time-limited"
+
+            def embed(self, texts):
+                raise SoftTimeLimitExceeded()
+
+        with self.assertRaises(SoftTimeLimitExceeded):
+            index_document_chunks(document, provider=TimeLimitedProvider())
+
+    def test_file_read(self):
+        document = self._document()
+        # Хранилище глобальное: заглушка не должна пережить этот тест.
+        self.addCleanup(storage_module.set_storage, storage_module.get_storage())
+        storage_module.set_storage(_TimeLimitedStorage())
+
+        with self.assertRaises(SoftTimeLimitExceeded):
+            ingestion_service._read_file(document)
+
+
+@skipUnless(connection.vendor == "postgresql", "FOR UPDATE пишет только Postgres")
+class IndexingLockTests(_TaskBase):
+    def test_indexing_does_not_lock_the_job_row(self):
+        # Пульс пишет `updated_at` из своего потока. Блокировка строки джоба на
+        # всю запись книги заставила бы его ждать, и книга выглядела бы
+        # зависшей посреди записи.
+        document = self._document()
+        job = IngestionJob.objects.create(
+            document=document,
+            user_email=EMAIL,
+            status=Document.Status.QUEUED,
+            celery_task_id="lock-run",
+        )
+
+        with CaptureQueriesContext(connection) as ctx:
+            ingest_document(
+                document, run_token="lock-run", ocr_provider=NullOcrProvider()
+            )
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, Document.Status.READY)
+        locks = [
+            q["sql"]
+            for q in ctx.captured_queries
+            if '"curriculum_ingestionjob"' in q["sql"] and "FOR UPDATE" in q["sql"]
+        ]
+        self.assertEqual(locks, [])
+
+
 @override_settings(
     CELERY_TASK_ALWAYS_EAGER=True,
     CELERY_TASK_EAGER_PROPAGATES=True,
@@ -602,6 +1020,20 @@ class CeleryDispatchTests(_TaskBase):
         job.refresh_from_db()
         self.assertEqual(document.ingestion_status, Document.Status.FAILED)
         self.assertEqual(job.error_code, dispatch.QUEUE_UNAVAILABLE_ERROR_CODE)
+
+    def test_book_publish_retries_once_at_most(self):
+        # Без короткой политики повторов Celery держит поток веба на каждой
+        # недоступной публикации ещё несколько попыток подряд.
+        document = self._document()
+        with mock.patch(
+            "curriculum.tasks.ingest_document_task.apply_async"
+        ) as publish:
+            with self.captureOnCommitCallbacks(execute=True):
+                dispatch.enqueue_ingestion(document)
+
+        _, publish_kwargs = publish.call_args
+        self.assertTrue(publish_kwargs["retry"])
+        self.assertEqual(publish_kwargs["retry_policy"]["max_retries"], 1)
 
     def test_ошибка_публикации_не_оставляет_вечную_очередь(self):
         document = self._document()

@@ -5,10 +5,12 @@ import { test } from "node:test";
 // src/lib/image-model-selection.test.ts: без него нативный разбор в node не
 // находит модуль и тест молча не запускается.
 import {
+  ERROR_MESSAGES,
   FAILURES_BEFORE_WARNING,
   MAX_UPLOAD_BYTES,
   PHASES,
   checkFileBeforeUpload,
+  canRecognizeLater,
   formatBytes,
   formatElapsed,
   formatMinutes,
@@ -17,6 +19,10 @@ import {
   ingestionFailureTitle,
   ingestionWarningMessage,
   isTerminal,
+  ocrNotice,
+  planProfilingNotice,
+  scansQuestion,
+  unrecognizedScans,
   phaseIndexFor,
   phaseState,
   pollDelayMs,
@@ -210,4 +216,188 @@ test("байты и прошедшее время читаемы", () => {
   assert.equal(formatElapsed(0), "0:00");
   assert.equal(formatElapsed(65_000), "1:05");
   assert.equal(formatElapsed(600_000), "10:00");
+});
+
+// ───────────────────────── Сканы и лимит ─────────────────────────────────────
+
+const NOW = new Date(2026, 10, 10, 15, 0);
+const AT_1840 = new Date(2026, 10, 10, 18, 40).toISOString();
+const PAST = new Date(2026, 10, 10, 14, 0).toISOString();
+const none = { hasProgram: false, now: NOW };
+const withProgram = { hasProgram: true, now: NOW };
+const quota = (scanned: number, reset_at?: string) => ({
+  scanned, attempted: 0, recognized: 0, skipped: "quota" as const, reset_at, plan: "free",
+});
+
+test("ocrNotice: quota без программы, время известно", () => {
+  assert.equal(
+    ocrNotice(quota(25, AT_1840), none),
+    "Не распознано 25 страниц-сканов: не хватило лимита. Он восстановится сегодня в 18:40, тогда нажми «Обработать заново».",
+  );
+});
+
+test("ocrNotice: quota без программы, времени нет или оно прошло", () => {
+  const text = "Не распознано 25 страниц-сканов: не хватило лимита. Нажми «Обработать заново», когда он восстановится.";
+  assert.equal(ocrNotice(quota(25), none), text);
+  assert.equal(ocrNotice(quota(25, PAST), none), text);
+});
+
+test("ocrNotice: quota, программа есть", () => {
+  assert.equal(ocrNotice(quota(25), withProgram), "Не распознано 25 страниц-сканов: не хватило лимита.");
+  assert.equal(
+    ocrNotice(quota(25, AT_1840), withProgram),
+    "Не распознано 25 страниц-сканов: не хватило лимита. Он восстановится сегодня в 18:40.",
+  );
+});
+
+test("ocrNotice: quota, склонение при n = 1, 3 и 21", () => {
+  assert.equal(ocrNotice(quota(1), withProgram), "Не распознана 1 страница-скан: не хватило лимита.");
+  assert.equal(ocrNotice(quota(3), withProgram), "Не распознано 3 страницы-скана: не хватило лимита.");
+  assert.equal(ocrNotice(quota(21), withProgram), "Не распознана 21 страница-скан: не хватило лимита.");
+});
+
+const win = (scanned: number, plan: string) => ({ scanned, attempted: 0, recognized: 0, skipped: "window" as const, plan });
+
+test("ocrNotice: window, бесплатный тариф", () => {
+  assert.equal(
+    ocrNotice(win(120, "free"), none),
+    "Не распознано 120 страниц-сканов: на бесплатном тарифе столько не распознать за раз.",
+  );
+});
+
+test("ocrNotice: window, другой тариф", () => {
+  assert.equal(
+    ocrNotice(win(120, "pro"), none),
+    "Не распознано 120 страниц-сканов: на твоём тарифе столько не распознать за раз.",
+  );
+});
+
+test("ocrNotice: window, склонение при 11, 111, 112 и 3", () => {
+  for (const n of [11, 111, 112]) {
+    assert.equal(
+      ocrNotice(win(n, "free"), none),
+      `Не распознано ${n} страниц-сканов: на бесплатном тарифе столько не распознать за раз.`,
+    );
+  }
+  assert.equal(
+    ocrNotice(win(3, "free"), none),
+    "Не распознано 3 страницы-скана: на бесплатном тарифе столько не распознать за раз.",
+  );
+});
+
+test("ocrNotice: потолок, всё отправленное распознано", () => {
+  assert.equal(
+    ocrNotice({ scanned: 120, attempted: 40, recognized: 40, skipped: "" }, none),
+    "Распознаны первые 40 страниц-сканов из 120: больше за одну обработку нельзя.",
+  );
+});
+
+test("ocrNotice: потолок, часть упала", () => {
+  assert.equal(
+    ocrNotice({ scanned: 120, attempted: 40, recognized: 35, skipped: "" }, none),
+    "Распознано 35 из 120 страниц-сканов: больше 40 за одну обработку нельзя.",
+  );
+});
+
+test("ocrNotice: часть упала без потолка", () => {
+  assert.equal(
+    ocrNotice({ scanned: 5, attempted: 5, recognized: 3, skipped: "" }, none),
+    "Распознано 3 из 5 страниц-сканов.",
+  );
+  assert.equal(
+    ocrNotice({ scanned: 21, attempted: 21, recognized: 20, skipped: "" }, none),
+    "Распознано 20 из 21 страницы-скана.",
+  );
+});
+
+test("ocrNotice: остановка по времени читается как частичный сбой", () => {
+  assert.equal(
+    ocrNotice({ scanned: 5, attempted: 5, recognized: 3, skipped: "", stopped: "time" }, none),
+    "Распознано 3 из 5 страниц-сканов.",
+  );
+});
+
+test("ocrNotice: нечего говорить", () => {
+  assert.equal(ocrNotice({}, none), null);
+  assert.equal(ocrNotice(null, none), null);
+  assert.equal(ocrNotice(undefined, none), null);
+  assert.equal(ocrNotice({ scanned: 3, attempted: 0, recognized: 0, skipped: "" }, none), null);
+  assert.equal(ocrNotice({ scanned: 5, attempted: 5, recognized: 5, skipped: "" }, none), null);
+});
+
+test("unrecognizedScans", () => {
+  assert.equal(unrecognizedScans({ scanned: 25, recognized: 5 }), 20);
+  assert.equal(unrecognizedScans({ scanned: 2, recognized: 5 }), 0);
+  assert.equal(unrecognizedScans({}), 0);
+  assert.equal(unrecognizedScans(null), 0);
+});
+
+test("canRecognizeLater", () => {
+  assert.equal(canRecognizeLater({ scanned: 25, attempted: 0, recognized: 0, skipped: "quota", reset_at: AT_1840, plan: "free" }), true);
+  assert.equal(canRecognizeLater({ scanned: 5, attempted: 5, recognized: 3, skipped: "" }), true);
+  assert.equal(canRecognizeLater({ scanned: 120, attempted: 0, recognized: 0, skipped: "window", plan: "free" }), false);
+  assert.equal(canRecognizeLater({ scanned: 120, attempted: 40, recognized: 40, skipped: "" }), false);
+  assert.equal(canRecognizeLater({ scanned: 3, attempted: 0, recognized: 0, skipped: "" }), false);
+  assert.equal(canRecognizeLater({}), false);
+  assert.equal(canRecognizeLater({ scanned: 5, attempted: 5, recognized: 3, skipped: "", stopped: "time" }), false);
+});
+
+test("planProfilingNotice", () => {
+  const text = "Программа составлена без подробного разбора глав.";
+  assert.equal(planProfilingNotice(["plan_profiling_skipped"]), text);
+  assert.equal(planProfilingNotice(["x", "plan_profiling_partial"]), text);
+  assert.equal(planProfilingNotice(["x"]), null);
+  assert.equal(planProfilingNotice(undefined), null);
+});
+
+test("scansQuestion склоняет страницы и местоимения", () => {
+  assert.deepEqual(scansQuestion(1), {
+    text: "В программу не попадёт 1 страница. Подождать лимит и распознать её или составить без неё?",
+    skip: "Составить без неё",
+  });
+  assert.deepEqual(scansQuestion(3), {
+    text: "В программу не попадут 3 страницы. Подождать лимит и распознать их или составить без них?",
+    skip: "Составить без них",
+  });
+  assert.deepEqual(scansQuestion(21), {
+    text: "В программу не попадёт 21 страница. Подождать лимит и распознать их или составить без них?",
+    skip: "Составить без них",
+  });
+  assert.deepEqual(scansQuestion(25), {
+    text: "В программу не попадут 25 страниц. Подождать лимит и распознать их или составить без них?",
+    skip: "Составить без них",
+  });
+});
+
+test("тексты ошибок сервера для timed_out и ocr_quota показываются как есть", () => {
+  const timed = "Обработка заняла больше часа и остановлена.";
+  const q = "В книге одни сканы, а лимита на их распознавание не хватило. Файл сохранён.";
+  assert.equal(ingestionErrorMessage("timed_out", timed), timed);
+  assert.equal(ingestionErrorMessage("ocr_quota", q), q);
+});
+
+test("ocr_failed переведён дословно", () => {
+  assert.equal(
+    ERROR_MESSAGES.ocr_failed,
+    "Сканы не распознались: сервис распознавания не ответил. Попробуй ещё раз позже.",
+  );
+});
+
+test("scansQuestion: причина «failed»", () => {
+  assert.deepEqual(scansQuestion(1, "failed"), {
+    text: "В программу не попадёт 1 страница: её не удалось распознать. Обработать книгу заново или составить без неё?",
+    skip: "Составить без неё",
+  });
+  assert.deepEqual(scansQuestion(3, "failed"), {
+    text: "В программу не попадут 3 страницы: их не удалось распознать. Обработать книгу заново или составить без них?",
+    skip: "Составить без них",
+  });
+  assert.deepEqual(scansQuestion(21, "failed"), {
+    text: "В программу не попадёт 21 страница: их не удалось распознать. Обработать книгу заново или составить без них?",
+    skip: "Составить без них",
+  });
+  assert.deepEqual(scansQuestion(25, "failed"), {
+    text: "В программу не попадут 25 страниц: их не удалось распознать. Обработать книгу заново или составить без них?",
+    skip: "Составить без них",
+  });
 });

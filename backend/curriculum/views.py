@@ -14,13 +14,22 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
+from django.conf import settings
 from django.http import Http404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from ai_engine.usage import (
+    AIUsageLimitExceeded,
+    release_usage_reservation,
+    reserve_usage_capacity,
+    usage_window_limit,
+)
 
 from . import progress
 from . import storage as storage_module
@@ -36,6 +45,7 @@ from .models import (
     StudyMaterial,
     SubjectChat,
 )
+from .ocr import MAX_OCR_PAGES_PER_RUN, NullOcrProvider, get_ocr_provider
 from .retrieval import RetrievalPolicy
 from .chat_title import generate_chat_title
 from .serializers import (
@@ -66,6 +76,7 @@ from .services import materials as materials_service
 from .services import plans as plans_service
 from .services import search as search_service
 from .services.dispatch import enqueue_ingestion
+from .services.ingestion import TIMED_OUT_ERROR_CODE, TIMED_OUT_MESSAGE
 from .upload_validation import UploadRejected, validate_upload_stream
 
 logger = logging.getLogger(__name__)
@@ -274,10 +285,36 @@ class DocumentViewSet(_UserScopedViewSet):
         сегодня: прогресс забирается опросом `GET .../status/`. Так фронтенд не
         придётся переписывать, когда пайплайн уедет в Celery.
 
+        Для готовой книги с программой отвечает 409 `book_has_program`. Если
+        прошлый прогон нашёл сканы, а их цена не помещается в лимит, отвечает 429:
+        `ocr_exceeds_window` (не поместится никогда) или обычный отказ с
+        `reset_at`. Ничего при этом не меняется.
+
         Провал обработки — это НЕ ошибка постановки: 202 отдаётся и в этом случае,
         а причина приезжает в `job.error_code` при первом же опросе статуса.
         """
         document = self.get_object()
+        if document.ingestion_status == Document.Status.READY:
+            # Повторная обработка пересоздаёт куски книги, а программа на них
+            # ссылается. Архивные программы охране не мешают: полка их не видит.
+            if (
+                CoursePlan.objects.filter(document=document)
+                .exclude(status=CoursePlan.Status.ARCHIVED)
+                .exists()
+            ):
+                return Response(
+                    {
+                        "error": (
+                            "У книги уже есть программа, поэтому обработать её "
+                            "заново нельзя."
+                        ),
+                        "code": "book_has_program",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            refused = self._ensure_room_for_scans(document)
+            if refused is not None:
+                return refused
         job = enqueue_ingestion(document)
         document.refresh_from_db()
         job.refresh_from_db()
@@ -289,6 +326,51 @@ class DocumentViewSet(_UserScopedViewSet):
             },
             status=status.HTTP_202_ACCEPTED,
         )
+
+    @staticmethod
+    def _ensure_room_for_scans(document) -> Response | None:
+        """Повтор перестраивает книгу с нуля, и распознанные сканы пропали бы.
+
+        Если прошлый прогон нашёл сканы, до постановки в очередь проверяем, что
+        их цена помещается в лимит. Не помещается даже в пустое окно: 429
+        `ocr_exceeds_window` без времени. Не помещается сейчас: обычный отказ
+        по лимиту (429, `reset_at` с учётом живых броней). В обоих случаях
+        ничего не меняется. Бронь берётся на минуту и сразу снимается: отказ и
+        время восстановления считает тот же код, что и в воркере.
+        """
+        scans = document.pages.filter(needs_ocr=True).count()
+        if not scans:
+            return None
+        provider = get_ocr_provider()
+        if isinstance(provider, NullOcrProvider):
+            return None
+        need = min(scans, MAX_OCR_PAGES_PER_RUN) * provider.page_token_bound()
+        if need <= 0:
+            return None
+        email = document.user_email
+        try:
+            claim = reserve_usage_capacity(
+                email,
+                reserved_tokens=need,
+                feature="curriculum_ocr",
+                ttl_seconds=60,
+            )
+        except AIUsageLimitExceeded:
+            window_limit = usage_window_limit(email)
+            if window_limit is not None and need > window_limit:
+                return Response(
+                    {
+                        "error": (
+                            "Сканы этой книги не помещаются в лимит твоего тарифа, "
+                            "даже когда он полностью свободен."
+                        ),
+                        "code": "ocr_exceeds_window",
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            raise
+        release_usage_reservation(claim)
+        return None
 
     # url_path задан явно: метод нельзя назвать `status`, иначе он затенит
     # одноимённый импорт `rest_framework.status` в теле класса.
@@ -326,8 +408,30 @@ class DocumentViewSet(_UserScopedViewSet):
                 dispatch.is_stale(job)
                 or job.error_code == progress.STALLED_ERROR_CODE
             )
-        body = dict(progress.describe(document.ingestion_status, stale=stale))
+        # Убитый пределом часа джоб слал пульс почти до мягкого предела. Джоб,
+        # умерший раньше (память, выкладка), остаётся `stalled`, сколько бы
+        # времени ни прошло: ему повтор может помочь, а книге, упёршейся в
+        # час, повтор не поможет.
+        limit_margin = timedelta(
+            seconds=int(getattr(settings, "CELERY_TASK_SOFT_TIME_LIMIT", 3540))
+            - int(getattr(settings, "CURRICULUM_INGEST_PULSE_SECONDS", 60))
+        )
+        timed_out = bool(
+            stale
+            and job is not None
+            and job.status in dispatch.RUNNING_STATUSES
+            and job.started_at is not None
+            and job.updated_at is not None
+            and job.updated_at - job.started_at >= limit_margin
+        )
+        if timed_out:
+            # Без признака зависания: экраны сначала смотрят на `stalled` и
+            # иначе показали бы «прервалась» вместо ошибки часа.
+            body = dict(progress.describe(Document.Status.FAILED))
+        else:
+            body = dict(progress.describe(document.ingestion_status, stale=stale))
         body["document_id"] = str(document.pk)
+        body["ocr_summary"] = dict(document.ocr_summary or {})
         serialized_job = IngestionJobSerializer(job).data if job else None
         if stale and serialized_job:
             # GET остаётся read-only: живой воркер мог обновиться между SELECT и
@@ -336,8 +440,12 @@ class DocumentViewSet(_UserScopedViewSet):
             serialized_job = dict(serialized_job)
             serialized_job.update(
                 status=Document.Status.FAILED,
-                error_code=progress.STALLED_ERROR_CODE,
-                error_message=progress.STALLED_MESSAGE,
+                error_code=(
+                    TIMED_OUT_ERROR_CODE if timed_out else progress.STALLED_ERROR_CODE
+                ),
+                error_message=(
+                    TIMED_OUT_MESSAGE if timed_out else progress.STALLED_MESSAGE
+                ),
             )
         body["job"] = serialized_job
         body["attempts"] = (
@@ -353,8 +461,8 @@ class DocumentViewSet(_UserScopedViewSet):
             "sections": document.sections.count(),
             "blocks": document.blocks.count(),
             "tasks": document.tasks.count(),
-            # Обратной связи `document.chunks` больше нет: чанки в другой
-            # базе. Считаем явным запросом.
+            # Обратной связи `document.chunks` нет: у куска нет внешнего ключа
+            # на документ. Считаем явным запросом.
             "chunks": KnowledgeChunk.objects.filter(document_id=document.pk).count(),
         }
         return Response(body)
@@ -383,7 +491,9 @@ class DocumentViewSet(_UserScopedViewSet):
         """Фрагменты документа с учётом политики доступа к решениям."""
         document = self.get_object()
         policy = RetrievalPolicy(mode=STUDENT_READ_MODE)
-        rows = KnowledgeChunk.objects.filter(document_id=document.pk)
+        rows = KnowledgeChunk.objects.defer("embedding").filter(
+            document_id=document.pk
+        )
         if not policy.allows_solutions:
             rows = rows.exclude(
                 solution_visibility=KnowledgeChunk.SolutionVisibility.RESTRICTED
@@ -529,6 +639,8 @@ class CoursePlanViewSet(_UserScopedViewSet):
 
         try:
             outcome = plans_service.generate_plan(goal, document)
+        except plans_service.PlanDoesNotFitLimit as exc:
+            return _plan_exceeds_window(exc)
         except plans_service.PlanRejected as exc:
             return Response(
                 {
@@ -559,6 +671,8 @@ class CoursePlanViewSet(_UserScopedViewSet):
         plan = self.get_object()
         try:
             outcome = plans_service.rebuild_plan(plan)
+        except plans_service.PlanDoesNotFitLimit as exc:
+            return _plan_exceeds_window(exc)
         except plans_service.PlanRejected as exc:
             return Response(
                 {
@@ -779,6 +893,14 @@ def _no_user():
             "code": "user_required",
         },
         status=status.HTTP_401_UNAUTHORIZED,
+    )
+
+
+def _plan_exceeds_window(exc) -> Response:
+    """Программу не вмещает и пустое окно тарифа: времени восстановления нет."""
+    return Response(
+        {"error": exc.message, "code": exc.code},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
     )
 
 

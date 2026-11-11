@@ -18,7 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { limitMessage } from "@/lib/ai-limit";
 import {
+  CurriculumApiError,
   type CoursePlanSummary,
   type CurriculumDocument,
   type IngestionState,
@@ -34,6 +36,7 @@ import {
   listGoals,
   listMaterials,
   listPlans,
+  startIngestion,
 } from "@/lib/curriculum-api";
 import { type CatalogSource, type CatalogSubject, booksOf, buildCatalog } from "@/lib/curriculum-catalog";
 import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
@@ -43,7 +46,12 @@ import {
   percentOf,
 } from "@/lib/curriculum-course-progress";
 import { dayMonth } from "@/lib/curriculum-forecast";
-import { ingestionErrorMessage } from "@/lib/curriculum-progress";
+import {
+  canRecognizeLater,
+  ingestionErrorMessage,
+  ocrNotice,
+  planProfilingNotice,
+} from "@/lib/curriculum-progress";
 import { cleanDocumentTitle } from "@/lib/curriculum-title";
 import { useDataChanged } from "@/lib/data-changed";
 
@@ -856,9 +864,14 @@ function SourceNotes({
     const title = coverTitle(document.title);
     if (status === "failed") {
       const state = ingestion[document.id];
-      const reason = state?.stalled
-        ? ingestionErrorMessage("stalled")
-        : ingestionErrorMessage(state?.job?.error_code ?? "", state?.job?.error_message ?? "");
+      const code = state?.job?.error_code ?? "";
+      const scanNote =
+        code === "ocr_quota" ? ocrNotice(document.ocr_summary, { hasProgram: true }) : null;
+      const reason =
+        scanNote ??
+        (state?.stalled
+          ? ingestionErrorMessage("stalled")
+          : ingestionErrorMessage(code, state?.job?.error_message ?? ""));
       return [
         <li key={document.id} className="is-bad">
           <span>{single ? reason : `«${title}»: ${reason}`}</span>
@@ -872,9 +885,35 @@ function SourceNotes({
         </li>,
       ];
     }
+    const named = (line: string) => (single ? line : `«${title}»: ${line}`);
+    const rawScan =
+      status === "ready"
+        ? ocrNotice(document.ocr_summary, { hasProgram: source.plans.length > 0 })
+        : null;
+    const scanLine = rawScan === null ? null : named(rawScan);
+    if (status === "ready" && source.plans.length > 0) {
+      const rawProfiling = planProfilingNotice(
+        source.plans.flatMap((plan) => plan.generation_warnings ?? []),
+      );
+      const profiling = rawProfiling === null ? null : named(rawProfiling);
+      return [scanLine, profiling].flatMap((line) =>
+        line ? [<li key={`${document.id}-${line}`}><span>{line}</span></li>] : [],
+      );
+    }
+    const redo =
+      scanLine !== null ? (
+        <RetryScansNote
+          key={`${document.id}-scans`}
+          document={document}
+          line={scanLine}
+          canRetry={canRecognizeLater(document.ocr_summary)}
+          onChanged={onChanged}
+        />
+      ) : null;
     // Без предмета программу не построить: не с чем её связать.
     if (status === "ready" && source.plans.length === 0 && subject.goalId) {
       return [
+        ...(redo ? [redo] : []),
         <li key={document.id}>
           <span>{single ? "Книга прочитана." : `Книга «${title}» прочитана.`}</span>
           <button
@@ -887,10 +926,55 @@ function SourceNotes({
         </li>,
       ];
     }
-    return [];
+    return redo ? [redo] : [];
   });
 
   return notes.length > 0 ? <ul className="cab-notes">{notes}</ul> : null;
+}
+
+function RetryScansNote({
+  document,
+  line,
+  canRetry,
+  onChanged,
+}: {
+  document: CurriculumDocument;
+  line: string;
+  canRetry: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
+
+  const retry = async () => {
+    setBusy(true);
+    setFailure("");
+    try {
+      await startIngestion(document.id);
+      await onChanged();
+    } catch (error) {
+      if (error instanceof CurriculumApiError && error.code === "ai_usage_limit_exceeded") {
+        const payload = (error.payload ?? {}) as { reset_at?: unknown };
+        setFailure(limitMessage(payload.reset_at));
+      } else {
+        setFailure(error instanceof Error ? error.message : "Не удалось запустить обработку.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li>
+      <span>{line}</span>
+      {canRetry ? (
+        <button type="button" className="btn btn-line" disabled={busy} onClick={() => void retry()}>
+          {busy ? "Запускаю…" : "Обработать заново"}
+        </button>
+      ) : null}
+      {failure ? <span className="cab-note-error">{failure}</span> : null}
+    </li>
+  );
 }
 
 function MaterialNote({

@@ -11,7 +11,12 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import nullcontext
 from dataclasses import dataclass
+
+from celery.exceptions import SoftTimeLimitExceeded
+from django.db import transaction
 
 from ..models import Document, KnowledgeChunk
 from ..retrieval import (
@@ -21,6 +26,9 @@ from ..retrieval import (
     get_lexical_retriever,
 )
 from .chunk_view import as_retrievable
+from .embedding_index import request_vector_repair
+
+logger = logging.getLogger(__name__)
 
 # Сколько фрагментов максимум вернуть за запрос.
 DEFAULT_LIMIT = 10
@@ -52,14 +60,16 @@ def search_chunks(request: SearchRequest) -> RetrievalBundle:
 
     chunks = [
         as_retrievable(chunk, document_map[str(chunk.document_id)])
-        # `select_related("task")` убран: задача осталась в основной базе,
-        # а JOIN между базами невозможен. `task_id` и так лежит в самом
-        # чанке, и политике доступа этого достаточно.
-        for chunk in KnowledgeChunk.objects.filter(document_id__in=document_map)
+        # `select_related("task")` не нужен: у куска нет внешнего ключа на
+        # задачу, а `task_id` лежит в самом куске.
+        for chunk in KnowledgeChunk.objects.defer("embedding")
+        .filter(document_id__in=document_map)
         .order_by("page_start", "id")
     ]
     if not chunks:
         return RetrievalBundle(policy_mode=request.mode)
+
+    _request_vector_repair(list(document_map))
 
     policy = RetrievalPolicy(mode=request.mode, max_chunks=request.limit)
     return KnowledgeRetrievalService(lexical=get_lexical_retriever()).retrieve(
@@ -69,6 +79,30 @@ def search_chunks(request: SearchRequest) -> RetrievalBundle:
         policy=policy,
         document_ids=list(document_map),
     )
+
+
+def _request_vector_repair(document_ids: list[str]) -> None:
+    """Недостающие векторы задетых книг снова в очередь (решение 11).
+
+    Поиск отвечает как обычно при любой ошибке починки: по словам куски
+    находятся и без векторов. Кэш ключей — таблица в той же базе, и ошибка её
+    запроса на Postgres обрывает всю транзакцию. Поэтому внутри чужой
+    транзакции починка идёт в точке сохранения (`transaction.atomic`): откат
+    снимает только её запросы, и поиск идёт дальше.
+
+    Вне транзакции (autocommit, как в обычном запросе) точки сохранения нет:
+    там каждый запрос и так своя транзакция. `atomic()` открыл бы настоящую, и
+    ключ кэша ждал бы фиксации до конца публикации, а второй вопрос по той же
+    книге — вместе с ним.
+    """
+    in_transaction = transaction.get_connection().in_atomic_block
+    try:
+        with transaction.atomic() if in_transaction else nullcontext():
+            request_vector_repair(document_ids)
+    except SoftTimeLimitExceeded:
+        raise
+    except Exception as exc:  # noqa: BLE001 — починка не ломает поиск
+        logger.warning("Починку векторов запросить не удалось: %s", exc, exc_info=True)
 
 
 def bundle_to_payload(bundle: RetrievalBundle) -> dict:

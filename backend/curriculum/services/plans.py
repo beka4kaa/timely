@@ -6,8 +6,9 @@
 
 Порядок шагов зафиксирован и не сокращается:
 
-    planner → validate → (блокеры ⇒ НИЧЕГО не сохраняем) → review → persist →
-    forecast → снапшот версии → ожидание подтверждения ученика
+    резерв программы → разбор глав в остаток лимита → planner → validate →
+    (блокеры ⇒ НИЧЕГО не сохраняем) → review → persist → forecast →
+    снапшот версии → ожидание подтверждения ученика
 
 Валидатор — граница доверия. Если он нашёл блокер (в том числе
 `hallucinated_source`, то есть ссылку на несуществующий фрагмент), план не
@@ -27,7 +28,17 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from ai_engine.usage import AIUsageLimitExceeded
+from ai_engine.usage import (
+    AIUsageLimitExceeded,
+    UsageReservation,
+    available_usage_tokens,
+    prepaid_usage,
+    release_usage_reservation,
+    reserve_usage_capacity,
+    shrink_usage_reservation,
+    usage_scope,
+    usage_window_limit,
+)
 
 from ..forecast import (
     ForecastInput,
@@ -58,8 +69,13 @@ from ..planning.contracts import (
     TocEntry,
 )
 from ..planning.duration import covered_pages, estimate_topic_minutes, split_total
-from ..planning.providers import get_planning_provider, get_review_provider
+from ..planning.providers import (
+    get_planning_provider,
+    get_review_provider,
+    plan_deadline,
+)
 from ..planning.validation import ValidationReport, topological_order, validate_plan
+from ..profiles.providers import get_profiling_provider, plan_profiling_seconds
 from ..retrieval import (
     ContextAssembler,
     KnowledgeRetrievalService,
@@ -70,6 +86,11 @@ from ..retrieval import (
     get_lexical_retriever,
 )
 from .chunk_view import as_retrievable
+from .section_profiles import (
+    ProfilingReport,
+    plan_section_profiling,
+    run_section_profiling,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +114,26 @@ PLANNING_TOKEN_BUDGET = 6000
 # быть невидимой магией.
 PLAN_DEADLINE_SECONDS = 300
 
+# Резервы программы и разбора глав живут столько, сколько запрос, и ещё запас.
+# Если запрос оборвётся (выкладка, таймаут gunicorn), `finally` не выполнится,
+# и резерв на всё свободное окно с общим сроком
+# (`AI_USAGE_RESERVATION_TTL_SECONDS`, 65 минут) держал бы чат ученика.
+PLAN_RESERVE_GRACE_SECONDS = 300
+
+# Чего не хватило программе (решение 14). Фронт пишет по ним «программа
+# составлена без подробного разбора глав».
+PLAN_PROFILING_SKIPPED = "plan_profiling_skipped"
+PLAN_PROFILING_PARTIAL = "plan_profiling_partial"
+
 
 def _plan_deadline_seconds() -> int:
     return max(
         1, int(getattr(settings, "CURRICULUM_PLAN_DEADLINE_SECONDS", PLAN_DEADLINE_SECONDS))
     )
+
+
+def _plan_reserve_ttl_seconds() -> int:
+    return _plan_deadline_seconds() + PLAN_RESERVE_GRACE_SECONDS
 
 
 class PlanRejected(RuntimeError):
@@ -107,6 +143,19 @@ class PlanRejected(RuntimeError):
         super().__init__(message)
         self.report = report
         self.message = message
+
+
+class PlanDoesNotFitLimit(RuntimeError):
+    """Программа дороже окна тарифа, даже пустого: ждать восстановления незачем."""
+
+    code = "plan_exceeds_window"
+    message = (
+        "Программа по этой книге не помещается в лимит твоего тарифа, "
+        "даже когда он полностью свободен."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
 
 
 class PlanSourceChanged(PlanRejected):
@@ -233,12 +282,12 @@ def retrieve_planning_context(
     )
     chunks = [
         as_retrievable(chunk, document)
-        for chunk in KnowledgeChunk.objects.filter(
+        for chunk in KnowledgeChunk.objects.defer("embedding").filter(
             document_id=document.pk,
             processing_version=document.processing_version,
         )
-        # select_related("task") убран: задача в основной базе,
-        # а JOIN между базами невозможен — task_id лежит в самом чанке.
+        # `select_related("task")` не нужен: у куска нет внешнего ключа на
+        # задачу, а `task_id` лежит в самом куске.
         .order_by("page_start", "id")
     ]
     document_ids = [str(document.pk)]
@@ -620,9 +669,17 @@ def generate_plan(
     *,
     planning_provider=None,
     review_provider=None,
+    profiling_provider=None,
     start_date: date | None = None,
 ) -> PlanGenerationOutcome:
-    """Полный цикл генерации. Кидает `PlanRejected`, если план непригоден."""
+    """Полный цикл генерации. Кидает `PlanRejected`, если план непригоден.
+
+    До первого вызова модели резервируется цена самой программы, а разбор глав
+    получает то, что осталось (решение 14). Если не помещается даже программа,
+    не запускается ничего: `AIUsageLimitExceeded` говорит, когда лимит
+    восстановится, а `PlanDoesNotFitLimit` — что программу не вмещает и пустое
+    окно тарифа.
+    """
     # Отсчёт идёт от входа в функцию, а не от первого вызова модели: retrieval и
     # сборка запроса тоже тратят время из того же бюджета ответа.
     deadline = time.monotonic() + _plan_deadline_seconds()
@@ -646,10 +703,236 @@ def generate_plan(
 
     request = build_planning_request(goal, document, bundle)
     planner = planning_provider or get_planning_provider()
+    reviewer = review_provider or get_review_provider()
 
-    attempt = _plan_with_one_repair(
-        planner, request, bundle, goal=goal, deadline=deadline
-    )
+    # Все вызовы модели идут на почту ученика. В запросе её ставит middleware, а
+    # прямой вызов (тесты, команды) без этого не записал бы расход ученику.
+    with usage_scope(user_email=goal.user_email):
+        # Сначала цена программы, потом разбор глав из остатка: параллельный
+        # чат не оставит ученика с оплаченным разбором и без программы.
+        estimate = _program_estimate(planner, reviewer, request, bundle)
+        reservation = (
+            UsageReservation()
+            if estimate is None
+            else _reserve_program(goal.user_email, estimate)
+        )
+        try:
+            profiling_warnings = _profile_sections(
+                document,
+                email=goal.user_email,
+                provider=profiling_provider or get_profiling_provider(),
+                program_reserved=estimate is not None,
+            )
+            # Свежие профили попадают в оглавление планировщика.
+            request = build_planning_request(goal, document, bundle)
+            return _compose_plan(
+                goal,
+                document,
+                bundle,
+                request,
+                planner=planner,
+                reviewer=reviewer,
+                reservation=reservation,
+                deadline=deadline,
+                source_processing_version=source_processing_version,
+                profiling_warnings=profiling_warnings,
+                start_date=start_date,
+            )
+        finally:
+            release_usage_reservation(reservation)
+
+
+def _program_estimate(planner, reviewer, request, bundle) -> int | None:
+    """Цена программы до первого вызова: планировщик и проверка (решение 14).
+
+    Починку (`_plan_with_one_repair`, второй вызов планировщика) резерв не
+    считает: она редка, а двойная цена отняла бы программу у бесплатных
+    учеников с обычными книгами. Если починка случится, она идёт под той же
+    предоплатой и сверх неё не тормозится, а перерасход окна учитывается в
+    конце, как у распознавания сканов. `None`, если оценки нет у планировщика
+    или у рецензента: тогда вызовы резервируют сами, как до резерва программы.
+    """
+    estimate_plan = getattr(planner, "estimate_tokens", None)
+    estimate_review = getattr(reviewer, "estimate_tokens", None)
+    if estimate_plan is None or estimate_review is None:
+        return None
+    return estimate_plan(request, bundle) + estimate_review(bundle)
+
+
+def _reserve_program(email: str, estimate: int) -> UsageReservation:
+    """Резерв программы. Отказ говорит, когда ждать, или что ждать незачем."""
+    need = max(1, estimate)
+    try:
+        return reserve_usage_capacity(
+            email,
+            reserved_tokens=need,
+            feature="curriculum_plan",
+            ttl_seconds=_plan_reserve_ttl_seconds(),
+        )
+    except AIUsageLimitExceeded as denied:
+        window_limit = usage_window_limit(email)
+        logger.info(
+            "Резерв программы на %s токенов отклонён (окно тарифа %s)",
+            need,
+            window_limit,
+        )
+        if window_limit is not None and estimate > window_limit:
+            raise PlanDoesNotFitLimit() from denied
+        # Если мешают только живые брони (вызов чата, остаток резерва
+        # оборванного запроса), отказ уже несёт время их окончания, а не сброс
+        # окна через несколько часов (`reserve_usage_capacity`).
+        raise
+
+
+def _profile_sections(
+    document: Document, *, email: str, provider, program_reserved: bool
+) -> list[str]:
+    """Разбор ещё не разобранных разделов в остаток лимита после резерва программы.
+
+    Возвращает предупреждения программы. Ошибка разбора, кроме отказа лимита,
+    только пишется в лог: планировщик работает и без профилей, по заголовкам.
+    Разобранные разделы считаются по ходу, в `report`, поэтому ошибка посреди
+    прогона не стирает уже сохранённое.
+    """
+    started = time.monotonic()
+    work = None
+    report = ProfilingReport()
+    try:
+        work = plan_section_profiling(document, provider=provider)
+        if not program_reserved:
+            # Без цены программы её резерва нет, и разбор занял бы окно раньше
+            # её вызовов. Решение 14 ставит программу первой: разбор пропускаем.
+            logger.warning(
+                "У планировщика или рецензента нет оценки цены: разбор глав "
+                "документа %s пропущен",
+                document.pk,
+            )
+            return _profiling_warnings(work, report)
+        items, reservation = _reserve_profiling(email, work.items)
+        try:
+            # Потоки пула видят этот резерв через копию контекста: их вызовы
+            # тратят его и сверх него не резервируют.
+            with prepaid_usage(reservation):
+                run_section_profiling(
+                    document,
+                    work,
+                    items=items,
+                    stop_at=started + plan_profiling_seconds(),
+                    provider=provider,
+                    report=report,
+                )
+        finally:
+            _settle_profiling_reserve(reservation, report.still_running_tokens)
+        logger.info("Разбор глав документа %s: %s", document.pk, report.as_dict())
+    except AIUsageLimitExceeded:
+        # Здесь его не бывает: вызовы идут под предоплатой, а отказ резерва
+        # разбора гасится в `_reserve_profiling`. Если появится, это отказ
+        # программе, а не повод строить её без разбора.
+        raise
+    except Exception:  # noqa: BLE001 — программа строится и без разбора
+        logger.warning(
+            "Разбор глав документа %s не удался, программа строится без него",
+            document.pk,
+            exc_info=True,
+        )
+    return _profiling_warnings(work, report)
+
+
+def _settle_profiling_reserve(reservation: UsageReservation, still_running_tokens: int) -> None:
+    """Резерв разбора, когда программа перестала ждать разделы.
+
+    Разделы, которые ещё идут, сами сохранят профиль и спишут свой расход:
+    им остаётся сумма их оценок, остальное окно свободно. То, что они не
+    спишут, снимет срок резерва.
+    """
+    if still_running_tokens > 0:
+        shrink_usage_reservation(reservation, still_running_tokens)
+    else:
+        release_usage_reservation(reservation)
+
+
+def _reserve_profiling(email: str, items) -> tuple[list, UsageReservation]:
+    """Резерв разбора на те разделы из начала очереди, что помещаются в остаток.
+
+    Остаток читается без блокировки и может на миг оказаться больше настоящего,
+    поэтому отказ даёт одну попытку с пересчитанным остатком. Второй отказ:
+    разбора нет, программа составляется без него.
+    """
+    if not items:
+        # Всё уже разобрано: окно читать незачем.
+        return [], UsageReservation()
+    for attempt in (1, 2):
+        prefix = _affordable_prefix(items, available_usage_tokens(email))
+        if not prefix:
+            break
+        try:
+            reservation = reserve_usage_capacity(
+                email,
+                reserved_tokens=sum(item[3] for item in prefix),
+                feature="curriculum_section_profiling",
+                ttl_seconds=_plan_reserve_ttl_seconds(),
+            )
+        except AIUsageLimitExceeded:
+            logger.info("Резерв разбора глав отклонён, попытка %s из 2", attempt)
+            continue
+        return prefix, reservation
+    return [], UsageReservation()
+
+
+def _affordable_prefix(items, available: int | None) -> list:
+    """Начало очереди, чья суммарная цена не больше остатка. Лимиты выключены — всё."""
+    if available is None:
+        return list(items)
+    prefix = []
+    total = 0
+    for item in items:
+        total += item[3]
+        if total > available:
+            break
+        prefix.append(item)
+    return prefix
+
+
+def _profiling_warnings(work, report: ProfilingReport) -> list[str]:
+    """Ученик видит, что программа составлена без подробного разбора глав.
+
+    Программе достались разделы, которые сохранились вовремя, и те, что успела
+    разобрать другая программа по этой книге. Раздел, досчитавшийся позже, ей
+    уже не достался.
+    """
+    if work is None:
+        # Разбор не удалось даже спланировать: программа точно без него.
+        return [PLAN_PROFILING_SKIPPED]
+    if not work.items:
+        return []
+    available = report.generated + report.reused
+    if available == 0:
+        return [PLAN_PROFILING_SKIPPED]
+    if available < len(work.items):
+        return [PLAN_PROFILING_PARTIAL]
+    return []
+
+
+def _compose_plan(
+    goal: LearningGoal,
+    document: Document,
+    bundle: RetrievalBundle,
+    request: CoursePlanningRequest,
+    *,
+    planner,
+    reviewer,
+    reservation: UsageReservation,
+    deadline: float,
+    source_processing_version: str,
+    profiling_warnings: list[str],
+    start_date: date | None,
+) -> PlanGenerationOutcome:
+    """Программа под её резервом: планировщик с починкой, проверка, запись."""
+    # Дедлайн видит и скелет: после него он не начинает новые главы.
+    with prepaid_usage(reservation), plan_deadline(deadline):
+        attempt = _plan_with_one_repair(
+            planner, request, bundle, goal=goal, deadline=deadline
+        )
     result, report = attempt.result, attempt.report
     if not report.is_valid:
         # Блокеры — стоп. Ничего не сохраняем: план со ссылками на выдуманные
@@ -668,7 +951,6 @@ def generate_plan(
             )
         raise PlanRejected(report, f"План не прошёл валидацию: {', '.join(codes)}")
 
-    reviewer = review_provider or get_review_provider()
     review = None
     review_skipped_deadline = False
     review_unavailable = False
@@ -680,7 +962,8 @@ def generate_plan(
         logger.warning("Рецензия для цели %s пропущена: вышел дедлайн", goal.pk)
     else:
         try:
-            review = reviewer.review_plan(result, request)
+            with prepaid_usage(reservation):
+                review = reviewer.review_plan(result, request)
         except AIUsageLimitExceeded:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -713,6 +996,7 @@ def generate_plan(
             request=request,
             source_processing_version=source_processing_version,
             source_chunks=source_chunks,
+            generation_warnings=profiling_warnings,
         )
         blockers = review.blockers if review else []
         if blockers:
@@ -741,6 +1025,7 @@ def generate_plan(
         warning_codes.append("plan_review_skipped_deadline")
     if review_unavailable:
         warning_codes.append("plan_review_unavailable")
+    warning_codes.extend(profiling_warnings)
     return PlanGenerationOutcome(
         plan=plan,
         report=report,
@@ -780,7 +1065,7 @@ def _lock_planning_source_snapshot(
 
     chunks = {
         str(chunk.pk): chunk
-        for chunk in KnowledgeChunk.objects.select_for_update().filter(
+        for chunk in KnowledgeChunk.objects.select_for_update().defer("embedding").filter(
             document_id=document.pk,
             processing_version=processing_version,
             pk__in=valid_ids,
@@ -801,6 +1086,7 @@ def _persist_plan(
     request: CoursePlanningRequest,
     source_processing_version: str,
     source_chunks: dict[str, KnowledgeChunk],
+    generation_warnings: list[str],
 ) -> CoursePlan:
     plan = CoursePlan.objects.create(
         user_email=goal.user_email,
@@ -820,6 +1106,7 @@ def _persist_plan(
         source_processing_version=source_processing_version,
         schema_version=request.schema_version,
         current_version=1,
+        generation_warnings=list(generation_warnings),
     )
 
     # Разделы берутся из того же snapshot'а, что ушёл в модель: id уже прошли
@@ -1103,6 +1390,7 @@ def rebuild_plan(
     *,
     planning_provider=None,
     review_provider=None,
+    profiling_provider=None,
     start_date: date | None = None,
 ) -> PlanGenerationOutcome:
     """Строит программу заново по той же паре цель+книга.
@@ -1134,6 +1422,7 @@ def rebuild_plan(
         document,
         planning_provider=planning_provider,
         review_provider=review_provider,
+        profiling_provider=profiling_provider,
         start_date=start_date,
     )
 

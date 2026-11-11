@@ -68,6 +68,8 @@ button.book-slot:hover { background: var(--t-hover); color: var(--t-ink); }
 /* Длинное объяснение занимает всю ширину: кнопка рядом сжала бы его в узкую колонку */
 .cab-notes li.is-bad > span { flex-basis: 100%; color: var(--t-ink-2); }
 .cab-notes .btn { height: 28px; padding: 0 10px; font-size: 12.5px; }
+/* Ошибка повтора отдельной строкой под строкой сканов */
+.cab-notes li > .cab-note-error { flex-basis: 100%; color: var(--t-warn); }
 
 /* Заглушка, пока стеллаж грузится */
 .cur-skel { display: block; border-radius: 8px; background: var(--t-fill); }

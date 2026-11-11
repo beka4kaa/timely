@@ -24,6 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
+from celery.exceptions import SoftTimeLimitExceeded
+
+from ai_engine.time_limit import hit_time_limit
+
 # Ключи в storage строим сами и никогда не берём из имени файла пользователя:
 # иначе «../../etc/passwd» уедет за пределы каталога.
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9/_.-]{0,500}$")
@@ -284,6 +288,8 @@ class S3FileStorage:
         try:
             response = self.client.get_object(Bucket=self.settings.bucket, Key=key)
         except Exception as exc:  # noqa: BLE001
+            if hit_time_limit(exc):
+                raise SoftTimeLimitExceeded() from exc
             if _error_code(exc) in _NOT_FOUND_CODES:
                 raise StorageError("Файл не найден.") from exc
             raise StorageError("Хранилище файлов сейчас недоступно.") from exc
@@ -401,6 +407,15 @@ def s3_settings_from_django() -> S3StorageSettings | None:
 _storage: FileStorage | None = None
 
 
+def _local_root() -> Path | str:
+    from django.conf import settings
+
+    root = getattr(settings, "CURRICULUM_STORAGE_ROOT", None)
+    if not root:
+        root = Path(settings.BASE_DIR) / ".curriculum-storage"
+    return root
+
+
 def get_storage() -> FileStorage:
     """Текущее хранилище. Переопределяется в тестах через `set_storage`.
 
@@ -417,11 +432,30 @@ def get_storage() -> FileStorage:
             _storage = S3FileStorage(s3)
             return _storage
 
-        root = getattr(settings, "CURRICULUM_STORAGE_ROOT", None)
-        if not root:
-            root = Path(settings.BASE_DIR) / ".curriculum-storage"
-        _storage = LocalFileStorage(root)
+        _storage = LocalFileStorage(_local_root())
     return _storage
+
+
+def get_storage_for(backend_name: str) -> FileStorage:
+    """Хранилище, в котором лежит файл с этим `DocumentFile.storage_backend`.
+
+    Читать файл по текущему умолчанию нельзя: после переезда на S3 книги,
+    загруженные раньше, остались в локальном хранилище. Поэтому читаем тем,
+    что записано в строке файла.
+    """
+    # Тот же объект, что у процесса: один клиент S3 на процесс, а не новый
+    # на каждое чтение.
+    current = get_storage()
+    if current.backend_name == backend_name:
+        return current
+    if backend_name == "s3":
+        s3 = s3_settings_from_django()
+        if s3 is None:
+            raise StorageError("Хранилище S3 не настроено.")
+        return S3FileStorage(s3)
+    if backend_name == "local":
+        return LocalFileStorage(_local_root())
+    raise StorageError(f"Неизвестное хранилище: {backend_name}.")
 
 
 def set_storage(storage: FileStorage | None) -> None:

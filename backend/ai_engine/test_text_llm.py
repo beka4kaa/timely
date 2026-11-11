@@ -163,6 +163,42 @@ class WallClockBackstopTests(SimpleTestCase):
                         system_prompt="s", payload={}, timeout=1, max_tokens=10
                     )
 
+    def test_a_call_still_waiting_for_a_slot_never_starts_after_its_deadline(self):
+        # Все слоты исполнителя заняты другими запросами процесса. Вызов, который
+        # так и не дождался слота, не должен стартовать потом, когда ответ уже
+        # никому не нужен, а допуск по лимиту снят.
+        started = threading.Event()
+        client = _RecordingClient()
+        record_call = client.create
+
+        def create(**kwargs):
+            started.set()
+            return record_call(**kwargs)
+
+        client.create = create
+        executor = text_llm._JSON_MODEL_EXECUTOR
+        release = threading.Event()
+        blockers = [executor.submit(release.wait, 30) for _ in range(executor._max_workers)]
+        try:
+            with _ClientFixture(client):
+                with patch.object(text_llm, "_WALL_CLOCK_GRACE_SECONDS", 0):
+                    with self.assertRaises(TimeoutError), self.assertLogs(
+                        "ai_engine.text_llm", level="INFO"
+                    ):
+                        TextModel("vendor/model").generate_json_content(
+                            system_prompt="s", payload={}, timeout=1, max_tokens=10
+                        )
+                release.set()
+                for blocker in blockers:
+                    blocker.result()
+                # Очередь исполнителя по порядку: всё, что стояло перед этой
+                # пустышкой, уже взято в работу.
+                executor.submit(lambda: None).result()
+                self.assertFalse(started.wait(1))
+        finally:
+            release.set()
+        self.assertEqual(client.calls, [])
+
     def test_fast_call_returns_normally(self):
         with _ClientFixture(_RecordingClient(response=_Response('{"a":1}'))):
             response = TextModel("vendor/model").generate_json_content(

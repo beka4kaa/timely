@@ -494,7 +494,9 @@ class PgVectorDenseRetriever:
     def _embed_query(self, query: str) -> tuple[list[float], str] | None:
         from .embeddings import get_embedding_provider
 
-        provider = self._provider or get_embedding_provider(private=True)
+        provider = self._provider or get_embedding_provider(
+            private=True, for_query=True
+        )
         if provider.name == "null-embedding":
             return None
         result = provider.embed([query])
@@ -518,6 +520,7 @@ class PgVectorDenseRetriever:
             return []
         vector, embedding_model = embedded
 
+        from pgvector import HalfVector
         from pgvector.django import CosineDistance
 
         from .models import KnowledgeChunk
@@ -530,7 +533,7 @@ class PgVectorDenseRetriever:
                 embedding_model=embedding_model,
             )
             .exclude(embedding=None)
-            .annotate(distance=CosineDistance("embedding", vector))
+            .annotate(distance=CosineDistance("embedding", HalfVector(vector)))
             .order_by("distance", "id")
             .values_list("id", "distance")[:limit]
         )

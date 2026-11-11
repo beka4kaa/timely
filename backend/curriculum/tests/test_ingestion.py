@@ -3,8 +3,11 @@
 import tempfile
 from unittest import mock
 
-from django.test import SimpleTestCase, TestCase
+from django.db import connection
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 
+from ai_engine.models import AIUsageQuotaState
 from ai_engine.usage import AIUsageLimitExceeded
 
 from curriculum import storage as storage_module
@@ -23,7 +26,14 @@ from curriculum.models import (
 from curriculum.ocr import NullOcrProvider, OcrResult
 from curriculum.services.embedding_index import IndexOutcome
 from curriculum.services.ingestion import detect_language, ingest_document
-from curriculum.tests.pdf_fixtures import scanned_pdf, textbook_pdf
+from curriculum.tests.test_embeddings import FakeEmbeddingProvider
+from curriculum.tests.pdf_fixtures import (
+    SCAN,
+    TEXTBOOK_PAGE_ONE,
+    build_text_pdf,
+    scanned_pdf,
+    textbook_pdf,
+)
 
 EMAIL = "student@example.com"
 
@@ -36,6 +46,9 @@ class StubOcrProvider:
     def __init__(self, text: str = "Problem 9. Stub page.\nSolution. x = 1."):
         self.text = text
         self.calls = 0
+
+    def page_token_bound(self) -> int:
+        return 4000
 
     def transcribe_page(self, png_bytes: bytes) -> OcrResult:
         self.calls += 1
@@ -128,6 +141,31 @@ class HappyPathTests(_IngestionBase):
     def test_page_count_reconciled_from_pdfium(self):
         self.document.refresh_from_db()
         self.assertEqual(self.document.page_count, 2)
+
+    def test_chunks_are_written_with_their_links_in_one_pass(self):
+        document = self._make_document(textbook_pdf())
+        with CaptureQueriesContext(connection) as captured:
+            ingest_document(document, ocr_provider=NullOcrProvider())
+        for query in captured.captured_queries:
+            sql = query["sql"]
+            if not sql.startswith('UPDATE "curriculum_knowledgechunk"'):
+                continue
+            set_part = sql.split(" SET ", 1)[1].split(" WHERE ", 1)[0]
+            for column in ('"parent_id"', '"previous_id"', '"next_id"'):
+                self.assertNotIn(column, set_part)
+        linked = KnowledgeChunk.objects.filter(
+            document_id=document.pk, next_id__isnull=False
+        )
+        self.assertTrue(linked.exists())
+        for chunk in linked:
+            self.assertEqual(
+                KnowledgeChunk.objects.get(pk=chunk.next_id).previous_id, chunk.pk
+            )
+
+    def test_blocks_do_not_keep_a_raw_copy(self):
+        blocks = DocumentBlock.objects.filter(document=self.document)
+        self.assertTrue(blocks.exists())
+        self.assertFalse(blocks.exclude(raw_text="").exists())
 
     def test_tasks_and_solutions_in_separate_tables(self):
         tasks = ExtractedTask.objects.filter(document=self.document)
@@ -289,6 +327,71 @@ class RunFencingTests(_IngestionBase):
         self.assertFalse(DocumentPage.objects.filter(document=document).exists())
 
 
+class EmbeddingPhaseStopTests(_IngestionBase):
+    """Фаза векторов при загрузке не должна ронять уже разобранную книгу."""
+
+    def _ingest(self, provider):
+        document = self._make_document(textbook_pdf())
+        with mock.patch(
+            "curriculum.services.embedding_index.get_embedding_provider",
+            return_value=provider,
+        ), mock.patch(
+            "curriculum.services.embedding_index.EMBEDDING_BATCH_SIZE", 1
+        ):
+            outcome = ingest_document(document, ocr_provider=NullOcrProvider())
+        document.refresh_from_db()
+        return document, outcome
+
+    def _statuses(self, document):
+        return list(
+            KnowledgeChunk.objects.filter(document_id=document.pk).values_list(
+                "embedding_status", flat=True
+            )
+        )
+
+    def test_all_successful_batches_are_not_stopped(self):
+        provider = FakeEmbeddingProvider()
+        document, outcome = self._ingest(provider)
+
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertGreater(len(provider.calls), 2)
+        self.assertEqual(
+            set(self._statuses(document)), {KnowledgeChunk.EmbeddingStatus.READY}
+        )
+        self.assertNotIn("embedding_stopped_early", outcome.warnings)
+
+    def test_two_failed_embedding_batches_in_a_row_leave_the_book_ready(self):
+        provider = FakeEmbeddingProvider(fail=True)
+        document, outcome = self._ingest(provider)
+
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertEqual(len(provider.calls), 2)
+        statuses = self._statuses(document)
+        self.assertGreater(len(statuses), 2)
+        self.assertEqual(
+            statuses.count(KnowledgeChunk.EmbeddingStatus.FAILED), 2
+        )
+        self.assertEqual(
+            statuses.count(KnowledgeChunk.EmbeddingStatus.PENDING),
+            len(statuses) - 2,
+        )
+        self.assertIn("embedding_stopped_early", outcome.warnings)
+
+    @override_settings(CELERY_TASK_SOFT_TIME_LIMIT=100)
+    def test_no_new_embedding_batch_after_the_deadline(self):
+        # Запись `started_at` ставит сам запуск, поэтому «срок уже прошёл»
+        # задаётся мягким пределом короче запаса в 600 секунд.
+        provider = FakeEmbeddingProvider()
+        document, outcome = self._ingest(provider)
+
+        self.assertEqual(document.ingestion_status, Document.Status.READY)
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(
+            set(self._statuses(document)), {KnowledgeChunk.EmbeddingStatus.PENDING}
+        )
+        self.assertIn("embedding_stopped_early", outcome.warnings)
+
+
 class OcrPathTests(_IngestionBase):
     def test_ocr_runs_only_on_scanned_pages(self):
         document = self._make_document(scanned_pdf())
@@ -321,30 +424,76 @@ class OcrPathTests(_IngestionBase):
         outcome = ingest_document(document, ocr_provider=NullOcrProvider())
         self.assertTrue(outcome.succeeded)
         self.assertEqual(outcome.warnings.count("ocr_not_configured"), 1)
+        document.refresh_from_db()
+        self.assertEqual(document.ocr_summary["scanned"], 1)
+        self.assertEqual(document.ocr_summary["attempted"], 0)
+        self.assertEqual(document.ocr_summary["recognized"], 0)
+        self.assertEqual(document.ocr_summary["skipped"], "")
 
     def test_ocr_page_cap_is_reported(self):
         document = self._make_document(scanned_pdf())
         outcome = ingest_document(
             document, ocr_provider=StubOcrProvider(), max_ocr_pages=0
         )
-        self.assertTrue(
-            any(w.startswith("ocr_limited_to_0") for w in outcome.warnings),
+        document.refresh_from_db()
+        self.assertEqual(document.ocr_summary["scanned"], 1)
+        self.assertEqual(document.ocr_summary["attempted"], 0)
+        self.assertFalse(
+            [code for code in outcome.warnings if code.startswith("ocr_limited")],
             outcome.warnings,
         )
 
-    def test_quota_denial_escapes_ingestion_for_worker_terminal_handling(self):
+    @override_settings(
+        AI_USAGE_ENFORCE_LIMITS=True,
+        AI_PLAN_LIMITS={"free": {"five_hour": 100_000, "weekly": 100_000}},
+    )
+    def test_quota_denial_mid_ocr_keeps_recognized_pages_and_the_book_is_ready(self):
         class DeniedOcr:
             name = "denied"
 
+            def __init__(self):
+                self.calls = 0
+
+            def page_token_bound(self):
+                return 4000
+
             def transcribe_page(self, png_bytes):
+                self.calls += 1
+                if self.calls == 1:
+                    return OcrResult(
+                        text="Problem 9. Stub page.\nSolution. x = 1.",
+                        model=self.name,
+                        succeeded=True,
+                    )
                 raise AIUsageLimitExceeded(
-                    window="five_hour",
-                    reset_at="2026-08-09T12:00:00Z",
+                    window="five_hour", reset_at="2026-08-09T12:00:00Z"
                 )
 
-        document = self._make_document(scanned_pdf())
-        with self.assertRaises(AIUsageLimitExceeded):
-            ingest_document(document, ocr_provider=DeniedOcr())
+        document = self._make_document(
+            build_text_pdf([TEXTBOOK_PAGE_ONE, SCAN, SCAN, SCAN])
+        )
+        provider = DeniedOcr()
+
+        outcome = ingest_document(document, ocr_provider=provider)
+
+        self.assertTrue(outcome.succeeded)
+        # Третий скан не отправлен: отказ на странице останавливает цикл.
+        self.assertEqual(provider.calls, 2)
+        document.refresh_from_db()
+        self.assertEqual(document.ocr_summary["scanned"], 3)
+        self.assertEqual(document.ocr_summary["attempted"], 3)
+        self.assertEqual(document.ocr_summary["recognized"], 1)
+        self.assertEqual(document.ocr_summary["skipped"], "")
+        applied = {
+            page.page_number: page.ocr_applied
+            for page in DocumentPage.objects.filter(document=document)
+        }
+        self.assertTrue(applied[2])
+        self.assertFalse(applied[3])
+        self.assertFalse(applied[4])
+        self.assertEqual(
+            AIUsageQuotaState.objects.get(user_email=EMAIL).reservations, {}
+        )
 
 
 class FailurePathTests(_IngestionBase):

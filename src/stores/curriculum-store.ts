@@ -15,6 +15,7 @@
 
 import { create } from "zustand";
 
+import { limitMessage } from "@/lib/ai-limit";
 import {
   type CoursePlan,
   type CurriculumDocument,
@@ -153,6 +154,10 @@ const INITIAL = {
 
 function toWizardError(error: unknown): WizardError {
   if (error instanceof CurriculumApiError) {
+    if (error.code === "ai_usage_limit_exceeded") {
+      const payload = (error.payload ?? {}) as { reset_at?: unknown };
+      return { code: error.code, message: limitMessage(payload.reset_at) };
+    }
     return { code: error.code || String(error.status), message: error.message };
   }
   // Прерывание по таймауту прилетает как DOMException, и её `message` — это
@@ -321,7 +326,17 @@ export const useCurriculumStore = create<CurriculumState>()((set, get) => ({
     set({ busy: true, error: null });
     try {
       await startIngestion(documentId);
-      set({ busy: false });
+      // Старое состояние «готово» сбрасываем сразу: экран ожидания берёт статус из
+      // `ingestion`, а пока его нет, из `document`. Оба прежние значения выключили
+      // бы опрос, и при сетевом сбое refresh экран застыл бы.
+      set((current) => ({
+        busy: false,
+        step: "processing",
+        ingestion: null,
+        document: current.document
+          ? { ...current.document, ingestion_status: "queued" }
+          : current.document,
+      }));
       await get().refreshIngestion();
     } catch (error) {
       set({ busy: false, error: toWizardError(error) });

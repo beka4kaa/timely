@@ -41,8 +41,8 @@ def _is_metered_request(method: str, path: str) -> bool:
         return True
     if len(tail) == 3 and tail[0] == "goals" and tail[2] == "normalize":
         return True
-    if len(tail) == 3 and tail[0] == "documents" and tail[2] == "ingest":
-        return True
+    # Обработка книги (`documents/<id>/ingest`) окна не проверяет: книга с
+    # текстом лимит не тратит, а сканы воркер резервирует сам.
     return False
 
 

@@ -7,25 +7,31 @@
 живом сервере, а не здесь.
 """
 
+import importlib
 from io import StringIO
 from types import SimpleNamespace
 from unittest import mock
 
+import numpy as np
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
+from pgvector import HalfVector
+from pgvector.django import HalfVectorField
 
-from ai_engine.models import AIUsageQuotaState
-from ai_engine.usage import AIUsageLimitExceeded, usage_scope
+from ai_engine.models import AIUsageEvent
+from ai_engine.usage import AIUsageLimitExceeded, build_usage_summary, usage_scope
 
 from curriculum.embeddings import (
+    EMBEDDING_FEATURE,
     EmbeddingResult,
     NullEmbeddingProvider,
     OpenAICompatibleEmbeddingProvider,
     estimate_tokens,
     get_embedding_provider,
+    vector_as_list,
 )
 from curriculum.models import EMBEDDING_DIMENSIONS, Document, KnowledgeChunk
 from curriculum.retrieval import (
@@ -129,61 +135,97 @@ class EmbeddingProviderTests(TestCase):
         self.assertGreaterEqual(estimate_tokens("а" * 400), 100)
         self.assertEqual(estimate_tokens(""), 1)
 
-    @override_settings(AI_USAGE_ENFORCE_LIMITS=True)
-    @mock.patch("ai_engine.usage.reserve_usage_capacity")
-    @mock.patch("openai.OpenAI")
-    def test_quota_denial_is_not_retried_as_provider_failure(self, openai, reserve):
-        reserve.side_effect = AIUsageLimitExceeded(
-            window="five_hour",
-            reset_at="2026-08-09T12:00:00Z",
-        )
-        provider = OpenAICompatibleEmbeddingProvider(
-            model="model",
-            base_url="https://example.test/v1",
-            api_key="key",
-        )
-
-        with usage_scope(user_email="student@example.com"):
-            with self.assertRaises(AIUsageLimitExceeded):
-                provider.embed(["текст"])
-
-        openai.return_value.embeddings.create.assert_not_called()
-
     @override_settings(
-        AI_USAGE_ENFORCE_LIMITS=True,
-        AI_PLAN_LIMITS={
-            "free": {"context": 10000, "five_hour": 10000, "weekly": 10000}
-        },
+        CURRICULUM_EMBEDDINGS_ENABLED=True,
+        CURRICULUM_QUERY_EMBEDDING_TIMEOUT_SECONDS=7,
     )
     @mock.patch("openai.OpenAI")
-    def test_batch_reservation_lives_through_usage_write(self, openai):
-        openai.return_value.embeddings.create.return_value = SimpleNamespace(
-            data=[
-                SimpleNamespace(
-                    index=0,
-                    embedding=[0.0] * EMBEDDING_DIMENSIONS,
-                )
-            ]
+    def test_query_provider_has_a_short_timeout_and_one_attempt(self, openai):
+        create = openai.return_value.embeddings.create
+        create.side_effect = RuntimeError("boom")
+        with (
+            mock.patch.dict("os.environ", {"EMBEDDING_MODEL": "m"}),
+            mock.patch("curriculum.embeddings.EMBEDDING_BASE_URL", "https://example.test/v1"),
+            mock.patch("curriculum.embeddings.EMBEDDING_API_KEY", "key"),
+        ):
+            provider = get_embedding_provider(private=True, for_query=True)
+        with (
+            mock.patch("curriculum.embeddings.time.sleep") as sleep,
+            self.assertLogs("curriculum.embeddings", level="WARNING") as logs,
+        ):
+            result = provider.embed(["вопрос"])
+
+        self.assertEqual(provider.timeout_seconds, 7)
+        self.assertEqual(create.call_args.kwargs["timeout"], 7)
+        self.assertEqual(provider.max_attempts, 1)
+        self.assertFalse(result.succeeded)
+        create.assert_called_once()
+        sleep.assert_not_called()
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            ["Батч эмбеддингов не удался (m, попытка 1/1): boom"],
         )
-        observed = []
 
-        def record(*args, **kwargs):
-            state = AIUsageQuotaState.objects.get(user_email="student@example.com")
-            observed.append(list(state.reservations.values()))
 
-        provider = OpenAICompatibleEmbeddingProvider(
+@override_settings(
+    AI_USAGE_ENFORCE_LIMITS=True,
+    AI_PLAN_LIMITS={"free": {"context": 1000, "five_hour": 1000, "weekly": 1000}},
+)
+class UnmeteredEmbeddingTests(TestCase):
+    """Векторы пишут расход, но окна лимита ученика не трогают (решение 12)."""
+
+    def _provider(self, openai):
+        openai.return_value.embeddings.create.return_value = SimpleNamespace(
+            data=[SimpleNamespace(index=0, embedding=[0.0] * EMBEDDING_DIMENSIONS)],
+            usage={"prompt_tokens": 5, "total_tokens": 5},
+        )
+        return OpenAICompatibleEmbeddingProvider(
             model="model",
             base_url="https://example.test/v1",
             api_key="key",
         )
-        with mock.patch("ai_engine.usage.record_model_usage", side_effect=record):
-            with usage_scope(user_email="student@example.com"):
-                result = provider.embed(["x"])
+
+    @mock.patch("openai.OpenAI")
+    def test_book_vectors_are_recorded_but_not_metered(self, openai):
+        provider = self._provider(openai)
+
+        with usage_scope(user_email="student@example.com"):
+            provider.embed(["a"])
+
+        event = AIUsageEvent.objects.get(
+            user_email="student@example.com", feature="curriculum_embedding"
+        )
+        self.assertFalse(event.metered)
+        self.assertEqual(event.billable_tokens, 5)
+        self.assertEqual(
+            build_usage_summary("student@example.com")["windows"]["five_hour"]["used"],
+            0,
+        )
+
+    @mock.patch("openai.OpenAI")
+    def test_embedding_runs_with_an_exhausted_window(self, openai):
+        AIUsageEvent.objects.create(
+            user_email="student@example.com",
+            model_name="m",
+            feature="chat",
+            total_tokens=1000,
+            billable_tokens=1000,
+        )
+        provider = self._provider(openai)
+
+        with usage_scope(user_email="student@example.com"):
+            result = provider.embed(["a"])
 
         self.assertTrue(result.succeeded)
-        self.assertEqual(observed[0][0]["kind"], "capacity")
-        state = AIUsageQuotaState.objects.get(user_email="student@example.com")
-        self.assertEqual(state.reservations, {})
+        openai.return_value.embeddings.create.assert_called_once()
+
+    def test_migration_backfills_the_feature_embed_records(self):
+        # 0010 держит метку строкой, а не импортом. Опечатка в ней оставила бы
+        # старые события эмбеддингов в окнах лимита.
+        migration = importlib.import_module(
+            "ai_engine.migrations.0010_aiusageevent_metered"
+        )
+        self.assertEqual(migration.EMBEDDING_FEATURE, EMBEDDING_FEATURE)
 
 
 @override_settings(CURRICULUM_EMBEDDINGS_ENABLED=True)
@@ -209,15 +251,19 @@ class PrivateQueryTests(TestCase):
 
         self.assertIsNotNone(embedded)
         self.assertEqual(create.call_args.kwargs["extra_body"], {"provider": {"zdr": True}})
+        self.assertEqual(create.call_args.kwargs["timeout"], 12)
 
     @mock.patch("ai_engine.usage.record_model_usage")
     @mock.patch("openai.OpenAI")
     def test_текст_книги_идёт_как_раньше(self, openai, _record):
         create = self._one_vector(openai)
 
-        get_embedding_provider().embed(["глава из книги"])
+        # Умолчание роли — 180 с, и локальный `.env` не должен его подменить.
+        with mock.patch.dict("os.environ", {"EMBEDDING_TIMEOUT": ""}):
+            get_embedding_provider().embed(["глава из книги"])
 
         self.assertNotIn("extra_body", create.call_args.kwargs)
+        self.assertEqual(create.call_args.kwargs["timeout"], 180)
 
     @mock.patch("ai_engine.usage.record_model_usage")
     @mock.patch("openai.OpenAI")
@@ -464,6 +510,39 @@ class IndexDocumentChunksTests(TestCase):
         self.assertIsNone(replacement.embedding)
 
 
+class HalfPrecisionVectorTests(TestCase):
+    """Векторы лежат в колонке половинной точности и читаются как `HalfVector`."""
+
+    def test_embedding_column_is_half_precision(self):
+        field = KnowledgeChunk._meta.get_field("embedding")
+        self.assertIsInstance(field, HalfVectorField)
+        self.assertEqual(field.db_type(connection), "halfvec(1536)")
+
+    def test_reused_vector_survives_the_half_precision_column(self):
+        provider = FakeEmbeddingProvider()
+        document = make_document()
+        ready = make_chunk(document, "сила", content_hash="same")
+        KnowledgeChunk.objects.filter(pk=ready.pk).update(
+            embedding=[0.25] * 1536,
+            embedding_model=provider.model,
+            embedding_status=KnowledgeChunk.EmbeddingStatus.READY,
+        )
+        fresh = make_chunk(document, "сила", content_hash="same")
+
+        index_document_chunks(document, provider=provider, chunk_ids=[fresh.pk])
+
+        fresh.refresh_from_db()
+        self.assertEqual(vector_as_list(fresh.embedding), [0.25] * 1536)
+
+    def test_vector_as_list_reads_every_stored_form(self):
+        self.assertEqual(vector_as_list(None), [])
+        self.assertEqual(vector_as_list([1, 2]), [1.0, 2.0])
+        self.assertEqual(
+            vector_as_list(np.array([1, 2], dtype=np.float32)), [1.0, 2.0]
+        )
+        self.assertEqual(vector_as_list(HalfVector([1, 2])), [1.0, 2.0])
+
+
 class EstimateTests(TestCase):
     def test_оценка_ничего_не_меняет_и_никуда_не_ходит(self):
         document = make_document()
@@ -589,6 +668,56 @@ class EmbeddingCommandSafetyTests(TestCase):
             )
 
         self.assertEqual(index.call_args.args[0], self.document)
+
+    @override_settings(
+        AI_USAGE_ENFORCE_LIMITS=True,
+        AI_PLAN_LIMITS={
+            "free": {"context": 1000, "five_hour": 1000, "weekly": 1000}
+        },
+    )
+    def test_reset_failed_requeues_and_embeds_outside_the_window(self):
+        email = self.document.user_email
+        KnowledgeChunk.objects.filter(document_id=self.document.pk).update(
+            embedding_status=KnowledgeChunk.EmbeddingStatus.FAILED
+        )
+        AIUsageEvent.objects.create(
+            user_email=email,
+            model_name="m",
+            total_tokens=1000,
+            billable_tokens=1000,
+        )
+        provider = OpenAICompatibleEmbeddingProvider(
+            model="model", base_url="https://example.test/v1", api_key="key"
+        )
+        out = StringIO()
+        with mock.patch("openai.OpenAI") as openai, mock.patch(
+            "curriculum.management.commands.curriculum_embed.get_embedding_provider",
+            return_value=provider,
+        ):
+            openai.return_value.embeddings.create.return_value = SimpleNamespace(
+                data=[SimpleNamespace(index=0, embedding=[0.0] * EMBEDDING_DIMENSIONS)],
+                usage={"prompt_tokens": 5, "total_tokens": 5},
+            )
+            call_command(
+                "curriculum_embed",
+                "--user",
+                email,
+                "--reset-failed",
+                "--execute",
+                "--max-usd",
+                "1",
+                stdout=out,
+            )
+
+        self.assertIn("Возвращено в очередь: 1", out.getvalue())
+        chunk = KnowledgeChunk.objects.get(document_id=self.document.pk)
+        self.assertEqual(chunk.embedding_status, KnowledgeChunk.EmbeddingStatus.READY)
+        self.assertTrue(
+            AIUsageEvent.objects.filter(user_email=email, metered=False).exists()
+        )
+        self.assertEqual(
+            AIUsageEvent.objects.filter(user_email=email, metered=True).count(), 1
+        )
 
     def test_reindex_all_не_очищает_строки_до_вызова_провайдера(self):
         chunk = KnowledgeChunk.objects.get(document_id=self.document.pk)

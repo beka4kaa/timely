@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import time
+
 from django.test import TestCase
 
 from curriculum.models import (
@@ -32,7 +34,9 @@ from curriculum.profiles.providers import (
 from curriculum.services.section_profiles import (
     LARGE_CHAPTER_PAGES,
     compute_content_hash,
+    plan_section_profiling,
     profile_document_sections,
+    run_section_profiling,
     sections_to_profile,
 )
 
@@ -75,6 +79,9 @@ class CountingProvider:
     def __init__(self):
         self.calls: list[str] = []
         self._inner = FakeSectionProfilingProvider()
+
+    def estimate_tokens(self, request: ProfilingRequest) -> int:
+        return 0
 
     def profile(self, request: ProfilingRequest) -> ProfileResult:
         self.calls.append(request.section_id)
@@ -307,6 +314,9 @@ class ProfilingRunTests(TestCase):
         class Flaky:
             name = "flaky"
 
+            def estimate_tokens(self, request):
+                return 0
+
             def profile(self, request):
                 if request.title == "Энергия":
                     raise RuntimeError("провайдер лёг")
@@ -324,6 +334,9 @@ class ProfilingRunTests(TestCase):
         class SaysNotTeachable:
             name = "strict"
 
+            def estimate_tokens(self, request):
+                return 0
+
             def profile(self, request):
                 return ProfileResult(section_id=request.section_id, is_teachable=False)
 
@@ -331,6 +344,59 @@ class ProfilingRunTests(TestCase):
 
         self.chapter.refresh_from_db()
         self.assertFalse(self.chapter.is_teachable)
+
+    def test_run_respects_given_items_and_stop_at(self):
+        """Программа решает, сколько разделов разобрать и до какого момента."""
+        second = section(self.doc, path="2", title="Энергия", level=2, start=7, end=12)
+        chunk(self.doc, second, text="Энергия — способность совершить работу.")
+        provider = CountingProvider()
+
+        work = plan_section_profiling(self.doc, provider=provider)
+
+        # План работы считается без модели.
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(
+            [item[0].pk for item in work.items], [self.chapter.pk, second.pk]
+        )
+
+        report = run_section_profiling(
+            self.doc, work, items=work.items[:1], provider=provider
+        )
+
+        self.assertEqual(provider.calls, [str(self.chapter.pk)])
+        self.assertEqual(report.generated, 1)
+        self.assertEqual(report.skipped_limit, 1)
+        self.assertFalse(SectionProfile.objects.filter(section=second).exists())
+
+        late = CountingProvider()
+        work = plan_section_profiling(self.doc, provider=late)
+        report = run_section_profiling(
+            self.doc, work, stop_at=time.monotonic() - 1, provider=late
+        )
+
+        # Глава уже в кэше, а до второго раздела очередь дошла после срока.
+        self.assertEqual(work.from_cache, 1)
+        self.assertEqual(late.calls, [])
+        self.assertEqual(report.skipped_time, 1)
+        self.assertEqual(report.generated, 0)
+        self.assertFalse(SectionProfile.objects.filter(section=second).exists())
+
+    def test_a_profile_saved_meanwhile_is_not_paid_again(self):
+        """Две программы по одной книге: вторая не платит за то, что сохранила первая."""
+        second = section(self.doc, path="2", title="Энергия", level=2, start=7, end=12)
+        chunk(self.doc, second, text="Энергия — способность совершить работу.")
+        provider = CountingProvider()
+        work = plan_section_profiling(self.doc, provider=provider)
+        # Параллельная программа досчитала главу, пока этот разбор её не начал.
+        SectionProfile.objects.create(
+            section=self.chapter, document=self.doc, content_hash=work.items[0][2]
+        )
+
+        report = run_section_profiling(self.doc, work, provider=provider)
+
+        self.assertEqual(provider.calls, [str(second.pk)])
+        self.assertEqual(report.reused, 1)
+        self.assertEqual(report.generated, 1)
 
     def test_хеш_учитывает_версию_промпта(self):
         first = compute_content_hash(

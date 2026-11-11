@@ -22,7 +22,7 @@
 import { limitMessage } from "@/lib/ai-limit";
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch, backendAuthHeaders } from "@/lib/auth-fetch";
-import type { IngestionStatusCode } from "@/lib/curriculum-progress";
+import type { IngestionStatusCode, OcrSummary } from "@/lib/curriculum-progress";
 
 const BASE = `${BACKEND_URL}/api/curriculum`;
 
@@ -77,6 +77,8 @@ export interface CurriculumDocument {
   page_count: number;
   ingestion_status: IngestionStatusCode;
   processing_version: string;
+  /** Итог распознавания сканов. У книг, обработанных раньше, приходит `{}`. */
+  ocr_summary?: Partial<OcrSummary>;
   file: DocumentFileInfo | null;
   created_at: string;
 }
@@ -172,6 +174,7 @@ export interface IngestionState {
   job: IngestionJob | null;
   attempts: IngestionAttempt[];
   warnings: string[];
+  ocr_summary?: Partial<OcrSummary>;
   stats: IngestionStats;
 }
 
@@ -250,6 +253,7 @@ export interface CoursePlanSummary {
   estimated_total_minutes: number;
   forecast_finish_date: string | null;
   current_version: number;
+  generation_warnings?: string[];
   created_at: string;
 }
 
@@ -273,6 +277,7 @@ export interface CoursePlan {
   status: PlanStatus;
   generation_model: string;
   reviewer_model: string;
+  generation_warnings?: string[];
   modules: CourseModule[];
   milestones: CourseMilestone[];
   created_at: string;

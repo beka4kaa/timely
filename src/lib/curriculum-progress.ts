@@ -9,6 +9,8 @@
 // (в том числе будущие, которых в ответе ещё нет) и пережить ответ старой версии
 // бэкенда, где полей `phase*` может не оказаться.
 
+import { resetPhrase } from "./ai-limit.ts";
+
 /** Статусы пайплайна из `Document.Status` на бэкенде. */
 export type IngestionStatusCode =
   | "uploaded"
@@ -117,7 +119,7 @@ export const FAILURES_BEFORE_WARNING = 3;
 
 // ────────────────────────── Ошибки обработки ─────────────────────────────────
 
-const ERROR_MESSAGES: Record<string, string> = {
+export const ERROR_MESSAGES: Record<string, string> = {
   // Самый вероятный случай в реальности: скан без подключённого распознавания.
   no_content:
     "Не удалось извлечь текст. Похоже, это скан страниц, а распознавание пока не подключено.",
@@ -132,6 +134,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   stalled:
     "Обработка прервалась и давно не двигается. Файл сохранён, запусти обработку заново.",
   ingest_timeout: "Обработка заняла слишком много времени и была остановлена.",
+  ocr_failed:
+    "Сканы не распознались: сервис распознавания не ответил. Попробуй ещё раз позже.",
   internal_error: "Во время обработки произошла ошибка. Мы уже знаем о ней.",
 };
 
@@ -283,4 +287,120 @@ export function formatElapsed(ms: number): string {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// ─────────────────────── Сканы, лимит и программа ────────────────────────────
+
+/** Сводка распознавания сканов из `ocr_summary`. У старых книг приходит `{}`. */
+export type OcrSummary = {
+  scanned: number;
+  attempted: number;
+  recognized: number;
+  skipped: "" | "quota" | "window";
+  reset_at?: string;
+  plan?: string;
+  stopped?: "time";
+};
+
+type Summary = Partial<OcrSummary> | null | undefined;
+
+function pluralForm(n: number): "one" | "few" | "many" {
+  if (n % 10 === 1 && n % 100 !== 11) return "one";
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return "few";
+  return "many";
+}
+
+/** «страница-скан / страницы-скана / страниц-сканов» после числа. */
+function scanNoun(n: number): string {
+  const form = pluralForm(n);
+  return form === "one" ? "страница-скан" : form === "few" ? "страницы-скана" : "страниц-сканов";
+}
+
+/** После «из N». */
+function scanNounAfterFrom(n: number): string {
+  return pluralForm(n) === "one" ? "страницы-скана" : "страниц-сканов";
+}
+
+function read(summary: Summary) {
+  return {
+    scanned: summary?.scanned ?? 0,
+    attempted: summary?.attempted ?? 0,
+    recognized: summary?.recognized ?? 0,
+    skipped: summary?.skipped ?? "",
+  };
+}
+
+export function unrecognizedScans(summary: Summary): number {
+  const { scanned, recognized } = read(summary);
+  return Math.max(0, scanned - recognized);
+}
+
+/** Повтор обработки помогает, только если лимита не хватило сейчас или страницы упали из-за сбоя. */
+export function canRecognizeLater(summary: Summary): boolean {
+  if (summary?.stopped === "time") return false;
+  const { attempted, recognized, skipped } = read(summary);
+  return skipped === "quota" || recognized < attempted;
+}
+
+export function ocrNotice(
+  summary: Summary,
+  options: { hasProgram: boolean; now?: Date },
+): string | null {
+  const { scanned, attempted, recognized, skipped } = read(summary);
+  const now = options.now ?? new Date();
+
+  if (skipped === "quota" || skipped === "window") {
+    const verb = pluralForm(scanned) === "one" ? "Не распознана" : "Не распознано";
+    const head = `${verb} ${scanned} ${scanNoun(scanned)}:`;
+    if (skipped === "window") {
+      const tariff = summary?.plan === "free" ? "на бесплатном тарифе" : "на твоём тарифе";
+      return `${head} ${tariff} столько не распознать за раз.`;
+    }
+    const phrase = resetPhrase(summary?.reset_at, now);
+    const base = `${head} не хватило лимита.`;
+    if (options.hasProgram) return phrase ? `${base} Он восстановится ${phrase}.` : base;
+    return phrase
+      ? `${base} Он восстановится ${phrase}, тогда нажми «Обработать заново».`
+      : `${base} Нажми «Обработать заново», когда он восстановится.`;
+  }
+
+  if (attempted > 0 && scanned > attempted) {
+    if (recognized >= attempted) {
+      return `Распознаны первые ${attempted} ${scanNoun(attempted)} из ${scanned}: больше за одну обработку нельзя.`;
+    }
+    return `Распознано ${recognized} из ${scanned} ${scanNounAfterFrom(scanned)}: больше ${attempted} за одну обработку нельзя.`;
+  }
+  if (attempted > 0 && recognized < attempted) {
+    return `Распознано ${recognized} из ${attempted} ${scanNounAfterFrom(attempted)}.`;
+  }
+  return null;
+}
+
+export function planProfilingNotice(warnings: string[] | undefined): string | null {
+  const partial = (warnings ?? []).some(
+    (w) => w === "plan_profiling_skipped" || w === "plan_profiling_partial",
+  );
+  return partial ? "Программа составлена без подробного разбора глав." : null;
+}
+
+/** Вопрос перед программой, когда часть сканов не распознана, и подпись кнопки «без них». */
+export function scansQuestion(
+  count: number,
+  reason: "quota" | "failed" = "quota",
+): { text: string; skip: string } {
+  const form = pluralForm(count);
+  const verb = form === "one" ? "не попадёт" : "не попадут";
+  const noun = form === "one" ? "страница" : form === "few" ? "страницы" : "страниц";
+  const single = count === 1;
+  const skip = single ? "Составить без неё" : "Составить без них";
+  if (reason === "failed") {
+    return {
+      text: `В программу ${verb} ${count} ${noun}: ${single ? "её" : "их"} не удалось распознать. Обработать книгу заново или составить без ${single ? "неё" : "них"}?`,
+      skip,
+    };
+  }
+  return {
+    text: `В программу ${verb} ${count} ${noun}. Подождать лимит и распознать ${single ? "её" : "их"} или составить без ${single ? "неё" : "них"}?`,
+    skip,
+  };
 }

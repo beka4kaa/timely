@@ -8,22 +8,29 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
-from django.db.utils import OperationalError, ProgrammingError
+from django.db.utils import Error as DBError, OperationalError, ProgrammingError
 from django.utils import timezone
 
 from .models import AIUsageEvent, AIUsageQuotaState
+from .time_limit import hit_time_limit
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_AI_PLANS = ("free", "pro", "max")
+
+# The most a plan or chapter-profiling call is expected to write. A job that
+# reserves up front prices each call's output with it rather than with the
+# call's ceiling (``provider_call_token_estimate``).
+CALL_OUTPUT_ESTIMATE_TOKENS = 3000
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,27 @@ _usage_context: ContextVar[UsageContext] = ContextVar(
     "timely_ai_usage_context",
     default=UsageContext(),
 )
+
+# The reserve a whole job paid for up front (``prepaid_usage``). It has its own
+# variable rather than a field in ``UsageContext``: ``usage_scope`` rebuilds that
+# context from the e-mail and the feature, and every provider opens one per call.
+_prepaid_reservation: ContextVar[UsageReservation | None] = ContextVar(
+    "timely_ai_prepaid_reservation",
+    default=None,
+)
+
+
+def _prepaid_for(user_email: str | None) -> UsageReservation | None:
+    """The active prepaid reserve, when it is this student's.
+
+    A prepayment covers its own student only: a call for anyone else inside the
+    block reserves for itself and leaves the reserve alone.
+    """
+
+    prepaid = _prepaid_reservation.get()
+    if prepaid is None or prepaid.user_email != (user_email or "").strip().lower():
+        return None
+    return prepaid
 
 
 @contextmanager
@@ -184,8 +212,12 @@ def _provider_input_token_bound(value: Any) -> int:
     else:
         # Exact for the configured embedding model and a close local proxy for
         # the OpenAI-compatible chat roles. The margin covers message framing
-        # and small provider-specific tokenizer differences.
-        estimated = math.ceil(len(tokenizer.encode(text)) * 1.25)
+        # and small provider-specific tokenizer differences. A book or a goal
+        # may spell a special token such as "<|endoftext|>": here it is just
+        # text, and tiktoken's default would raise on it.
+        estimated = math.ceil(
+            len(tokenizer.encode(text, disallowed_special=())) * 1.25
+        )
     return estimated + 256
 
 
@@ -194,26 +226,53 @@ def provider_call_token_upper_bound(
     *,
     max_output_tokens: int = 0,
     image_count: int = 0,
+    image_input_tokens: int = 0,
 ) -> int:
     """Conservative reservation aligned with the ledger's billing formula.
 
     Text input is counted locally, output uses the request ceiling, and images
     use the deterministic charge. The ledger bills the greater of provider
     tokens and that image charge, so summing both would reject valid OCR calls.
+
+    ``image_input_tokens`` is what the provider counts in its input for each
+    image (a vision model's visual tokens), which the local text count cannot
+    see. It adds to the input side; the image charge stays the floor.
     """
 
     input_upper_bound = _provider_input_token_bound(input_payload)
     output_upper_bound = max(0, int(max_output_tokens or 0))
     images = max(0, int(image_count or 0))
+    image_input_upper_bound = images * max(0, int(image_input_tokens or 0))
     image_upper_bound = images * max(
         0,
         int(getattr(settings, "AI_IMAGE_TOKEN_CHARGE", 4000)),
     )
     return max(
         1,
-        input_upper_bound + output_upper_bound,
+        input_upper_bound + image_input_upper_bound + output_upper_bound,
         image_upper_bound,
     )
+
+
+def provider_call_token_estimate(
+    input_payload: Any,
+    *,
+    max_output_tokens: int = 0,
+) -> int:
+    """Expected price of one text call, for a job that reserves up front.
+
+    The input is counted like the upper bound, the output only up to
+    ``CALL_OUTPUT_ESTIMATE_TOKENS``: priced at every call's ceiling, a plan with
+    its chapter profiles would rarely fit the window. A call that writes more
+    still runs inside ``prepaid_usage``, and the overrun lands in the ledger.
+    Scans and lone calls keep ``provider_call_token_upper_bound``.
+    """
+
+    output_estimate = min(
+        max(0, int(max_output_tokens or 0)),
+        CALL_OUTPUT_ESTIMATE_TOKENS,
+    )
+    return _provider_input_token_bound(input_payload) + output_estimate
 
 
 def _response_output(response: Any) -> Any:
@@ -290,8 +349,15 @@ def record_model_usage(
     output_payload: Any = None,
     image_count: int = 0,
     metadata: dict[str, Any] | None = None,
+    metered: bool = True,
 ) -> AIUsageEvent | None:
-    """Persist one provider call without ever breaking the AI request."""
+    """Persist one provider call without ever breaking the AI request.
+
+    ``metered=False`` keeps the call in the ledger but out of the student's
+    quota: windows and the usage summary ignore it. Inside ``prepaid_usage`` a
+    metered call of the reserve's own student also draws that reserve down by
+    its billable tokens.
+    """
     context = current_usage_context()
     if not context.user_email and not getattr(settings, "AI_USAGE_TRACK_ANONYMOUS", False):
         return None
@@ -315,7 +381,7 @@ def record_model_usage(
     }
 
     try:
-        return AIUsageEvent.objects.create(
+        event = AIUsageEvent.objects.create(
             user_email=context.user_email[:254],
             provider=(provider or "unknown")[:48],
             model_name=actual_model,
@@ -330,12 +396,29 @@ def record_model_usage(
             billable_tokens=billable_tokens,
             cost_usd=numbers.cost_usd,
             is_estimated=numbers.estimated,
+            metered=metered,
             metadata=safe_metadata,
         )
-    except (OperationalError, ProgrammingError) as exc:
-        logger.warning("[usage] ledger unavailable; request remains successful: %s", exc)
     except Exception as exc:  # noqa: BLE001 - accounting is deliberately fail-open
-        logger.warning("[usage] failed to record provider call: %s", exc, exc_info=True)
+        if hit_time_limit(exc):
+            # Fail-open covers accounting failures, not the worker's soft time
+            # limit: swallowed here, it would let the job run on to the hard kill.
+            raise SoftTimeLimitExceeded() from exc
+        if isinstance(exc, (OperationalError, ProgrammingError)):
+            logger.warning(
+                "[usage] ledger unavailable; request remains successful: %s", exc
+            )
+        else:
+            logger.warning(
+                "[usage] failed to record provider call: %s", exc, exc_info=True
+            )
+    else:
+        prepaid = _prepaid_for(context.user_email)
+        if metered and prepaid is not None:
+            # The windows count these tokens from now on, so the reserve that
+            # held them for this call lets go of exactly as many.
+            consume_usage_reservation(prepaid, billable_tokens)
+        return event
     return None
 
 
@@ -504,7 +587,9 @@ def build_usage_summary(user_email: str | None, *, now=None) -> dict[str, Any]:
         return summary
 
     try:
-        queryset = AIUsageEvent.objects.filter(user_email__iexact=email)
+        # Unmetered calls stay in the ledger only. Every part below (windows,
+        # totals, models, features, days and context) reads metered events.
+        queryset = AIUsageEvent.objects.filter(user_email__iexact=email, metered=True)
         five_start = now - timedelta(hours=5)
         week_start = (now - timedelta(days=now.weekday())).replace(
             hour=0,
@@ -613,17 +698,133 @@ def build_usage_summary(user_email: str | None, *, now=None) -> dict[str, Any]:
         return summary
 
 
+def _window_refusal(
+    summary: dict[str, Any],
+    *,
+    reserved: int,
+    tokens: int,
+) -> AIUsageLimitExceeded | None:
+    """Refusal for ``tokens`` more next to ``reserved``, or ``None`` if they fit.
+
+    When both windows are short, the refusal names the one that frees up last:
+    the work cannot start before then anyway, and that is the time the student
+    is shown.
+    """
+
+    windows = summary["windows"]
+    short = [
+        name
+        for name in ("five_hour", "weekly")
+        if int(windows[name]["used"]) + reserved + tokens > int(windows[name]["limit"])
+    ]
+    if not short:
+        return None
+    name = max(short, key=lambda item: datetime.fromisoformat(windows[item]["reset_at"]))
+    return AIUsageLimitExceeded(window=name, reset_at=windows[name]["reset_at"])
+
+
+def _claims_block_until(
+    windows: dict[str, Any],
+    reservations: dict[str, dict[str, Any]],
+    need: int,
+    *,
+    kind: str = "capacity",
+) -> datetime | None:
+    """When the claims a new ``kind`` claim competes with stop blocking ``need``.
+
+    The claims are let go in the order they expire, so the answer is the
+    expiry of the claim whose release makes room. ``None`` when the spent
+    tokens alone leave no room (the window reset is the answer then) or when
+    no claim is in the way.
+    """
+    room = min(
+        int(windows[name]["limit"]) - int(windows[name]["used"])
+        for name in ("five_hour", "weekly")
+    )
+    if need > room:
+        return None
+    claims = sorted(
+        (
+            claim
+            for claim in reservations.values()
+            if kind == "admission" or claim["kind"] == "capacity"
+        ),
+        key=lambda claim: claim["expires_at"],
+    )
+    held = sum(int(claim["tokens"]) for claim in claims)
+    blocked_until: float | None = None
+    for claim in claims:
+        if held + need <= room:
+            break
+        held -= int(claim["tokens"])
+        blocked_until = claim["expires_at"]
+    if blocked_until is None:
+        return None
+    return datetime.fromtimestamp(blocked_until, tz=UTC)
+
+
+def _refusal_until_claims_end(
+    denied: AIUsageLimitExceeded,
+    windows: dict[str, Any],
+    reservations: dict[str, dict[str, Any]],
+    need: int,
+    *,
+    kind: str = "capacity",
+) -> AIUsageLimitExceeded:
+    """The refusal, with the time live claims let go when only they block it.
+
+    Claims expire within minutes (a chat call, the rest of a job cut off by a
+    deploy), so the student is told that time and not a window reset hours
+    away. The payload keeps its shape.
+    """
+    blocked_until = _claims_block_until(windows, reservations, need, kind=kind)
+    if blocked_until is None:
+        return denied
+    return AIUsageLimitExceeded(window=denied.window, reset_at=_iso(blocked_until))
+
+
 def ensure_usage_available(user_email: str | None) -> None:
+    """Refuse a request up front when a window has no room left for it.
+
+    Live capacity reservations hold their part of the window, so a chat cannot
+    spend what a running job has reserved. The reserve of the job this check
+    runs in (``prepaid_usage``) does not count against it. When only live
+    reservations stand in the way, the refusal says when they let go.
+    """
+
     if not getattr(settings, "AI_USAGE_ENFORCE_LIMITS", False):
         return
     email = (user_email or "").strip().lower()
     if not email:
         return
-    summary = build_usage_summary(email)
-    for key in ("five_hour", "weekly"):
-        window = summary["windows"][key]
-        if window["used"] >= window["limit"]:
-            raise AIUsageLimitExceeded(window=key, reset_at=window["reset_at"])
+    current = timezone.now()
+    summary = build_usage_summary(email, now=current)
+    reservations = _read_live_reservations(email, now_timestamp=current.timestamp())
+    own = _prepaid_for(email)
+    if own is not None:
+        reservations.pop(own.key, None)
+    # Room for at least one more token: used + reserved >= limit refuses.
+    denied = _window_refusal(
+        summary,
+        reserved=_competing_reserved_tokens(reservations, kind="capacity"),
+        tokens=1,
+    )
+    if denied is not None:
+        raise _refusal_until_claims_end(denied, summary["windows"], reservations, 1)
+
+
+def usage_window_limit(user_email: str | None) -> int | None:
+    """The smaller of the plan's two windows: no single job can reserve more.
+
+    ``None`` when limits are off or there is no student to charge.
+    """
+    if not getattr(settings, "AI_USAGE_ENFORCE_LIMITS", False):
+        return None
+    email = (user_email or "").strip().lower()
+    if not email:
+        return None
+    limits = resolve_usage_plan(email)["limits"]
+    return min(int(limits["five_hour"]), int(limits["weekly"]))
 
 
 def _active_reservations(
@@ -656,6 +857,102 @@ def _active_reservations(
             "kind": reservation_kind,
         }
     return active
+
+
+def _competing_reserved_tokens(
+    reservations: dict[str, dict[str, Any]],
+    *,
+    kind: str,
+) -> int:
+    """Live reserved tokens a new claim of ``kind`` has to fit next to.
+
+    Admission leases gate concurrent jobs against all live work, but do not
+    consume their own provider-call budget a second time. Capacity claims
+    therefore count only other capacity claims.
+    """
+    return sum(
+        int(item["tokens"])
+        for item in reservations.values()
+        if kind == "admission" or item["kind"] == "capacity"
+    )
+
+
+def _read_live_reservations(
+    email: str,
+    *,
+    now_timestamp: float,
+) -> dict[str, dict[str, Any]]:
+    """One user's live reservations, read without the row lock.
+
+    An unreadable row counts as no reservations: ``reserve_usage_capacity``
+    fails open on the same errors and would admit the work.
+    """
+    try:
+        state = AIUsageQuotaState.objects.filter(user_email=email).first()
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning("[usage] quota reservations unavailable; counting none: %s", exc)
+        return {}
+    return _active_reservations(
+        state.reservations if state is not None else {},
+        now_timestamp=now_timestamp,
+    )
+
+
+def available_usage_tokens(user_email: str | None, *, now=None) -> int | None:
+    """Tokens a new capacity reservation could still take right now.
+
+    The headroom of the tighter window minus live capacity reservations,
+    counted exactly as ``reserve_usage_capacity`` counts them, never below
+    zero. ``None`` when limits are off or there is no student to charge.
+    """
+    if not getattr(settings, "AI_USAGE_ENFORCE_LIMITS", False):
+        return None
+    email = (user_email or "").strip().lower()
+    if not email:
+        return None
+
+    current = now or timezone.now()
+    windows = build_usage_summary(email, now=current)["windows"]
+    headroom = min(
+        int(windows[name]["limit"]) - int(windows[name]["used"])
+        for name in ("five_hour", "weekly")
+    )
+    reservations = _read_live_reservations(email, now_timestamp=current.timestamp())
+    return max(0, headroom - _competing_reserved_tokens(reservations, kind="capacity"))
+
+
+def reservations_block_until(
+    user_email: str | None,
+    need: int,
+    *,
+    now=None,
+) -> datetime | None:
+    """When live reservations stop standing in the way of ``need`` more tokens.
+
+    A refused reserve shows the student when to come back. If the spent tokens
+    leave room for ``need`` in both windows, only live capacity reservations
+    block it: a chat call's claim, the rest of a dead worker's reserve. They
+    let go as they expire, so the answer is the expiry of the claim whose
+    release makes room, that is the latest of the claims that have to go, and
+    not a window reset hours away.
+
+    ``None`` when limits are off, there is no student, the spent tokens alone
+    leave no room (then the window reset is the answer), or no live claim is
+    in the way.
+    """
+    if not getattr(settings, "AI_USAGE_ENFORCE_LIMITS", False):
+        return None
+    email = (user_email or "").strip().lower()
+    if not email:
+        return None
+
+    current = now or timezone.now()
+    # Counted as `reserve_usage_capacity` counts them for a capacity claim.
+    return _claims_block_until(
+        build_usage_summary(email, now=current)["windows"],
+        _read_live_reservations(email, now_timestamp=current.timestamp()),
+        need,
+    )
 
 
 def reserve_usage_capacity(
@@ -720,25 +1017,13 @@ def reserve_usage_capacity(
                 state.reservations,
                 now_timestamp=now_timestamp,
             )
-            # Admission leases gate concurrent jobs against all live work, but
-            # do not consume their own provider-call budget a second time.
-            # Capacity reservations therefore count only other capacity calls.
-            already_reserved = sum(
-                int(item["tokens"])
-                for item in reservations.values()
-                if kind == "admission" or item["kind"] == "capacity"
-            )
+            already_reserved = _competing_reserved_tokens(reservations, kind=kind)
             summary = build_usage_summary(email, now=current)
-            for window_name in ("five_hour", "weekly"):
-                window = summary["windows"][window_name]
-                if int(window["used"]) + already_reserved + tokens > int(
-                    window["limit"]
-                ):
-                    denied = AIUsageLimitExceeded(
-                        window=window_name,
-                        reset_at=window["reset_at"],
-                    )
-                    break
+            denied = _window_refusal(summary, reserved=already_reserved, tokens=tokens)
+            if denied is not None:
+                denied = _refusal_until_claims_end(
+                    denied, summary["windows"], reservations, tokens, kind=kind
+                )
 
             if denied is None:
                 reservations[key] = {
@@ -765,8 +1050,19 @@ def reserve_usage_capacity(
     )
 
 
-def release_usage_reservation(reservation: UsageReservation) -> None:
-    """Release one claim; stale claims are also pruned opportunistically."""
+def _edit_live_reservations(
+    reservation: UsageReservation,
+    edit: Callable[[dict[str, dict[str, Any]]], Any],
+    *,
+    what: str,
+) -> None:
+    """Change one user's live reservations under the row lock.
+
+    Expired claims are pruned on the way, and the row is written only when it
+    changed. Database errors are logged and swallowed: the TTL is the
+    crash/rolling-deploy cleanup path, and accounting must not turn completed
+    work into failed work.
+    """
 
     if not reservation.active:
         return
@@ -783,14 +1079,72 @@ def release_usage_reservation(reservation: UsageReservation) -> None:
                 state.reservations,
                 now_timestamp=timezone.now().timestamp(),
             )
-            reservations.pop(reservation.key, None)
+            edit(reservations)
             if reservations != state.reservations:
                 state.reservations = reservations
                 state.save(update_fields=["reservations", "updated_at"])
-    except (OperationalError, ProgrammingError) as exc:
-        # The TTL is the crash/rolling-deploy cleanup path; accounting must not
-        # turn a completed ingestion into a failed one.
-        logger.warning("[usage] quota reservation cleanup unavailable: %s", exc)
+    except DBError as exc:  # every DB-API error, InterfaceError included
+        logger.warning("[usage] %s unavailable: %s", what, exc)
+
+
+def release_usage_reservation(reservation: UsageReservation) -> None:
+    """Release one claim; stale claims are also pruned opportunistically."""
+
+    _edit_live_reservations(
+        reservation,
+        lambda live: live.pop(reservation.key, None),
+        what="quota reservation cleanup",
+    )
+
+
+def shrink_usage_reservation(reservation: UsageReservation, tokens: int) -> None:
+    """Keep at most ``tokens`` of a claim and give the rest of it back.
+
+    A job that stops waiting for calls still running keeps their share: they
+    draw it down as they record usage, and the expiry removes what they leave.
+    The claim never grows, since the calls may already have spent more than
+    their estimate. Zero releases it. Database errors are swallowed as in
+    ``release_usage_reservation``.
+    """
+
+    keep = _as_non_negative_int(tokens)
+    if keep == 0:
+        release_usage_reservation(reservation)
+        return
+
+    def shrink(live: dict[str, dict[str, Any]]) -> None:
+        claim = live.get(reservation.key)
+        if claim is not None and int(claim["tokens"]) > keep:
+            live[reservation.key] = {**claim, "tokens": keep}
+
+    _edit_live_reservations(reservation, shrink, what="quota reservation shrink")
+
+
+def consume_usage_reservation(reservation: UsageReservation, tokens: int) -> None:
+    """Draw a prepaid reserve down by tokens its job has just spent.
+
+    Those tokens are in the ledger now, so the reserve no longer has to hold
+    them. A reserve drawn down to zero disappears. The expiry stays as it was,
+    so the TTL still cleans up after a crashed worker. Database errors are
+    swallowed as in ``release_usage_reservation``: the reserve then holds until
+    it is released or expires.
+    """
+
+    spent = _as_non_negative_int(tokens)
+    if spent == 0:
+        return
+
+    def draw_down(live: dict[str, dict[str, Any]]) -> None:
+        claim = live.get(reservation.key)
+        if claim is None:
+            return
+        left = int(claim["tokens"]) - spent
+        if left > 0:
+            live[reservation.key] = {**claim, "tokens": left}
+        else:
+            del live[reservation.key]
+
+    _edit_live_reservations(reservation, draw_down, what="prepaid reservation draw-down")
 
 
 @contextmanager
@@ -818,28 +1172,69 @@ def usage_reservation(
 
 
 @contextmanager
+def prepaid_usage(reservation: UsageReservation) -> Iterator[None]:
+    """Let the calls inside draw on a reserve paid up front for a whole job.
+
+    Inside the block, for the reservation's own student,
+    ``provider_call_reservation`` reserves nothing and hands back this
+    reservation, and every metered ``record_model_usage`` draws it down by its
+    billable tokens. A call that costs more than what is left still runs: the
+    overrun is in the ledger, and the windows read it from there. A call for
+    anyone else reserves and is charged as usual. A parallel request has its
+    own context and keeps reserving as usual, and its pre-check counts the
+    reserve, so it cannot eat it.
+
+    An inactive reservation changes nothing. Threads see the reserve through
+    ``contextvars.copy_context()``. The block does not release the reservation:
+    whoever reserved it does.
+    """
+
+    if not reservation.active:
+        yield
+        return
+    token = _prepaid_reservation.set(reservation)
+    try:
+        yield
+    finally:
+        _prepaid_reservation.reset(token)
+
+
+@contextmanager
 def provider_call_reservation(
     *,
     input_payload: Any,
     max_output_tokens: int = 0,
     image_count: int = 0,
+    image_input_tokens: int = 0,
     feature: str = "unknown",
 ) -> Iterator[UsageReservation]:
     """Reserve a model call until its caller has persisted ``AIUsageEvent``.
 
     Callers must keep both the network request and ``record_model_usage`` inside
     this context. Quota denial happens before the provider can spend anything.
+    Inside ``prepaid_usage`` the job's reserve already covers the call: nothing
+    is reserved, and that reservation is handed back.
+
+    The claim expires after ``AI_USAGE_CALL_RESERVATION_TTL_SECONDS``, not the
+    long job TTL: a call cut off by a redeploy or the gunicorn timeout must not
+    hold the student's window, which the request pre-check counts, for an hour.
     """
 
+    prepaid = _prepaid_for(current_usage_context().user_email)
+    if prepaid is not None:
+        yield prepaid
+        return
     upper_bound = provider_call_token_upper_bound(
         input_payload,
         max_output_tokens=max_output_tokens,
         image_count=image_count,
+        image_input_tokens=image_input_tokens,
     )
     with usage_reservation(
         current_usage_context().user_email,
         reserved_tokens=upper_bound,
         feature=feature,
         reservation_kind="capacity",
+        ttl_seconds=getattr(settings, "AI_USAGE_CALL_RESERVATION_TTL_SECONDS", 600),
     ) as reservation:
         yield reservation

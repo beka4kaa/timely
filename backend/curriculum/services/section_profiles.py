@@ -1,5 +1,15 @@
 """Профилирование разделов книги: map-стадия с кэшем.
 
+Разбор идёт при составлении программы, а не после загрузки книги (решение 14),
+и в два шага. `plan_section_profiling` без вызовов модели решает, какие разделы
+разобрать, и оценивает цену каждого. `run_section_profiling` разбирает те из
+них, на которые программа нашла лимит и время.
+
+**Начатый раздел не бросается.** После срока новые разделы не стартуют, а
+начатые программа ждёт ещё `LATE_RESULT_GRACE_SECONDS`. Раздел, который
+досчитался позже, оплачен: его профиль сохраняет сам поток пула, и следующая
+программа за него не платит.
+
 Порядок работы намеренно не «профилировать всё подряд».
 
 **Сначала главы.** Профиль главы отвечает на вопрос планировщика — что здесь
@@ -19,12 +29,16 @@
 from __future__ import annotations
 
 import contextvars
+import functools
 import hashlib
 import logging
-from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
+from collections import deque
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from ..models import DocumentSection, KnowledgeChunk, SectionProfile
 from ..profiles.context import build_context, collect_statistics
@@ -42,6 +56,10 @@ MAX_CONCURRENCY = 4
 # материал не станет, а планировщику нужно знать, по какому шву делить.
 LARGE_CHAPTER_PAGES = 15
 
+# Сколько секунд после срока разбора программа ещё ждёт начатые разделы.
+# Дольше раздел досчитывается без неё и сохраняет профиль сам.
+LATE_RESULT_GRACE_SECONDS = 30
+
 
 @dataclass
 class ProfilingReport:
@@ -52,6 +70,17 @@ class ProfilingReport:
     generated: int = 0
     failed: int = 0
     skipped_empty: int = 0
+    # Не поместились в лимит, который программа нашла под разбор.
+    skipped_limit: int = 0
+    # Очередь дошла до раздела после срока: вызов не начинался.
+    skipped_time: int = 0
+    # Профиль успела сохранить другая программа по этой же книге, пока раздел
+    # ждал своей очереди. Вызов не нужен, профиль есть.
+    reused: int = 0
+    # Ещё идут, когда программа перестала ждать: досчитаются и сохранят профиль
+    # сами, но этой программе уже не достанутся. Токены — сумма их оценок.
+    still_running: int = 0
+    still_running_tokens: int = 0
     errors: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -61,7 +90,27 @@ class ProfilingReport:
             "generated": self.generated,
             "failed": self.failed,
             "skipped_empty": self.skipped_empty,
+            "skipped_limit": self.skipped_limit,
+            "skipped_time": self.skipped_time,
+            "reused": self.reused,
+            "still_running": self.still_running,
         }
+
+
+@dataclass
+class ProfilingWork:
+    """Разделы, которым нужен вызов модели, с ценой каждого. Модель не вызывалась.
+
+    `items`: раздел, запрос, ключ кэша и оценка цены вызова в токенах. Порядок
+    тот же, что у `sections_to_profile`: сначала главы.
+    """
+
+    items: list[tuple[DocumentSection, ProfilingRequest, str, int]] = field(
+        default_factory=list
+    )
+    requested: int = 0
+    from_cache: int = 0
+    skipped_empty: int = 0
 
 
 def compute_content_hash(
@@ -125,76 +174,217 @@ def profile_document_sections(
     include_subsections: bool = True,
     provider=None,
 ) -> ProfilingReport:
-    """Профилирует разделы книги и возвращает отчёт о прогоне."""
+    """Профилирует разделы книги без пределов и возвращает отчёт о прогоне."""
+    provider = provider or get_profiling_provider()
+    work = plan_section_profiling(
+        document,
+        processing_version=processing_version,
+        include_subsections=include_subsections,
+        provider=provider,
+    )
+    return run_section_profiling(
+        document, work, provider=provider, processing_version=processing_version
+    )
+
+
+def plan_section_profiling(
+    document,
+    *,
+    processing_version: str = "",
+    include_subsections: bool = True,
+    provider=None,
+) -> ProfilingWork:
+    """Какие разделы ещё надо разобрать и сколько стоит каждый. Без вызовов модели.
+
+    Свежий профиль в кэше и раздел без текста вызова не требуют, поэтому в
+    `items` не попадают.
+    """
     version = processing_version or document.processing_version
     provider = provider or get_profiling_provider()
-    report = ProfilingReport()
+    work = ProfilingWork()
 
-    pending: list[tuple[DocumentSection, ProfilingRequest, str]] = []
     selected = sections_to_profile(document, include_subsections=include_subsections)
     for section in selected:
-        report.requested += 1
+        work.requested += 1
         chunk_ids = _chunk_ids(section, version)
         content_hash = compute_content_hash(
             section, processing_version=version, chunk_ids=chunk_ids
         )
         if _is_fresh(section, content_hash):
-            report.from_cache += 1
+            work.from_cache += 1
             continue
 
         context = build_context(section, processing_version=version)
         if not context.strip():
             # Раздел без текста профилировать нечем. Это не ошибка: так
             # выглядят титул, пустая рубрика и глава, чей текст не распознался.
-            report.skipped_empty += 1
+            work.skipped_empty += 1
             continue
 
-        pending.append(
-            (
-                section,
-                ProfilingRequest(
-                    section_id=str(section.pk),
-                    title=section.title,
-                    number_label=section.number_label,
-                    structural_role=section.structural_role,
-                    level=section.level,
-                    page_start=section.start_page or 0,
-                    page_end=section.end_page or 0,
-                    context=context,
-                    content_statistics=collect_statistics(
-                        section, processing_version=version
-                    ),
-                ),
-                content_hash,
+        request = ProfilingRequest(
+            section_id=str(section.pk),
+            title=section.title,
+            number_label=section.number_label,
+            structural_role=section.structural_role,
+            level=section.level,
+            page_start=section.start_page or 0,
+            page_end=section.end_page or 0,
+            context=context,
+            content_statistics=collect_statistics(section, processing_version=version),
+        )
+        work.items.append(
+            (section, request, content_hash, provider.estimate_tokens(request))
+        )
+    return work
+
+
+def run_section_profiling(
+    document,
+    work: ProfilingWork,
+    *,
+    items=None,
+    stop_at: float | None = None,
+    provider=None,
+    processing_version: str = "",
+    report: ProfilingReport | None = None,
+) -> ProfilingReport:
+    """Разбирает `items` из плана работы (по умолчанию все) и сохраняет профили.
+
+    Что из плана не вошло в `items`, считается в `skipped_limit`. `stop_at` —
+    момент `time.monotonic()`: раздел, до которого очередь дошла позже, не
+    стартует и считается в `skipped_time`. Начатые разделы ждём ещё
+    `LATE_RESULT_GRACE_SECONDS`, а не дождавшиеся досчитываются без нас и
+    сохраняют профиль сами (`still_running`).
+
+    Отчёт можно передать готовым: тогда его счётчики видны вызывающему и
+    тогда, когда прогон оборвался ошибкой.
+    """
+    version = processing_version or document.processing_version
+    provider = provider or get_profiling_provider()
+    chosen = list(work.items if items is None else items)
+    report = report if report is not None else ProfilingReport()
+    report.requested = work.requested
+    report.from_cache = work.from_cache
+    report.skipped_empty = work.skipped_empty
+    report.skipped_limit = max(0, len(work.items) - len(chosen))
+    if not chosen:
+        return report
+
+    # Разделы раздаёт главный поток, по одному на освободившийся поток пула:
+    # так срок и свежесть профиля проверяются прямо перед стартом раздела, а к
+    # базе ходит только он. Сохраняет профили тоже он.
+    pending = deque(chosen)
+    running: dict[Future, tuple] = {}
+    workers = min(MAX_CONCURRENCY, len(chosen))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        while True:
+            while pending and len(running) < workers:
+                if stop_at is not None and time.monotonic() >= stop_at:
+                    report.skipped_time += len(pending)
+                    pending.clear()
+                    break
+                item = pending.popleft()
+                section, request, content_hash, _estimate = item
+                if _is_fresh(section, content_hash):
+                    # Пока раздел ждал очереди, его разобрала другая программа
+                    # по этой же книге: второй раз за него не платим.
+                    report.reused += 1
+                    continue
+                # Контекст копируется на каждый раздел и здесь, в родительском
+                # потоке: usage-метрики, предоплаченный резерв и tenant живут в
+                # ContextVar и в пул сами не переезжают. Один объект контекста
+                # нельзя войти из двух потоков сразу, поэтому копия своя у
+                # каждого раздела.
+                context = contextvars.copy_context()
+                running[pool.submit(context.run, _profile_one, provider, request)] = item
+            if not running:
+                break
+            done, _ = wait(
+                running, timeout=_wait_seconds(stop_at), return_when=FIRST_COMPLETED
+            )
+            if not done:
+                # Срок ожидания вышел: идущие разделы досчитаются без нас.
+                break
+            for future in done:
+                _collect(
+                    running.pop(future),
+                    future.result(),
+                    document=document,
+                    version=version,
+                    report=report,
+                )
+    finally:
+        _hand_over(running, document=document, version=version, report=report)
+        pool.shutdown(wait=False)
+    return report
+
+
+def _wait_seconds(stop_at: float | None) -> float | None:
+    """Сколько ещё ждать начатые разделы. Без срока — сколько понадобится."""
+    if stop_at is None:
+        return None
+    return max(0.0, stop_at + LATE_RESULT_GRACE_SECONDS - time.monotonic())
+
+
+def _collect(item, result, *, document, version: str, report: ProfilingReport) -> None:
+    """Результат раздела, который программа дождалась: сохраняем в этом потоке."""
+    section, request, content_hash, _estimate = item
+    if result is None:
+        report.failed += 1
+        report.errors.append(str(section.pk))
+        return
+    _save(
+        section,
+        document,
+        result,
+        content_hash=content_hash,
+        processing_version=version,
+        statistics=request.content_statistics,
+    )
+    report.generated += 1
+
+
+def _hand_over(running: dict, *, document, version: str, report: ProfilingReport) -> None:
+    """Разделы, которых программа больше не ждёт.
+
+    Уже досчитанный сохраняется здесь же. Ещё идущий оплачен и потому не
+    бросается: его профиль сохранит поток пула, когда раздел досчитается
+    (`_save_late`). Сумма оценок таких разделов остаётся им в резерве разбора.
+    """
+    main = threading.get_ident()
+    for future, item in running.items():
+        if future.done():
+            try:
+                _collect(item, future.result(), document=document, version=version, report=report)
+            except Exception:  # noqa: BLE001 — не прячем исходную ошибку прогона
+                logger.warning(
+                    "Профиль раздела %s не сохранён", item[0].pk, exc_info=True
+                )
+            continue
+        report.still_running += 1
+        report.still_running_tokens += item[3]
+        future.add_done_callback(
+            functools.partial(
+                _save_late, item=item, document=document, version=version, main=main
             )
         )
 
-    if not pending:
-        return report
 
-    # Контекст копируется НА КАЖДЫЙ раздел, а не один раз на всех.
-    # `copy_context` обязателен сам по себе — usage-метрики и tenant живут в
-    # ContextVar и в пул сами не переезжают, воркер увидел бы пустой контекст и
-    # записал расход не тому пользователю. Но один и тот же объект контекста
-    # нельзя войти из двух потоков одновременно: Python отвечает «cannot enter
-    # context: … is already entered». Снимок на задачу снимает и то, и другое.
-    # Копии снимаются здесь, в родительском потоке: внутри воркера копировать
-    # уже нечего — там контекст пуст.
-    tasks = [(contextvars.copy_context(), item) for item in pending]
+def _save_late(future: Future, *, item, document, version: str, main: int) -> None:
+    """Раздел досчитался, когда программа его уже не ждала.
 
-    def run(task):
-        context, (section, request, content_hash) = task
-        return section, request, content_hash, context.run(
-            _profile_one, provider, request
-        )
-
-    workers = min(MAX_CONCURRENCY, len(tasks))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for section, request, content_hash, result in pool.map(run, tasks):
-            if result is None:
-                report.failed += 1
-                report.errors.append(str(section.pk))
-                continue
+    Вызов оплачен, поэтому профиль сохраняется: следующая программа за него не
+    заплатит. Пишет его поток пула своей транзакцией и закрывает своё
+    соединение, потому что после ухода программы его никто не закроет. Если
+    раздел досчитался в ту же секунду, когда программа его отпустила, колбэк
+    приходит в главный поток: тогда соединение запроса не трогаем.
+    """
+    section, request, content_hash, _estimate = item
+    in_pool = threading.get_ident() != main
+    try:
+        result = None if future.cancelled() else future.result()
+        if result is not None:
             _save(
                 section,
                 document,
@@ -203,9 +393,11 @@ def profile_document_sections(
                 processing_version=version,
                 statistics=request.content_statistics,
             )
-            report.generated += 1
-
-    return report
+    except Exception:  # noqa: BLE001 — ответа ученику уже нет, остаётся лог
+        logger.warning("Поздний профиль раздела %s не сохранён", section.pk, exc_info=True)
+    finally:
+        if in_pool:
+            connection.close()
 
 
 def _profile_one(provider, request: ProfilingRequest) -> ProfileResult | None:
