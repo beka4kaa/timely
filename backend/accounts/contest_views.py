@@ -14,12 +14,26 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .contest_files import PdfRejected, pdf_response, read_pdf
+from .contest_admin import (
+    AdminRefusal,
+    check_locked,
+    check_permission,
+    contest_problems,
+    delete_contest,
+    parse_input,
+    ready_problems,
+    save_contest,
+    started,
+)
 from .contest_payloads import (
+    admin_contest,
     attempts_payload,
     contest_queryset,
+    file_info,
     ordered_tasks,
     standings_payload,
     student_contest,
+    with_stats,
 )
 from .contest_rules import (
     MAX_ANSWER_LENGTH,
@@ -43,12 +57,6 @@ def forbidden() -> Response:
 
 def not_found(message: str = "Такого контеста нет.", code: str = "not_found") -> Response:
     return refusal(code, message, status.HTTP_404_NOT_FOUND)
-
-
-def file_info(file: ContestFile | None) -> dict | None:
-    if file is None:
-        return None
-    return {"id": file.pk, "name": file.name, "size": file.size, "pages": file.pages}
 
 
 class ContestViewSet(viewsets.ViewSet):
@@ -214,3 +222,133 @@ class AdminContestFileViewSet(viewsets.ViewSet):
         if stored is None:
             return refusal("not_found", "Файла нет.", status.HTTP_404_NOT_FOUND)
         return pdf_response(stored, f"fajl-{stored.pk}.pdf")
+
+
+class AdminContestViewSet(viewsets.ViewSet):
+    """Контесты в админке: черновики, публикация, правила тиров и правок после начала."""
+
+    permission_classes = [AllowAny]
+
+    def _actor(self, request):
+        actor = current_user(request)
+        return actor if is_admin_or_mod(actor) else None
+
+    def _find(self, pk):
+        if not str(pk).isdigit():
+            return None
+        return with_stats(contest_queryset()).filter(pk=int(pk)).first()
+
+    def _answer(self, pk, http_status=status.HTTP_200_OK) -> Response:
+        return Response(admin_contest(self._find(pk), now=timezone.now()), status=http_status)
+
+    @staticmethod
+    def _refused(refusal_error: AdminRefusal) -> Response:
+        extra = {"problems": refusal_error.problems} if refusal_error.problems else {}
+        return refusal(refusal_error.code, refusal_error.message, refusal_error.http_status, **extra)
+
+    def list(self, request):
+        if self._actor(request) is None:
+            return forbidden()
+        now = timezone.now()
+        contests = with_stats(contest_queryset()).order_by("-start_time", "-id")
+        return Response([admin_contest(contest, now=now) for contest in contests])
+
+    def retrieve(self, request, pk=None):
+        if self._actor(request) is None:
+            return forbidden()
+        contest = self._find(pk)
+        if contest is None:
+            return not_found()
+        return Response(admin_contest(contest, now=timezone.now()))
+
+    def create(self, request):
+        actor = self._actor(request)
+        if actor is None:
+            return forbidden()
+        wanted, problems = parse_input(request.data)
+        if problems:
+            return refusal("invalid", "Проверь поля.", status.HTTP_400_BAD_REQUEST, problems=problems)
+        try:
+            check_permission(actor, None, wanted)
+        except AdminRefusal as refused:
+            return self._refused(refused)
+        contest = save_contest(None, wanted, actor)
+        return self._answer(contest.pk, status.HTTP_201_CREATED)
+
+    def partial_update(self, request, pk=None):
+        actor = self._actor(request)
+        if actor is None:
+            return forbidden()
+        contest = self._find(pk)
+        if contest is None:
+            return not_found()
+        now = timezone.now()
+        try:
+            check_permission(actor, contest)
+            wanted, problems = parse_input(request.data, contest)
+            if problems:
+                return refusal("invalid", "Проверь поля.", status.HTTP_400_BAD_REQUEST, problems=problems)
+            check_permission(actor, contest, wanted)
+            check_locked(contest, wanted, now)
+            if contest.is_published and not started(contest, now):
+                # Опубликованный контест до начала остаётся годным к публикации.
+                blockers = ready_problems(contest, wanted, actor, now)
+                if blockers:
+                    raise AdminRefusal("not_ready", "Так контест не опубликовать.", status.HTTP_400_BAD_REQUEST, blockers)
+        except AdminRefusal as refused:
+            return self._refused(refused)
+        save_contest(contest, wanted, actor)
+        return self._answer(contest.pk)
+
+    def destroy(self, request, pk=None):
+        actor = self._actor(request)
+        if actor is None:
+            return forbidden()
+        contest = self._find(pk)
+        if contest is None:
+            return not_found()
+        try:
+            check_permission(actor, contest)
+        except AdminRefusal as refused:
+            return self._refused(refused)
+        if contest.submissions.exists():
+            return refusal("has_answers", "В контесте уже есть ответы.", status.HTTP_409_CONFLICT)
+        delete_contest(contest)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        actor = self._actor(request)
+        if actor is None:
+            return forbidden()
+        contest = self._find(pk)
+        if contest is None:
+            return not_found()
+        try:
+            check_permission(actor, contest)
+        except AdminRefusal as refused:
+            return self._refused(refused)
+        blockers = contest_problems(contest, actor, timezone.now())
+        if blockers:
+            return refusal("not_ready", "Контест пока нельзя опубликовать.", status.HTTP_400_BAD_REQUEST, problems=blockers)
+        contest.is_published = True
+        contest.save(update_fields=["is_published"])
+        return self._answer(contest.pk)
+
+    @action(detail=True, methods=["post"])
+    def unpublish(self, request, pk=None):
+        actor = self._actor(request)
+        if actor is None:
+            return forbidden()
+        contest = self._find(pk)
+        if contest is None:
+            return not_found()
+        try:
+            check_permission(actor, contest)
+        except AdminRefusal as refused:
+            return self._refused(refused)
+        if started(contest, timezone.now()):
+            return refusal("started", "Контест уже начался.", status.HTTP_409_CONFLICT)
+        contest.is_published = False
+        contest.save(update_fields=["is_published"])
+        return self._answer(contest.pk)

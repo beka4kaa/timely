@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch
 from rest_framework import serializers
 
-from .contest_rules import REVIEW_TEXT_LIMIT, Attempt, contest_state, first_variant, standings
+from .contest_rules import REVIEW_TEXT_LIMIT, TIER_CAPS, Attempt, contest_state, first_variant, standings
 from .models import Contest, CustomUser, Task, TaskSubmission
 from .serializers import public_username
 
@@ -159,3 +159,58 @@ def attempts_payload(contest: Contest, *, now: datetime, viewer=None, mine: bool
         }
         for pk, student_id, task_id, status, created_at in rows
     ]
+
+
+def file_info(file) -> dict | None:
+    if file is None:
+        return None
+    return {"id": file.pk, "name": file.name, "size": file.size, "pages": file.pages}
+
+
+def with_stats(queryset):
+    """Сколько учеников отвечало и сколько всего попыток."""
+    return queryset.annotate(
+        participants_count=Count("submissions__student", distinct=True),
+        attempts_count=Count("submissions", distinct=True),
+    )
+
+
+def admin_contest(contest: Contest, *, now: datetime) -> dict:
+    """Всё о контесте для админки, вместе с ответами и файлами."""
+    tasks = ordered_tasks(contest)
+    attempts = getattr(contest, "attempts_count", None)
+    participants = getattr(contest, "participants_count", None)
+    if attempts is None or participants is None:
+        attempts = contest.submissions.count()
+        participants = contest.submissions.values("student").distinct().count()
+    return {
+        "id": contest.id,
+        "title": contest.title,
+        "description": contest.description,
+        "start_time": _iso(contest.start_time),
+        "end_time": _iso(contest.end_time),
+        "tier": contest.tier,
+        "art": contest.art,
+        "is_published": contest.is_published,
+        "state": contest_state(contest.start_time, contest.end_time, now),
+        "created_at": _iso(contest.created_at),
+        "points_total": sum(task.points for task in tasks),
+        "tier_cap": TIER_CAPS.get(contest.tier, 0),
+        "participants": participants,
+        "attempts": attempts,
+        "can_delete": attempts == 0,
+        "locked": contest.is_published and now >= contest.start_time,
+        "tasks": [
+            {
+                "id": task.id,
+                "number": number,
+                "title": task.title or "",
+                "condition_text": task.condition_text or "",
+                "answer": task.answer or "",
+                "points": task.points,
+                "statement": file_info(task.statement_file),
+                "solution": file_info(task.solution_file),
+            }
+            for number, task in enumerate(tasks, start=1)
+        ],
+    }

@@ -18,7 +18,7 @@ from accounts.views import (
 from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 from ai_engine.ocr_views import OCRView
 from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
-from accounts.contest_views import AdminContestFileViewSet, ContestViewSet
+from accounts.contest_views import AdminContestFileViewSet, AdminContestViewSet, ContestViewSet
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from ai_engine.chat_views import BoardChatStreamView, BoardChatView
@@ -85,6 +85,7 @@ router.register(r'contests', ContestViewSet, basename='contests')
 router.register(r'private-leaderboards', PrivateLeaderboardViewSet, basename='private-leaderboards')
 router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 router.register(r'admin/contest-files', AdminContestFileViewSet, basename='admin-contest-files')
+router.register(r'admin/contests', AdminContestViewSet, basename='admin-contests')
 router.register(r'habits', HabitViewSet, basename='habits')
 router.register(r'nutrition/entries', NutritionEntryViewSet, basename='nutrition-entries')
 router.register(r'pomodoro/sessions', FocusSessionViewSet, basename='pomodoro-sessions')
