@@ -648,9 +648,10 @@ class AccountsTests(_Base):
         self.task.refresh_from_db()
         self.assertEqual(self.task.title, "their task")
 
-    def test_author_and_admin_can_change_a_task(self):
+    def test_only_an_admin_can_change_a_task(self):
+        # Задачи живут в контестах, и ученик их не правит, даже свои старые.
         response = self.client.patch(f"/api/tasks/{self.own_task.id}/", {"title": "edited"}, format="json")
-        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.status_code, 403, response.content)
 
         self.client.credentials(**auth_headers(self.admin.email))
         response = self.client.patch(f"/api/tasks/{self.task.id}/", {"title": "fixed"}, format="json")

@@ -12,13 +12,13 @@ from ai_engine.views import (
 )
 from accounts.views import (
     LeaderboardViewSet, MeView,
-    TaskViewSet, TaskSubmissionViewSet, ContestViewSet, PrivateLeaderboardViewSet,
+    TaskViewSet, TaskSubmissionViewSet, PrivateLeaderboardViewSet,
     AdminUserViewSet,
 )
 from diary.views import WeeklyTemplateViewSet, DiaryWeekViewSet
 from ai_engine.ocr_views import OCRView
 from ai_engine.canvas_analyzer_views import CanvasAnalyzerView
-from accounts.contest_views import AdminContestFileViewSet
+from accounts.contest_views import AdminContestFileViewSet, ContestViewSet
 from ai_engine.solve_views import SolveTaskView
 from ai_engine.draw_views import WhiteboardDrawView
 from ai_engine.chat_views import BoardChatStreamView, BoardChatView

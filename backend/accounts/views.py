@@ -11,12 +11,12 @@ from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from demo.identity import visitors_q
-from .models import CustomUser, Task, TaskSubmission, Contest, PrivateLeaderboard, new_invite_code
+from .models import CustomUser, Task, TaskSubmission, PrivateLeaderboard, new_invite_code
 from .serializers import (
     LeaderboardSerializer,
-    TaskSerializer, TaskSubmissionSerializer, ContestSerializer,
+    TaskSerializer, TaskSubmissionSerializer,
     PrivateLeaderboardSerializer, MeSerializer, MeUpdateSerializer, AdminUserSerializer,
-    is_admin_or_mod, visible_tasks, with_openness,
+    is_admin_or_mod, visible_tasks,
 )
 
 
@@ -238,9 +238,18 @@ class AdminUserViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class TaskViewSet(ViewerContextMixin, viewsets.ModelViewSet):
-    """Tasks/problems. Admins & moderators see all; a student sees what has come out in a contest, and their own."""
+    """Банк задач для админов и модераторов.
+
+    Ученику задачи приходят только через контест: там условие открывается со
+    стартом, а ответ с концом. Отсюда он не видит и не пишет ничего.
+    """
     serializer_class = TaskSerializer
     permission_classes = [AllowAny]
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not is_admin_or_mod(current_user(request)):
+            raise PermissionDenied('Задачи видят только админы.')
 
     def get_queryset(self):
         return visible_tasks(current_user(self.request)).order_by('-created_at', '-id')
@@ -265,44 +274,19 @@ class TaskViewSet(ViewerContextMixin, viewsets.ModelViewSet):
         instance.delete()
 
 
-class ContestViewSet(ViewerContextMixin, viewsets.ModelViewSet):
-    """Contests bundle tasks. Anyone can read the contest, its tasks only once they have opened; only admins/mods can write."""
-    serializer_class = ContestSerializer
-
-    def get_queryset(self):
-        tasks = with_openness(Task.objects.select_related('author'))
-        return Contest.objects.prefetch_related(Prefetch('tasks', queryset=tasks))
-
-    def _require_admin(self):
-        user = current_user(self.request)
-        return is_admin_or_mod(user), user
-
-    def create(self, request, *args, **kwargs):
-        ok, _ = self._require_admin()
-        if not ok:
-            return Response({'error': 'Only admins or moderators can create contests.'}, status=status.HTTP_403_FORBIDDEN)
-        return super().create(request, *args, **kwargs)
-
-    def update(self, request, *args, **kwargs):
-        ok, _ = self._require_admin()
-        if not ok:
-            return Response({'error': 'Only admins or moderators can edit contests.'}, status=status.HTTP_403_FORBIDDEN)
-        return super().update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        ok, _ = self._require_admin()
-        if not ok:
-            return Response({'error': 'Only admins or moderators can delete contests.'}, status=status.HTTP_403_FORBIDDEN)
-        return super().destroy(request, *args, **kwargs)
-
-    def perform_create(self, serializer):
-        serializer.save(created_by=current_user(self.request))
-
-
 class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
-    """Submissions. Users manage their own; admins/mods see all + can approve/reject."""
+    """Решения. Ученик только читает свои: отвечает он через контест.
+
+    Админы и модераторы видят все, одобряют и отклоняют.
+    """
     serializer_class = TaskSubmissionSerializer
     permission_classes = [AllowAny]
+    WRITE_ACTIONS = {'create', 'update', 'partial_update', 'destroy'}
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if self.action in self.WRITE_ACTIONS and not is_admin_or_mod(current_user(request)):
+            raise PermissionDenied('Ответ отправляется через страницу контеста.')
 
     def get_queryset(self):
         user = current_user(self.request)

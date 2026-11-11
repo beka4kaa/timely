@@ -1,6 +1,5 @@
 import importlib
 import json
-from datetime import timedelta
 from importlib import import_module
 from unittest.mock import patch
 
@@ -11,7 +10,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from . import views
-from .models import Contest, CustomUser, Discipline, PrivateLeaderboard, Task, TaskSubmission, UserRating
+from .models import CustomUser, Discipline, PrivateLeaderboard, Task, TaskSubmission, UserRating
 from config.testing import auth_headers
 
 
@@ -275,16 +274,8 @@ class FirstRequestProfileTests(TestCase):
 
     def test_endpoints_that_need_the_student_work_from_the_first_request(self):
         # These used to crash on an account with no row.
-        author = CustomUser.objects.create_user(username='author', email='author@example.com', password='x')
-        task = Task.objects.create(author=author, title='Задача', status='active')
-        _contest('Идёт', -1, 1, [task])
-
-        submitted = self.client.post(
-            '/api/submissions/',
-            data=json.dumps({'task': task.id, 'file_url_or_code': 'x = 1'}),
-            content_type='application/json',
-            **auth_headers(self.EMAIL),
-        )
+        # Ответы ученик отправляет через контест, а свои решения читает здесь.
+        submitted = self.client.get('/api/submissions/', **auth_headers(self.EMAIL))
         group = self.client.post(
             '/api/private-leaderboards/',
             data=json.dumps({'name': 'Класс'}),
@@ -292,7 +283,7 @@ class FirstRequestProfileTests(TestCase):
             **auth_headers('other@example.com'),
         )
 
-        self.assertEqual(submitted.status_code, 201, submitted.content)
+        self.assertEqual(submitted.status_code, 200, submitted.content)
         self.assertEqual(group.status_code, 201, group.content)
         self.assertEqual(CustomUser.objects.filter(email=self.EMAIL).count(), 1)
 
@@ -487,17 +478,6 @@ def _many_students(count):
     )
 
 
-def _contest(title, starts_in_hours, ends_in_hours, tasks=()):
-    now = timezone.now()
-    contest = Contest.objects.create(
-        title=title,
-        start_time=now + timedelta(hours=starts_in_hours),
-        end_time=now + timedelta(hours=ends_in_hours),
-    )
-    contest.tasks.set(tasks)
-    return contest
-
-
 class _ApiTestCase(TestCase):
     def get(self, url, user):
         return self.client.get(url, **auth_headers(user.email))
@@ -506,197 +486,6 @@ class _ApiTestCase(TestCase):
         return self.client.post(
             url, data=json.dumps(body or {}), content_type='application/json', **auth_headers(user.email),
         )
-
-
-class ContestSecrecyTests(_ApiTestCase):
-    """Условие закрыто до начала контеста, авторское решение до его конца."""
-
-    def setUp(self):
-        self.author = _account('author', is_staff=True)
-        self.student = _account('student')
-        self.moderator = _account('moderator', is_moderator=True)
-
-    def task(self, title, **fields):
-        fields.setdefault('author', self.author)
-        return Task.objects.create(
-            title=title,
-            condition_text=f'условие {title}',
-            author_solution_image=f'решение {title}',
-            status='active',
-            **fields,
-        )
-
-    def contest_row(self, contest, user=None):
-        rows = self.get('/api/contests/', user or self.student).json()
-        return next(row for row in rows if row['id'] == contest.id)
-
-    def details(self, contest, user=None):
-        return {row['id']: row for row in self.contest_row(contest, user)['task_details']}
-
-    def listed_task_ids(self, user=None):
-        return {row['id'] for row in self.get('/api/tasks/', user or self.student).json()}
-
-    def test_nothing_of_a_future_contest_is_readable(self):
-        task = self.task('будущая')
-        contest = _contest('Скоро', 24, 25, [task])
-
-        row = self.contest_row(contest)
-        self.assertEqual(row['task_details'], [])
-        # Число задач остаётся: страница пишет «4 задачи», а открыть задачу по номеру нельзя.
-        self.assertEqual(row['tasks'], [task.id])
-        self.assertNotIn(task.id, self.listed_task_ids())
-        self.assertEqual(self.get(f'/api/tasks/{task.id}/', self.student).status_code, 404)
-        self.assertEqual(self.get(f'/api/contests/{contest.id}/', self.student).json()['task_details'], [])
-
-    def test_running_contest_shows_the_statement_but_not_the_solution(self):
-        task = self.task('идёт')
-        contest = _contest('Сейчас', -1, 1, [task])
-
-        shown = self.details(contest)[task.id]
-        self.assertEqual(shown['condition_text'], 'условие идёт')
-        self.assertNotIn('author_solution_image', shown)
-        self.assertIn(task.id, self.listed_task_ids())
-        one = self.get(f'/api/tasks/{task.id}/', self.student).json()
-        self.assertEqual(one['condition_text'], 'условие идёт')
-        self.assertNotIn('author_solution_image', one)
-
-    def test_finished_contest_shows_the_solution(self):
-        task = self.task('прошла')
-        contest = _contest('Вчера', -25, -24, [task])
-
-        self.assertEqual(self.details(contest)[task.id]['author_solution_image'], 'решение прошла')
-        one = self.get(f'/api/tasks/{task.id}/', self.student).json()
-        self.assertEqual(one['author_solution_image'], 'решение прошла')
-
-    def test_a_contest_opens_exactly_at_its_start_and_closes_at_its_end(self):
-        # Те же границы, что у страницы контестов: начало и конец уже считаются наступившими.
-        now = timezone.now()
-        task = self.task('граница')
-        contest = Contest.objects.create(title='Только что', start_time=now, end_time=now + timedelta(hours=1))
-        contest.tasks.set([task])
-        with patch('django.utils.timezone.now', return_value=now):
-            self.assertIn(task.id, self.details(contest))
-
-            Contest.objects.filter(pk=contest.pk).update(start_time=now - timedelta(hours=1), end_time=now)
-            self.assertIn('author_solution_image', self.details(contest)[task.id])
-
-    def test_reused_task_stays_closed_until_its_next_contest_starts(self):
-        # Иначе условие будущего контеста читалось бы в прошедшем, где эта задача уже была.
-        task = self.task('снова')
-        other = self.task('другая')
-        past = _contest('Вчера', -25, -24, [task, other])
-        _contest('Скоро', 24, 25, [task])
-
-        self.assertEqual(set(self.details(past)), {other.id})
-        self.assertCountEqual(self.contest_row(past)['tasks'], [task.id, other.id])
-        self.assertNotIn(task.id, self.listed_task_ids())
-
-    def test_reused_task_shows_no_solution_while_another_contest_runs(self):
-        task = self.task('снова')
-        past = _contest('Вчера', -25, -24, [task])
-        running = _contest('Сейчас', -1, 1, [task])
-
-        self.assertNotIn('author_solution_image', self.details(past)[task.id])
-        self.assertNotIn('author_solution_image', self.details(running)[task.id])
-
-    def test_running_contest_keeps_its_statement_when_the_task_is_also_in_a_future_one(self):
-        task = self.task('снова')
-        running = _contest('Сейчас', -1, 1, [task])
-        future = _contest('Скоро', 24, 25, [task])
-
-        self.assertEqual(self.details(running)[task.id]['condition_text'], 'условие снова')
-        self.assertEqual(self.details(future), {})
-
-    def test_task_stays_closed_until_it_gets_a_contest(self):
-        # Админ сначала создаёт задачу и только потом контест: иначе условие было бы открыто всё это время.
-        task = self.task('черновик')
-
-        self.assertNotIn(task.id, self.listed_task_ids())
-        self.assertEqual(self.get(f'/api/tasks/{task.id}/', self.student).status_code, 404)
-
-    def test_staff_see_everything_before_the_start(self):
-        task = self.task('будущая')
-        contest = _contest('Скоро', 24, 25, [task])
-
-        for user in (self.author, self.moderator):
-            with self.subTest(user=user.username):
-                shown = self.details(contest, user)[task.id]
-                self.assertEqual(shown['condition_text'], 'условие будущая')
-                self.assertEqual(shown['author_solution_image'], 'решение будущая')
-                self.assertIn(task.id, self.listed_task_ids(user))
-
-    def test_author_reads_their_own_task(self):
-        # Он сам это написал: скрывать нечего, а поле иначе стало бы доступно только на запись.
-        task = self.task('своя', author=self.student)
-        _contest('Скоро', 24, 25, [task])
-
-        one = self.get(f'/api/tasks/{task.id}/', self.student).json()
-        self.assertEqual(one['condition_text'], 'условие своя')
-        self.assertEqual(one['author_solution_image'], 'решение своя')
-        self.assertIn(task.id, self.listed_task_ids())
-
-    def test_closed_task_cannot_be_named_through_a_submission(self):
-        # Ответ на отправку называет задачу и её баллы.
-        future = self.task('будущая')
-        _contest('Скоро', 24, 25, [future])
-        draft = self.task('черновик')
-        missing = self.post('/api/submissions/', self.student, {'task': 987654}).json()['task']
-
-        for task in (future, draft):
-            with self.subTest(task=task.title):
-                response = self.post('/api/submissions/', self.student, {'task': task.id})
-                self.assertEqual(response.status_code, 400)
-                self.assertNotIn(task.title, response.content.decode())
-                # Закрытая задача отвечает так же, как несуществующая.
-                self.assertEqual(
-                    response.json()['task'][0].replace(str(task.id), '987654'), missing[0],
-                )
-        self.assertFalse(TaskSubmission.objects.exists())
-
-    def test_submission_cannot_be_moved_onto_a_closed_task(self):
-        running = self.task('идёт')
-        _contest('Сейчас', -1, 1, [running])
-        future = self.task('будущая')
-        _contest('Скоро', 24, 25, [future])
-        created = self.post('/api/submissions/', self.student, {'task': running.id})
-        self.assertEqual(created.status_code, 201, created.content)
-
-        response = self.client.patch(
-            f"/api/submissions/{created.json()['id']}/",
-            data=json.dumps({'task': future.id}),
-            content_type='application/json',
-            **auth_headers(self.student.email),
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertNotIn('будущая', response.content.decode())
-
-    def test_submission_is_accepted_for_a_task_that_is_open(self):
-        running = self.task('идёт')
-        _contest('Сейчас', -1, 1, [running])
-
-        response = self.post('/api/submissions/', self.student, {'task': running.id, 'file_url_or_code': 'x'})
-
-        self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(response.json()['task_title'], 'идёт')
-
-    def test_author_real_name_is_not_shown_with_a_task(self):
-        peer = _account('peer', first_name='Настоящее', last_name='Имя')
-        task = self.task('идёт', author=peer)
-        contest = _contest('Сейчас', -1, 1, [task])
-
-        self.assertEqual(self.details(contest)[task.id]['author_name'], 'peer')
-
-    def test_contest_list_does_not_query_per_task(self):
-        _contest('Первый', -25, -24, [self.task('одна')])
-        with CaptureQueriesContext(connection) as few:
-            self.get('/api/contests/', self.student)
-
-        for index in range(2):
-            tasks = [self.task(f'{index}-{n}', author=_account(f'a{index}{n}')) for n in range(3)]
-            _contest(f'Ещё {index}', -25, -24, tasks)
-        with self.assertNumQueries(len(few)):
-            self.get('/api/contests/', self.student)
 
 
 class LeaderboardPrivacyTests(_ApiTestCase):

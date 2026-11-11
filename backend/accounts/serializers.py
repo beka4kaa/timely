@@ -1,7 +1,7 @@
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from rest_framework import serializers
-from .models import CustomUser, UserRating, Task, TaskSubmission, Contest, PrivateLeaderboard
+from .models import Contest, CustomUser, UserRating, Task, TaskSubmission, PrivateLeaderboard
 
 
 def is_admin_or_mod(user):
@@ -119,27 +119,6 @@ class TaskSubmissionSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return display_name(obj.student)
-
-
-class ContestSerializer(serializers.ModelSerializer):
-    # Write task membership by id; read full task details. The ids of a future contest
-    # stay visible: the page counts them, and a closed task can't be opened by its id.
-    tasks        = serializers.PrimaryKeyRelatedField(many=True, queryset=Task.objects.all(), required=False)
-    task_details = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Contest
-        fields = ('id', 'title', 'description', 'start_time', 'end_time', 'tasks', 'task_details', 'created_at')
-        read_only_fields = ('created_at',)
-
-    def get_task_details(self, contest):
-        tasks = contest.tasks.all()
-        if not is_admin_or_mod(self.context.get('viewer')):
-            if contest.start_time > timezone.now():
-                tasks = []
-            else:
-                tasks = [task for task in tasks if getattr(task, 'statement_open', False)]
-        return TaskSerializer(tasks, many=True, context=self.context).data
 
 
 class PrivateLeaderboardSerializer(serializers.ModelSerializer):
