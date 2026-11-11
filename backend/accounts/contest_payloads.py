@@ -11,8 +11,12 @@ from datetime import datetime
 from django.db.models import Prefetch
 from rest_framework import serializers
 
-from .contest_rules import REVIEW_TEXT_LIMIT, contest_state, first_variant
-from .models import Contest, Task, TaskSubmission
+from .contest_rules import REVIEW_TEXT_LIMIT, Attempt, contest_state, first_variant, standings
+from .models import Contest, CustomUser, Task, TaskSubmission
+from .serializers import public_username
+
+HIDDEN_NAME = "Участник"
+FEED_LIMIT = 200
 
 _iso = serializers.DateTimeField().to_representation
 
@@ -93,3 +97,65 @@ def student_contest(contest: Contest, *, now: datetime, viewer=None, with_mine: 
     if with_mine and viewer is not None:
         data["mine"] = mine_results(contest, viewer, tasks)
     return data
+
+
+def visible_names(viewer, student_ids) -> dict[int, str]:
+    """Имя для таблицы и ленты: публичное у согласившихся и у себя, иначе «Участник»."""
+    from .views import on_public_board  # views импортирует этот модуль через contest_views
+
+    users = list(CustomUser.objects.filter(pk__in=set(student_ids)).only("pk", "username"))
+    shown = set(
+        CustomUser.objects.filter(pk__in=[user.pk for user in users])
+        .filter(on_public_board(viewer))
+        .values_list("pk", flat=True)
+    )
+    return {user.pk: public_username(user) if user.pk in shown else HIDDEN_NAME for user in users}
+
+
+def standings_payload(contest: Contest, *, now: datetime, viewer=None) -> list[dict]:
+    if contest_state(contest.start_time, contest.end_time, now) == "upcoming":
+        return []
+    tasks = ordered_tasks(contest)
+    rows = TaskSubmission.objects.filter(contest=contest).values_list("student_id", "task_id", "status", "created_at")
+    attempts = [Attempt(student, task, status == "approved", at) for student, task, status, at in rows]
+    table = standings([task.id for task in tasks], {task.id: task.points for task in tasks}, attempts, contest.start_time)
+    names = visible_names(viewer, [row.student_id for row in table])
+    me = viewer.pk if viewer is not None else None
+    return [
+        {
+            "place": row.place,
+            "name": names.get(row.student_id, HIDDEN_NAME),
+            "me": row.student_id == me,
+            "points": row.points,
+            "solved": row.solved,
+            "penalty": row.penalty,
+            "marks": row.marks,
+        }
+        for row in table
+    ]
+
+
+def attempts_payload(contest: Contest, *, now: datetime, viewer=None, mine: bool = False) -> list[dict]:
+    """Лента попыток без самих ответов: время от начала, кто, номер задачи и вердикт."""
+    if contest_state(contest.start_time, contest.end_time, now) == "upcoming":
+        return []
+    numbers = {task.id: number for number, task in enumerate(ordered_tasks(contest), start=1)}
+    queryset = TaskSubmission.objects.filter(contest=contest)
+    if mine:
+        queryset = queryset.filter(student=viewer) if viewer is not None else queryset.none()
+    rows = list(
+        queryset.order_by("-created_at", "-pk").values_list("pk", "student_id", "task_id", "status", "created_at")[:FEED_LIMIT]
+    )
+    names = visible_names(viewer, [row[1] for row in rows])
+    me = viewer.pk if viewer is not None else None
+    return [
+        {
+            "id": pk,
+            "at": max(0, int((created_at - contest.start_time).total_seconds())),
+            "name": names.get(student_id, HIDDEN_NAME),
+            "me": student_id == me,
+            "task": numbers.get(task_id, 0),
+            "correct": status == "approved",
+        }
+        for pk, student_id, task_id, status, created_at in rows
+    ]

@@ -329,3 +329,96 @@ class AnswerTests(ContestBase):
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(self.rating(), before + 70)
+
+
+class StandingsTests(ContestBase):
+    def setUp(self):
+        super().setUp()
+        self.student.username = "aruzhan"
+        self.student.show_in_leaderboard = True
+        self.student.save()
+        self.timur = CustomUser.objects.create_user(
+            username="timur", email="timur@example.com", password="x", show_in_leaderboard=True,
+        )
+        self.hidden = CustomUser.objects.create_user(
+            username="hidden_kid", email="hidden@example.com", password="x", first_name="Скрытый",
+        )
+        self.dana = CustomUser.objects.create_user(
+            username="dana", email="dana@example.com", password="x", show_in_leaderboard=True,
+        )
+        self.cup = self.contest(tasks=[{"points": 100}, {"points": 50}])
+        self.first, self.second = self.tasks
+
+    def attempt(self, who, task, minutes, correct, answer="ответ-ученика"):
+        row = TaskSubmission.objects.create(
+            student=who, task=task, contest=self.cup, file_url_or_code=answer,
+            status="approved" if correct else "rejected",
+        )
+        TaskSubmission.objects.filter(pk=row.pk).update(created_at=self.cup.start_time + timedelta(minutes=minutes))
+        return row
+
+    def table(self, who=None):
+        return self.get(f"/api/contests/{self.cup.id}/standings/", who=who)
+
+    def test_table_orders_by_points_then_penalty(self):
+        self.attempt(self.student, self.first, 15, False)
+        self.attempt(self.student, self.first, 20, True)
+        for minute in (2, 4, 6):
+            self.attempt(self.timur, self.first, minute, False)
+        self.attempt(self.timur, self.first, 10, True)
+        self.attempt(self.hidden, self.second, 5, True)
+        self.attempt(self.dana, self.first, 30, False)
+
+        rows = self.table().json()
+
+        self.assertEqual([row["name"] for row in rows], ["aruzhan", "timur", "Участник", "dana"])
+        self.assertEqual([row["place"] for row in rows], [1, 1, 3, 4])
+        self.assertEqual([row["points"] for row in rows], [100, 100, 50, 0])
+        self.assertEqual([row["penalty"] for row in rows], [25, 25, 5, 0])
+        self.assertEqual([row["me"] for row in rows], [True, False, False, False])
+        self.assertEqual(rows[2]["marks"], ["none", "solved"])
+        self.assertEqual(rows[3]["marks"], ["tried", "none"])
+        self.assertEqual(set(rows[0]), {"place", "name", "me", "points", "solved", "penalty", "marks"})
+
+    def test_hidden_student_is_a_participant(self):
+        self.attempt(self.hidden, self.second, 5, True)
+        response = self.table()
+        self.assertEqual(response.json()[0]["name"], "Участник")
+        body = response.content.decode()
+        for secret in ("hidden_kid", "hidden@example.com", "Скрытый"):
+            self.assertNotIn(secret, body)
+
+    def test_hidden_student_sees_their_own_name(self):
+        self.attempt(self.hidden, self.second, 5, True)
+        [row] = self.table(who=self.hidden).json()
+        self.assertEqual((row["name"], row["me"]), ("hidden_kid", True))
+
+    def test_feed_never_contains_answers(self):
+        self.attempt(self.timur, self.first, 3, False, answer="секретный-ответ")
+        self.attempt(self.hidden, self.first, 7, True, answer="4242")
+
+        response = self.get(f"/api/contests/{self.cup.id}/attempts/")
+
+        body = response.content.decode()
+        self.assertNotIn("секретный-ответ", body)
+        self.assertNotIn("4242", body)
+        self.assertNotIn("hidden_kid", body)
+        rows = response.json()
+        self.assertEqual(set(rows[0]), {"id", "at", "name", "me", "task", "correct"})
+        self.assertEqual([(row["name"], row["at"], row["task"], row["correct"]) for row in rows],
+                         [("Участник", 420, 1, True), ("timur", 180, 1, False)])
+
+    def test_feed_mine_filter(self):
+        own = self.attempt(self.student, self.second, 9, False)
+        self.attempt(self.timur, self.first, 3, False)
+        rows = self.get(f"/api/contests/{self.cup.id}/attempts/?mine=1").json()
+        self.assertEqual([(row["id"], row["me"], row["task"]) for row in rows], [(own.id, True, 2)])
+
+    def test_nothing_before_start(self):
+        later = self.contest(state="upcoming")
+        self.assertEqual(self.get(f"/api/contests/{later.id}/standings/").json(), [])
+        self.assertEqual(self.get(f"/api/contests/{later.id}/attempts/").json(), [])
+
+    def test_drafts_have_no_table(self):
+        draft = self.contest(published=False)
+        self.assertEqual(self.get(f"/api/contests/{draft.id}/standings/").status_code, 404)

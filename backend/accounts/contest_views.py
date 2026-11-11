@@ -14,7 +14,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .contest_files import PdfRejected, pdf_response, read_pdf
-from .contest_payloads import contest_queryset, ordered_tasks, student_contest
+from .contest_payloads import (
+    attempts_payload,
+    contest_queryset,
+    ordered_tasks,
+    standings_payload,
+    student_contest,
+)
 from .contest_rules import (
     MAX_ANSWER_LENGTH,
     MAX_ATTEMPTS_PER_TASK,
@@ -151,6 +157,21 @@ class ContestViewSet(viewsets.ViewSet):
             "attempt": tried + 1,
             "solved": correct,
         })
+
+    @action(detail=True, methods=["get"])
+    def standings(self, request, pk=None):
+        contest = self._published(pk)
+        if contest is None:
+            return not_found()
+        return Response(standings_payload(contest, now=timezone.now(), viewer=current_user(request)))
+
+    @action(detail=True, methods=["get"])
+    def attempts(self, request, pk=None):
+        contest = self._published(pk)
+        if contest is None:
+            return not_found()
+        mine = (request.query_params.get("mine") or "").lower() in {"1", "true", "yes"}
+        return Response(attempts_payload(contest, now=timezone.now(), viewer=current_user(request), mine=mine))
 
     @action(detail=True, methods=["get"], url_path=r"tasks/(?P<task_id>\d+)/statement")
     def statement(self, request, pk=None, task_id=None):
