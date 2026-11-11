@@ -86,7 +86,7 @@ export function ContestTile({ contest, today }: { contest: NextContest | null; t
   return (
     <Link
       className="tile card quiet soon"
-      href="/dashboard/arena/solve"
+      href={`/dashboard/arena/solve/${contest.id}`}
       data-attach={`Контест: ${contest.title}`}
     >
       <h2>

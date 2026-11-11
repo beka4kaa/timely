@@ -1,7 +1,16 @@
 // Как контест выглядит для ученика: что идёт, что впереди, какого он цвета и чем кончился.
 // Здесь нет React и нет сети, поэтому всё проверяется тестами.
 
-import type { AdminContest, Contest, ContestState, ContestTask, MyTaskResult, Submission } from "./contest-api";
+import type {
+  AdminContest,
+  Contest,
+  ContestArtName,
+  ContestState,
+  ContestTask,
+  ContestTier,
+  MyTaskResult,
+  Submission,
+} from "./contest-api";
 
 /** Русское число: `ru(3, "день", "дня", "дней")` даёт «дня». */
 export function ru(n: number, one: string, few: string, many: string): string {
@@ -221,4 +230,54 @@ export function adminBadge(contest: AdminContest, now: Date): string {
   }
   if (days === 1) return "Завтра";
   return `Через ${days} ${ru(days, "день", "дня", "дней")}`;
+}
+
+
+/** То, что нужно плашке: одинаково у контеста ученика и у контеста админки. */
+export interface Plaque {
+  id: number;
+  title: string;
+  description: string;
+  start_time: string;
+  end_time: string;
+  tier: ContestTier;
+  art: ContestArtName;
+  taskCount: number;
+  /** Сколько баллов можно получить за все задачи. */
+  points: number;
+}
+
+export function plaqueOf(contest: Contest | AdminContest): Plaque {
+  const taskCount = "task_count" in contest ? contest.task_count : contest.tasks.length;
+  return {
+    id: contest.id,
+    title: contest.title,
+    description: contest.description,
+    start_time: contest.start_time,
+    end_time: contest.end_time,
+    tier: contest.tier,
+    art: contest.art,
+    taskCount,
+    points: contest.points_total,
+  };
+}
+
+/** «4 задачи, 3 часа, до 750 баллов». Без задач только длительность: придумывать число нельзя. */
+export function plaqueRules(plaque: Plaque, { duration = true }: { duration?: boolean } = {}): string {
+  const parts: string[] = [];
+  if (plaque.taskCount) parts.push(`${plaque.taskCount} ${ru(plaque.taskCount, "задача", "задачи", "задач")}`);
+  if (duration) {
+    const minutes = Math.round((ms(plaque.end_time) - ms(plaque.start_time)) / 60_000);
+    if (minutes >= 2880) {
+      const days = Math.round(minutes / 1440);
+      parts.push(`${days} ${ru(days, "день", "дня", "дней")}`);
+    } else if (minutes >= 60 && minutes % 60 === 0) {
+      const hours = minutes / 60;
+      parts.push(`${hours} ${ru(hours, "час", "часа", "часов")}`);
+    } else if (minutes > 0) {
+      parts.push(`${minutes} ${ru(minutes, "минута", "минуты", "минут")}`);
+    }
+  }
+  if (plaque.points > 0) parts.push(`до ${plaque.points} ${ru(plaque.points, "балла", "баллов", "баллов")}`);
+  return parts.join(", ");
 }

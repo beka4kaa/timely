@@ -13,7 +13,7 @@ import {
 } from "./contest-form";
 import { layoutContests } from "./contest-layout";
 import { ARTS, TIERS, canSetTier, tierMeta } from "./contest-tiers";
-import { adminBadge, answerErrorText, attemptClock, contestStateAt, reviewPrompt, taskRows } from "./contest-view";
+import { adminBadge, answerErrorText, attemptClock, contestStateAt, plaqueOf, plaqueRules, reviewPrompt, taskRows } from "./contest-view";
 
 const PDF: ContestFileInfo = { id: 7, name: "z.pdf", size: 100, pages: 1 };
 
@@ -257,5 +257,23 @@ describe("метки админки", () => {
       adminBadge(admin({ state: "ended", start_time: new Date(2026, 10, 1, 11, 0).toISOString(), end_time: new Date(2026, 10, 1, 14, 0).toISOString(), participants: 41 }), now),
       "Прошёл, 41 участник",
     );
+  });
+});
+
+describe("плашка", () => {
+  it("одинаково читает контест ученика и админки", () => {
+    const fromStudent = plaqueOf(contest({ task_count: 3, points_total: 300 }));
+    const fromAdmin = plaqueOf(admin({ points_total: 250, tasks: [
+      { id: 1, number: 1, title: "", condition_text: "", answer: "1", points: 150, statement: PDF, solution: null },
+      { id: 2, number: 2, title: "", condition_text: "", answer: "2", points: 100, statement: PDF, solution: null },
+    ] }));
+    assert.deepEqual([fromStudent.taskCount, fromStudent.points, fromStudent.tier], [3, 300, 2]);
+    assert.deepEqual([fromAdmin.taskCount, fromAdmin.points, fromAdmin.art], [2, 250, "waves"]);
+  });
+
+  it("правила: задачи, длительность и сколько можно получить", () => {
+    assert.equal(plaqueRules(plaqueOf(contest({ task_count: 4, points_total: 750 }))), "4 задачи, 3 часа, до 750 баллов");
+    assert.equal(plaqueRules(plaqueOf(contest({ task_count: 0, points_total: 0 }))), "3 часа");
+    assert.equal(plaqueRules(plaqueOf(contest({ task_count: 1, points_total: 50 })), { duration: false }), "1 задача, до 50 баллов");
   });
 });
