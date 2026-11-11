@@ -36,6 +36,8 @@ import {
   type CurriculumDocument,
   type LearningGoal,
 } from "@/lib/curriculum-api";
+import { BOOKS_ENABLED } from "@/config/features";
+import { railPlaceholder, showBookPicker } from "@/lib/curriculum-books";
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 import "katex/dist/katex.min.css";
@@ -135,7 +137,7 @@ function AskRail() {
     setBookSettled(true);
     if (pageGoalId) return;
     const remembered = window.localStorage.getItem(SUBJECT_KEY);
-    if (remembered && remembered !== NO_BOOK) setSelected(remembered);
+    if (BOOKS_ENABLED && remembered && remembered !== NO_BOOK) setSelected(remembered);
   }, [open, bookSettled, pageGoalId]);
 
   // Книгу могли удалить, пока ученика не было. Идущий разговор не трогаем.
@@ -283,9 +285,9 @@ function AskRail() {
           onSubmit={(text) => void chat.ask(text)}
           onStop={chat.stop}
           busy={chat.busy}
-          placeholder={current ? "Спроси по книге" : "Чем помочь?"}
+          placeholder={railPlaceholder(BOOKS_ENABLED, Boolean(current))}
           suggestions={chat.turns.length ? undefined : SUGGESTIONS[view]}
-          left={picker}
+          left={showBookPicker(BOOKS_ENABLED) ? picker : undefined}
         />
       }
       feedRef={feedRef}

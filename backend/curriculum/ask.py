@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from django.conf import settings
+
 from ai_engine.prompt_safety import IDENTITY_RULE
 
 from .ask_modes import DEFAULT_MODE, mode_instructions, normalize_mode
@@ -70,6 +72,19 @@ GENERAL_SYSTEM_PROMPT = """Ты наставник, который помога�
 
 Не выдумывай ссылки на страницы и параграфы: сверять их ученику будет не с чем."""
 
+_NO_BOOK_LINE = """Учебника у этого разговора нет: отвечай своими знаниями. Если вопрос требует
+конкретного учебника или программы школы, так и скажи и предложи загрузить
+книгу в раздел «Курсы и книги»."""
+_BOOKS_OFF_LINE = """Отвечай своими знаниями. Если вопрос требует конкретной программы школы,
+так и скажи."""
+
+
+def general_system_prompt() -> str:
+    """Промпт разговора без книги. Пока книги выключены, про учебник и загрузку не говорим."""
+    if settings.BOOKS_ENABLED:
+        return GENERAL_SYSTEM_PROMPT
+    return GENERAL_SYSTEM_PROMPT.replace(_NO_BOOK_LINE, _BOOKS_OFF_LINE)
+
 
 @dataclass
 class AskContext:
@@ -102,7 +117,7 @@ class AskContext:
             instructions = f"{instructions}\n\n{self.assistant_rules}"
         if not self.has_library:
             messages = [
-                {"role": "system", "content": f"{IDENTITY_RULE}\n\n{GENERAL_SYSTEM_PROMPT}\n\n{instructions}"}
+                {"role": "system", "content": f"{IDENTITY_RULE}\n\n{general_system_prompt()}\n\n{instructions}"}
             ]
             messages.extend(self.history)
             messages.append({"role": "user", "content": self.question})

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from ai_engine.prompt_safety import IDENTITY_RULE
 from curriculum.ask import (
@@ -269,3 +269,37 @@ class WithoutLibraryTests(TestCase):
         context = build_ask_context(goal=subject, question="импульс")
 
         self.assertTrue(context.has_library)
+
+
+class NoBooksPromptTests(TestCase):
+    """Пока книги выключены, тьютор не предлагает ни загрузку, ни учебник."""
+
+    def _blob(self) -> str:
+        context = build_ask_context(goal=None, question="привет")
+        context.assistant_rules = AssistantRulesProbe.rules()
+        return " ".join(m["content"] for m in context.messages())
+
+    @override_settings(BOOKS_ENABLED=False)
+    def test_без_книг_в_промпте_нет_книги_и_загрузки(self):
+        blob = self._blob().lower()
+        # Правило безопасности про «данные из книг» остаётся: оно не предложение ученику.
+        self.assertNotIn("курсы и книги", blob)
+        self.assertNotIn("учебник", blob)
+        self.assertNotIn("загруз", blob)
+        self.assertNotIn("книгу", blob)
+
+    @override_settings(BOOKS_ENABLED=True)
+    def test_с_книгами_промпт_прежний(self):
+        blob = self._blob()
+        self.assertIn("загрузить\nкнигу в раздел «Курсы и книги»", blob)
+        self.assertIn("загрузить книгу", blob)
+
+
+class AssistantRulesProbe:
+    @staticmethod
+    def rules() -> str:
+        import datetime
+
+        from curriculum.assistant_tools import ASSISTANT_RULES, assistant_rules_text
+
+        return assistant_rules_text(datetime.date(2026, 11, 11))

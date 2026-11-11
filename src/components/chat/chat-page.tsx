@@ -45,6 +45,8 @@ import { invalidateResources, useResource, type ResourceState } from "@/lib/reso
 
 import { STOPPED_ERROR } from "./ask-stages";
 import { AskTurn } from "./ask-turn";
+import { BOOKS_ENABLED } from "@/config/features";
+import { chatEmptyLine, chatPlaceholder, showBookPicker } from "@/lib/curriculum-books";
 import { ChatList } from "./chat-list";
 import { chatTitle } from "./chat-title";
 import {
@@ -152,6 +154,7 @@ function buildSubjects(goals: LearningGoal[], documents: CurriculumDocument[]): 
 /** Книга, выбранная в прошлый раз. Выбор «без книги» тоже считается выбором. */
 function rememberedSubject(list: Subject[]): string | null {
   const value = readStored(SUBJECT_KEY);
+  if (!BOOKS_ENABLED) return null;
   return list.some((item) => item.goalId === value) ? value : null;
 }
 
@@ -447,7 +450,7 @@ export function ChatPage() {
         : [],
     [documents, selected],
   );
-  const hasSources = shelf.length > 0 || spines.length > 0;
+  const hasSources = BOOKS_ENABLED && (shelf.length > 0 || spines.length > 0);
 
   const showSource = useCallback((documentId: string, page: number) => {
     setPickedPages((prev) => ({ ...prev, [documentId]: page }));
@@ -491,7 +494,8 @@ export function ChatPage() {
   const answered =
     !busy && lastTurn?.role === "assistant" && Boolean(lastTurn.content) && !lastTurn.error;
   const openRow = chats.find((row) => row.id === chatId);
-  const placeholder = modeKey === "plain" && current?.books ? "Спроси по книге" : mode.hint;
+  const placeholder =
+    modeKey === "plain" ? chatPlaceholder(BOOKS_ENABLED, Boolean(current?.books), mode.hint) : mode.hint;
 
   const list = (
     <ChatList
@@ -646,12 +650,14 @@ export function ChatPage() {
             tools={
               <>
                 <ModePicker mode={mode} onPick={pickMode} />
-                <BookPicker
-                  options={subjects}
-                  selected={selected}
-                  failed={subjectsFailed}
-                  onPick={pickSubject}
-                />
+                {showBookPicker(BOOKS_ENABLED) ? (
+                  <BookPicker
+                    options={subjects}
+                    selected={selected}
+                    failed={subjectsFailed}
+                    onPick={pickSubject}
+                  />
+                ) : null}
                 {prefs.showPicker && askOptions.data ? (
                   <ModelPicker
                     options={askOptions.data}
@@ -722,11 +728,7 @@ function EmptyTalk({
     );
   }
 
-  const line = current
-    ? current.books
-      ? `Отвечу по книге предмета «${current.title}» и покажу страницу.`
-      : `У предмета «${current.title}» пока нет книги, отвечу своими словами.`
-    : "Учёба, план, как собраться с мыслями. Можно и по книге.";
+  const line = chatEmptyLine(BOOKS_ENABLED, current);
 
   return (
     <>

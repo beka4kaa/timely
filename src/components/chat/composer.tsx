@@ -23,6 +23,7 @@ import {
 import { Icon } from "@/components/shell/icons";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 import { BOOKS_ENABLED } from "@/config/features";
+import { chatContextHint } from "@/lib/curriculum-books";
 import type { AskOptions } from "@/lib/curriculum-api";
 
 import { CHAT_MODES, type ChatMode, type ChatModeKey } from "./chat-modes";
@@ -330,7 +331,7 @@ export function ContextMeter({ usage }: { usage: AskUsage }) {
   return (
     <span
       className="ctx"
-      title={`Контекст: ${countLabel(used)} из ${countLabel(usage.context_window)} токенов. В него идут правила тьютора, последние реплики и фрагменты книги.`}
+      title={`Контекст: ${countLabel(used)} из ${countLabel(usage.context_window)} токенов. В него идут ${chatContextHint(BOOKS_ENABLED)}.`}
     >
       {/* Заметная точка даже на доле процента: ноль выглядел бы как поломка. */}
       <span className="ring xs" style={{ "--p": Math.max(percent, 4) } as CSSProperties} aria-hidden="true">

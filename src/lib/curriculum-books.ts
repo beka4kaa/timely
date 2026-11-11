@@ -46,6 +46,40 @@ export function curriculumTabLabel(booksEnabled: boolean): string {
   return booksEnabled ? "Книги" : "Курсы";
 }
 
+/** Выбор книги в поле ввода чата и в мини-окне: без книг выбирать не из чего. */
+export function showBookPicker(booksEnabled: boolean): boolean {
+  return booksEnabled;
+}
+
+/** Подсказка в поле чата: «по книге» только когда у предмета есть книга и книги включены. */
+export function chatPlaceholder(booksEnabled: boolean, hasBook: boolean, fallback: string): string {
+  return booksEnabled && hasBook ? "Спроси по книге" : fallback;
+}
+
+/** То же для мини-окна тьютора. */
+export function railPlaceholder(booksEnabled: boolean, hasBook: boolean): string {
+  return chatPlaceholder(booksEnabled, hasBook, "Чем помочь?");
+}
+
+/** Строка пустого чата. Без книг не обещаем ни книгу, ни страницу. */
+export function chatEmptyLine(
+  booksEnabled: boolean,
+  subject: { title: string; books: number } | null,
+): string {
+  if (!booksEnabled) return "Учёба, план, как собраться с мыслями.";
+  if (!subject) return "Учёба, план, как собраться с мыслями. Можно и по книге.";
+  return subject.books
+    ? `Отвечу по книге предмета «${subject.title}» и покажу страницу.`
+    : `У предмета «${subject.title}» пока нет книги, отвечу своими словами.`;
+}
+
+/** Подсказка над счётчиком контекста. */
+export function chatContextHint(booksEnabled: boolean): string {
+  return booksEnabled
+    ? "правила тьютора, последние реплики и фрагменты книги"
+    : "правила тьютора и последние реплики";
+}
+
 /** Название раздела в меню, заголовке и ссылках «назад». */
 export const SECTION_LABEL = curriculumSectionLabel(BOOKS_ENABLED);
 export const TAB_LABEL = curriculumTabLabel(BOOKS_ENABLED);
