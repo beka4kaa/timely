@@ -290,7 +290,7 @@ class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = current_user(self.request)
-        qs = TaskSubmission.objects.select_related('student', 'task').order_by('-created_at')
+        qs = TaskSubmission.objects.select_related('student', 'task', 'contest').order_by('-created_at')
         if is_admin_or_mod(user):
             status_filter = self.request.query_params.get('status')
             return qs.filter(status=status_filter) if status_filter else qs

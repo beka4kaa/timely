@@ -104,6 +104,7 @@ class TaskSubmissionSerializer(serializers.ModelSerializer):
     student_email = serializers.EmailField(source='student.email', read_only=True)
     task_title    = serializers.CharField(source='task.title', read_only=True)
     task_points   = serializers.IntegerField(source='task.points', read_only=True)
+    contest_title = serializers.SerializerMethodField()
 
     class Meta:
         model = TaskSubmission
@@ -119,6 +120,9 @@ class TaskSubmissionSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return display_name(obj.student)
+
+    def get_contest_title(self, obj):
+        return obj.contest.title if obj.contest_id else ''
 
 
 class PrivateLeaderboardSerializer(serializers.ModelSerializer):

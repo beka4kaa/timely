@@ -12,7 +12,6 @@ import { authFetch } from "@/lib/auth-fetch"
 import { BACKEND_URL } from "@/lib/api-utils"
 import { collectBoard } from "@/lib/rating-view"
 
-export type Difficulty = "easy" | "medium" | "hard"
 export type SubmissionStatus = "pending" | "approved" | "rejected"
 
 export interface Me {
@@ -35,18 +34,6 @@ export interface Me {
   /** Свой город. Другим он не виден: в рейтинге этого поля нет. */
   city: string | null
   authenticated?: boolean
-}
-
-/** Задача из банка задач админки (старый раздел «Задачи»). */
-export interface BankTask {
-  id: number
-  title: string
-  condition_text: string
-  difficulty: Difficulty
-  points: number
-  status: string
-  author_name: string
-  created_at: string | null
 }
 
 export type ContestTier = 1 | 2 | 3 | 4 | 5
@@ -87,6 +74,9 @@ export interface Submission {
   task: number
   task_title: string
   task_points: number
+  /** Контест, в котором отправлен ответ. У старых решений вне контеста пусто. */
+  contest?: number | null
+  contest_title?: string
   file_url_or_code: string
   student_solution_image: string
   status: SubmissionStatus
@@ -287,16 +277,6 @@ export const getMe = async (): Promise<Me> => unwrap(await authFetch(url("/api/m
 export const updateMe = async (data: Partial<Pick<Me, "bio" | "show_in_leaderboard">>): Promise<Me> =>
   unwrap(await authFetch(url("/api/me/"), { method: "PATCH", body: JSON.stringify(data) }))
 
-// ── tasks ────────────────────────────────────────────────────────────
-export const listTasks = async (): Promise<BankTask[]> =>
-  unwrap(await authFetch(url("/api/tasks/")))
-
-export const createTask = async (data: Partial<BankTask>): Promise<BankTask> =>
-  unwrap(await authFetch(url("/api/tasks/"), { method: "POST", body: JSON.stringify(data) }))
-
-export const updateTask = async (id: number, data: Partial<BankTask>): Promise<BankTask> =>
-  unwrap(await authFetch(url(`/api/tasks/${id}/`), { method: "PATCH", body: JSON.stringify(data) }))
-
 // ── contests ─────────────────────────────────────────────────────────
 /** Ответ сервера или `ContestApiError` с кодом и списком проблем формы. */
 export async function contestReply<T>(res: Response): Promise<T> {
@@ -357,27 +337,9 @@ export const unpublishAdminContest = async (id: number): Promise<AdminContest> =
 export const deleteAdminContest = async (id: number): Promise<void> =>
   contestReply(await authFetch(url(`/api/admin/contests/${id}/`), { method: "DELETE" }))
 
-export const createContest = async (data: {
-  title: string
-  description?: string
-  start_time: string
-  end_time: string
-  tasks: number[]
-}): Promise<Contest> =>
-  unwrap(await authFetch(url("/api/contests/"), { method: "POST", body: JSON.stringify(data) }))
-
 // ── submissions ──────────────────────────────────────────────────────
 export const listMySubmissions = async (): Promise<Submission[]> =>
   unwrap(await authFetch(url("/api/submissions/")))
-
-export const createSubmission = async (data: {
-  task: number
-  file_url_or_code: string
-}): Promise<Submission> =>
-  unwrap(await authFetch(url("/api/submissions/"), { method: "POST", body: JSON.stringify(data) }))
-
-export const listPendingSubmissions = async (): Promise<Submission[]> =>
-  unwrap(await authFetch(url("/api/submissions/pending/")))
 
 export const approveSubmission = async (id: number): Promise<Submission> =>
   unwrap(await authFetch(url(`/api/submissions/${id}/approve/`), { method: "POST" }))

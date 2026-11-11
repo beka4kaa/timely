@@ -1,576 +1,299 @@
-"use client"
+"use client";
 
-import React, { useCallback, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { Loader2, Plus, Check, X, Pencil, Search } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  useMe, listTasks, createTask, updateTask, listContests, createContest,
-  listPendingSubmissions, listMySubmissions, approveSubmission, rejectSubmission,
-  listAdminUsers, updateAdminUserAccess,
-  type ContestTask, type Contest, type Submission, type Difficulty, type AdminUser,
-} from "@/lib/contest-api"
-import { CoffeePageShell } from "@/components/dashboard/coffee-page-shell"
+// Админка: контесты в той же сетке, что у учеников, участники и решения.
+// Задачи живут внутри контестов, ответы проверяются сами, поэтому отдельных вкладок
+// «Задачи» и «Проверка» больше нет: ручное одобрение осталось в «Решениях».
 
-const DIFF_STYLES: Record<Difficulty, string> = {
-  easy: "text-emerald-800 border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
-  medium: "text-amber-800 border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
-  hard: "text-rose-800 border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300",
-}
-const DIFF_LABEL: Record<Difficulty, string> = { easy: "Easy", medium: "Medium", hard: "Hard" }
-const SUBMISSION_STATUS_LABEL: Record<Submission["status"], string> = {
-  pending: "На проверке",
-  approved: "Выполнено",
-  rejected: "Отклонено",
-}
-const SUBMISSION_STATUS_CLASS: Record<Submission["status"], string> = {
-  pending: "text-amber-800 border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
-  approved: "text-emerald-800 border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
-  rejected: "text-rose-800 border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300",
-}
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
-function DifficultyBadge({ d }: { d: Difficulty }) {
-  return <Badge variant="outline" className={cn("font-medium", DIFF_STYLES[d] ?? "")}>{DIFF_LABEL[d] ?? d}</Badge>
-}
+import { ADMIN_CONTESTS_KEY } from "@/components/arena/contest-editor";
+import { ContestGrid, type GridItem } from "@/components/arena/contest-grid";
+import {
+  ContestApiError,
+  approveSubmission,
+  listAdminContests,
+  listAdminUsers,
+  listMySubmissions,
+  rejectSubmission,
+  updateAdminUserAccess,
+  useMe,
+  type AdminUser,
+  type Submission,
+} from "@/lib/contest-api";
+import { adminBadge, plaqueOf } from "@/lib/contest-view";
+import { useResource } from "@/lib/resource-cache";
+import { useNow } from "@/lib/use-now";
 
-function SubmissionStatusBadge({ status }: { status: Submission["status"] }) {
+type AdminTab = "contests" | "users" | "submissions";
+
+const TABS: Array<{ tab: AdminTab; label: string }> = [
+  { tab: "contests", label: "Контесты" },
+  { tab: "users", label: "Участники" },
+  { tab: "submissions", label: "Решения" },
+];
+
+function ContestsTab() {
+  const contests = useResource(ADMIN_CONTESTS_KEY, listAdminContests, { ttl: 60_000 });
+  const now = useNow(30_000);
+  const list = contests.data;
+
+  if (!list && contests.error) {
+    return (
+      <section className="ct-note card" role="alert">
+        <h2>Контесты не загрузились</h2>
+        <p>Проверь связь и попробуй ещё раз.</p>
+        <button className="btn btn-line" type="button" onClick={contests.reload}>
+          Повторить
+        </button>
+      </section>
+    );
+  }
+  if (!list || !now) {
+    return (
+      <p className="small-note" role="status">
+        Загружаю контесты…
+      </p>
+    );
+  }
+  if (!list.length) {
+    return (
+      <section className="ct-note card">
+        <h2>Контестов пока нет</h2>
+        <p>Выбери тир и рисунок, загрузи задачи в PDF и опубликуй: контест сам встанет в сетку.</p>
+        <Link className="btn btn-main" href="/dashboard/admin/contests/new">
+          Новый контест
+        </Link>
+      </section>
+    );
+  }
+
+  const items: GridItem[] = list.map((contest) => ({
+    plaque: plaqueOf(contest),
+    href: `/dashboard/admin/contests/${contest.id}`,
+    badge: adminBadge(contest, now),
+    draft: !contest.is_published,
+  }));
   return (
-    <Badge variant="outline" className={cn("font-medium", SUBMISSION_STATUS_CLASS[status] ?? "")}>
-      {SUBMISSION_STATUS_LABEL[status] ?? status}
-    </Badge>
-  )
+    <>
+      <ContestGrid items={items} now={now} />
+      <p className="small-note adm-note">
+        Расставлять ничего не нужно: идущий или ближайший контест встаёт билетом наверху, следующие идут парами,
+        прошедшие маленькими плашками. Ученики видят ту же сетку, только без черновиков.
+      </p>
+    </>
+  );
 }
 
-/* ──────────────────────────── Users tab ──────────────────────────── */
 function UsersTab() {
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [query, setQuery] = useState("")
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    setLoading(true)
+    setLoading(true);
     listAdminUsers(query)
       .then(setUsers)
-      .catch((e) => toast.error(`Не удалось загрузить участников: ${e.message}`))
-      .finally(() => setLoading(false))
-  }, [query])
+      .catch((error: Error) => toast.error(`Участники не загрузились: ${error.message}`))
+      .finally(() => setLoading(false));
+  }, [query]);
 
   useEffect(() => {
-    const id = window.setTimeout(load, 200)
-    return () => window.clearTimeout(id)
-  }, [load])
+    const timer = window.setTimeout(load, 200);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
-  const updateAccess = async (
-    user: AdminUser,
-    field: "has_full_access" | "is_moderator" | "is_staff",
-    value: boolean,
-  ) => {
-    const key = `${user.id}:${field}`
-    setBusy(key)
+  async function toggle(user: AdminUser, field: "has_full_access" | "is_moderator" | "is_staff", value: boolean) {
+    setBusy(`${user.id}:${field}`);
     try {
-      const updated = await updateAdminUserAccess(user.id, { [field]: value })
-      setUsers((items) => items.map((item) => (item.id === updated.id ? updated : item)))
-      toast.success("Права обновлены")
-    } catch (e: any) {
-      toast.error(`Не удалось обновить права: ${e.message}`)
+      const updated = await updateAdminUserAccess(user.id, { [field]: value });
+      setUsers((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      toast.error(`Права не обновились: ${(error as Error).message}`);
     } finally {
-      setBusy(null)
+      setBusy(null);
     }
   }
 
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <CardTitle className="text-base">Участники</CardTitle>
-        <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-8"
-            placeholder="Поиск по email или имени"
-          />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
-        ) : users.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Участники не найдены.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Аккаунт</TableHead>
-                <TableHead className="w-[90px] text-right">Рейтинг</TableHead>
-                <TableHead className="w-[150px] text-right">Решения</TableHead>
-                <TableHead className="w-[130px] text-center">Все страницы</TableHead>
-                <TableHead className="w-[120px] text-center">Модератор</TableHead>
-                <TableHead className="w-[100px] text-center">Staff</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="font-medium">{user.name || user.username || user.email}</div>
-                    <div className="text-xs text-muted-foreground">{user.email}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{user.overall_elo}</TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-                    {user.submissions_approved}/{user.submissions_total}
-                    {user.submissions_pending > 0 && <span className="ml-1 text-amber-400">+{user.submissions_pending}</span>}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={user.has_full_access}
-                      disabled={busy !== null}
-                      onCheckedChange={(checked) => updateAccess(user, "has_full_access", checked)}
-                      aria-label="Полный доступ"
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={user.is_moderator}
-                      disabled={busy !== null}
-                      onCheckedChange={(checked) => updateAccess(user, "is_moderator", checked)}
-                      aria-label="Модератор"
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Switch
-                      checked={user.is_staff}
-                      disabled={busy !== null}
-                      onCheckedChange={(checked) => updateAccess(user, "is_staff", checked)}
-                      aria-label="Staff"
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-/* ──────────────────────────── Tasks tab ──────────────────────────── */
-function TasksTab() {
-  const [tasks, setTasks] = useState<ContestTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState<ContestTask | null>(null)
-  const [form, setForm] = useState({ title: "", condition_text: "", difficulty: "medium" as Difficulty, points: 100 })
-  const [saving, setSaving] = useState(false)
-
-  const load = useCallback(() => {
-    setLoading(true)
-    listTasks().then(setTasks).catch((e) => toast.error(`Не удалось загрузить задачи: ${e.message}`)).finally(() => setLoading(false))
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const openNew = () => { setEditing(null); setForm({ title: "", condition_text: "", difficulty: "medium", points: 100 }); setOpen(true) }
-  const openEdit = (t: ContestTask) => { setEditing(t); setForm({ title: t.title, condition_text: t.condition_text, difficulty: t.difficulty, points: t.points }); setOpen(true) }
-
-  const save = async () => {
-    if (!form.title.trim()) { toast.error("Введите название задачи"); return }
-    setSaving(true)
-    try {
-      if (editing) { await updateTask(editing.id, form); toast.success("Задача обновлена") }
-      else { await createTask(form); toast.success("Задача создана") }
-      setOpen(false); load()
-    } catch (e: any) { toast.error(`Ошибка: ${e.message}`) } finally { setSaving(false) }
-  }
+  const switches: Array<{ field: "has_full_access" | "is_moderator" | "is_staff"; label: string }> = [
+    { field: "has_full_access", label: "Все страницы" },
+    { field: "is_moderator", label: "Модератор" },
+    { field: "is_staff", label: "Админ" },
+  ];
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle className="text-base">Задачи</CardTitle>
-        <Button size="sm" onClick={openNew}><Plus className="w-4 h-4 mr-1.5" />Создать задачу</Button>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
-        ) : tasks.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Пока нет задач. Создайте первую.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Название</TableHead>
-                <TableHead className="w-[120px]">Сложность</TableHead>
-                <TableHead className="w-[90px] text-right">Очки</TableHead>
-                <TableHead className="w-[110px]">Статус</TableHead>
-                <TableHead className="w-[60px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.title || <span className="text-muted-foreground">(без названия)</span>}</TableCell>
-                  <TableCell><DifficultyBadge d={t.difficulty} /></TableCell>
-                  <TableCell className="text-right tabular-nums">{t.points}</TableCell>
-                  <TableCell><span className="text-xs text-muted-foreground capitalize">{t.status}</span></TableCell>
-                  <TableCell><Button variant="ghost" size="icon" onClick={() => openEdit(t)}><Pencil className="w-4 h-4" /></Button></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>{editing ? "Редактировать задачу" : "Новая задача"}</DialogTitle></DialogHeader>
-          <div className="flex flex-col gap-3 py-1">
-            <Input placeholder="Название задачи" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <Textarea placeholder="Условие задачи (поддерживается markdown)" rows={6} value={form.condition_text} onChange={(e) => setForm({ ...form, condition_text: e.target.value })} />
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="text-xs text-muted-foreground mb-1.5 block">Сложность</label>
-                <Select value={form.difficulty} onValueChange={(v) => setForm({ ...form, difficulty: v as Difficulty })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">Easy</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-28">
-                <label className="text-xs text-muted-foreground mb-1.5 block">Очки</label>
-                <Input type="number" value={form.points} onChange={(e) => setForm({ ...form, points: Number(e.target.value) || 0 })} />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Отмена</Button>
-            <Button onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}{editing ? "Сохранить" : "Создать"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  )
-}
-
-/* ──────────────────────────── Contests tab ──────────────────────────── */
-function ContestsTab() {
-  const [contests, setContests] = useState<Contest[]>([])
-  const [tasks, setTasks] = useState<ContestTask[]>([])
-  const [loading, setLoading] = useState(true)
-  const [open, setOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ title: "", description: "", start_time: "", end_time: "" })
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-
-  const load = useCallback(() => {
-    setLoading(true)
-    Promise.all([listContests(), listTasks()])
-      .then(([c, t]) => { setContests(c); setTasks(t) })
-      .catch((e) => toast.error(`Ошибка загрузки: ${e.message}`))
-      .finally(() => setLoading(false))
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const openNew = () => { setForm({ title: "", description: "", start_time: "", end_time: "" }); setSelected(new Set()); setOpen(true) }
-  const toggle = (id: number) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-
-  const save = async () => {
-    if (!form.title.trim()) { toast.error("Введите название контеста"); return }
-    if (!form.start_time || !form.end_time) { toast.error("Укажите время начала и конца"); return }
-    setSaving(true)
-    try {
-      await createContest({ ...form, tasks: Array.from(selected) })
-      toast.success("Контест создан"); setOpen(false); load()
-    } catch (e: any) { toast.error(`Ошибка: ${e.message}`) } finally { setSaving(false) }
-  }
-
-  const fmt = (s: string) => (s ? new Date(s).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—")
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle className="text-base">Контесты</CardTitle>
-        <Button size="sm" onClick={openNew}><Plus className="w-4 h-4 mr-1.5" />Создать контест</Button>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
-        ) : contests.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Контестов пока нет.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Название</TableHead>
-                <TableHead className="w-[140px]">Начало</TableHead>
-                <TableHead className="w-[140px]">Конец</TableHead>
-                <TableHead className="w-[80px] text-right">Задач</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contests.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.title}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{fmt(c.start_time)}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{fmt(c.end_time)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{c.task_details?.length ?? c.tasks.length}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Новый контест</DialogTitle></DialogHeader>
-          <div className="flex flex-col gap-3 py-1">
-            <Input placeholder="Название контеста" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            <Textarea placeholder="Описание (необязательно)" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="text-xs text-muted-foreground mb-1.5 block">Начало</label>
-                <Input type="datetime-local" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-muted-foreground mb-1.5 block">Конец</label>
-                <Input type="datetime-local" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">Задачи ({selected.size} выбрано)</label>
-              <div className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-                {tasks.length === 0 ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground text-center">Сначала создайте задачи.</p>
-                ) : tasks.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => toggle(t.id)}
-                    className={cn("w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50", selected.has(t.id) && "bg-muted/60")}
-                  >
-                    <span className={cn("w-4 h-4 rounded border flex items-center justify-center shrink-0", selected.has(t.id) ? "bg-primary border-primary" : "border-border")}>
-                      {selected.has(t.id) && <Check className="w-3 h-3 text-primary-foreground" />}
-                    </span>
-                    <span className="flex-1 truncate">{t.title || "(без названия)"}</span>
-                    <DifficultyBadge d={t.difficulty} />
-                  </button>
+    <section className="card adm-card" aria-label="Участники">
+      <input
+        className="ed-in adm-search"
+        value={query}
+        placeholder="Поиск по почте или имени"
+        aria-label="Поиск участников"
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {loading && !users.length ? (
+        <p className="small-note" role="status">
+          Загружаю участников…
+        </p>
+      ) : !users.length ? (
+        <p className="small-note">Никого не нашлось.</p>
+      ) : (
+        <ul className="adm-list">
+          {users.map((user) => (
+            <li key={user.id} className="adm-user">
+              <span className="who">
+                <b>{user.name || user.username || user.email}</b>
+                <small>{user.email}</small>
+              </span>
+              <span className="adm-num" title="Рейтинг">
+                {user.overall_elo}
+              </span>
+              <span className="adm-num muted" title="Принято из всех ответов">
+                {user.submissions_approved}/{user.submissions_total}
+              </span>
+              <span className="adm-switches">
+                {switches.map((item) => (
+                  <label key={item.field} className="adm-switch">
+                    <span>{item.label}</span>
+                    <button
+                      className="switch"
+                      type="button"
+                      role="switch"
+                      aria-checked={user[item.field]}
+                      aria-label={`${item.label}: ${user.email}`}
+                      disabled={busy !== null}
+                      onClick={() => toggle(user, item.field, !user[item.field])}
+                    />
+                  </label>
                 ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Отмена</Button>
-            <Button onClick={save} disabled={saving}>{saving && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}Создать</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  )
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
-/* ──────────────────────────── Review tab ──────────────────────────── */
-function ReviewTab() {
-  const [subs, setSubs] = useState<Submission[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<number | null>(null)
+const STATUS_LABEL: Record<Submission["status"], string> = {
+  pending: "На проверке",
+  approved: "Верно",
+  rejected: "Неверно",
+};
 
-  const load = useCallback(() => {
-    setLoading(true)
-    listPendingSubmissions().then(setSubs).catch((e) => toast.error(`Ошибка: ${e.message}`)).finally(() => setLoading(false))
-  }, [])
-  useEffect(() => { load() }, [load])
-
-  const act = async (id: number, kind: "approve" | "reject") => {
-    setBusy(id)
-    try {
-      if (kind === "approve") { const r = await approveSubmission(id); toast.success(`Принято · +${r.task_points} к рейтингу`) }
-      else { await rejectSubmission(id); toast.success("Отклонено") }
-      setSubs((s) => s.filter((x) => x.id !== id))
-    } catch (e: any) { toast.error(`Ошибка: ${e.message}`) } finally { setBusy(null) }
-  }
-
-  return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">Проверка решений {subs.length > 0 && <span className="text-muted-foreground font-normal">· {subs.length} в очереди</span>}</CardTitle></CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
-        ) : subs.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Нет решений на проверке.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Студент</TableHead>
-                <TableHead>Задача</TableHead>
-                <TableHead>Решение</TableHead>
-                <TableHead className="w-[70px] text-right">Очки</TableHead>
-                <TableHead className="w-[140px] text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {subs.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="text-sm">{s.student_name}<div className="text-xs text-muted-foreground">{s.student_email}</div></TableCell>
-                  <TableCell className="text-sm">{s.task_title || `#${s.task}`}</TableCell>
-                  <TableCell className="max-w-[260px]"><code className="text-xs text-muted-foreground break-all line-clamp-2">{s.file_url_or_code || s.student_solution_image || "—"}</code></TableCell>
-                  <TableCell className="text-right tabular-nums">{s.task_points}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button size="icon" variant="outline" className="h-8 w-8 text-emerald-400 hover:text-emerald-300 border-emerald-400/30" disabled={busy === s.id} onClick={() => act(s.id, "approve")}><Check className="w-4 h-4" /></Button>
-                      <Button size="icon" variant="outline" className="h-8 w-8 text-rose-400 hover:text-rose-300 border-rose-400/30" disabled={busy === s.id} onClick={() => act(s.id, "reject")}><X className="w-4 h-4" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-/* ──────────────────────────── Submissions tab ──────────────────────────── */
 function SubmissionsTab() {
-  const [subs, setSubs] = useState<Submission[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<number | null>(null)
-
-  const load = useCallback(() => {
-    setLoading(true)
-    listMySubmissions()
-      .then(setSubs)
-      .catch((e) => toast.error(`Ошибка загрузки решений: ${e.message}`))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  const act = async (id: number, kind: "approve" | "reject") => {
-    setBusy(id)
-    try {
-      const updated = kind === "approve" ? await approveSubmission(id) : await rejectSubmission(id)
-      setSubs((items) => items.map((item) => (item.id === updated.id ? updated : item)))
-      toast.success(kind === "approve" ? "Решение принято" : "Решение отклонено")
-    } catch (e: any) {
-      toast.error(`Ошибка: ${e.message}`)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">Все решения</CardTitle></CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin" /></div>
-        ) : subs.length === 0 ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">Решений пока нет.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Студент</TableHead>
-                <TableHead>Задача</TableHead>
-                <TableHead className="w-[120px]">Статус</TableHead>
-                <TableHead>Ответ</TableHead>
-                <TableHead className="w-[130px] text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {subs.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="text-sm">
-                    {s.student_name}
-                    <div className="text-xs text-muted-foreground">{s.student_email}</div>
-                  </TableCell>
-                  <TableCell className="text-sm">{s.task_title || `#${s.task}`}</TableCell>
-                  <TableCell><SubmissionStatusBadge status={s.status} /></TableCell>
-                  <TableCell className="max-w-[260px]">
-                    <code className="text-xs text-muted-foreground break-all line-clamp-2">
-                      {s.file_url_or_code || s.student_solution_image || "—"}
-                    </code>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {s.status === "pending" ? (
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button size="icon" variant="outline" className="h-8 w-8 text-emerald-400 hover:text-emerald-300 border-emerald-400/30" disabled={busy === s.id} onClick={() => act(s.id, "approve")}><Check className="w-4 h-4" /></Button>
-                        <Button size="icon" variant="outline" className="h-8 w-8 text-rose-400 hover:text-rose-300 border-rose-400/30" disabled={busy === s.id} onClick={() => act(s.id, "reject")}><X className="w-4 h-4" /></Button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-/* ──────────────────────────── Page ──────────────────────────── */
-export default function AdminPage() {
-  const router = useRouter()
-  const { me, loading } = useMe()
+  const [rows, setRows] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!loading && !me?.is_admin) {
-      router.replace("/dashboard")
+    listMySubmissions()
+      .then(setRows)
+      .catch((error: Error) => toast.error(`Решения не загрузились: ${error.message}`))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function decide(row: Submission, approve: boolean) {
+    setBusy(row.id);
+    try {
+      const updated = approve ? await approveSubmission(row.id) : await rejectSubmission(row.id);
+      setRows((items) => items.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+      toast.success(approve ? `Засчитано, +${updated.task_points}` : "Отклонено");
+    } catch (error) {
+      toast.error(error instanceof ContestApiError || error instanceof Error ? error.message : "Не получилось.");
+    } finally {
+      setBusy(null);
     }
-  }, [loading, me?.is_admin, router])
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-32 text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin" /></div>
-  }
-
-  if (!me?.is_admin) {
-    return null
   }
 
   return (
-    <CoffeePageShell
-      contentClassName="max-w-6xl"
-    >
-      <Tabs defaultValue="users">
-        <TabsList className="h-auto flex-wrap justify-start rounded-[14px] border border-tm-line bg-tm-surface-2 p-1">
-          <TabsTrigger value="users">Участники</TabsTrigger>
-          <TabsTrigger value="submissions">Решения</TabsTrigger>
-          <TabsTrigger value="review">Проверка</TabsTrigger>
-          <TabsTrigger value="tasks">Задачи</TabsTrigger>
-          <TabsTrigger value="contests">Контесты</TabsTrigger>
-        </TabsList>
-        <TabsContent value="users" className="mt-4"><UsersTab /></TabsContent>
-        <TabsContent value="submissions" className="mt-4"><SubmissionsTab /></TabsContent>
-        <TabsContent value="review" className="mt-4"><ReviewTab /></TabsContent>
-        <TabsContent value="tasks" className="mt-4"><TasksTab /></TabsContent>
-        <TabsContent value="contests" className="mt-4"><ContestsTab /></TabsContent>
-      </Tabs>
-    </CoffeePageShell>
-  )
+    <section className="card adm-card" aria-label="Решения">
+      {loading ? (
+        <p className="small-note" role="status">
+          Загружаю решения…
+        </p>
+      ) : !rows.length ? (
+        <p className="small-note">Решений пока нет.</p>
+      ) : (
+        <ul className="adm-list">
+          {rows.map((row) => (
+            <li key={row.id} className="adm-sub">
+              <span className="who">
+                <b>{row.student_name}</b>
+                <small>{row.student_email}</small>
+              </span>
+              <span className="adm-task">
+                <b>{row.task_title || `Задача ${row.task}`}</b>
+                <small>{row.contest_title || "Вне контеста"}</small>
+              </span>
+              <code className="adm-answer">{row.file_url_or_code || row.student_solution_image || "Пусто"}</code>
+              <span className={`adm-status is-${row.status}`}>{STATUS_LABEL[row.status] ?? row.status}</span>
+              <span className="adm-actions">
+                {row.status !== "approved" ? (
+                  <button className="btn btn-line" type="button" disabled={busy === row.id} onClick={() => decide(row, true)}>
+                    Засчитать
+                  </button>
+                ) : null}
+                {row.status !== "rejected" ? (
+                  <button className="btn btn-text" type="button" disabled={busy === row.id} onClick={() => decide(row, false)}>
+                    Отклонить
+                  </button>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export default function AdminPage() {
+  const router = useRouter();
+  const { me, loading } = useMe();
+  const [tab, setTab] = useState<AdminTab>("contests");
+
+  useEffect(() => {
+    if (!loading && !me?.is_admin) router.replace("/dashboard");
+  }, [loading, me?.is_admin, router]);
+
+  if (loading || !me?.is_admin) {
+    return (
+      <div className="content view">
+        <p className="small-note" role="status">
+          Загружаю…
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="content view">
+      <header className="head adm-head">
+        <div className="adm-head-l">
+          <h1 className="title">Админка</h1>
+          <div className="tabs" role="group" aria-label="Разделы админки">
+            {TABS.map((item) => (
+              <button
+                key={item.tab}
+                type="button"
+                aria-pressed={tab === item.tab}
+                onClick={() => setTab(item.tab)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {tab === "contests" ? (
+          <Link className="btn btn-main" href="/dashboard/admin/contests/new">
+            Новый контест
+          </Link>
+        ) : null}
+      </header>
+      {tab === "contests" ? <ContestsTab /> : tab === "users" ? <UsersTab /> : <SubmissionsTab />}
+    </div>
+  );
 }

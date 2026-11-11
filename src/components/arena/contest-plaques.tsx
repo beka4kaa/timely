@@ -95,7 +95,8 @@ export function ContestHero({ plaque, now, href, badge, draft }: {
 export function ContestCard({ plaque, now, href, wide, badge, draft }: {
   plaque: Plaque;
   now: Date;
-  href: string;
+  /** Без ссылки карточка просто рисуется: так её показывает превью в редакторе. */
+  href?: string;
   wide?: boolean;
   badge?: string;
   draft?: boolean;
@@ -104,12 +105,9 @@ export function ContestCard({ plaque, now, href, wide, badge, draft }: {
   const running = contestStateAt(plaque, now) === "running";
   const when = running ? `Идёт до ${time(plaque.end_time)}` : shortDate(plaque.start_time);
   const rules = plaqueRules(plaque, { duration: false });
-  return (
-    <Link
-      href={href}
-      className={`plq plq-card ${tier.className}${wide ? " plq-wide" : ""}${draft ? " is-draft" : ""}`}
-      data-attach={plaque.title}
-    >
+  const className = `plq plq-card ${tier.className}${wide ? " plq-wide" : ""}${draft ? " is-draft" : ""}`;
+  const inner = (
+    <>
       <span className="tier-pill">
         <TierEmblem tier={plaque.tier} />
         <span>{badge ?? tier.name}</span>
@@ -117,7 +115,14 @@ export function ContestCard({ plaque, now, href, wide, badge, draft }: {
       <ContestArt art={plaque.art} size="card" />
       <h2 className="plq-name">{plaque.title}</h2>
       <p className="plq-rules">{[when, rules].filter(Boolean).join(", ")}</p>
+    </>
+  );
+  return href ? (
+    <Link href={href} className={className} data-attach={plaque.title}>
+      {inner}
     </Link>
+  ) : (
+    <div className={className}>{inner}</div>
   );
 }
 

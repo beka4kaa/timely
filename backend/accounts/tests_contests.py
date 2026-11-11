@@ -422,3 +422,17 @@ class StandingsTests(ContestBase):
     def test_drafts_have_no_table(self):
         draft = self.contest(published=False)
         self.assertEqual(self.get(f"/api/contests/{draft.id}/standings/").status_code, 404)
+
+
+class SubmissionListTests(ContestBase):
+    def test_admin_sees_which_contest_an_attempt_came_from(self):
+        contest = self.contest(title="Осенний кубок")
+        TaskSubmission.objects.create(student=self.student, task=self.tasks[0], contest=contest, status="rejected")
+        [row] = self.get("/api/submissions/", who=self.owner).json()
+        self.assertEqual((row["contest"], row["contest_title"]), (contest.id, "Осенний кубок"))
+
+    def test_an_attempt_outside_a_contest_has_no_title(self):
+        self.contest()
+        TaskSubmission.objects.create(student=self.student, task=self.tasks[0], status="approved")
+        [row] = self.get("/api/submissions/", who=self.owner).json()
+        self.assertEqual((row["contest"], row["contest_title"]), (None, ""))
