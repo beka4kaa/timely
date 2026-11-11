@@ -71,6 +71,8 @@
 .tile .go.is-stretched::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 .tile-acts { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0 3px; }
 .tile-acts .btn { height: 28px; padding: 0 10px; }
+/* Четыре оценки повторения: две строки по две, от худшей к лучшей */
+.tile-acts.is-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tile-done { color: var(--t-muted); font-size: 12.5px; outline: none; }
 .tile-fail { color: var(--t-warn); font-size: 12.5px; }
 

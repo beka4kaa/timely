@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db import transaction
 from django.db.models import Case, F, IntegerField, OuterRef, Subquery, Value, When
@@ -482,6 +482,45 @@ def build_pacing(
     return pacing, warnings, snapshot
 
 
+def fsrs_review_dates(plan: CoursePlan, topics: list[TopicInput]) -> dict[str, datetime]:
+    """Срок FSRS у тем программы, которые ученик уже повторял.
+
+    Общего ключа у темы программы (`CourseTopic`) и темы ученика (`mind.Topic`)
+    нет, поэтому связь мягкая, как у целей в `curriculum.services.goals`: по
+    названию без учёта регистра и пробелов по краям. Берутся только темы этого
+    ученика, у которых уже есть повторения и срок. Если у цели программы есть
+    предмет, годятся только темы этого предмета, даже если одноимённая тема всего
+    одна: «Векторы» по геометрии не повод двигать «Векторы» по физике. Совпадение
+    должно остаться ровно одно, иначе тема пропускается: неверная привязка хуже
+    отсутствующей, она поставила бы чужой срок.
+    """
+    from mind.models import Topic  # локальный импорт: studyplan → mind только здесь
+
+    candidates: dict[str, list[tuple[str, datetime]]] = {}
+    rows = Topic.objects.filter(
+        subject__user_email=plan.user_email,
+        archived=False,
+        fsrs_reps__gt=0,
+        next_review_at__isnull=False,
+    ).values_list("name", "subject_id", "next_review_at")
+    for name, subject_id, due in rows:
+        key = (name or "").strip().casefold()
+        if key:
+            candidates.setdefault(key, []).append((str(subject_id), due))
+    if not candidates:
+        return {}
+
+    goal_subject = str(plan.goal.subject_id) if plan.goal_id and plan.goal.subject_id else None
+    result: dict[str, datetime] = {}
+    for topic in topics:
+        found = candidates.get((topic.title or "").strip().casefold(), [])
+        if goal_subject:
+            found = [row for row in found if row[0] == goal_subject]
+        if len(found) == 1:
+            result[topic.topic_id] = found[0][1]
+    return result
+
+
 def build_request(
     *,
     plan: CoursePlan,
@@ -531,6 +570,7 @@ def build_request(
         prerequisites=prerequisites,
         desired_finish_date=plan.goal.desired_finish_date if plan.goal_id else None,
         detailed_horizon_days=detailed_horizon_days,
+        review_due=fsrs_review_dates(plan, topics),
     )
     return request, warnings, pacing_snapshot
 

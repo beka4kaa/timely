@@ -1173,6 +1173,8 @@ def _propose_topic_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
     if args.get("delete") is True:
         return proposal(delete=True)
     if args.get("reviewed") is True:
+        # «Вернуть как было» отправляет `before` PATCH'ем. Повторение меняет и память
+        # FSRS (`mind/reviews.py`): без неё следующий срок считался бы от отменённой оценки.
         return proposal(
             reviewed=True,
             before={
@@ -1181,6 +1183,11 @@ def _propose_topic_change(args: dict, ctx: AssistantContext) -> dict[str, Any]:
                 "nextReviewAt": topic.next_review_at.isoformat() if topic.next_review_at else None,
                 "intervalDays": topic.interval_days,
                 "easeFactor": topic.ease_factor,
+                "fsrsStability": topic.fsrs_stability,
+                "fsrsDifficulty": topic.fsrs_difficulty,
+                "fsrsState": topic.fsrs_state,
+                "fsrsReps": topic.fsrs_reps,
+                "fsrsLapses": topic.fsrs_lapses,
             },
         )
 

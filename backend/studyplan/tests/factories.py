@@ -118,6 +118,7 @@ def request(
     prerequisites: dict | None = None,
     desired_finish_date: date | None = None,
     session_minutes: int = 45,
+    review_due: dict | None = None,
 ) -> ScheduleGenerationRequest:
     return ScheduleGenerationRequest(
         user_email="student@example.com",
@@ -132,4 +133,5 @@ def request(
         commitments=commitments,
         prerequisites=prerequisites or {},
         desired_finish_date=desired_finish_date,
+        review_due=review_due or {},
     )

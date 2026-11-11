@@ -705,6 +705,52 @@ export function upcomingTests(
   return tests.sort((left, right) => left.inDays - right.inDays);
 }
 
+// ────────────────────────────── Повторения ───────────────────────────────────
+
+/** Тема на карточке «Пора повторить»: только то, что нужно для порядка. */
+export interface RankedTopic {
+  status: string;
+  archived?: boolean;
+  nextReviewAt: string | null;
+  /** Шанс вспомнить сейчас по FSRS. Только для порядка, ученику числом не показываем. */
+  recallProbability?: number | null;
+}
+
+/** Сколько дней тема ждёт повторения: 0 сегодня, больше нуля просрочена, `null` срока нет. */
+export function topicDue(
+  topic: Pick<RankedTopic, "nextReviewAt">,
+  today: string,
+  timeZone: string,
+): number | null {
+  if (!topic.nextReviewAt) return null;
+  return daysBetween(zonedDateKey(topic.nextReviewAt, timeZone), today);
+}
+
+/**
+ * Порядок тем: просроченные, потом сегодняшние, потом начатые, потом не начатые.
+ *
+ * Просроченные идут по шансу вспомнить (его считает сервер по FSRS), самый низкий первым:
+ * тема на грани забывания важнее той, что просто дольше ждёт. Шанса нет, если тему ещё ни
+ * разу не оценивали: такая считается самой забытой. При равенстве первой та, что ждёт дольше.
+ */
+export function rankTopics<T extends RankedTopic>(topics: T[], today: string, timeZone: string): T[] {
+  const rows = topics
+    .filter((topic) => !topic.archived)
+    .map((topic, index) => {
+      const late = topicDue(topic, today, timeZone);
+      const group =
+        late !== null && late > 0 ? 0 : late === 0 ? 1 : topic.status !== "NOT_STARTED" ? 2 : 3;
+      return { topic, index, group, late: late ?? 0, recall: topic.recallProbability ?? 0 };
+    });
+  rows.sort((left, right) => {
+    if (left.group !== right.group) return left.group - right.group;
+    if (left.group === 0 && left.recall !== right.recall) return left.recall - right.recall;
+    if (left.group === 0 && left.late !== right.late) return right.late - left.late;
+    return left.index - right.index;
+  });
+  return rows.map((row) => row.topic);
+}
+
 export interface NextContest {
   id: number;
   title: string;

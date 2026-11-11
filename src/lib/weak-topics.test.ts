@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { DueMark } from "../components/mind/due-mark";
 import {
   buildDrafts,
   coverOf,
@@ -9,12 +13,12 @@ import {
   dueTopics,
   findSubject,
   firstReviewFields,
+  isDue,
   lastTimeLabel,
-  memoryCurve,
-  memoryPercent,
   nearestTopic,
   topicsInGroup,
   reviewGroup,
+  scheduleOf,
   subjectsToRemove,
   type WeakTopic,
   whenLabel,
@@ -117,50 +121,64 @@ test("в группе ближайшие сверху, при равенстве
   );
 });
 
-test("память: к сроку повторения половина, потом меньше", () => {
-  const ago = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString();
-  assert.equal(memoryPercent({ lastRevisedAt: null, intervalDays: 3 }, NOW), null);
-  assert.equal(memoryPercent({ lastRevisedAt: ago(0), intervalDays: 3 }, NOW), 100);
-  assert.equal(memoryPercent({ lastRevisedAt: ago(3), intervalDays: 3 }, NOW), 50);
-  assert.equal(memoryPercent({ lastRevisedAt: ago(6), intervalDays: 3 }, NOW), 25);
-  // Без интервала считаем его за день, а не падаем.
-  assert.equal(memoryPercent({ lastRevisedAt: ago(1), intervalDays: null }, NOW), 50);
+test("пора повторить: срок сегодня или уже прошёл, без чисел", () => {
+  assert.equal(isDue(topic({ id: "вчера", nextReviewAt: at(4) }), NOW), true);
+  assert.equal(isDue(topic({ id: "сегодня", nextReviewAt: at(5, 20) }), NOW), true);
+  assert.equal(isDue(topic({ id: "завтра", nextReviewAt: at(6) }), NOW), false);
+  assert.equal(isDue(topic({ id: "без срока" }), NOW), false);
+  assert.equal(isDue(topic({ id: "архив", nextReviewAt: at(1), archived: true }), NOW), false);
 });
 
-test("график: без прошлого повторения нет ни кривой, ни подъёма", () => {
-  const curve = memoryCurve({ lastRevisedAt: null, intervalDays: null, nextDays: 5, reviewToday: true, now: NOW });
-  assert.equal(curve.past, "");
-  assert.equal(curve.up, "");
-  assert.deepEqual(curve.reviews, []);
-  assert.ok(curve.future.startsWith("M150.0 6.0"));
-  assert.ok(curve.next);
+test("метка в списке: точка с подписью «пора», без кольца и чисел", () => {
+  const due = renderToStaticMarkup(createElement(DueMark, { due: true }));
+  assert.match(due, /aria-label="пора"/);
+  assert.doesNotMatch(due, /ring|--p|\d/);
+  const calm = renderToStaticMarkup(createElement(DueMark, { due: false }));
+  assert.match(calm, /aria-hidden="true"/);
+  assert.doesNotMatch(calm, /пора|ring|--p/);
 });
 
-test("график: повторение сегодня поднимает кривую, отметка на выбранном сроке", () => {
-  const last = new Date(NOW.getTime() - 3 * 86_400_000).toISOString();
-  const curve = memoryCurve({ lastRevisedAt: last, intervalDays: 3, nextDays: 7, reviewToday: true, now: NOW });
-  assert.ok(curve.past.startsWith("M"));
-  assert.ok(curve.area.endsWith("Z"));
-  assert.notEqual(curve.up, "");
-  assert.equal(curve.reviews.length, 1);
-  assert.equal(curve.next?.x, 225);
+test("отмена оценки возвращает и память FSRS", () => {
+  const before = scheduleOf(
+    topic({
+      id: "Инерция",
+      status: "SUCCESS",
+      lastRevisedAt: at(1),
+      nextReviewAt: at(9),
+      intervalDays: 8,
+      easeFactor: 2.31,
+      fsrsStability: 8.4,
+      fsrsDifficulty: 4.2,
+      fsrsState: 2,
+      fsrsReps: 3,
+      fsrsLapses: 1,
+    }),
+  );
+  assert.deepEqual(before, {
+    status: "SUCCESS",
+    lastRevisedAt: at(1),
+    nextReviewAt: at(9),
+    intervalDays: 8,
+    easeFactor: 2.31,
+    fsrsStability: 8.4,
+    fsrsDifficulty: 4.2,
+    fsrsState: 2,
+    fsrsReps: 3,
+    fsrsLapses: 1,
+  });
 });
 
-test("график: давнее повторение за краем не рисуется точкой, срок дальше двух недель тоже", () => {
-  const last = new Date(NOW.getTime() - 40 * 86_400_000).toISOString();
-  const curve = memoryCurve({ lastRevisedAt: last, intervalDays: 8, nextDays: 30, reviewToday: true, now: NOW });
-  assert.deepEqual(curve.reviews, []);
-  assert.equal(curve.next, null);
-  assert.ok(curve.past.startsWith("M0.0 "));
-});
-
-test("график: без повторения сегодня кривая просто убывает дальше", () => {
-  const last = new Date(NOW.getTime() - 1 * 86_400_000).toISOString();
-  const curve = memoryCurve({ lastRevisedAt: last, intervalDays: 4, nextDays: 3, reviewToday: false, now: NOW });
-  assert.equal(curve.up, "");
-  assert.ok(curve.next);
-  const startY = Number(curve.future.split(" ")[1].split("L")[0]);
-  assert.ok(startY > 6, "кривая начинается ниже верхней границы");
+test("колода и метка «пора повторить» согласны между собой", () => {
+  const topics = [
+    topic({ id: "просрочена", nextReviewAt: at(2) }),
+    topic({ id: "сегодня", nextReviewAt: at(5, 9) }),
+    topic({ id: "потом", nextReviewAt: at(9) }),
+    topic({ id: "архив", nextReviewAt: at(1), archived: true }),
+  ];
+  assert.deepEqual(
+    dueTopics(topics, NOW).map((row) => row.id),
+    topics.filter((row) => isDue(row, NOW)).map((row) => row.id),
+  );
 });
 
 test("обложка: свой цвет важнее, остальные по названию и стабильно", () => {

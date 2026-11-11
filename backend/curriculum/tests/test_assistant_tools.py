@@ -10,7 +10,7 @@ import datetime as dt
 import json
 from unittest import mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from config.testing import auth_headers
@@ -1149,8 +1149,89 @@ class TopicAndSubjectChangesTests(TestCase):
         proposal = self.tools.proposals[0]
         self.assertIs(proposal["reviewed"], True)
         self.assertEqual(
-            sorted(proposal["before"]), ["easeFactor", "intervalDays", "lastRevisedAt", "nextReviewAt", "status"]
+            sorted(proposal["before"]),
+            [
+                "easeFactor",
+                "fsrsDifficulty",
+                "fsrsLapses",
+                "fsrsReps",
+                "fsrsStability",
+                "fsrsState",
+                "intervalDays",
+                "lastRevisedAt",
+                "nextReviewAt",
+                "status",
+            ],
         )
+
+    # Ожидание считается при цели 0,9: настройка из `.env` разработчика не должна его менять.
+    @override_settings(FSRS_DESIRED_RETENTION=0.9)
+    def test_undoing_a_review_brings_back_the_fsrs_memory(self):
+        """«Вернуть как было» после «отмечу, что повторил» возвращает и память FSRS.
+
+        Фронтенд применяет предложение оценкой «Вспомнил» (`reviewTopic`), а отменяет
+        PATCH'ем с `before`; ключи в snake_case переводит прокси Next (`toSnakeCase`).
+        Здесь тот же путь через вью.
+        """
+        import re
+
+        from rest_framework.test import APIRequestFactory
+
+        from mind.srs import memory_of, next_review
+        from mind.views import TopicViewSet
+
+        fields = (
+            "status",
+            "last_revised_at",
+            "next_review_at",
+            "interval_days",
+            "ease_factor",
+            "fsrs_stability",
+            "fsrs_difficulty",
+            "fsrs_state",
+            "fsrs_reps",
+            "fsrs_lapses",
+        )
+        reviewed_at = timezone.now() - dt.timedelta(days=4, hours=2)
+        Topic.objects.filter(pk=self.topic.pk).update(
+            status="MEDIUM",
+            last_revised_at=reviewed_at,
+            next_review_at=reviewed_at + dt.timedelta(days=4),
+            interval_days=4,
+            ease_factor=1.92,
+            fsrs_stability=3.5,
+            fsrs_difficulty=6.2,
+            fsrs_state=2,
+            fsrs_reps=2,
+            fsrs_lapses=1,
+        )
+        self.topic.refresh_from_db()
+        original = {name: getattr(self.topic, name) for name in fields}
+        factory = APIRequestFactory()
+
+        def call(method, action, data):
+            request = getattr(factory, method)(f"/api/mind/topics/{self.topic.pk}/", data, format="json")
+            request.user_email = OWNER
+            response = TopicViewSet.as_view({method: action})(request, pk=self.topic.pk)
+            self.assertEqual(response.status_code, 200, response.data)
+            self.topic.refresh_from_db()
+
+        self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "reviewed": True})
+        before = self.tools.proposals[0]["before"]
+
+        call("post", "review", {"rating": "GOOD"})
+        self.assertEqual(self.topic.fsrs_reps, 3)
+
+        snake = {re.sub(r"([A-Z])", r"_\1", key).lower(): value for key, value in before.items()}
+        call("patch", "partial_update", snake)
+        self.assertEqual({name: getattr(self.topic, name) for name in fields}, original)
+
+        # Следующее повторение считается от восстановленной памяти, а не от отменённой оценки.
+        expected = next_review(rating="GOOD", memory=memory_of(self.topic), now=timezone.now())
+        call("post", "review", {"rating": "GOOD"})
+        self.assertEqual(self.topic.fsrs_reps, 3)
+        self.assertAlmostEqual(self.topic.fsrs_stability, expected.stability)
+        self.assertEqual(self.topic.interval_days, expected.interval_days)
 
     def test_topic_can_be_deleted(self):
         self.tools.run("propose_topic_change", {"topic_id": str(self.topic.pk), "delete": True})

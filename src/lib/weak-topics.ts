@@ -1,6 +1,8 @@
-// Слабые темы: что сегодня повторять, как подписать срок и сколько примерно помнится.
+// Слабые темы: что сегодня повторять и как подписать срок.
 //
 // Чистые функции без React и сети: так они проверяются таблицей, а страница только рисует.
+// Шанс вспомнить ученику не показываем ни числом, ни графиком: его считает сервер по FSRS
+// (`recallProbability`), и он нужен только для порядка тем.
 
 import { plural } from "./mind-srs";
 import type { Topic, TopicStatus } from "../types/mind";
@@ -21,6 +23,13 @@ export interface WeakTopic
     | "nextReviewAt"
     | "intervalDays"
     | "easeFactor"
+    | "fsrsStability"
+    | "fsrsDifficulty"
+    | "fsrsState"
+    | "fsrsReps"
+    | "fsrsLapses"
+    | "recallProbability"
+    | "reviewIntervals"
     | "subjectName"
     | "subjectEmoji"
     | "subjectColor"
@@ -120,15 +129,49 @@ export function topicsInGroup(topics: WeakTopic[], group: ReviewGroup, now: Date
   return topics.filter((topic) => reviewGroup(topic.nextReviewAt, now) === group).sort(byReviewDate);
 }
 
+/**
+ * Что можно вернуть назад, если оценку поставили по ошибке. Вместе со сроком
+ * возвращается и память FSRS, иначе следующий срок считался бы от отменённой оценки.
+ */
+export type TopicSchedule = Pick<
+  WeakTopic,
+  | "status"
+  | "lastRevisedAt"
+  | "nextReviewAt"
+  | "intervalDays"
+  | "easeFactor"
+  | "fsrsStability"
+  | "fsrsDifficulty"
+  | "fsrsState"
+  | "fsrsReps"
+  | "fsrsLapses"
+>;
+
+export function scheduleOf(topic: WeakTopic): TopicSchedule {
+  return {
+    status: topic.status,
+    lastRevisedAt: topic.lastRevisedAt,
+    nextReviewAt: topic.nextReviewAt,
+    intervalDays: topic.intervalDays,
+    easeFactor: topic.easeFactor,
+    fsrsStability: topic.fsrsStability,
+    fsrsDifficulty: topic.fsrsDifficulty,
+    fsrsState: topic.fsrsState,
+    fsrsReps: topic.fsrsReps,
+    fsrsLapses: topic.fsrsLapses,
+  };
+}
+
+/** Тему пора повторить: срок сегодня или уже прошёл. Архив не в счёт. */
+export function isDue(topic: Pick<WeakTopic, "archived" | "nextReviewAt">, now: Date): boolean {
+  if (topic.archived) return false;
+  const group = reviewGroup(topic.nextReviewAt, now);
+  return group === "late" || group === "today";
+}
+
 /** Колода на сегодня: всё просроченное и сегодняшнее, самое давнее сверху. */
 export function dueTopics(topics: WeakTopic[], now: Date): WeakTopic[] {
-  return topics
-    .filter((topic) => {
-      if (topic.archived) return false;
-      const group = reviewGroup(topic.nextReviewAt, now);
-      return group === "late" || group === "today";
-    })
-    .sort(byReviewDate);
+  return topics.filter((topic) => isDue(topic, now)).sort(byReviewDate);
 }
 
 /** Следующая тема, когда на сегодня всё. */
@@ -138,124 +181,6 @@ export function nearestTopic(topics: WeakTopic[], now: Date): WeakTopic | null {
       .filter((topic) => !topic.archived && topic.nextReviewAt && dayDiff(now, new Date(topic.nextReviewAt)) > 0)
       .sort(byReviewDate)[0] ?? null
   );
-}
-
-// ── Память ────────────────────────────────────────────────────────────────────
-
-/**
- * Оценка, а не измерение. Модель как у half-life regression: к сроку повторения помнится
- * половина, и убывает по экспоненте. Истории повторений бэкенд не хранит, известно только
- * последнее, поэтому и на графике зубец один. Подпись на странице поэтому «примерно».
- */
-const RETENTION_AT_REVIEW = 0.5;
-
-function retention(elapsedDays: number, intervalDays: number): number {
-  return Math.pow(RETENTION_AT_REVIEW, Math.max(0, elapsedDays) / Math.max(intervalDays, 0.4));
-}
-
-/** Сколько процентов примерно помнится сейчас. `null`, если тему ещё не повторяли. */
-export function memoryPercent(
-  topic: Pick<WeakTopic, "lastRevisedAt" | "intervalDays">,
-  now: Date,
-): number | null {
-  if (!topic.lastRevisedAt) return null;
-  const since = (now.getTime() - new Date(topic.lastRevisedAt).getTime()) / DAY_MS;
-  return Math.round(retention(since, topic.intervalDays || 1) * 100);
-}
-
-export interface MemoryPoint {
-  x: number;
-  y: number;
-}
-
-export interface MemoryCurve {
-  /** Кривая от прошлого повторения до сегодня. Пусто, если тему ещё не повторяли. */
-  past: string;
-  area: string;
-  future: string;
-  /** Подъём в день повторения. Пусто, если повторения сегодня не будет. */
-  up: string;
-  todayX: number;
-  height: number;
-  /** Отмеченные повторения. */
-  reviews: MemoryPoint[];
-  next: MemoryPoint | null;
-}
-
-const CHART_W = 300;
-const CHART_H = 96;
-const CHART_FROM = -14;
-const CHART_TO = 14;
-
-/**
- * График памяти: две недели назад, сегодня, две недели вперёд.
- *
- * `nextDays` это срок следующего повторения. С `reviewToday` тема повторяется сегодня,
- * кривая поднимается и падает медленнее до этого срока. Без него сегодня всё уже
- * сделано: память просто продолжает убывать до даты, которая уже назначена.
- */
-export function memoryCurve({
-  lastRevisedAt,
-  intervalDays,
-  nextDays,
-  reviewToday,
-  now,
-}: {
-  lastRevisedAt: string | null;
-  intervalDays: number | null;
-  nextDays: number;
-  reviewToday: boolean;
-  now: Date;
-}): MemoryCurve {
-  const x = (day: number) => ((day - CHART_FROM) / (CHART_TO - CHART_FROM)) * CHART_W;
-  const y = (memory: number) => 6 + (1 - memory) * (CHART_H - 12);
-  const line = (points: Array<[number, number]>) =>
-    points.map(([day, memory], index) => `${index ? "L" : "M"}${x(day).toFixed(1)} ${y(memory).toFixed(1)}`).join("");
-
-  const interval = intervalDays || 1;
-  const since = lastRevisedAt
-    ? Math.max(0, (now.getTime() - new Date(lastRevisedAt).getTime()) / DAY_MS)
-    : null;
-
-  let past = "";
-  let area = "";
-  const reviews: MemoryPoint[] = [];
-  if (since !== null) {
-    const start = Math.max(CHART_FROM, -since);
-    const points: Array<[number, number]> = [];
-    for (let day = start; day < 0; day += 0.25) points.push([day, retention(day + since, interval)]);
-    points.push([0, retention(since, interval)]);
-    past = line(points);
-    area = `${past}L${x(0).toFixed(1)} ${CHART_H}L${x(start).toFixed(1)} ${CHART_H}Z`;
-    if (since <= -CHART_FROM) reviews.push({ x: x(-since), y: y(1) });
-  }
-
-  const future: Array<[number, number]> = [];
-  let up = "";
-  let nextMemory: number;
-  if (reviewToday) {
-    const stretch = Math.max(nextDays, 0.4);
-    for (let day = 0; day <= CHART_TO; day += 0.25) future.push([day, retention(day, stretch)]);
-    nextMemory = retention(nextDays, stretch);
-    if (since !== null) {
-      up = `M${x(0).toFixed(1)} ${y(retention(since, interval)).toFixed(1)}V${y(1).toFixed(1)}`;
-    }
-  } else {
-    const base = since ?? 0;
-    for (let day = 0; day <= CHART_TO; day += 0.25) future.push([day, retention(base + day, interval)]);
-    nextMemory = retention(base + nextDays, interval);
-  }
-
-  return {
-    past,
-    area,
-    future: line(future),
-    up,
-    todayX: x(0),
-    height: CHART_H,
-    reviews,
-    next: nextDays >= 0.5 && nextDays <= CHART_TO ? { x: x(nextDays), y: y(nextMemory) } : null,
-  };
 }
 
 // ── Обложка ───────────────────────────────────────────────────────────────────

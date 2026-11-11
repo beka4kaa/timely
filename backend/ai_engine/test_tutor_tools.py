@@ -14,7 +14,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from ai_engine.models import SkillState
 from ai_engine.tutor_modes import TUTOR_MODES
@@ -284,15 +284,14 @@ class ToolsAgainstTheDatabaseTests(TestCase):
         result = run_tutor_tool("classify_error", {"error_type": "arithmetic"}, self.context)
         self.assertFalse(result["systemic"])
 
+    # Ожидание считается при цели 0,9: настройка из `.env` разработчика не должна его менять.
+    @override_settings(FSRS_DESIRED_RETENTION=0.9)
     def test_schedule_review_uses_the_shared_srs_calculation(self) -> None:
-        from mind.srs import next_review
+        from django.utils import timezone
 
-        expected = next_review(
-            rating="GOOD",
-            status=self.topic.status,
-            interval_days=self.topic.interval_days,
-            ease_factor=self.topic.ease_factor,
-        )
+        from mind.srs import memory_of, next_review
+
+        expected = next_review(rating="GOOD", memory=memory_of(self.topic), now=timezone.now())
         result = run_tutor_tool("schedule_review", {"rating": "GOOD"}, self.context)
 
         self.assertTrue(result["ok"])
@@ -300,6 +299,31 @@ class ToolsAgainstTheDatabaseTests(TestCase):
         self.topic.refresh_from_db()
         self.assertEqual(self.topic.interval_days, expected.interval_days)
         self.assertEqual(self.topic.status, expected.status)
+        self.assertAlmostEqual(self.topic.fsrs_stability, expected.stability)
+        self.assertEqual(self.topic.fsrs_reps, 1)
+
+    def test_schedule_review_writes_a_review_event(self) -> None:
+        """Тьютор пишет в журнал то же, что и кнопка повторения."""
+        from ai_engine.learning_events import GRADED_RESULTS
+        from ai_engine.models import LearningEvent
+
+        run_tutor_tool("schedule_review", {"rating": "HARD"}, self.context)
+
+        event = LearningEvent.objects.get(user_email="student@example.com")
+        self.assertEqual(event.activity, "review")
+        self.assertEqual(event.metadata["rating"], "HARD")
+        self.assertEqual(event.source, "tutor_tool")
+        self.assertEqual(event.mode, "practice")
+        self.assertEqual(str(event.topic_id), str(self.topic.pk))
+        self.assertNotIn(event.result, GRADED_RESULTS)
+
+    def test_review_event_is_not_counted_as_practice(self) -> None:
+        run_tutor_tool("schedule_review", {"rating": "AGAIN"}, self.context)
+        state = SkillState.objects.get(user_email="student@example.com", topic=self.topic)
+        self.assertEqual((state.success_count, state.fail_count), (0, 0))
+        self.assertEqual(state.mastery_probability, 0.0)
+        # Зелёным станет с парной правкой recompute_skill_state (ветка tutor-signals), она вливается первой.
+        self.assertEqual((state.status, state.evidence_count), ("NOT_STARTED", 0))
 
     def test_schedule_review_keeps_topic_and_skill_state_in_sync(self) -> None:
         """Страница слабых тем читает Topic, тьютор — SkillState."""

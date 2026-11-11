@@ -368,6 +368,13 @@ BOOKS_ENABLED = "test" in sys.argv or os.getenv("BOOKS_ENABLED", "false").lower(
     "on",
 }
 
+# Повторение тем по FSRS (`mind/srs.py`): какую долю тем ученик должен вспомнить к сроку.
+# Выше цель, чаще повторения. За неделю до контрольной (из `ScheduledTest` или из дневника)
+# темы её предмета получают 0,95 сами (`mind/reviews.py`). Строка как есть: её разбирает
+# `mind.srs.clean_retention`, так что «0,95» с запятой годится, а пустое значение или число
+# вне 0,7–0,99 дают 0,9 и не роняют запуск.
+FSRS_DESIRED_RETENTION = os.getenv("FSRS_DESIRED_RETENTION", "0.9")
+
 # Разбор «что человек написал»: быстрый и дешёвый вызов, ученик ждёт его перед ответом.
 UNDERSTAND_MODEL = os.getenv("UNDERSTAND_MODEL", "z-ai/glm-5.3-flash")
 UNDERSTAND_TIMEOUT = int(os.getenv("UNDERSTAND_TIMEOUT", "8"))

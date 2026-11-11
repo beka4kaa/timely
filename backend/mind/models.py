@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 import uuid
 
@@ -27,6 +28,13 @@ class Topic(models.Model):
         ('STUDIED', 'Studied'),
         ('NOT_STUDIED', 'Not Studied'),
     ]
+    # `fsrs.State` как есть. У новой темы Learning: так в пакете выглядит карточка
+    # без единой оценки (см. `mind/srs.py`).
+    FSRS_STATE_CHOICES = [
+        (1, 'Learning'),
+        (2, 'Review'),
+        (3, 'Relearning'),
+    ]
 
     id = models.CharField(primary_key=True, max_length=255, default=uuid.uuid4, editable=False)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='topics')
@@ -38,8 +46,25 @@ class Topic(models.Model):
     archived = models.BooleanField(default=False)
     last_revised_at = models.DateTimeField(null=True, blank=True)
     next_review_at = models.DateTimeField(null=True, blank=True)
+    # Поля SM-2. Срок теперь ставит FSRS, а эти два поля он заполняет для чтения
+    # (фильтр слабых тем, сводка тьютора) и для отката: интервал в днях и
+    # ease_factor, пересчитанный из сложности.
     interval_days = models.IntegerField(null=True, blank=True)
     ease_factor = models.FloatField(default=2.5)
+    # Память темы по FSRS (`mind/srs.py`). Пусто, пока тему ни разу не оценили.
+    # У колонок NOT NULL есть `db_default`: миграцию применяет новый веб-контейнер,
+    # пока старый ещё создаёт темы без этих колонок.
+    fsrs_stability = models.FloatField(
+        null=True, blank=True, validators=[MinValueValidator(0.001)]
+    )
+    fsrs_difficulty = models.FloatField(
+        null=True, blank=True, validators=[MinValueValidator(1.0), MaxValueValidator(10.0)]
+    )
+    fsrs_state = models.PositiveSmallIntegerField(
+        choices=FSRS_STATE_CHOICES, default=1, db_default=1
+    )
+    fsrs_reps = models.PositiveIntegerField(default=0, db_default=0)
+    fsrs_lapses = models.PositiveIntegerField(default=0, db_default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -20,7 +20,9 @@ MIN_PART_MINUTES = 15
 # растёт с длительностью.
 REVIEW_MINUTES = 15
 
-# Через сколько дней после освоения темы идут повторения (§6.6).
+# Через сколько дней после освоения темы идут повторения (§6.6), если ученик эту
+# тему ещё ни разу не повторял. У повторённой темы срок уже поставил FSRS
+# (`mind.Topic.next_review_at`), и план берёт его: см. `ScheduleGenerationRequest.review_due`.
 REVIEW_OFFSETS_DAYS = (2, 7, 21)
 
 # Сколько дней после целевой даты повторения его ещё имеет смысл ставить.
@@ -176,6 +178,10 @@ class ScheduleGenerationRequest:
     prerequisites: dict[str, tuple[str, ...]] = field(default_factory=dict)
     desired_finish_date: date | None = None
     detailed_horizon_days: int = DEFAULT_DETAILED_HORIZON_DAYS
+    # Срок следующего повторения по FSRS (`mind.Topic.next_review_at`, UTC) у тем
+    # программы, которые ученик уже повторял: {topic_id: момент}. Такая тема
+    # получает одно повторение на этот срок вместо шагов 2/7/21.
+    review_due: dict[str, datetime] = field(default_factory=dict)
 
 
 # ────────────────────────────── Выход движка ─────────────────────────────────

@@ -33,6 +33,16 @@ export interface Topic {
     nextReviewAt: string | null
     intervalDays: number | null
     easeFactor: number
+    // Память темы по FSRS (`backend/mind/srs.py`). Пусто, пока тему не оценили.
+    fsrsStability?: number | null
+    fsrsDifficulty?: number | null
+    fsrsState?: number
+    fsrsReps?: number
+    fsrsLapses?: number
+    // Шанс вспомнить сейчас, 0…1. Только для порядка тем: числом ученику не показываем.
+    recallProbability?: number | null
+    // Через сколько дней тема вернётся при каждой оценке: подпись на кнопке.
+    reviewIntervals?: Partial<Record<ReviewRating, number>> | null
     orderIndex?: number         // Order within subject for sorting
     reviewLogs?: ReviewLog[]
     createdAt: string

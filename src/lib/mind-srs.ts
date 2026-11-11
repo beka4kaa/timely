@@ -1,85 +1,31 @@
-// Интервал повторения на кнопках оценки: тот же расчёт, что в `backend/mind/srs.py`.
+// Оценки повторения и подписи сроков на кнопках.
 //
-// Сервер остаётся источником правды: дату ставит он, а здесь только подпись на кнопке,
-// чтобы ученик видел, когда тема вернётся, до того как нажмёт. Таблица в
-// `mind-srs.test.ts` снята с питоновской функции: поменялся расчёт там, поменяй и здесь.
+// Срок считает сервер по FSRS (`backend/mind/srs.py`) и присылает его для каждой оценки в
+// `reviewIntervals`: здесь только подписи. Своего расчёта на фронтенде нет намеренно, иначе
+// на кнопке было бы одно число, а сервер поставил бы другое.
 
-import type { ReviewRating, TopicStatus } from "../types/mind";
+import type { ReviewRating } from "../types/mind";
 
-const MIN_EASE_FACTOR = 1.3;
-const MAX_EASE_FACTOR = 3.0;
-const DEFAULT_EASE_FACTOR = 2.5;
+/** Подписи оценок. Одни и те же на всех экранах повторения. */
+export const RATING_LABEL: Record<ReviewRating, string> = {
+  AGAIN: "Не вспомнил",
+  HARD: "С трудом",
+  GOOD: "Вспомнил",
+  EASY: "Легко",
+};
 
-export interface ReviewInput {
-  rating: ReviewRating;
-  status: TopicStatus | string | null;
-  intervalDays: number | null;
-  easeFactor: number | null;
-}
+/** Четыре оценки от худшей к лучшей, в этом порядке и стоят кнопки. */
+export const REVIEW_RATES: ReadonlyArray<{ rating: ReviewRating; label: string }> = (
+  ["AGAIN", "HARD", "GOOD", "EASY"] as const
+).map((rating) => ({ rating, label: RATING_LABEL[rating] }));
 
-export interface ReviewOutcome {
-  intervalDays: number;
-  easeFactor: number;
-  status: string;
-}
-
-/** Порт `mind.srs.next_review`: те же множители, границы и порядок действий. */
-export function nextReview({ rating, status, intervalDays, easeFactor }: ReviewInput): ReviewOutcome {
-  const interval = intervalDays || 1;
-  const ease = easeFactor || DEFAULT_EASE_FACTOR;
-  const current = status || "NOT_STARTED";
-
-  if (rating === "AGAIN") {
-    return {
-      intervalDays: 1,
-      easeFactor: Math.max(MIN_EASE_FACTOR, ease - 0.2),
-      status: "MEDIUM",
-    };
-  }
-
-  if (rating === "HARD") {
-    return {
-      intervalDays: Math.max(1, Math.trunc(interval * 1.2)),
-      easeFactor: Math.max(MIN_EASE_FACTOR, ease - 0.15),
-      status: current === "NOT_STARTED" ? "MEDIUM" : current,
-    };
-  }
-
-  if (rating === "EASY") {
-    // Интервал считается по текущей лёгкости, и только потом она растёт.
-    let next = current;
-    if (current === "NOT_STARTED" || current === "MEDIUM") next = "SUCCESS";
-    else if (current === "SUCCESS") next = "MASTERED";
-    return {
-      intervalDays: Math.max(7, Math.trunc(interval * ease * 1.5)),
-      easeFactor: Math.min(MAX_EASE_FACTOR, ease + 0.15),
-      status: next,
-    };
-  }
-
-  // GOOD
-  if (current === "NOT_STARTED") {
-    return { intervalDays: 1, easeFactor: ease, status: "MEDIUM" };
-  }
-  if (current === "MEDIUM") {
-    return {
-      intervalDays: Math.max(2, Math.trunc(interval * ease)),
-      easeFactor: ease,
-      status: interval >= 3 ? "SUCCESS" : "MEDIUM",
-    };
-  }
-  if (current === "SUCCESS") {
-    return {
-      intervalDays: Math.max(4, Math.trunc(interval * ease)),
-      easeFactor: ease,
-      status: interval >= 7 ? "MASTERED" : "SUCCESS",
-    };
-  }
-  return {
-    intervalDays: Math.max(7, Math.trunc(interval * ease)),
-    easeFactor: ease,
-    status: current,
-  };
+/** Через сколько дней вернётся тема при этой оценке. `null`, если сервер срок не прислал. */
+export function reviewDays(
+  topic: { reviewIntervals?: Partial<Record<ReviewRating, number>> | null },
+  rating: ReviewRating,
+): number | null {
+  const days = topic.reviewIntervals?.[rating];
+  return typeof days === "number" && days >= 1 ? days : null;
 }
 
 /** «день», «дня», «дней»: выбирает форму по числу. */

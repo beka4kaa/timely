@@ -300,6 +300,7 @@ def build_schedule(request: ScheduleGenerationRequest) -> ScheduleDraft:
         topic_finished=topic_finished,
         horizon_end=request.end_date,
         zone_name=request.timezone,
+        review_due=request.review_due,
     )
     blocks.extend(review_blocks)
     blocks.sort(key=lambda block: (block.start, block.title))

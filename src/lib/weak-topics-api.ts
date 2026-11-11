@@ -12,22 +12,6 @@ import type { WeakSubject, WeakSubtopic, WeakTopic } from "@/lib/weak-topics";
 export const WEAK_PAGE_TOPICS_KEY = "weak:topics";
 export const WEAK_PAGE_SUBJECTS_KEY = "weak:subjects";
 
-/** Что можно вернуть назад, если оценку поставили по ошибке. */
-export type TopicSchedule = Pick<
-  WeakTopic,
-  "status" | "lastRevisedAt" | "nextReviewAt" | "intervalDays" | "easeFactor"
->;
-
-export function scheduleOf(topic: WeakTopic): TopicSchedule {
-  return {
-    status: topic.status,
-    lastRevisedAt: topic.lastRevisedAt,
-    nextReviewAt: topic.nextReviewAt,
-    intervalDays: topic.intervalDays,
-    easeFactor: topic.easeFactor,
-  };
-}
-
 /**
  * Прокси отвечает 200 и тогда, когда Django ответил ошибкой: тело при этом не список.
  * Без этой проверки отказ выглядел бы как «тем пока нет».

@@ -20,7 +20,7 @@ import {
 import { shiftDateKey, weekDays } from "@/lib/studyplan-calendar";
 import { selectVisibleSchedules } from "@/lib/studyplan-calendar-entries";
 import type { DiaryWeek } from "@/types/diary";
-import type { Topic } from "@/types/mind";
+import type { ReviewRating, Topic } from "@/types/mind";
 
 export const TTL = {
   /** План и дневник меняются от действий ученика — держим две минуты. */
@@ -118,14 +118,22 @@ export async function fetchWeakTopics(): Promise<Topic[]> {
   return Array.isArray(body) ? body : body.results ?? [];
 }
 
-/** «Помню» / «Не помню» — то же повторение, что на странице слабых тем. */
-export async function reviewTopic(topicId: string, rating: "GOOD" | "AGAIN"): Promise<void> {
+/**
+ * Оценка повторения, то же, что на странице слабых тем. Возвращает тему с новым сроком,
+ * если сервер её прислал: по ней пишем, когда тема вернётся.
+ */
+export async function reviewTopic(topicId: string, rating: ReviewRating): Promise<Partial<Topic> | null> {
   const response = await fetch(`/api/topics/${encodeURIComponent(topicId)}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rating }),
   });
   if (!response.ok) throw new Error("Не удалось записать повторение");
+  try {
+    return (await response.json()) as Partial<Topic>;
+  } catch {
+    return null;
+  }
 }
 
 // ── Библиотека ────────────────────────────────────────────────────────────────

@@ -29,10 +29,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import Any, Callable
-
-from django.utils import timezone
 
 from .learning_events import (
     SYSTEMIC_ERROR_COUNT,
@@ -316,29 +313,27 @@ def _handle_classify_error(args: dict[str, Any], context: ToolContext) -> dict[s
 
 
 def _handle_schedule_review(args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-    """Назначить следующее повторение тем же расчётом, что и ручное повторение."""
-    from mind.srs import next_review  # локальный импорт: ai_engine → mind только здесь
+    """Назначить следующее повторение тем же путём, что и кнопка повторения.
+
+    `mind.reviews.review_topic` считает срок по FSRS, сохраняет тему и пишет
+    событие `review` в журнал. Событие без оценённого результата, поэтому
+    пересчёт ниже не принимает повторение за практику.
+    """
+    from mind.reviews import review_topic  # локальный импорт: ai_engine → mind только здесь
 
     problem = _require_topic(context)
     if problem:
         return problem
 
     topic = context.topic
-    outcome = next_review(
-        rating=args.get("rating", "GOOD"),
-        status=getattr(topic, "status", "NOT_STARTED"),
-        interval_days=getattr(topic, "interval_days", None),
-        ease_factor=getattr(topic, "ease_factor", None),
+    outcome = review_topic(
+        topic,
+        args.get("rating", "GOOD"),
+        user_email=context.user_email,
+        source="tutor_tool",
+        mode=context.mode,
     )
-    now = timezone.now()
-    due = now + timedelta(days=outcome.interval_days)
-
-    topic.status = outcome.status
-    topic.last_revised_at = now
-    topic.next_review_at = due
-    topic.ease_factor = outcome.ease_factor
-    topic.interval_days = outcome.interval_days
-    topic.save()
+    due = outcome.next_review_at
 
     # Состояние навыка хранит свою дату повторения: страница слабых тем читает
     # Topic, а тьютор — SkillState, и расходиться они не должны.

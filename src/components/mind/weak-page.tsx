@@ -10,7 +10,7 @@ import { useAskRail } from "@/contexts/ask-rail";
 import { intervalLabel, plural } from "@/lib/mind-srs";
 import { useResource } from "@/lib/resource-cache";
 import { useNow } from "@/lib/use-now";
-import { dueTopics, nearestTopic, type WeakTopic } from "@/lib/weak-topics";
+import { dueTopics, nearestTopic, scheduleOf, type TopicSchedule, type WeakTopic } from "@/lib/weak-topics";
 import {
   WEAK_PAGE_SUBJECTS_KEY,
   WEAK_PAGE_TOPICS_KEY,
@@ -19,8 +19,6 @@ import {
   patchTopic,
   replaceTopic,
   reviewTopic,
-  scheduleOf,
-  type TopicSchedule,
 } from "@/lib/weak-topics-api";
 import type { ReviewRating } from "@/types/mind";
 

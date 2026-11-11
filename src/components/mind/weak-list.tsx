@@ -6,10 +6,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { DueMark } from "@/components/mind/due-mark";
 import { cn } from "@/lib/utils";
 import {
   REVIEW_GROUPS,
-  memoryPercent,
+  isDue,
   topicsInGroup,
   whenLabel,
   type WeakSubject,
@@ -33,18 +34,6 @@ const STATUSES: Array<{ value: TopicStatus; label: string }> = [
   { value: "SUCCESS", label: "знаю хорошо" },
   { value: "MASTERED", label: "усвоено" },
 ];
-
-function Ring({ percent }: { percent: number | null }) {
-  return (
-    <span
-      className="ring xs"
-      style={{ "--p": percent ?? 0 } as React.CSSProperties}
-      title={percent === null ? "Ещё не повторяли" : `Помнишь примерно ${percent}%`}
-    >
-      <span className="ring-arc" />
-    </span>
-  );
-}
 
 function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotify }) {
   const [title, setTitle] = useState("");
@@ -149,7 +138,7 @@ function TopicRow({
   const renameRef = useRef<HTMLInputElement>(null);
   // Enter и Esc снимают фокус с поля: потом приходит blur, и второй раз сохранять не надо.
   const settled = useRef(false);
-  const percent = memoryPercent(topic, now);
+  const due = isDue(topic, now);
 
   useEffect(() => {
     if (!open) setMode("view");
@@ -227,7 +216,7 @@ function TopicRow({
             void saveName();
           }}
         >
-          <Ring percent={percent} />
+          <DueMark due={due} />
           <input
             ref={renameRef}
             type="text"
@@ -254,7 +243,7 @@ function TopicRow({
           data-attach={label}
           onClick={() => onAsk(topic)}
         >
-          <Ring percent={percent} />
+          <DueMark due={due} />
           <span className="tp-name">{topic.name}</span>
           <span className="m s">{subject}</span>
           <span className="m w">{when}</span>

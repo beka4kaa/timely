@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from config.ownership import OwnedViewSetMixin, request_email
 from .models import Subject, Topic, ReviewSet, Subtopic, MindSession
 from .serializers import SubjectSerializer, TopicSerializer, SubtopicSerializer, MindSessionSerializer
-from .srs import next_review
+from .reviews import review_topic
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q
@@ -49,8 +49,9 @@ class TopicViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
         now = timezone.now()
         
         if filter_param == 'weak' or filter_param == 'weaknesses':
+            # Без старого признака SM-2 `ease_factor < 2`: под FSRS его опускает ниже 2
+            # одно «Не вспомнил», и усвоенная тема висела бы в слабых навсегда.
             queryset = queryset.filter(
-                Q(ease_factor__lt=2.0) | 
                 Q(next_review_at__lt=now) |
                 Q(status__in=['NOT_STARTED', 'LEARNING'])
             )
@@ -82,29 +83,20 @@ class TopicViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
-        """Spaced repetition review with GOOD (like) and AGAIN (dislike).
+        """Повторение темы: AGAIN, HARD, GOOD или EASY.
 
-        Сам расчёт живёт в `mind.srs.next_review` — тем же расчётом пользуется
-        инструмент тьютора `schedule_review`, иначе в проекте появились бы два
-        независимых алгоритма повторения.
+        Расчёт по FSRS живёт в `mind.srs`, запись темы и событие журнала в
+        `mind.reviews.review_topic`. Тем же путём идёт инструмент тьютора
+        `schedule_review`, иначе в проекте появились бы два алгоритма повторения.
         """
         topic = self.get_object()
-        outcome = next_review(
-            rating=request.data.get('rating', 'GOOD'),
-            status=topic.status,
-            interval_days=topic.interval_days,
-            ease_factor=topic.ease_factor,
+        review_topic(
+            topic,
+            request.data.get('rating', 'GOOD'),
+            user_email=request_email(request),
+            source='topic_review',
         )
-
-        now = timezone.now()
-        topic.status = outcome.status
-        topic.last_revised_at = now
-        topic.next_review_at = now + timedelta(days=outcome.interval_days)
-        topic.ease_factor = outcome.ease_factor
-        topic.interval_days = outcome.interval_days
-
-        topic.save()
-        return Response(TopicSerializer(topic).data)
+        return Response(self.get_serializer(topic).data)
 
 class SubtopicViewSet(OwnedViewSetMixin, viewsets.ModelViewSet):
     queryset = Subtopic.objects.all()

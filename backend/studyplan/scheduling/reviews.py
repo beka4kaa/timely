@@ -1,22 +1,30 @@
-"""Интервальные повторения: через 2, 7 и 21 день после освоения темы.
+"""Интервальные повторения в календаре.
 
 Повторение планируется в момент построения календаря, а не «когда-нибудь
 потом», потому что иначе оно не появится: ученик не станет сам вспоминать, что
 тему двухнедельной давности пора освежить, — и именно это забывание продукт и
 должен снимать (§6.6).
 
-Отсчёт идёт от даты, когда тема ЗАКОНЧЕНА в плане, а не от её начала: повторять
-то, что ещё не пройдено до конца, бессмысленно.
+Два случая:
 
-Связь с `mind/srs.py`. Там живёт расчёт следующего интервала ПО РЕЗУЛЬТАТУ
-повторения (`AGAIN`/`HARD`/`GOOD`/`EASY`), и он остаётся единственным на проект.
-Здесь другой вопрос — куда поставить первое повторение, когда результата ещё
-нет и быть не может. Как только повторение состоится, пересчёт следующего срока
-пойдёт через `mind.srs.next_review` (Этап 5), а не через эти константы.
+* ученик эту тему ещё ни разу не повторял. Результата повторения нет и быть не
+  может, поэтому три повторения через 2, 7 и 21 день. Отсчёт идёт от даты,
+  когда тема ЗАКОНЧЕНА в плане, а не от её начала: повторять то, что ещё не
+  пройдено до конца, бессмысленно;
+* тему уже повторяли. Срок назначил FSRS по ответам ученика и реальной паузе
+  (`mind.srs`, поле `mind.Topic.next_review_at`), и план ставит одно повторение
+  на этот срок. Если срок наступает в день урока по этой же теме или раньше, урок
+  сам освежил тему: повторение встаёт через первый шаг (2 дня) после урока, а не
+  сразу за ним и не до него. Следующий срок FSRS назначит после самого
+  повторения, а план подхватит его при следующей сборке.
+
+Алгоритм один на проект: шаги 2/7/21 — это только стартовые сроки темы без
+истории, а не второй расчёт интервалов.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 
 from .contracts import (
@@ -38,6 +46,7 @@ def place_reviews(
     topic_finished: dict[str, datetime],
     horizon_end: date,
     zone_name: str,
+    review_due: Mapping[str, datetime] | None = None,
 ) -> tuple[list[PlannedBlock], dict]:
     """Расставить повторения в оставшуюся ёмкость.
 
@@ -47,25 +56,40 @@ def place_reviews(
     новой темы неправильно.
     """
     zone = resolve_zone(zone_name)
+    review_due = review_due or {}
 
     # Все запросы собираются заранее и сортируются по целевой дате: иначе
     # повторение первой темы через 21 день забирало бы окно раньше, чем
     # повторение пятой темы через 2 дня, хотя оно позже по календарю.
-    requests: list[tuple[date, int, int, object]] = []
+    # Запрос: (дата, тема по порядку, шаг для сортировки, шаг блока, тема).
+    requests: list[tuple[date, int, int, int | None, object]] = []
     for topic_index, topic in enumerate(pacing.topic_pacing):
         finished = topic_finished.get(topic.topic_id)
         if finished is None:
             continue
         finished_local = finished.astimezone(zone).date()
+        due = review_due.get(topic.topic_id)
+        if due is not None:
+            due_local = due.astimezone(zone).date()
+            target = (
+                due_local
+                if due_local > finished_local
+                else finished_local + timedelta(days=REVIEW_OFFSETS_DAYS[0])
+            )
+            # Шаг `None`: повторение по сроку FSRS, а не один из шагов 2/7/21.
+            requests.append((target, topic_index, -1, None, topic))
+            continue
         for step, offset in enumerate(REVIEW_OFFSETS_DAYS):
-            requests.append((finished_local + timedelta(days=offset), topic_index, step, topic))
+            requests.append(
+                (finished_local + timedelta(days=offset), topic_index, step, step, topic)
+            )
     requests.sort(key=lambda item: (item[0], item[1], item[2]))
 
     blocks: list[PlannedBlock] = []
     beyond_horizon = 0
     dropped = 0
 
-    for target_date, _topic_index, step, topic in requests:
+    for target_date, _topic_index, _order, step, topic in requests:
         if target_date > horizon_end:
             beyond_horizon += 1
             continue

@@ -3,9 +3,6 @@
 .rv.is-solo { grid-template-columns: minmax(0, 1fr); }
 .rv.is-solo .rv-deck { margin-right: 0; }
 /* При «меньше движения» плавного ввода нет, а поле всё равно лежит в .ti-host */
-.rv-chart .rv-dot { fill: none; stroke: var(--t-ink); stroke-width: 5px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.rv-chart .rv-dot.is-ring { stroke-width: 7.5px; }
-.rv-chart .rv-dot.is-hole { stroke: var(--t-card); stroke-width: 4.5px; }
 .rv-count { flex: none; color: var(--t-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .rv-card:focus { outline: none; }
 .rv-explain { padding: 0; background: none; cursor: pointer; }
@@ -33,8 +30,9 @@
 /* Строка темы: кнопка, а действия рядом с ней, вложить одну кнопку в другую нельзя */
 .tp-row { position: relative; }
 .tp-row .tp { width: 100%; text-align: left; }
-/* Tailwind тоже знает класс .ring: без этого вокруг кольца появлялась синяя обводка */
-.tp-row .ring.xs { box-shadow: none; }
+/* Тему пора повторить: точка в первой колонке строки. Без кольца и без чисел */
+.tp-due { justify-self: center; width: 7px; height: 7px; border-radius: 50%; }
+.tp-due.is-on { background: var(--t-ink); }
 .tp-name { min-width: 0; overflow-wrap: anywhere; }
 .tp .s { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .tp.is-archived .tp-name { color: var(--t-muted); }

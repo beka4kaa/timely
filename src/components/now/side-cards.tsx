@@ -9,19 +9,21 @@ import { useRef, useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useAskRail } from "@/contexts/ask-rail";
+import { REVIEW_RATES, intervalLabel } from "@/lib/mind-srs";
 import {
   dayHeading,
   dayMonthLabel,
-  daysBetween,
   homeworkTitle,
   plural,
+  rankTopics,
+  topicDue,
   type HomeworkItem,
   type NextContest,
   type UpcomingTest,
 } from "@/lib/now-feed";
 import { invalidateResources, type ResourceState } from "@/lib/resource-cache";
-import { formatMinutes, zonedDateKey } from "@/lib/studyplan-calendar";
-import type { Topic, TopicStatus } from "@/types/mind";
+import { formatMinutes } from "@/lib/studyplan-calendar";
+import type { ReviewRating, Topic } from "@/types/mind";
 
 import { reviewTopic } from "./now-resources";
 
@@ -128,33 +130,8 @@ export function HomeworkTile({
 
 // ─────────────────────────────── Повторения ──────────────────────────────────
 
-/** Сколько дней тема ждёт повторения: 0 сегодня, больше нуля просрочена, `null` срока нет. */
-function topicDue(topic: Topic, today: string, timeZone: string): number | null {
-  if (!topic.nextReviewAt) return null;
-  return daysBetween(zonedDateKey(topic.nextReviewAt, timeZone), today);
-}
-
-const STARTED: Record<TopicStatus, boolean> = {
-  NOT_STARTED: false,
-  MEDIUM: true,
-  SUCCESS: true,
-  MASTERED: true,
-};
-
-/** Просроченные сверху, потом сегодняшние, потом начатые, потом не начатые. */
-function rankTopics(topics: Topic[], today: string, timeZone: string): Topic[] {
-  const score = (topic: Topic) => {
-    const late = topicDue(topic, today, timeZone);
-    if (late !== null && late > 0) return 0;
-    if (late === 0) return 1;
-    return STARTED[topic.status] ? 2 : 3;
-  };
-  return [...topics]
-    .filter((topic) => !topic.archived)
-    .sort((left, right) => score(left) - score(right));
-}
-
-type Reviewed = "GOOD" | "AGAIN" | "busy";
+/** Ответ записан: через сколько дней тема вернётся, если сервер это прислал. */
+type Reviewed = "busy" | { days: number | null };
 
 export function WeakTile({
   topics,
@@ -171,25 +148,25 @@ export function WeakTile({
   const [announce, setAnnounce] = useState("");
   const focusDone = useRef<string | null>(null);
 
+  // Просроченные по шансу вспомнить, самый низкий первым: его считает сервер, а
+  // ученику число не показываем, только порядок.
   const ranked = rankTopics(topics.data ?? [], today, timeZone);
   const due = ranked.filter((topic) => (topicDue(topic, today, timeZone) ?? -1) >= 0);
   const shown = (due.length ? due : ranked).slice(0, 4);
   // Кнопки только у одной темы, как и всё на этой странице: один следующий шаг.
   // Ответил, и они переходят к следующей.
-  const active = due.find((topic) => {
-    const state = reviewed[topic.id];
-    return state !== "GOOD" && state !== "AGAIN";
-  });
+  const active = due.find((topic) => typeof reviewed[topic.id] !== "object");
 
-  const review = async (topic: Topic, rating: "GOOD" | "AGAIN") => {
+  const review = async (topic: Topic, rating: ReviewRating) => {
     setReviewed((current) => ({ ...current, [topic.id]: "busy" }));
     setFailed(null);
     try {
-      await reviewTopic(topic.id, rating);
+      const updated = await reviewTopic(topic.id, rating);
+      const days = typeof updated?.intervalDays === "number" ? updated.intervalDays : null;
       focusDone.current = topic.id;
-      setReviewed((current) => ({ ...current, [topic.id]: rating }));
+      setReviewed((current) => ({ ...current, [topic.id]: { days } }));
       setAnnounce(`«${topic.name}»: записали.`);
-      if (rating === "GOOD") mascot.hop(0.7);
+      if (rating === "GOOD" || rating === "EASY") mascot.hop(0.7);
       // Список и счётчик в панели обновятся, когда ученик успеет прочитать
       // «записали». Тема при этом может уйти из списка вместе с фокусом на
       // подтверждении: тогда переводим его на заголовок карточки.
@@ -233,7 +210,7 @@ export function WeakTile({
           {shown.map((topic) => {
             const late = topicDue(topic, today, timeZone);
             const state = reviewed[topic.id];
-            const answered = state === "GOOD" || state === "AGAIN";
+            const answered = typeof state === "object" ? state : null;
             return (
               <li key={topic.id} id={`topic-${topic.id}`} data-attach={`Тема: ${topic.name}`}>
                 {topic.name}
@@ -243,25 +220,19 @@ export function WeakTile({
                   </small>
                 ) : null}
                 {active?.id === topic.id ? (
-                  <div className="tile-acts">
-                    <button
-                      type="button"
-                      className="btn btn-line"
-                      disabled={state === "busy"}
-                      aria-label={`Помню: ${topic.name}`}
-                      onClick={() => void review(topic, "GOOD")}
-                    >
-                      Помню
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-text"
-                      disabled={state === "busy"}
-                      aria-label={`Не помню: ${topic.name}`}
-                      onClick={() => void review(topic, "AGAIN")}
-                    >
-                      Не помню
-                    </button>
+                  <div className="tile-acts is-rates">
+                    {REVIEW_RATES.map((row) => (
+                      <button
+                        key={row.rating}
+                        type="button"
+                        className="btn btn-line"
+                        disabled={state === "busy"}
+                        aria-label={`${row.label}: ${topic.name}`}
+                        onClick={() => void review(topic, row.rating)}
+                      >
+                        {row.label}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
                 {answered ? (
@@ -277,9 +248,9 @@ export function WeakTile({
                       }
                     }}
                   >
-                    {state === "GOOD"
-                      ? "Записали, следующее повторение позже"
-                      : "Записали, вернёмся завтра"}
+                    {answered.days === null
+                      ? "Записали"
+                      : `Записали, повторим ${intervalLabel(answered.days)}`}
                   </p>
                 ) : null}
                 {failed === topic.id ? (

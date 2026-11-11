@@ -21,11 +21,13 @@ import {
   partLabel,
   pickPresetIndex,
   plural,
+  rankTopics,
   relativeDayLabel,
   relativeStamp,
   revisionRows,
   shortDateLabel,
   splitBlockTitle,
+  topicDue,
   upcomingTests,
   weekStrip,
   workspaceOf,
@@ -510,4 +512,80 @@ test("зона ученика задаёт «сегодня» и минуты", 
   assert.equal(day.nowMinutes, 90);
   assert.equal(day.hero?.block.id, "morning");
   assert.equal(day.hero?.mode, "next");
+});
+
+// ─────────────────────────────── Повторения ──────────────────────────────────
+
+function topicRow(
+  id: string,
+  nextReviewAt: string | null,
+  recallProbability: number | null = null,
+  overrides: Partial<{ status: string; archived: boolean }> = {},
+) {
+  return { id, status: "MEDIUM", archived: false, nextReviewAt, recallProbability, ...overrides };
+}
+
+test("срок темы считается в днях по зоне ученика", () => {
+  const today = "2026-11-03";
+  assert.equal(topicDue(topicRow("late", "2026-11-01T10:00:00Z"), today, TZ), 2);
+  assert.equal(topicDue(topicRow("today", "2026-11-03T23:00:00Z"), today, TZ), 0);
+  assert.equal(topicDue(topicRow("later", "2026-11-05T10:00:00Z"), today, TZ), -2);
+  assert.equal(topicDue(topicRow("none", null), today, TZ), null);
+  // 20:00 UTC 2 ноября — уже 3 ноября в Ташкенте: сегодня, а не просрочено.
+  assert.equal(topicDue(topicRow("east", "2026-11-02T20:00:00Z"), today, "Asia/Tashkent"), 0);
+});
+
+test("просроченные идут по шансу вспомнить, самый низкий первым", () => {
+  const today = "2026-11-03";
+  const ranked = rankTopics(
+    [
+      topicRow("holds", "2026-10-20T10:00:00Z", 0.81),
+      topicRow("today", "2026-11-03T10:00:00Z", 0.9),
+      topicRow("fading", "2026-11-02T10:00:00Z", 0.42),
+      topicRow("middle", "2026-10-30T10:00:00Z", 0.66),
+    ],
+    today,
+    TZ,
+  );
+  // Не по дате: «holds» ждёт дольше всех, но помнится лучше.
+  assert.deepEqual(
+    ranked.map((topic) => topic.id),
+    ["fading", "middle", "holds", "today"],
+  );
+});
+
+test("без шанса вспомнить просроченная тема идёт первой, при равенстве дольше ждущая", () => {
+  const today = "2026-11-03";
+  const ranked = rankTopics(
+    [
+      topicRow("rated", "2026-10-25T10:00:00Z", 0.3),
+      topicRow("fresh", "2026-11-02T10:00:00Z", null),
+      topicRow("old", "2026-10-28T10:00:00Z", null),
+    ],
+    today,
+    TZ,
+  );
+  assert.deepEqual(
+    ranked.map((topic) => topic.id),
+    ["old", "fresh", "rated"],
+  );
+});
+
+test("после сроков: начатые, потом не начатые, архив скрыт", () => {
+  const today = "2026-11-03";
+  const ranked = rankTopics(
+    [
+      topicRow("new", null, null, { status: "NOT_STARTED" }),
+      topicRow("hidden", "2026-11-01T10:00:00Z", 0.1, { archived: true }),
+      topicRow("started", "2026-11-09T10:00:00Z", 0.97),
+      topicRow("today", "2026-11-03T08:00:00Z", 0.92),
+      topicRow("late", "2026-11-01T10:00:00Z", 0.75),
+    ],
+    today,
+    TZ,
+  );
+  assert.deepEqual(
+    ranked.map((topic) => topic.id),
+    ["late", "today", "started", "new"],
+  );
 });

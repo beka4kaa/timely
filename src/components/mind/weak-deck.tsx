@@ -1,47 +1,23 @@
 "use client";
 
-// Колода на сегодня и панель памяти рядом.
+// Колода на сегодня и панель срока рядом.
 //
 // На карточке нет готового ответа: у темы в базе только название и подтемы. Поэтому это
 // попытка вспомнить и честная оценка себя (CLAUDE.md §6.5), а подтемы, если они есть,
-// служат проверкой на обороте.
+// служат проверкой на обороте. Шанс вспомнить ученику не показываем: только срок.
 
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
-import { intervalLabel, nextReview } from "@/lib/mind-srs";
-import {
-  coverOf,
-  dayDiff,
-  lastTimeLabel,
-  memoryCurve,
-  memoryPercent,
-  whenLabel,
-  type WeakTopic,
-} from "@/lib/weak-topics";
+import { REVIEW_RATES, intervalLabel, reviewDays } from "@/lib/mind-srs";
+import { coverOf, isDue, lastTimeLabel, whenLabel, type WeakTopic } from "@/lib/weak-topics";
 import { cn } from "@/lib/utils";
 import type { ReviewRating } from "@/types/mind";
-
-const RATES: Array<{ rating: ReviewRating; label: string }> = [
-  { rating: "AGAIN", label: "Не вспомнил" },
-  { rating: "HARD", label: "Трудно" },
-  { rating: "GOOD", label: "Хорошо" },
-  { rating: "EASY", label: "Легко" },
-];
 
 /** Сколько отметок помещается в шапке карточки. Дальше считаем числами. */
 const MAX_PIPS = 8;
 const FLY_MS = 300;
-
-function intervalFor(topic: WeakTopic, rating: ReviewRating): number {
-  return nextReview({
-    rating,
-    status: topic.status,
-    intervalDays: topic.intervalDays,
-    easeFactor: topic.easeFactor,
-  }).intervalDays;
-}
 
 function questionOf(topic: WeakTopic): string {
   return `Что ты помнишь про тему «${topic.name}»?`;
@@ -78,78 +54,26 @@ function Pips({ done, total }: { done: number; total: number }) {
   );
 }
 
-function MemoryChart({
-  topic,
-  nextDays,
-  reviewToday,
-  now,
-}: {
-  topic: WeakTopic;
-  nextDays: number;
-  reviewToday: boolean;
-  now: Date;
-}) {
-  const curve = memoryCurve({
-    lastRevisedAt: topic.lastRevisedAt,
-    intervalDays: topic.intervalDays,
-    nextDays,
-    reviewToday,
-    now,
-  });
-  return (
-    <svg className="rv-chart" viewBox="0 0 300 96" preserveAspectRatio="none" aria-hidden="true">
-      <path className="gr" d={`M0 ${curve.height - 0.5}H300`} />
-      {curve.area ? <path className="ar" d={curve.area} /> : null}
-      {curve.past ? <path className="ln" d={curve.past} /> : null}
-      <path className="ln fut" d={curve.future} />
-      <path className="tod" d={`M${curve.todayX.toFixed(1)} 0V${curve.height}`} />
-      {curve.up ? <path className="ln up" d={curve.up} /> : null}
-      {/* График растянут по ширине, и обычный кружок стал бы овалом. Точка из штриха остаётся круглой. */}
-      {curve.reviews.map((point) => (
-        <path key={point.x} className="rv-dot" d={`M${point.x.toFixed(1)} ${point.y.toFixed(1)}h0.01`} />
-      ))}
-      {curve.next ? (
-        <>
-          <path className="rv-dot is-ring" d={`M${curve.next.x.toFixed(1)} ${curve.next.y.toFixed(1)}h0.01`} />
-          <path className="rv-dot is-hole" d={`M${curve.next.x.toFixed(1)} ${curve.next.y.toFixed(1)}h0.01`} />
-        </>
-      ) : null}
-    </svg>
-  );
-}
-
 function MemoryPanel({
   topic,
-  nextDays,
   nextLabel,
   rest,
   now,
   reminder,
 }: {
   topic: WeakTopic;
-  nextDays: number;
   nextLabel: string;
   rest: boolean;
   now: Date;
   reminder: string;
 }) {
-  const percent = memoryPercent(topic, now);
   return (
-    <aside className={cn("rv-mem card", rest && "is-rest")} aria-label="Память">
+    <aside className={cn("rv-mem card", rest && "is-rest")} aria-label="Срок повторения">
       <div className="rv-now">
-        <b>{percent === null ? "—" : `${percent}%`}</b>
         <span>
-          {percent === null ? "ещё не повторяли" : "примерно помнишь"}
+          {isDue(topic, now) ? "Пора повторить" : null}
           <small>{topic.name}</small>
         </span>
-      </div>
-      <div className="rv-plot">
-        <MemoryChart topic={topic} nextDays={nextDays} reviewToday={!rest} now={now} />
-        <div className="pf-axis">
-          <span>2 недели назад</span>
-          <span>сегодня</span>
-          <span>через 2 недели</span>
-        </div>
       </div>
       <ul className="rv-next">
         <li>
@@ -266,13 +190,13 @@ export function WeakDeck({
   const panelTopic = shown ?? nearest;
   const rest = !shown;
   const rating = preview ?? (forgot ? "AGAIN" : "GOOD");
-  const nextDays = shown
-    ? intervalFor(shown, rating)
-    : nearest?.nextReviewAt
-      ? dayDiff(now, new Date(nearest.nextReviewAt))
-      : 0;
+  // Срок при этой оценке присылает сервер (FSRS). Не прислал: на кнопке срока нет,
+  // а в панели «после оценки». Своего расчёта тут нет, чтобы не разойтись с сервером.
+  const promised = shown ? reviewDays(shown, rating) : null;
   const nextLabel = shown
-    ? intervalLabel(nextDays)
+    ? promised === null
+      ? "после оценки"
+      : intervalLabel(promised)
     : nearest
       ? whenLabel(nearest.nextReviewAt, now)
       : "";
@@ -327,19 +251,22 @@ export function WeakDeck({
                     onPointerLeave={() => setPreview(null)}
                     onBlur={() => setPreview(null)}
                   >
-                    {RATES.map((row) => (
-                      <button
-                        key={row.rating}
-                        type="button"
-                        disabled={Boolean(flying)}
-                        onPointerEnter={() => setPreview(row.rating)}
-                        onFocus={() => setPreview(row.rating)}
-                        onClick={() => rate(shown, row.rating)}
-                      >
-                        <b>{row.label}</b>
-                        <small>{intervalLabel(intervalFor(shown, row.rating))}</small>
-                      </button>
-                    ))}
+                    {REVIEW_RATES.map((row) => {
+                      const days = reviewDays(shown, row.rating);
+                      return (
+                        <button
+                          key={row.rating}
+                          type="button"
+                          disabled={Boolean(flying)}
+                          onPointerEnter={() => setPreview(row.rating)}
+                          onFocus={() => setPreview(row.rating)}
+                          onClick={() => rate(shown, row.rating)}
+                        >
+                          <b>{row.label}</b>
+                          {days === null ? null : <small>{intervalLabel(days)}</small>}
+                        </button>
+                      );
+                    })}
                   </div>
                   <button className="link rv-explain" type="button" onClick={() => onAsk(shown)}>
                     Разобрать с тьютором
@@ -365,7 +292,6 @@ export function WeakDeck({
       {panelTopic ? (
         <MemoryPanel
           topic={panelTopic}
-          nextDays={nextDays}
           nextLabel={nextLabel}
           rest={rest}
           now={now}

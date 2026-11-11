@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Play, Zap, Clock, AlertTriangle, Calendar, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RATING_LABEL } from '@/lib/mind-srs'
 import {
     Topic,
     isDueToday,
@@ -119,7 +120,7 @@ export default function ReviewPage() {
                     </CardHeader>
                     <CardContent className="p-8">
                         <p className="text-center text-muted-foreground mb-8">
-                            Как хорошо вы помните эту тему?
+                            Как хорошо ты помнишь эту тему?
                         </p>
                         <div className="grid grid-cols-2 gap-4">
                             <Button
@@ -129,7 +130,7 @@ export default function ReviewPage() {
                                 onClick={() => handleReview(reviewingTopic.id, 'AGAIN')}
                             >
                                 <span className="text-lg">😵</span>
-                                <span>Не помню</span>
+                                <span>{RATING_LABEL.AGAIN}</span>
                             </Button>
                             <Button
                                 size="lg"
@@ -138,7 +139,7 @@ export default function ReviewPage() {
                                 onClick={() => handleReview(reviewingTopic.id, 'HARD')}
                             >
                                 <span className="text-lg">😓</span>
-                                <span>Трудно</span>
+                                <span>{RATING_LABEL.HARD}</span>
                             </Button>
                             <Button
                                 size="lg"
@@ -147,7 +148,7 @@ export default function ReviewPage() {
                                 onClick={() => handleReview(reviewingTopic.id, 'GOOD')}
                             >
                                 <span className="text-lg">😊</span>
-                                <span>Хорошо</span>
+                                <span>{RATING_LABEL.GOOD}</span>
                             </Button>
                             <Button
                                 size="lg"
@@ -156,7 +157,7 @@ export default function ReviewPage() {
                                 onClick={() => handleReview(reviewingTopic.id, 'EASY')}
                             >
                                 <span className="text-lg">🤩</span>
-                                <span>Легко</span>
+                                <span>{RATING_LABEL.EASY}</span>
                             </Button>
                         </div>
                         <Button
