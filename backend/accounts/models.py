@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import AbstractUser
 from django.utils.crypto import get_random_string
 
@@ -64,6 +65,29 @@ class UserRating(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.discipline.name}: {self.elo_score}"
 
+class ContestFile(models.Model):
+    """PDF условия или решения задачи контеста.
+
+    Лежит в базе, а не на диске: диск контейнера пропадает при каждой выкладке,
+    а внешнего хранилища нет. Файлы маленькие и редкие, отдаются только через API
+    с проверкой прав. Содержимое не читается в списках.
+    """
+    data = models.BinaryField()
+    name = models.CharField(max_length=180)
+    size = models.PositiveIntegerField()
+    pages = models.PositiveSmallIntegerField(default=0)
+    sha256 = models.CharField(max_length=64)
+    # Текст из PDF нужен только для разбора с тьютором после конца контеста.
+    text = models.TextField(blank=True, default='')
+    uploaded_by = models.ForeignKey(
+        CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='contest_files',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.size} байт)"
+
+
 class Task(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -86,6 +110,16 @@ class Task(models.Model):
     base_elo = models.IntegerField(default=1200)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    # Порядок задачи в контесте: номер задачи у ученика.
+    position = models.PositiveSmallIntegerField(default=0)
+    # Правильный ответ, варианты через «;». Ученику уходит только после конца контеста.
+    answer = models.CharField(max_length=300, blank=True, default='')
+    statement_file = models.ForeignKey(
+        ContestFile, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+    )
+    solution_file = models.ForeignKey(
+        ContestFile, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+    )
 
     def __str__(self):
         return f"Task {self.id} ({self.title or self.status})"
@@ -106,6 +140,21 @@ class TaskSubmission(models.Model):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Ответ, отправленный в контесте. У старых ответов вне контеста пусто.
+    contest = models.ForeignKey(
+        'Contest', on_delete=models.SET_NULL, null=True, blank=True, related_name='submissions',
+    )
+
+    class Meta:
+        constraints = [
+            # Баллы за задачу контеста начисляются один раз: держит база, а не код.
+            models.UniqueConstraint(
+                fields=['student', 'task', 'contest'],
+                condition=Q(status='approved') & Q(contest__isnull=False),
+                name='one_accepted_answer_per_contest_task',
+            ),
+        ]
+        indexes = [models.Index(fields=['contest', 'created_at'], name='submission_contest_time')]
 
     def __str__(self):
         return f"Submission by {self.student.username} for Task {self.task.id} ({self.status})"
@@ -127,6 +176,8 @@ class ReviewVote(models.Model):
 
 class Contest(models.Model):
     """A timed contest bundling a set of tasks (LeetCode-style)."""
+    TIER_CHOICES = [(1, 'Аметист'), (2, 'Алмаз'), (3, 'Золото'), (4, 'Серебро'), (5, 'Бронза')]
+
     title       = models.CharField(max_length=512)
     description = models.TextField(blank=True, default='')
     start_time  = models.DateTimeField()
@@ -136,6 +187,11 @@ class Contest(models.Model):
         CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_contests',
     )
     created_at  = models.DateTimeField(auto_now_add=True)
+    # Тир задаёт потолок баллов и цвет плашки, рисунок выбирает админ.
+    tier         = models.PositiveSmallIntegerField(default=5, choices=TIER_CHOICES)
+    art          = models.CharField(max_length=20, default='rings')
+    # Черновик видит только админка.
+    is_published = models.BooleanField(default=False, db_index=True)
 
     class Meta:
         ordering = ['-start_time']
