@@ -199,7 +199,8 @@ class AnswerTests(ContestBase):
         return CustomUser.objects.get(pk=(who or self.student).pk).overall_elo
 
     def age_attempts(self, seconds):
-        TaskSubmission.objects.update(created_at=self.now - timedelta(seconds=seconds))
+        # От текущего момента, а не от setUp: под нагрузкой между ними проходят секунды.
+        TaskSubmission.objects.update(created_at=timezone.now() - timedelta(seconds=seconds))
 
     def test_correct_answer_adds_points_once(self):
         contest = self.contest(tasks=[{"answer": "3/4", "points": 150}])
