@@ -561,7 +561,8 @@ class RecomputeSkillStateTests(SimpleTestCase):
     def test_three_unaided_successes_reach_mastery(self) -> None:
         state = recompute_skill_state([self._fact("correct") for _ in range(3)])
         self.assertEqual(state.status, "MASTERED")
-        self.assertEqual(state.mastery_probability, 1.0)
+        self.assertGreaterEqual(state.mastery_probability, 0.8)
+        self.assertLess(state.mastery_probability, 1.0)
         self.assertEqual(state.success_count, 3)
 
     def test_successes_with_hints_do_not_reach_mastery(self) -> None:
@@ -583,6 +584,54 @@ class RecomputeSkillStateTests(SimpleTestCase):
         facts = [self._fact("incorrect") for _ in range(4)] + [self._fact("correct")]
         self.assertEqual(recompute_skill_state(facts).status, "NEEDS_PRACTICE")
         self.assertEqual(recompute_skill_state(facts).fail_count, 4)
+
+    def test_recent_successes_outweigh_old_failures(self) -> None:
+        """BKT учитывает порядок: три ошибки, потом три успеха — лучше обратного."""
+        improving = recompute_skill_state(
+            [self._fact("incorrect") for _ in range(3)] + [self._fact("correct") for _ in range(3)]
+        )
+        declining = recompute_skill_state(
+            [self._fact("correct") for _ in range(3)] + [self._fact("incorrect") for _ in range(3)]
+        )
+        self.assertGreater(improving.mastery_probability, declining.mastery_probability)
+        self.assertEqual(improving.success_count, declining.success_count)
+
+    def test_guessed_answer_does_not_make_topic_mastered(self) -> None:
+        for kind in ("guessed", "copied"):
+            state = recompute_skill_state([self._fact("correct", error_type=kind) for _ in range(5)])
+            self.assertNotEqual(state.status, "MASTERED", kind)
+            self.assertLess(state.mastery_probability, 0.8, kind)
+
+    def test_hinted_success_moves_mastery_less_than_unaided(self) -> None:
+        unaided = recompute_skill_state([self._fact("correct")])
+        hinted = recompute_skill_state([self._fact("correct", hint_level=2)])
+        self.assertGreater(unaided.mastery_probability, hinted.mastery_probability)
+        self.assertGreater(hinted.mastery_probability, 0.3)
+
+    def test_ungraded_events_are_ignored_by_mastery(self) -> None:
+        """Повторения и объяснения (нет оценённого результата) не двигают навык."""
+        base = [self._fact("incorrect"), self._fact("correct")]
+        noisy = [self._fact("completed"), base[0], self._fact("skipped"), base[1], self._fact("abandoned")]
+        a, b = recompute_skill_state(base), recompute_skill_state(noisy)
+        self.assertEqual(a.mastery_probability, b.mastery_probability)
+        self.assertEqual(a.confidence, b.confidence)
+        self.assertEqual(a.success_count, b.success_count)
+        self.assertEqual(a.fail_count, b.fail_count)
+
+    def test_ungraded_review_is_not_practice(self) -> None:
+        """Повторение без оценки не делает навык «начатым» и не даёт доказательств."""
+        review = LearningEventFacts(result="", activity="review", created_at=timezone.now())
+        state = recompute_skill_state([review])
+        self.assertEqual(state.status, "NOT_STARTED")
+        self.assertEqual(state.evidence_count, 0)
+        self.assertIsNone(state.last_practiced_at)
+
+        earlier = timezone.now() - timedelta(days=2)
+        graded = LearningEventFacts(result="correct", created_at=earlier)
+        after = recompute_skill_state([graded, review])
+        self.assertEqual(after.evidence_count, 1)
+        self.assertEqual(after.last_practiced_at, earlier)
+        self.assertEqual(after, recompute_skill_state([graded]))
 
     def test_confidence_grows_with_evidence_and_is_capped(self) -> None:
         low = recompute_skill_state([self._fact("correct")])
@@ -719,6 +768,28 @@ class LearningEventJournalTests(TestCase):
         apply_learning_event(user_email="student@example.com", topic=self.topic, result="correct")
         apply_learning_event(user_email="other@example.com", topic=self.topic, result="incorrect")
         self.assertEqual(SkillState.objects.count(), 2)
+
+
+    def test_review_event_without_graded_result_leaves_skill_state_alone(self) -> None:
+        """Повторение (activity=review, оценка в metadata) не двигает SkillState."""
+        from ai_engine.learning_events import apply_learning_event
+
+        apply_learning_event(
+            user_email="student@example.com", topic=self.topic, result="correct", activity="task_attempt"
+        )
+        before = SkillState.objects.get(user_email="student@example.com", topic=self.topic)
+        apply_learning_event(
+            user_email="student@example.com",
+            topic=self.topic,
+            activity="review",
+            result="completed",
+            metadata={"rating": "again"},
+        )
+        after = SkillState.objects.get(user_email="student@example.com", topic=self.topic)
+        self.assertEqual(before.mastery_probability, after.mastery_probability)
+        self.assertEqual(before.confidence, after.confidence)
+        self.assertEqual(before.success_count, after.success_count)
+        self.assertEqual(before.fail_count, after.fail_count)
 
 
 class ChatSessionModeTests(TestCase):

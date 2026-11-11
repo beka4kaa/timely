@@ -25,6 +25,7 @@ from typing import Any, Iterator
 
 from ..draw_views import style_from_message
 from ..solve_views import BOARD_LLM_BASE_URL, OPENROUTER_MODEL, openrouter_client
+from ..fatigue import build_fatigue_note
 from ..student_memory import build_student_memory
 from ..tutor_modes import TutorMode, get_mode
 from ..tutor_tools import (
@@ -94,6 +95,7 @@ def build_router_messages(
     mode: TutorMode,
     lesson_instruction: str = "",
     student_memory: str = "",
+    fatigue_note: str = "",
 ) -> list[dict[str, Any]]:
     """Собрать `messages` для роутящего запроса.
 
@@ -114,6 +116,10 @@ def build_router_messages(
     memory = str(student_memory or "").strip()
     if memory:
         layers.append(memory)
+    # Сигнал усталости (§9.4): одна строка, только когда он выше порога.
+    fatigue = str(fatigue_note or "").strip()
+    if fatigue:
+        layers.append(fatigue)
     instruction = str(lesson_instruction or "").strip()
     if instruction:
         layers.append(instruction)
@@ -126,6 +132,18 @@ def build_router_messages(
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
     return messages
+
+
+def _fatigue_note_for(ctx: dict[str, Any], history: list, user_message: str) -> str:
+    """Реплики ученика из истории и текущая → строка про усталость (или пусто)."""
+    said = [
+        item.get("content")
+        for item in history
+        if isinstance(item, dict) and item.get("role") == "user"
+        and isinstance(item.get("content"), str)
+    ]
+    said.append(user_message)
+    return build_fatigue_note(str(ctx.get("user_email") or ""), said)
 
 
 def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any) -> SkillResult:
@@ -152,6 +170,7 @@ def route_and_run(*, user_message: str, history: list | None = None, **ctx: Any)
         # Память об ученике собирает backend по user_email, а не модель и не
         # клиент: иначе её содержимое стало бы управляемым извне.
         student_memory=build_student_memory(str(ctx.get("user_email") or "")),
+        fatigue_note=_fatigue_note_for(ctx, history, user_message),
     )
     tools = tools_for_mode(mode)
 
@@ -401,6 +420,7 @@ def route_and_run_streaming(
         # Память об ученике собирает backend по user_email, а не модель и не
         # клиент: иначе её содержимое стало бы управляемым извне.
         student_memory=build_student_memory(str(ctx.get("user_email") or "")),
+        fatigue_note=_fatigue_note_for(ctx, history, user_message),
     )
     tools = tools_for_mode(mode)
 

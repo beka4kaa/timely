@@ -50,16 +50,26 @@ SYSTEMIC_ERROR_COUNT = 3
 # не доказательство навыка, иначе «посмотрел урок» повышало бы усвоенность.
 GRADED_RESULTS = frozenset({"correct", "incorrect", "partial"})
 
-# Вклад одного события в mastery. Верно без подсказок — полный вес; верно с
-# подсказками — заметно меньше, потому что помощь и была смыслом подсказки.
-_RESULT_WEIGHTS = {
-    ("correct", False): 1.0,
-    ("correct", True): 0.6,
-    ("partial", False): 0.4,
-    ("partial", True): 0.25,
-    ("incorrect", False): 0.0,
-    ("incorrect", True): 0.0,
-}
+# Параметры Bayesian Knowledge Tracing (Corbett & Anderson, 1995; PRODUCT.md §6.1).
+# Это типовые значения из литературы, а не подобранные по нашим данным: подбор
+# (EM/fit по журналу, как bkt_trainer.py у OpenTutor) появится, когда накопятся
+# события. Подобраны так, чтобы три самостоятельных успеха подряд давали
+# вероятность выше MASTERY_THRESHOLD, а «четыре ошибки и один успех» оставляли
+# навык в NEEDS_PRACTICE.
+BKT_PRIOR = 0.3  # P(L0): вероятность, что навык уже был усвоен до первой попытки
+BKT_LEARN = 0.1  # P(T): шанс усвоить навык за одну попытку
+BKT_GUESS = 0.2  # P(G): шанс ответить верно, не владея навыком
+BKT_SLIP = 0.1  # P(S): шанс ошибиться, владея навыком
+# Верный ответ с подсказкой — слабее доказательство: подсказка могла «подсказать»
+# и без владения, поэтому вероятность угадать здесь выше (как прежний вес 0.6).
+BKT_GUESS_HINTED = 0.5
+# «Частично»: смесь верного и неверного исхода; доля верного — как прежние
+# веса 0.4 / 0.25 для ответа без подсказки / с подсказкой.
+_PARTIAL_CORRECT_SHARE = {False: 0.4, True: 0.25}
+
+# Верный ответ, помеченный как угаданный или списанный, — не доказательство
+# навыка: BKT-обновление пропускается, и такой ответ не считается самостоятельным.
+UNEARNED_SUCCESS_ERRORS = frozenset({"guessed", "copied"})
 
 
 def normalize_error_type(value: Any) -> str:
@@ -93,10 +103,28 @@ class LearningEventFacts:
     hint_level: int = 0
     error_type: str = ""
     created_at: datetime | None = None
+    activity: str = ""
 
     @property
     def is_graded(self) -> bool:
         return self.result in GRADED_RESULTS
+
+    @property
+    def is_practice(self) -> bool:
+        """Событие вообще говорит о практике навыка.
+
+        Повторение без оценки (`activity="review"`, оценка лежит в metadata) и
+        событие с пустым результатом — не практика: они не должны ни «начинать»
+        навык, ни копить доказательства, ни сдвигать дату последней практики.
+        """
+        if self.is_graded:
+            return True
+        return bool(self.result) and self.activity != "review"
+
+    @property
+    def is_earned_success(self) -> bool:
+        """Верный ответ, не помеченный как угаданный или списанный."""
+        return self.result == "correct" and self.error_type not in UNEARNED_SUCCESS_ERRORS
 
     @property
     def was_hinted(self) -> bool:
@@ -133,14 +161,56 @@ class SkillStateFields:
         }
 
 
+def _bkt_update(mastery: float, fact: LearningEventFacts) -> float:
+    """Один шаг BKT: апостериорная вероятность по исходу попытки, затем обучение."""
+
+    def posterior(correct: bool, guess: float) -> float:
+        if correct:
+            hit = mastery * (1 - BKT_SLIP)
+            miss = (1 - mastery) * guess
+        else:
+            hit = mastery * BKT_SLIP
+            miss = (1 - mastery) * (1 - guess)
+        return hit / (hit + miss)
+
+    if fact.result == "correct":
+        if not fact.is_earned_success:
+            return mastery
+        known = posterior(True, BKT_GUESS_HINTED if fact.was_hinted else BKT_GUESS)
+    elif fact.result == "partial":
+        share = _PARTIAL_CORRECT_SHARE[fact.was_hinted]
+        known = share * posterior(True, BKT_GUESS) + (1 - share) * posterior(False, BKT_GUESS)
+    else:
+        known = posterior(False, BKT_GUESS)
+    return known + (1 - known) * BKT_LEARN
+
+
+def bkt_mastery(facts: Sequence[LearningEventFacts]) -> float:
+    """Вероятность владения после всех оценённых попыток, от старых к новым.
+
+    Порядок решает: свежие успехи весят больше старых ошибок и наоборот. События
+    без оценённого результата (объяснение, повторение) пропускаются.
+    """
+    ordered = [item for item in facts if item.is_graded]
+    # Журнал отдаёт события уже по created_at; сортируем сами только когда у всех
+    # есть время, иначе доверяем порядку вызывающего.
+    if all(item.created_at is not None for item in ordered):
+        ordered.sort(key=lambda item: item.created_at)
+    mastery = BKT_PRIOR
+    for item in ordered:
+        mastery = _bkt_update(mastery, item)
+    return mastery
+
+
 def recompute_skill_state(facts: Sequence[LearningEventFacts]) -> SkillStateFields:
     """Свести события навыка в одно состояние. Чистая функция.
 
-    Правила намеренно простые и объяснимые — §6.10 требует начинать с прозрачных
-    правил, а не с необученной модели: по такому состоянию система решает, что
-    показать ученику дальше, и это решение должно быть воспроизводимым.
-    Bayesian Knowledge Tracing и IRT (§6.1) появятся, когда накопятся данные.
+    Вероятность владения — Bayesian Knowledge Tracing по оценённым попыткам от
+    старых к новым (§6.1). Статус по-прежнему требует доказательств: порог
+    вероятности, число самостоятельных успехов и отсутствие системной ошибки
+    (§6.3). Параметры BKT — константы выше, пока не подобраны по данным.
     """
+    facts = [item for item in facts if item.is_practice]
     if not facts:
         return SkillStateFields(
             status="NOT_STARTED",
@@ -159,20 +229,14 @@ def recompute_skill_state(facts: Sequence[LearningEventFacts]) -> SkillStateFiel
     success_count = sum(1 for item in graded if item.result == "correct")
     fail_count = sum(1 for item in graded if item.result == "incorrect")
     unaided_successes = sum(
-        1 for item in graded if item.result == "correct" and not item.was_hinted
+        1 for item in graded if item.is_earned_success and not item.was_hinted
     )
 
     errors = Counter(
         item.error_type for item in facts if item.error_type and item.error_type != ""
     )
 
-    if graded:
-        total_weight = sum(
-            _RESULT_WEIGHTS.get((item.result, item.was_hinted), 0.0) for item in graded
-        )
-        mastery = total_weight / len(graded)
-    else:
-        mastery = 0.0
+    mastery = bkt_mastery(facts) if graded else 0.0
 
     confidence = min(1.0, len(graded) / CONFIDENCE_EVIDENCE_TARGET)
     has_systemic_error = any(count >= SYSTEMIC_ERROR_COUNT for count in errors.values())
@@ -231,6 +295,7 @@ def facts_from_events(events: Iterable[LearningEvent]) -> list[LearningEventFact
             hint_level=event.hint_level or 0,
             error_type=event.error_type or "",
             created_at=event.created_at,
+            activity=event.activity or "",
         )
         for event in events
     ]
