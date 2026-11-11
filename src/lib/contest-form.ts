@@ -50,6 +50,12 @@ export function emptyDraft(now: Date): ContestDraft {
   };
 }
 
+/** Новое начало: конец едет вместе с ним, длительность остаётся той же. */
+export function moveStart(draft: ContestDraft, start: Date): ContestDraft {
+  const shift = start.getTime() - draft.start.getTime();
+  return { ...draft, start, end: new Date(draft.end.getTime() + shift) };
+}
+
 export function draftFromAdmin(contest: AdminContest): ContestDraft {
   return {
     title: contest.title,

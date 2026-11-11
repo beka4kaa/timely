@@ -7,6 +7,7 @@ import {
   draftToInput,
   durationLabel,
   emptyDraft,
+  moveStart,
   pointsBudget,
   publishBlockers,
   type ContestDraft,
@@ -185,6 +186,13 @@ describe("форма контеста", () => {
     assert.deepEqual(publishBlockers(draft({ tier: 3 }), new Date(2026, 10, 11), true), ["Сумма 350 больше потолка тира: 200."]);
     assert.deepEqual(publishBlockers(draft(), new Date(2026, 10, 13), true), ["Конец уже прошёл."]);
     assert.deepEqual(publishBlockers(draft({ title: " " }), new Date(2026, 10, 11), true), ["Напиши название."]);
+  });
+
+  it("конец едет вместе с началом, длительность та же", () => {
+    const moved = moveStart(draft(), new Date(2026, 10, 19, 11, 0));
+    assert.equal(moved.start.getTime(), new Date(2026, 10, 19, 11, 0).getTime());
+    assert.equal(moved.end.getTime(), new Date(2026, 10, 19, 14, 0).getTime());
+    assert.equal(moved.title, "Кубок");
   });
 
   it("пишет длительность", () => {

@@ -27,6 +27,7 @@ import {
   durationLabel,
   emptyDraft,
   emptyTask,
+  moveStart,
   pointsBudget,
   publishBlockers,
   type ContestDraft,
@@ -319,6 +320,7 @@ export function ContestEditor({ initial, canTopTiers, now }: {
                 aria-pressed={draft.tier === item.tier}
                 disabled={locked || !allowed}
                 title={allowed ? undefined : "Этот тир ставит только владелец"}
+                aria-label={`${item.name}, до ${item.cap} баллов`}
                 onClick={() => update({ tier: item.tier })}
               >
                 <TierEmblem tier={item.tier} />
@@ -375,7 +377,12 @@ export function ContestEditor({ initial, canTopTiers, now }: {
         />
 
         <div className="ed-two">
-          <DateTimeField label="Начало" value={draft.start} disabled={locked} onChange={(start) => update({ start })} />
+          <DateTimeField
+            label="Начало"
+            value={draft.start}
+            disabled={locked}
+            onChange={(start) => setDraft((current) => moveStart(current, start))}
+          />
           <DateTimeField label="Конец" value={draft.end} disabled={ended} onChange={(end) => update({ end })} />
         </div>
         <p className="ed-hint">{durationLabel(draft.start, draft.end)}</p>
