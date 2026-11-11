@@ -105,7 +105,7 @@ def _classmates(disciplines) -> list[CustomUser]:
 
 def _tasks(teacher, spec, discipline) -> list[Task]:
     tasks = []
-    for title, difficulty, points, condition in spec["tasks"]:
+    for position, (title, difficulty, points, condition, answer) in enumerate(spec["tasks"]):
         task, _ = Task.objects.get_or_create(
             author=teacher,
             title=title,
@@ -115,6 +115,8 @@ def _tasks(teacher, spec, discipline) -> list[Task]:
                 "points": points,
                 "status": "active",
                 "discipline": discipline,
+                "position": position,
+                "answer": answer,
             },
         )
         tasks.append(task)
@@ -131,6 +133,9 @@ def _contest(spec, window, tasks, teacher) -> tuple[Contest, timedelta]:
             start_time=window[0],
             end_time=window[1],
             created_by=teacher,
+            tier=spec["tier"],
+            art=spec["art"],
+            is_published=True,
         )
         shift = timedelta(0)
     else:
@@ -146,7 +151,7 @@ def solved_by(points: int) -> int:
     return max(0, min(len(content.PAST_CONTEST["tasks"]), int((points - 850) / 160)))
 
 
-def _classmate_solutions(classmates, tasks, window, teacher) -> None:
+def _classmate_solutions(classmates, tasks, window, teacher, contest) -> None:
     existing = set(
         TaskSubmission.objects.filter(task__in=tasks, student__in=classmates).values_list("student_id", "task_id")
     )
@@ -157,7 +162,8 @@ def _classmate_solutions(classmates, tasks, window, teacher) -> None:
             row = TaskSubmission.objects.create(
                 student=user,
                 task=task,
-                file_url_or_code="Решение на листе, фото приложено.",
+                contest=contest,
+                file_url_or_code=content.PAST_CONTEST["tasks"][number][4],
                 status="approved",
                 reviewed_by=teacher,
             )
@@ -189,13 +195,13 @@ def ensure_world(now: datetime) -> bool:
         classmates = _classmates(disciplines)
 
         past_tasks = _tasks(teacher, content.PAST_CONTEST, disciplines["Математика"])
-        _, shift = _contest(content.PAST_CONTEST, windows["past"], past_tasks, teacher)
+        past, shift = _contest(content.PAST_CONTEST, windows["past"], past_tasks, teacher)
         if shift:
             TaskSubmission.objects.filter(task__in=past_tasks).update(
                 created_at=F("created_at") + shift,
                 reviewed_at=F("reviewed_at") + shift,
             )
-        _classmate_solutions(classmates, past_tasks, windows["past"], teacher)
+        _classmate_solutions(classmates, past_tasks, windows["past"], teacher, past)
 
         next_tasks = _tasks(teacher, content.NEXT_CONTEST, disciplines["Физика"])
         _contest(content.NEXT_CONTEST, windows["next"], next_tasks, teacher)

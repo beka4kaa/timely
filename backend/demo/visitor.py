@@ -16,7 +16,7 @@ from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist
 from django.db import transaction
 
-from accounts.models import CustomUser, Discipline, PrivateLeaderboard, TaskSubmission, UserRating
+from accounts.models import Contest, CustomUser, Discipline, PrivateLeaderboard, TaskSubmission, UserRating
 from curriculum.models import CourseEnrollment, CourseModule, CoursePlan, CourseTopic, LearningGoal, SubjectChat
 from curriculum.services import goals as goals_service
 from curriculum.services import plans as plans_service
@@ -614,11 +614,13 @@ def _contest_rows(user: CustomUser, now: datetime) -> None:
     tasks = past_contest_tasks()
     window = contest_windows(now)["past"]
     teacher = tasks[0].author if tasks else None
+    contest = Contest.objects.filter(title=content.PAST_CONTEST["title"]).first()
     for number, task in enumerate(tasks[: content.VISITOR_SOLVED]):
         row = TaskSubmission.objects.create(
             student=user,
             task=task,
-            file_url_or_code="Решение на листе, фото приложено.",
+            contest=contest,
+            file_url_or_code=content.PAST_CONTEST["tasks"][number][4],
             status="approved",
             reviewed_by=teacher,
         )

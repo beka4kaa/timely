@@ -239,8 +239,10 @@ class DemoStartTests(TestCase):
         window = contest_windows(timezone.now())["past"]
         solutions = TaskSubmission.objects.filter(student=user, status="approved")
         self.assertEqual(solutions.count(), content.VISITOR_SOLVED)
+        past = Contest.objects.get(title=content.PAST_CONTEST["title"])
         for row in solutions:
             self.assertTrue(window[0] <= row.created_at <= window[1])
+            self.assertEqual(row.contest_id, past.pk)
         board = PrivateLeaderboard.objects.get(owner=user)
         self.assertEqual(board.members.count(), 1 + sum(1 for row in content.CLASSMATES if row[-1]))
 
@@ -362,6 +364,24 @@ class WorldTests(TestCase):
             self.assertTrue(window[0] <= row.created_at <= window[1])
         upcoming = Contest.objects.get(title=content.NEXT_CONTEST["title"])
         self.assertGreater(upcoming.start_time, later)
+
+    def test_contests_are_published_within_caps(self):
+        from accounts.contest_rules import TIER_CAPS, split_variants
+
+        ensure_world(timezone.now())
+        for spec in (content.PAST_CONTEST, content.NEXT_CONTEST):
+            contest = Contest.objects.get(title=spec["title"])
+            with self.subTest(contest.title):
+                self.assertTrue(contest.is_published)
+                self.assertEqual((contest.tier, contest.art), (spec["tier"], spec["art"]))
+                tasks = sorted(contest.tasks.all(), key=lambda task: task.position)
+                self.assertEqual([task.title for task in tasks], [row[0] for row in spec["tasks"]])
+                self.assertLessEqual(sum(task.points for task in tasks), TIER_CAPS[contest.tier])
+                self.assertTrue(all(split_variants(task.answer) for task in tasks))
+        past = Contest.objects.get(title=content.PAST_CONTEST["title"])
+        rows = TaskSubmission.objects.filter(task__contests=past)
+        self.assertTrue(rows.exists())
+        self.assertFalse(rows.filter(contest__isnull=True).exists())
 
 
 @override_settings(DEMO_MODE=True)
