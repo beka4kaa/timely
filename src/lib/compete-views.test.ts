@@ -6,7 +6,6 @@ import {
   contestParts,
   contestResult,
   contestRules,
-  contestTone,
   countdown,
   ownSubmissions,
   reviewPrompt,
@@ -33,7 +32,12 @@ function contest(patch: Partial<Contest> = {}): Contest {
     description: "",
     start_time: "2026-11-07T06:00:00Z",
     end_time: "2026-11-07T07:30:00Z",
+    tier: 5,
+    art: "rings",
+    state: "ended",
     tasks: [1, 2, 3, 4],
+    task_count: 4,
+    points_total: 400,
     task_details: [],
     created_at: "2026-11-01T00:00:00Z",
     ...patch,
@@ -68,16 +72,6 @@ describe("контесты", () => {
     assert.equal(ru(3, "день", "дня", "дней"), "дня");
     assert.equal(ru(11, "день", "дня", "дней"), "дней");
     assert.equal(ru(21, "день", "дня", "дней"), "день");
-  });
-
-  it("красит плашку предметом из названия, а без предмета оставляет индиго", () => {
-    assert.equal(contestTone("Контест по физике 42"), "p-rose");
-    assert.equal(contestTone("Контест по алгебре 12"), "p-indigo");
-    assert.equal(contestTone("Контест по химии 7"), "p-teal");
-    assert.equal(contestTone("Контест по истории 2"), "p-blue");
-    // Название без предмета не должно получать случайный цвет из запасного правила.
-    assert.equal(contestTone("Еженедельный контест 505"), "p-indigo");
-    assert.equal(contestTone("Еженедельный контест 506"), "p-indigo");
   });
 
   it("делит название на номер и вид", () => {

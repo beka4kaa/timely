@@ -1,11 +1,7 @@
 // Как контест выглядит для ученика: что идёт, что впереди, какого он цвета и чем кончился.
 // Здесь нет React и нет сети, поэтому всё проверяется тестами.
 
-import type { Contest, Submission } from "./contest-api";
-import { subjectVisual, type SubjectTint } from "./subject-visual";
-
-export type ContestTone = "p-indigo" | "p-rose" | "p-teal" | "p-blue";
-export type ContestArtKind = "rings" | "throw" | "dots";
+import type { AdminContest, Contest, ContestState, ContestTask, MyTaskResult, Submission } from "./contest-api";
 
 /** Русское число: `ru(3, "день", "дня", "дней")` даёт «дня». */
 export function ru(n: number, one: string, few: string, many: string): string {
@@ -15,30 +11,6 @@ export function ru(n: number, one: string, few: string, many: string): string {
   if (last === 1) return one;
   if (last >= 2 && last <= 4) return few;
   return many;
-}
-
-/** Предмет называют в заголовке контеста: отдельного поля в модели нет. */
-const SUBJECT_WORD =
-  /геометр|алгебр|матем|физик|механик|хими|биолог|литерат|русск|казах|қазақ|англ|немец|франц|истор|обществ|географ|информат|програм/i;
-
-const TONE_OF_TINT: Record<SubjectTint, ContestTone> = {
-  lilac: "p-indigo",
-  pink: "p-rose",
-  sky: "p-blue",
-  mint: "p-teal",
-};
-
-/** Цвет плашки это предмет, тот же, что в дневнике и на обложках. Без предмета она индиго. */
-export function contestTone(title: string): ContestTone {
-  if (!SUBJECT_WORD.test(title)) return "p-indigo";
-  return TONE_OF_TINT[subjectVisual(title).tint];
-}
-
-/** Картинка на плашке идёт от предмета: у физики траектории, у химии атомы, у остальных кольца. */
-export function contestArt(tone: ContestTone): ContestArtKind {
-  if (tone === "p-rose") return "throw";
-  if (tone === "p-teal") return "dots";
-  return "rings";
 }
 
 /** «Контест по физике 42» даёт номер 42 и вид «По физике». */
@@ -175,13 +147,78 @@ export function contestResult(contest: Contest, submissions: readonly Submission
 /** Сколько условий помещается в вопрос тьютору: остальное он попросит сам. */
 const REVIEW_LIMIT = 1800;
 
-/** Вопрос тьютору после контеста. Условия идут с ним: без них ему не о чем говорить. */
+/**
+ * Вопрос тьютору после контеста. Условия идут с ним: без них ему не о чем говорить.
+ * У задач в PDF это текст, вынутый из файла, у старых задач их текст.
+ */
 export function reviewPrompt(contest: Contest): string {
   const lines = contest.task_details.map((task, index) => {
-    const condition = task.condition_text.trim();
-    return `${index + 1}. ${task.title}${condition ? `: ${condition}` : ""}`;
+    const number = task.number ?? index + 1;
+    const condition = (task.review_text || task.condition_text || "").trim();
+    return `${number}. ${task.title || `Задача ${number}`}${condition ? `: ${condition}` : ""}`;
   });
   let tasks = lines.join("\n");
   if (tasks.length > REVIEW_LIMIT) tasks = `${tasks.slice(0, REVIEW_LIMIT).trimEnd()}…`;
   return `Разбери со мной контест «${contest.title}». Вот задачи:\n${tasks}`;
+}
+
+
+/** Состояние по часам браузера. Сервер всё равно решает сам, это только для вида. */
+export function contestStateAt(contest: Pick<Contest, "start_time" | "end_time">, now: Date): ContestState {
+  const moment = now.getTime();
+  if (moment < ms(contest.start_time)) return "upcoming";
+  if (moment < ms(contest.end_time)) return "running";
+  return "ended";
+}
+
+export type TaskRow = ContestTask & { mine: MyTaskResult | null };
+
+/** Задачи вместе со своими попытками ученика. */
+export function taskRows(contest: Contest): TaskRow[] {
+  const mine = new Map((contest.mine ?? []).map((row) => [row.task, row]));
+  return contest.task_details.map((task) => ({ ...task, mine: mine.get(task.id) ?? null }));
+}
+
+/** Время попытки от начала контеста: часы и минуты, «1:05». */
+export function attemptClock(seconds: number): string {
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+const ANSWER_ERRORS: Record<string, string> = {
+  no_profile: "Войди в аккаунт, чтобы отвечать.",
+  admin: "Админы не отвечают в контестах.",
+  bad_task: "Такой задачи в контесте нет.",
+  not_running: "Контест сейчас не идёт.",
+  empty: "Впиши ответ.",
+  too_long: "Ответ длиннее 100 знаков.",
+  already_solved: "Эта задача уже решена.",
+  too_many: "Попыток по этой задаче больше нет.",
+  too_fast: "Подожди пару секунд.",
+  no_answer: "У задачи нет ответа.",
+};
+
+export function answerErrorText(code: string): string {
+  return ANSWER_ERRORS[code] ?? "Не получилось проверить. Попробуй ещё раз.";
+}
+
+function dayStart(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** Метка на плашке в админке: черновик, когда начнётся, идёт или прошёл. */
+export function adminBadge(contest: AdminContest, now: Date): string {
+  if (!contest.is_published) return "Черновик";
+  const people = `${contest.participants} ${ru(contest.participants, "участник", "участника", "участников")}`;
+  const state = contestStateAt(contest, now);
+  if (state === "running") return `Идёт, ${people}`;
+  if (state === "ended") return `Прошёл, ${people}`;
+  const start = new Date(contest.start_time);
+  const days = Math.round((dayStart(start) - dayStart(now)) / 86_400_000);
+  if (days <= 0) {
+    const time = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(start);
+    return `Сегодня в ${time}`;
+  }
+  if (days === 1) return "Завтра";
+  return `Через ${days} ${ru(days, "день", "дня", "дней")}`;
 }

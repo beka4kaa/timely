@@ -37,7 +37,8 @@ export interface Me {
   authenticated?: boolean
 }
 
-export interface ContestTask {
+/** Задача из банка задач админки (старый раздел «Задачи»). */
+export interface BankTask {
   id: number
   title: string
   condition_text: string
@@ -46,6 +47,36 @@ export interface ContestTask {
   status: string
   author_name: string
   created_at: string | null
+}
+
+export type ContestTier = 1 | 2 | 3 | 4 | 5
+export type ContestArtName =
+  | "rings" | "throw" | "orbits" | "waves" | "sun" | "grid"
+  | "cells" | "stars" | "triangles" | "spiral" | "steps" | "code"
+export type ContestState = "upcoming" | "running" | "ended"
+
+/**
+ * Задача контеста глазами ученика. До начала задач нет вовсе, после начала есть номер,
+ * баллы и есть ли PDF, а ответ, решение и текст для разбора приходят только после конца.
+ */
+export interface ContestTask {
+  id: number
+  number: number
+  title: string
+  points: number
+  has_statement: boolean
+  /** Текст условия есть только у старых задач без PDF. */
+  condition_text: string
+  answer?: string
+  has_solution?: boolean
+  review_text?: string
+}
+
+export interface MyTaskResult {
+  task: number
+  attempts: number
+  solved: boolean
+  last_answer: string
 }
 
 export interface Submission {
@@ -69,9 +100,120 @@ export interface Contest {
   description: string
   start_time: string
   end_time: string
+  tier: ContestTier
+  art: ContestArtName
+  state: ContestState
+  /** Номера задач по порядку: сколько их, видно и до начала. */
   tasks: number[]
+  task_count: number
+  points_total: number
   task_details: ContestTask[]
+  /** Свои попытки по задачам: только в ответе на один контест. */
+  mine?: MyTaskResult[]
   created_at: string
+}
+
+export interface AnswerResult {
+  correct: boolean
+  points: number
+  attempt: number
+  solved: boolean
+}
+
+export interface StandingRow {
+  place: number
+  name: string
+  me: boolean
+  points: number
+  solved: number
+  penalty: number
+  marks: Array<"solved" | "tried" | "none">
+}
+
+export interface AttemptRow {
+  id: number
+  /** Секунды от начала контеста. */
+  at: number
+  name: string
+  me: boolean
+  task: number
+  correct: boolean
+}
+
+export interface ContestFileInfo {
+  id: number
+  name: string
+  size: number
+  pages: number
+}
+
+export interface AdminContestTask {
+  id: number
+  number: number
+  title: string
+  condition_text: string
+  answer: string
+  points: number
+  statement: ContestFileInfo | null
+  solution: ContestFileInfo | null
+}
+
+export interface AdminContest {
+  id: number
+  title: string
+  description: string
+  start_time: string
+  end_time: string
+  tier: ContestTier
+  art: ContestArtName
+  state: ContestState
+  created_at: string
+  is_published: boolean
+  points_total: number
+  tier_cap: number
+  participants: number
+  attempts: number
+  can_delete: boolean
+  /** Опубликован и уже начался: задачи, ответы, баллы, тир и начало не меняются. */
+  locked: boolean
+  tasks: AdminContestTask[]
+}
+
+export interface AdminContestInput {
+  title: string
+  description: string
+  start_time: string
+  end_time: string
+  tier: ContestTier
+  art: ContestArtName
+  tasks: Array<{
+    id?: number
+    answer: string
+    points: number
+    statement_file: number | null
+    solution_file: number | null
+  }>
+}
+
+export interface ContestProblem {
+  code: string
+  field: string
+  message: string
+}
+
+/** Отказ сервера по контестам: код для логики и текст, который можно показать. */
+export class ContestApiError extends Error {
+  status: number
+  code: string
+  problems: ContestProblem[]
+
+  constructor(status: number, code: string, message: string, problems: ContestProblem[] = []) {
+    super(message)
+    this.name = "ContestApiError"
+    this.status = status
+    this.code = code
+    this.problems = problems
+  }
 }
 
 export interface LeaderboardUser {
@@ -146,18 +288,74 @@ export const updateMe = async (data: Partial<Pick<Me, "bio" | "show_in_leaderboa
   unwrap(await authFetch(url("/api/me/"), { method: "PATCH", body: JSON.stringify(data) }))
 
 // ── tasks ────────────────────────────────────────────────────────────
-export const listTasks = async (): Promise<ContestTask[]> =>
+export const listTasks = async (): Promise<BankTask[]> =>
   unwrap(await authFetch(url("/api/tasks/")))
 
-export const createTask = async (data: Partial<ContestTask>): Promise<ContestTask> =>
+export const createTask = async (data: Partial<BankTask>): Promise<BankTask> =>
   unwrap(await authFetch(url("/api/tasks/"), { method: "POST", body: JSON.stringify(data) }))
 
-export const updateTask = async (id: number, data: Partial<ContestTask>): Promise<ContestTask> =>
+export const updateTask = async (id: number, data: Partial<BankTask>): Promise<BankTask> =>
   unwrap(await authFetch(url(`/api/tasks/${id}/`), { method: "PATCH", body: JSON.stringify(data) }))
 
 // ── contests ─────────────────────────────────────────────────────────
+/** Ответ сервера или `ContestApiError` с кодом и списком проблем формы. */
+export async function contestReply<T>(res: Response): Promise<T> {
+  if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T
+  let body: { error?: string; detail?: string; code?: string; problems?: ContestProblem[] } = {}
+  try {
+    body = await res.json()
+  } catch {
+    /* non-json error body */
+  }
+  throw new ContestApiError(
+    res.status,
+    body.code ?? "error",
+    body.error ?? body.detail ?? res.statusText,
+    Array.isArray(body.problems) ? body.problems : [],
+  )
+}
+
 export const listContests = async (): Promise<Contest[]> =>
   unwrap(await authFetch(url("/api/contests/")))
+
+export const getContest = async (id: number): Promise<Contest> =>
+  contestReply(await authFetch(url(`/api/contests/${id}/`)))
+
+export const answerTask = async (contestId: number, taskId: number, answer: string): Promise<AnswerResult> =>
+  contestReply(
+    await authFetch(url(`/api/contests/${contestId}/answer/`), {
+      method: "POST",
+      body: JSON.stringify({ task: taskId, answer }),
+    }),
+  )
+
+export const getStandings = async (id: number): Promise<StandingRow[]> =>
+  contestReply(await authFetch(url(`/api/contests/${id}/standings/`)))
+
+export const getAttempts = async (id: number, mine = false): Promise<AttemptRow[]> =>
+  contestReply(await authFetch(url(`/api/contests/${id}/attempts/${mine ? "?mine=1" : ""}`)))
+
+// ── admin contests ───────────────────────────────────────────────────
+export const listAdminContests = async (): Promise<AdminContest[]> =>
+  contestReply(await authFetch(url("/api/admin/contests/")))
+
+export const getAdminContest = async (id: number): Promise<AdminContest> =>
+  contestReply(await authFetch(url(`/api/admin/contests/${id}/`)))
+
+export const createAdminContest = async (input: AdminContestInput): Promise<AdminContest> =>
+  contestReply(await authFetch(url("/api/admin/contests/"), { method: "POST", body: JSON.stringify(input) }))
+
+export const updateAdminContest = async (id: number, input: AdminContestInput): Promise<AdminContest> =>
+  contestReply(await authFetch(url(`/api/admin/contests/${id}/`), { method: "PATCH", body: JSON.stringify(input) }))
+
+export const publishAdminContest = async (id: number): Promise<AdminContest> =>
+  contestReply(await authFetch(url(`/api/admin/contests/${id}/publish/`), { method: "POST" }))
+
+export const unpublishAdminContest = async (id: number): Promise<AdminContest> =>
+  contestReply(await authFetch(url(`/api/admin/contests/${id}/unpublish/`), { method: "POST" }))
+
+export const deleteAdminContest = async (id: number): Promise<void> =>
+  contestReply(await authFetch(url(`/api/admin/contests/${id}/`), { method: "DELETE" }))
 
 export const createContest = async (data: {
   title: string
