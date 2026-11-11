@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from demo.identity import visitors_q
@@ -316,14 +316,25 @@ class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
         if not is_admin_or_mod(reviewer):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
         sub = self.get_object()
-        if sub.status != 'approved':
-            student = sub.student
-            student.overall_elo = (student.overall_elo or 0) + (sub.task.points or 0)
-            student.save(update_fields=['overall_elo'])
-        sub.status = 'approved'
-        sub.reviewed_by = reviewer
-        sub.reviewed_at = timezone.now()
-        sub.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+        if sub.status == 'approved':
+            return Response(TaskSubmissionSerializer(sub).data)
+        counted = Response({'error': 'Уже засчитано.', 'code': 'already_counted'}, status=status.HTTP_409_CONFLICT)
+        # В контесте баллы за задачу даются один раз: вторая одобренная попытка их не удвоит.
+        if sub.contest_id and TaskSubmission.objects.filter(
+            student_id=sub.student_id, task_id=sub.task_id, contest_id=sub.contest_id, status='approved',
+        ).exclude(pk=sub.pk).exists():
+            return counted
+        try:
+            with transaction.atomic():
+                sub.status = 'approved'
+                sub.reviewed_by = reviewer
+                sub.reviewed_at = timezone.now()
+                sub.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+                CustomUser.objects.filter(pk=sub.student_id).update(
+                    overall_elo=F('overall_elo') + (sub.task.points or 0),
+                )
+        except IntegrityError:
+            return counted
         return Response(TaskSubmissionSerializer(sub).data)
 
     @action(detail=True, methods=['post'])

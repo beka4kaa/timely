@@ -184,3 +184,148 @@ class OldPathsTests(ContestBase):
             **auth_headers(self.owner.email),
         )
         self.assertEqual(response.status_code, 405)
+
+
+class AnswerTests(ContestBase):
+    def answer(self, contest, task, text, who=None):
+        return self.client.post(
+            f"/api/contests/{contest.id}/answer/",
+            data=json.dumps({"task": task.id, "answer": text}),
+            content_type="application/json",
+            **auth_headers((who or self.student).email),
+        )
+
+    def rating(self, who=None):
+        return CustomUser.objects.get(pk=(who or self.student).pk).overall_elo
+
+    def age_attempts(self, seconds):
+        TaskSubmission.objects.update(created_at=self.now - timedelta(seconds=seconds))
+
+    def test_correct_answer_adds_points_once(self):
+        contest = self.contest(tasks=[{"answer": "3/4", "points": 150}])
+        before = self.rating()
+
+        response = self.answer(contest, self.tasks[0], "0,75")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"correct": True, "points": 150, "attempt": 1, "solved": True})
+        self.assertEqual(self.rating(), before + 150)
+        row = TaskSubmission.objects.get()
+        self.assertEqual((row.status, row.contest_id, row.file_url_or_code), ("approved", contest.id, "0,75"))
+
+        self.age_attempts(10)
+        again = self.answer(contest, self.tasks[0], "0.75")
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.json()["code"], "already_solved")
+        self.assertEqual(self.rating(), before + 150)
+
+    def test_wrong_answer_is_recorded_and_can_be_retried(self):
+        contest = self.contest()
+        wrong = self.answer(contest, self.tasks[0], "1")
+        self.assertEqual(wrong.json(), {"correct": False, "points": 0, "attempt": 1, "solved": False})
+        self.assertEqual(TaskSubmission.objects.get().status, "rejected")
+
+        self.age_attempts(3)
+        right = self.answer(contest, self.tasks[0], "4242")
+        self.assertEqual(right.json(), {"correct": True, "points": 100, "attempt": 2, "solved": True})
+
+    def test_too_fast_and_too_many(self):
+        contest = self.contest(tasks=[{}, {}])
+        self.answer(contest, self.tasks[0], "1")
+        self.age_attempts(1)
+        fast = self.answer(contest, self.tasks[1], "1")
+        self.assertEqual(fast.status_code, 429)
+        self.assertEqual(fast.json()["code"], "too_fast")
+        self.assertEqual(fast.json()["error"], "Подожди пару секунд.")
+        self.assertEqual(fast.json()["retry_after"], 2)
+
+        TaskSubmission.objects.bulk_create([
+            TaskSubmission(student=self.student, task=self.tasks[0], contest=contest, status="rejected")
+            for _ in range(29)
+        ])
+        self.age_attempts(60)
+        many = self.answer(contest, self.tasks[0], "4242")
+        self.assertEqual(many.status_code, 429)
+        self.assertEqual(many.json()["code"], "too_many")
+
+    def test_only_while_running(self):
+        for state in ("upcoming", "ended"):
+            contest = self.contest(state=state)
+            response = self.answer(contest, self.tasks[0], "4242")
+            self.assertEqual(response.status_code, 409, state)
+            self.assertEqual(response.json()["code"], "not_running")
+        self.assertFalse(TaskSubmission.objects.exists())
+
+    def test_drafts_take_no_answers(self):
+        contest = self.contest(published=False)
+        self.assertEqual(self.answer(contest, self.tasks[0], "4242").status_code, 404)
+
+    def test_admins_do_not_answer(self):
+        contest = self.contest()
+        response = self.answer(contest, self.tasks[0], "4242", who=self.owner)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "admin")
+
+    def test_task_from_another_contest(self):
+        contest = self.contest()
+        other = self.contest()
+        response = self.answer(contest, self.tasks[0], "4242")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "bad_task")
+        self.assertEqual(other.tasks.count(), 1)
+
+    def test_empty_and_too_long(self):
+        contest = self.contest()
+        self.assertEqual(self.answer(contest, self.tasks[0], "   ").json()["code"], "empty")
+        self.assertEqual(self.answer(contest, self.tasks[0], "1" * 101).json()["code"], "too_long")
+
+    def test_a_task_without_an_answer_records_nothing(self):
+        contest = self.contest(tasks=[{"answer": " ; "}])
+        response = self.answer(contest, self.tasks[0], "1")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "no_answer")
+        self.assertFalse(TaskSubmission.objects.exists())
+
+    def test_answer_works_from_the_first_request(self):
+        contest = self.contest()
+        response = self.answer(contest, self.tasks[0], "4242", who=CustomUser(email="new@example.com"))
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(CustomUser.objects.filter(email="new@example.com").exists())
+
+    def test_race_on_the_unique_index_awards_nothing(self):
+        from unittest import mock
+
+        from django.db import IntegrityError
+
+        contest = self.contest()
+        before = self.rating()
+        with mock.patch.object(TaskSubmission.objects, "create", side_effect=IntegrityError("twin")):
+            response = self.answer(contest, self.tasks[0], "4242")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "already_solved")
+        self.assertEqual(self.rating(), before)
+
+    def test_manual_approval_does_not_double_count(self):
+        contest = self.contest()
+        task = self.tasks[0]
+        TaskSubmission.objects.create(student=self.student, task=task, contest=contest, status="approved")
+        wrong = TaskSubmission.objects.create(student=self.student, task=task, contest=contest, status="rejected")
+        before = self.rating()
+
+        response = self.client.post(f"/api/submissions/{wrong.id}/approve/", **auth_headers(self.owner.email))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "already_counted")
+        self.assertEqual(response.json()["error"], "Уже засчитано.")
+        self.assertEqual(self.rating(), before)
+        self.assertEqual(TaskSubmission.objects.get(pk=wrong.pk).status, "rejected")
+
+    def test_manual_approval_of_a_wrong_attempt_awards_points(self):
+        contest = self.contest(tasks=[{"points": 70}])
+        wrong = TaskSubmission.objects.create(student=self.student, task=self.tasks[0], contest=contest, status="rejected")
+        before = self.rating()
+
+        response = self.client.post(f"/api/submissions/{wrong.id}/approve/", **auth_headers(self.owner.email))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(self.rating(), before + 70)

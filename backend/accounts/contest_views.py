@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
+from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -11,8 +15,15 @@ from rest_framework.response import Response
 
 from .contest_files import PdfRejected, pdf_response, read_pdf
 from .contest_payloads import contest_queryset, ordered_tasks, student_contest
-from .contest_rules import contest_state
-from .models import ContestFile
+from .contest_rules import (
+    MAX_ANSWER_LENGTH,
+    MAX_ATTEMPTS_PER_TASK,
+    MIN_SECONDS_BETWEEN_ATTEMPTS,
+    answers_match,
+    contest_state,
+    split_variants,
+)
+from .models import ContestFile, CustomUser, TaskSubmission
 from .views import current_user, is_admin_or_mod
 
 
@@ -80,6 +91,66 @@ class ContestViewSet(viewsets.ViewSet):
             return not_found("Файла нет.", "no_file")
         prefix = "zadacha" if kind == "statement" else "reshenie"
         return pdf_response(stored, f"{prefix}-{number}.pdf")
+
+    @action(detail=True, methods=["post"])
+    def answer(self, request, pk=None):
+        """POST /api/contests/{id}/answer/ {task, answer}: вердикт сразу, баллы один раз."""
+        user = current_user(request)
+        if user is None:
+            return refusal("no_profile", "Войди в аккаунт, чтобы отвечать.", status.HTTP_403_FORBIDDEN)
+        if is_admin_or_mod(user):
+            return refusal("admin", "Админы не отвечают в контестах.", status.HTTP_403_FORBIDDEN)
+        contest = self._published(pk)
+        if contest is None:
+            return not_found()
+        task = next((row for row in ordered_tasks(contest) if str(row.id) == str(request.data.get("task"))), None)
+        if task is None:
+            return not_found("Такой задачи в контесте нет.", "bad_task")
+        now = timezone.now()
+        if contest_state(contest.start_time, contest.end_time, now) != "running":
+            return refusal("not_running", "Контест сейчас не идёт.", status.HTTP_409_CONFLICT)
+        raw = request.data.get("answer")
+        text = raw.strip() if isinstance(raw, str) else ""
+        if not text:
+            return refusal("empty", "Впиши ответ.", status.HTTP_400_BAD_REQUEST)
+        if len(text) > MAX_ANSWER_LENGTH:
+            return refusal("too_long", f"Ответ длиннее {MAX_ANSWER_LENGTH} знаков.", status.HTTP_400_BAD_REQUEST)
+
+        mine = TaskSubmission.objects.filter(contest=contest, student=user)
+        if mine.filter(task=task, status="approved").exists():
+            return refusal("already_solved", "Эта задача уже решена.", status.HTTP_409_CONFLICT)
+        tried = mine.filter(task=task).count()
+        if tried >= MAX_ATTEMPTS_PER_TASK:
+            return refusal("too_many", "Попыток по этой задаче больше нет.", status.HTTP_429_TOO_MANY_REQUESTS)
+        last = mine.order_by("-created_at").values_list("created_at", flat=True).first()
+        if last is not None:
+            waited = (now - last).total_seconds()
+            if waited < MIN_SECONDS_BETWEEN_ATTEMPTS:
+                return refusal(
+                    "too_fast", "Подожди пару секунд.", status.HTTP_429_TOO_MANY_REQUESTS,
+                    retry_after=max(1, math.ceil(MIN_SECONDS_BETWEEN_ATTEMPTS - waited)),
+                )
+        if not split_variants(task.answer):
+            return refusal("no_answer", "У задачи нет ответа.", status.HTTP_409_CONFLICT)
+
+        correct = answers_match(text, task.answer)
+        try:
+            with transaction.atomic():
+                TaskSubmission.objects.create(
+                    student=user, task=task, contest=contest, file_url_or_code=text,
+                    status="approved" if correct else "rejected", reviewed_at=now,
+                )
+                if correct:
+                    CustomUser.objects.filter(pk=user.pk).update(overall_elo=F("overall_elo") + task.points)
+        except IntegrityError:
+            # Вторая верная попытка из соседней вкладки: индекс не пустил, баллы не начислены.
+            return refusal("already_solved", "Эта задача уже решена.", status.HTTP_409_CONFLICT)
+        return Response({
+            "correct": correct,
+            "points": task.points if correct else 0,
+            "attempt": tried + 1,
+            "solved": correct,
+        })
 
     @action(detail=True, methods=["get"], url_path=r"tasks/(?P<task_id>\d+)/statement")
     def statement(self, request, pk=None, task_id=None):
