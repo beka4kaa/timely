@@ -102,6 +102,38 @@ a.plq.plq-card, a.plq.plq-mini { display: flex; }
 .cx-tasks .right-answer b { color: var(--t-ink); font-weight: 600; }
 .srow-file { margin: 8px 4px 0; color: var(--t-warn); }
 .cx-review { margin-top: 12px; }
+.cx-tasks .nm-link { color: inherit; text-decoration: none; }
+.cx-tasks .nm-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Страница задачи: условие слева, ответ справа. */
+.cx-task-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin: 4px 0 14px; }
+.cx-task-head h1 { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--t-serif); font-size: 26px; font-weight: 500; line-height: 1.15; }
+.cx-task-head .task-n { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--t-fill); font-family: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: lining-nums; }
+.cx-task-head .small-note { margin: 6px 0 0 40px; }
+.cx-task-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--t-fill); }
+.cx-task-tabs button { height: 28px; padding: 0 12px; border-radius: 9px; color: var(--t-muted); font-size: 13px; }
+.cx-task-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 16px; }
+.cx-task-doc { --r: 18px; min-height: 240px; padding: 10px; }
+.cx-task-text { margin: 8px 10px; max-width: 62ch; font-family: var(--t-serif); font-size: 17px; line-height: 1.5; white-space: pre-line; }
+.cx-task-side { position: sticky; top: 16px; display: grid; gap: 10px; }
+.cx-task-answer { padding: 10px; }
+.cx-tasks.cx-task-answer .srow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; }
+.cx-tasks.cx-task-answer .ans, .cx-tasks.cx-task-answer .srow-note { grid-column: 1; }
+.cx-tasks.cx-task-answer .srow-note { margin: 0; text-align: left; }
+.cx-tasks.cx-task-answer.is-past .ans-past { justify-content: flex-start; }
+.cx-task-dl { justify-self: start; }
+.cx-task-nav { display: flex; justify-content: space-between; gap: 8px; }
+.pdf-view { position: relative; }
+.pdf-pages { display: grid; gap: 10px; }
+.pdf-page { display: block; width: 100%; height: auto; border-radius: 10px; background: #fff; box-shadow: inset 0 0 0 0.5px var(--t-line); }
+.pdf-state { display: grid; justify-items: start; gap: 8px; padding: 14px 10px; }
+/* Узко: ответ над условием, чтобы не прятался под нижней панелью и был под рукой. */
+@container main (max-width: 860px) {
+  .cx-task-body { grid-template-columns: minmax(0, 1fr); }
+  .cx-task-side { position: static; order: -1; }
+  .cx-task-doc { padding: 6px; }
+  .cx-task-head h1 { font-size: 22px; }
+}
 
 .cx-table { --r: 18px; padding: 10px 8px; }
 .cx-table .lr.cx-row { grid-template-columns: 24px 30px minmax(0, 1fr) 60px; gap: 0 10px; padding: 6px 10px; }

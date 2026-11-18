@@ -22,14 +22,27 @@ async function saveBlob(response: Response, fileName: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(href), 10_000);
 }
 
+export type ContestPdfKind = "statement" | "solution";
+
+function contestPdfUrl(contestId: number, taskId: number, kind: ContestPdfKind): string {
+  return `${BACKEND_URL}/api/contests/${contestId}/tasks/${taskId}/${kind}/`;
+}
+
 export async function downloadContestPdf(
   contestId: number,
   taskId: number,
-  kind: "statement" | "solution",
+  kind: ContestPdfKind,
   fileName: string,
 ): Promise<void> {
-  const response = await authFetch(`${BACKEND_URL}/api/contests/${contestId}/tasks/${taskId}/${kind}/`);
+  const response = await authFetch(contestPdfUrl(contestId, taskId, kind));
   await saveBlob(response, fileName);
+}
+
+/** Байты PDF задачи для просмотра на странице: сервер решает, открыт ли файл. */
+export async function fetchContestPdf(contestId: number, taskId: number, kind: ContestPdfKind): Promise<ArrayBuffer> {
+  const response = await authFetch(contestPdfUrl(contestId, taskId, kind));
+  if (!response.ok) await contestReply(response);
+  return response.arrayBuffer();
 }
 
 export async function downloadAdminPdf(fileId: number, fileName: string): Promise<void> {

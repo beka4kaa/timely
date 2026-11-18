@@ -14,7 +14,9 @@ import {
 } from "./contest-form";
 import { layoutContests } from "./contest-layout";
 import { ARTS, TIERS, canSetTier, tierMeta } from "./contest-tiers";
-import { adminBadge, answerErrorText, attemptClock, contestStateAt, plaqueOf, plaqueRules, reviewPrompt, taskRows } from "./contest-view";
+import {
+  adminBadge, answerErrorText, attemptClock, contestStateAt, plaqueOf, plaqueRules, reviewPrompt, taskByNumber, taskPath, taskRows,
+} from "./contest-view";
 
 const PDF: ContestFileInfo = { id: 7, name: "z.pdf", size: 100, pages: 1 };
 
@@ -229,6 +231,24 @@ describe("страница контеста", () => {
     const rows = taskRows(value);
     assert.equal(rows[0].mine, null);
     assert.deepEqual(rows[1].mine, { task: 11, attempts: 2, solved: false, last_answer: "9" });
+  });
+
+  it("страница задачи по номеру: адрес, соседи и чужой номер", () => {
+    const rows = taskRows(contest({
+      task_details: [
+        { id: 10, number: 1, title: "", points: 100, has_statement: true, condition_text: "" },
+        { id: 11, number: 2, title: "", points: 200, has_statement: true, condition_text: "" },
+        { id: 12, number: 3, title: "", points: 300, has_statement: true, condition_text: "" },
+      ],
+    }));
+    assert.equal(taskPath(7, 2), "/dashboard/arena/solve/7/task/2");
+    const middle = taskByNumber(rows, "2");
+    assert.deepEqual([middle?.previous?.id, middle?.task.id, middle?.next?.id], [10, 11, 12]);
+    assert.equal(taskByNumber(rows, "1")?.previous, null);
+    assert.equal(taskByNumber(rows, "3")?.next, null);
+    for (const raw of ["4", "0", "1.5", "abc", "", undefined]) {
+      assert.equal(taskByNumber(rows, raw), null, String(raw));
+    }
   });
 
   it("состояние по часам браузера", () => {

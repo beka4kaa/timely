@@ -188,6 +188,23 @@ export function taskRows(contest: Contest): TaskRow[] {
   return contest.task_details.map((task) => ({ ...task, mine: mine.get(task.id) ?? null }));
 }
 
+/** Страница одной задачи: по её номеру в контесте, а не по id, чтобы адрес был понятным. */
+export function taskPath(contestId: number, number: number): string {
+  return `/dashboard/arena/solve/${contestId}/task/${number}`;
+}
+
+/** Задача по номеру из адреса и её соседи для «Предыдущая» и «Следующая». */
+export function taskByNumber(
+  rows: TaskRow[],
+  raw: string | undefined,
+): { task: TaskRow; previous: TaskRow | null; next: TaskRow | null } | null {
+  const number = Number(raw);
+  if (!Number.isInteger(number)) return null;
+  const index = rows.findIndex((row) => row.number === number);
+  if (index < 0) return null;
+  return { task: rows[index], previous: rows[index - 1] ?? null, next: rows[index + 1] ?? null };
+}
+
 /** Время попытки от начала контеста: часы и минуты, «1:05». */
 export function attemptClock(seconds: number): string {
   const minutes = Math.floor(Math.max(0, seconds) / 60);

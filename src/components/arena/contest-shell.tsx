@@ -43,9 +43,11 @@ async function loadContest(id: number): Promise<Contest | null> {
   }
 }
 
-export function ContestShell({ id, tab, children }: {
+export function ContestShell({ id, tab, compact = false, children }: {
   id: number;
   tab: ContestTab;
+  /** Страница задачи: без билета и вкладок, чтобы условие было сразу видно. */
+  compact?: boolean;
   children: (contest: Contest, now: Date, reload: () => void) => ReactNode;
 }) {
   const known = Number.isInteger(id) && id > 0;
@@ -65,10 +67,16 @@ export function ContestShell({ id, tab, children }: {
   const missing = !known || contest.data === null;
 
   return (
-    <div className="content view">
-      <Link className="back" href="/dashboard/arena/solve">
-        Контесты
-      </Link>
+    <div className={`content view${compact ? " cx-task-view" : ""}`}>
+      {compact ? (
+        <Link className="back" href={`/dashboard/arena/solve/${id}`}>
+          {data?.title ?? "Контест"}
+        </Link>
+      ) : (
+        <Link className="back" href="/dashboard/arena/solve">
+          Контесты
+        </Link>
+      )}
       {missing ? (
         <section className="ct-note card" role="alert">
           <h2>Такого контеста нет</h2>
@@ -86,6 +94,8 @@ export function ContestShell({ id, tab, children }: {
         <p className="small-note" role="status">
           Загружаю контест…
         </p>
+      ) : compact ? (
+        children(data, now, contest.reload)
       ) : (
         <>
           <ContestHero plaque={plaqueOf(data)} now={now} />
