@@ -150,6 +150,7 @@ export default withAuth(
           '/auth/register',
           '/auth/error',
           '/register',
+          '/privacy',
         ]
         const isPublicPath = (IS_DEMO ? DEMO_PUBLIC_PATHS : publicPaths)
           .some(path => pathname.startsWith(path))

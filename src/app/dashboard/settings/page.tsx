@@ -103,6 +103,11 @@ function ChatSection() {
             onChange={(value) => setChatPrefs({ showUsage: value })}
           />
         </div>
+        <p className="small-note">
+          <Link className="link" href="/privacy">
+            Что видит тьютор и куда уходят данные
+          </Link>
+        </p>
       </div>
     </section>
   );

@@ -404,6 +404,7 @@ const ru: LandingCopy = {
         links: [
           ["Войти", "/auth/signin"],
           ["Создать аккаунт", "/auth/register"],
+          ["Конфиденциальность", "/privacy"],
         ],
       },
     ],
@@ -693,6 +694,7 @@ const en: LandingCopy = {
         links: [
           ["Sign in", "/auth/signin"],
           ["Create an account", "/auth/register"],
+          ["Privacy (in Russian)", "/privacy"],
         ],
       },
     ],

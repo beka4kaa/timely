@@ -1,0 +1,146 @@
+/*
+ * Страница о конфиденциальности открыта без входа на обоих хостах, поэтому стили приложения
+ * (`styles/timely/index.css`, только в дашборде) сюда не доходят. Токены те же, что в tokens.css.
+ */
+
+.page {
+  --bg: #f4f4f5;
+  --card: #ffffff;
+  --card-sh: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03), 0 14px 30px -24px rgba(0, 0, 0, 0.18);
+  --ink: #111112;
+  --ink-2: #3c3c40;
+  --muted: #6a6a70;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.16);
+
+  min-height: 100vh;
+  padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+:global(.dark) .page {
+  --bg: #0d0d0e;
+  --card: rgba(255, 255, 255, 0.042);
+  --card-sh: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --ink: #ececee;
+  --ink-2: #c4c4c8;
+  --muted: #97979d;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.15);
+}
+
+.doc {
+  display: grid;
+  gap: 28px;
+  width: min(680px, 100%);
+  margin-inline: auto;
+}
+
+.brand {
+  justify-self: start;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.head {
+  display: grid;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: clamp(32px, 6vw, 42px);
+  font-weight: 500;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.lead {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 17px;
+}
+
+.card {
+  display: grid;
+  gap: 4px;
+  padding: 8px 28px;
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--card-sh);
+}
+
+.part {
+  display: grid;
+  gap: 10px;
+  padding-block: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.part:first-child {
+  border-top: 0;
+}
+
+.part h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.part p,
+.part ul {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.part ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 20px;
+}
+
+.part a,
+.foot a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.part a:hover,
+.foot a:hover {
+  text-decoration-color: currentColor;
+}
+
+.foot {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.foot p {
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .page {
+    padding-block: 24px 48px;
+  }
+
+  .card {
+    padding: 4px 18px;
+    border-radius: 16px;
+  }
+}

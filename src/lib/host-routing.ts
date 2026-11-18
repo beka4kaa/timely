@@ -36,6 +36,7 @@ const APP_PASSTHROUGH_PREFIXES = [
   "/api",
   "/auth",
   "/register",
+  "/privacy",
   "/_next",
 ];
 
@@ -152,7 +153,7 @@ export function toDashboardPath(pathname: string): string {
   if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
     return pathname;
   }
-  // `/auth/...`, `/register`, файлы — это не разделы дашборда, и приставка
+  // `/auth/...`, `/register`, `/privacy`, файлы — это не разделы дашборда, и приставка
   // сделала бы из них несуществующие страницы.
   if (isAppPassthroughPath(pathname)) return pathname;
   return appPathToDashboardPath(pathname);

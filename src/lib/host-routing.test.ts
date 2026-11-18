@@ -93,6 +93,14 @@ test("keeps auth routes and static assets outside dashboard rewrites", () => {
   );
 });
 
+test("the privacy page opens on both hosts without the dashboard prefix", () => {
+  assert.equal(isAppPassthroughPath("/privacy"), true);
+  assert.equal(toDashboardPath("/privacy"), "/privacy");
+  assert.deepEqual(resolveHostRouting({ hostname: "app.timelyplan.me", pathname: "/privacy" }), { type: "next" });
+  assert.deepEqual(resolveHostRouting({ hostname: "timelyplan.me", pathname: "/privacy" }), { type: "next" });
+  assert.equal(isAppPassthroughPath("/privacy-policy-of-someone"), false);
+});
+
 test("leaves the marketing landing and unrelated preview hosts untouched", () => {
   assert.deepEqual(
     resolveHostRouting({
