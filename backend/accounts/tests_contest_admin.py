@@ -319,6 +319,34 @@ class AdminContestTests(AdminBase):
         self.assertFalse(ContestFile.objects.filter(pk=old_file.pk).exists())
         self.assertTrue(ContestFile.objects.filter(pk=new_file.pk).exists())
 
+    def test_a_task_shared_with_an_old_contest_gets_its_own_copy(self):
+        # Старые данные: одна задача сразу в прошедшем контесте и в будущем черновике.
+        shared = Task.objects.create(author=self.owner, title="Общая", condition_text="Условие", status="active")
+        past = Contest.objects.create(
+            title="Прошёл", start_time=self.now - timedelta(days=3), end_time=self.now - timedelta(days=2),
+            is_published=True, tier=5,
+        )
+        draft = Contest.objects.create(
+            title="Будущий", start_time=self.now + timedelta(days=1), end_time=self.now + timedelta(days=1, hours=3),
+        )
+        past.tasks.set([shared])
+        draft.tasks.set([shared])
+
+        statement = self.pdf()
+        response = self.send("patch", f"/api/admin/contests/{draft.pk}/", self.payload(tasks=[
+            {"id": shared.pk, "answer": "42", "points": 50, "statement_file": statement.pk, "solution_file": None},
+        ]))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        shared.refresh_from_db()
+        self.assertEqual((shared.answer, shared.statement_file_id), ("", None))
+        self.assertEqual(list(past.tasks.all()), [shared])
+        copy = draft.tasks.get()
+        self.assertNotEqual(copy.pk, shared.pk)
+        self.assertEqual((copy.title, copy.condition_text, copy.answer), ("Общая", "Условие", "42"))
+        seen = self.send("get", f"/api/contests/{past.pk}/", who=self.student).json()
+        self.assertEqual(seen["task_details"][0]["answer"], "")
+
     def test_a_task_of_another_contest_cannot_be_taken(self):
         other = self.create().json()
         mine = self.create().json()

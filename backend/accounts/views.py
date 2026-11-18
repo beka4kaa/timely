@@ -11,6 +11,7 @@ from django.db.models import Count, F, Q
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from demo.identity import visitors_q
+from .contest_rules import allowed_tiers
 from .models import CustomUser, Task, TaskSubmission, PrivateLeaderboard, new_invite_code
 from .serializers import (
     LeaderboardSerializer,
@@ -260,17 +261,26 @@ class TaskViewSet(ViewerContextMixin, viewsets.ModelViewSet):
         new_status = 'active' if is_admin_or_mod(user) else 'pending'
         serializer.save(author=user, status=new_status)
 
+    # Баллы, ответ и файлы задачи контеста меняет только редактор контеста: там тиры,
+    # потолок баллов и запрет правок после старта. Отсюда их можно было бы обойти.
+    CONTEST_FIELDS = frozenset({'points', 'answer', 'statement_file', 'solution_file'})
+
     def _require_author_or_admin(self, task):
         user = current_user(self.request)
         if not (is_admin_or_mod(user) or (user and task.author_id == user.id)):
             raise PermissionDenied('Only the author or an admin can change this task.')
 
     def perform_update(self, serializer):
-        self._require_author_or_admin(serializer.instance)
+        task = serializer.instance
+        self._require_author_or_admin(task)
+        if self.CONTEST_FIELDS & set(serializer.validated_data) and task.contests.exists():
+            raise PermissionDenied('Баллы, ответ и файлы задачи контеста меняются в редакторе контеста.')
         serializer.save()
 
     def perform_destroy(self, instance):
         self._require_author_or_admin(instance)
+        if instance.contests.exists():
+            raise PermissionDenied('Задача контеста удаляется в редакторе контеста.')
         instance.delete()
 
 
@@ -316,9 +326,10 @@ class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
         if not is_admin_or_mod(reviewer):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
         sub = self.get_object()
+        self._require_tier(reviewer, sub)
         if sub.status == 'approved':
             return Response(TaskSubmissionSerializer(sub).data)
-        counted = Response({'error': 'Уже засчитано.', 'code': 'already_counted'}, status=status.HTTP_409_CONFLICT)
+        counted =Response({'error': 'Уже засчитано.', 'code': 'already_counted'}, status=status.HTTP_409_CONFLICT)
         # В контесте баллы за задачу даются один раз: вторая одобренная попытка их не удвоит.
         if sub.contest_id and TaskSubmission.objects.filter(
             student_id=sub.student_id, task_id=sub.task_id, contest_id=sub.contest_id, status='approved',
@@ -344,15 +355,23 @@ class TaskSubmissionViewSet(ViewerContextMixin, viewsets.ModelViewSet):
         if not is_admin_or_mod(reviewer):
             return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
         sub = self.get_object()
-        if sub.status == 'approved':
-            student = sub.student
-            student.overall_elo = (student.overall_elo or 0) - (sub.task.points or 0)
-            student.save(update_fields=['overall_elo'])
-        sub.status = 'rejected'
-        sub.reviewed_by = reviewer
-        sub.reviewed_at = timezone.now()
-        sub.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+        self._require_tier(reviewer, sub)
+        with transaction.atomic():
+            if sub.status == 'approved':
+                CustomUser.objects.filter(pk=sub.student_id).update(
+                    overall_elo=F('overall_elo') - (sub.task.points or 0),
+                )
+            sub.status = 'rejected'
+            sub.reviewed_by = reviewer
+            sub.reviewed_at = timezone.now()
+            sub.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
         return Response(TaskSubmissionSerializer(sub).data)
+
+    @staticmethod
+    def _require_tier(reviewer, sub):
+        """Баллы в контесте тира 1–2 даёт и снимает только владелец, как и сами такие контесты."""
+        if sub.contest_id and sub.contest.tier not in allowed_tiers(reviewer):
+            raise PermissionDenied('Попытки контеста этого тира проверяет только владелец.')
 
 
 class PrivateLeaderboardViewSet(ViewerContextMixin, viewsets.ModelViewSet):

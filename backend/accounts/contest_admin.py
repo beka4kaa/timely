@@ -276,7 +276,18 @@ def save_contest(contest: Contest | None, wanted: ContestInput, actor) -> Contes
                 "solution_file_id": item["solution_file"],
             }
             task = existing.get(item["id"]) if item["id"] else None
-            if task is None:
+            if task is not None and task.contests.exclude(pk=contest.pk).exists():
+                # Старая задача сразу в нескольких контестах. Ответ и PDF, записанные здесь,
+                # прошедший контест показал бы раньше времени, поэтому этот контест получает
+                # свою копию, а общая задача остаётся как была.
+                task = Task.objects.create(
+                    author=task.author,
+                    status="active",
+                    title=task.title,
+                    condition_text=task.condition_text,
+                    **values,
+                )
+            elif task is None:
                 task = Task.objects.create(author=actor, status="active", title="", **values)
             else:
                 for name, value in values.items():

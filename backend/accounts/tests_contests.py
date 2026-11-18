@@ -178,6 +178,49 @@ class OldPathsTests(ContestBase):
     def test_admin_still_manages_tasks(self):
         self.assertEqual(self.get("/api/tasks/", who=self.owner).status_code, 200)
 
+    def test_a_contest_task_changes_only_in_the_contest_editor(self):
+        # Иначе баллы, ответ и файлы меняются мимо тиров, потолка и запрета правок после старта.
+        self.contest()
+        task = self.tasks[0]
+        headers = auth_headers(self.owner.email)
+        before = (task.points, task.answer)
+
+        patched = self.client.patch(
+            f"/api/tasks/{task.id}/", data=json.dumps({"points": 5000, "answer": "1"}),
+            content_type="application/json", **headers,
+        )
+        deleted = self.client.delete(f"/api/tasks/{task.id}/", **headers)
+
+        self.assertEqual((patched.status_code, deleted.status_code), (403, 403))
+        task.refresh_from_db()
+        self.assertEqual((task.points, task.answer), before)
+
+    def test_a_task_outside_contests_is_still_editable(self):
+        loose = Task.objects.create(author=self.owner, title="Черновик", status="active")
+        response = self.client.patch(
+            f"/api/tasks/{loose.id}/", data=json.dumps({"points": 70}),
+            content_type="application/json", **auth_headers(self.owner.email),
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def test_moderator_does_not_judge_top_tier_attempts(self):
+        moderator = CustomUser.objects.create_user(
+            username="mod@example.com", email="mod@example.com", password="x", is_moderator=True,
+        )
+        top = self.contest(tier=1)
+        attempt = TaskSubmission.objects.create(student=self.student, task=self.tasks[0], contest=top, status="rejected")
+        lower = self.contest(tier=4)
+        low_attempt = TaskSubmission.objects.create(student=self.other, task=self.tasks[0], contest=lower, status="rejected")
+        headers = auth_headers(moderator.email)
+
+        refused = self.client.post(f"/api/submissions/{attempt.id}/approve/", **headers)
+        allowed = self.client.post(f"/api/submissions/{low_attempt.id}/approve/", **headers)
+
+        self.assertEqual(refused.status_code, 403)
+        self.assertEqual(allowed.status_code, 200, allowed.content)
+        attempt.refresh_from_db()
+        self.assertEqual(attempt.status, "rejected")
+
     def test_contests_list_refuses_writes(self):
         response = self.client.post(
             "/api/contests/", data=json.dumps({"title": "x"}), content_type="application/json",
