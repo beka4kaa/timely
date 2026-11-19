@@ -4,7 +4,7 @@
 // Стор вызывает их с `Date.now()`, а тесты с любым моментом, поэтому вся логика
 // переходов, сброса счёта, заголовка вкладки и звонка проверяется без браузера.
 
-import { minutesWord } from "./pomodoro.logic";
+import { msg, plural, t } from "./i18n";
 import {
   CUSTOM_PRESET,
   DEFAULT_PRESET_INDEX,
@@ -29,9 +29,9 @@ export const BELL_EVERY_MS = 4000;
 const AUTO_RINGS = 2;
 
 export const PHASE_LABEL: Record<TimerPhase, string> = {
-  focus: "Фокус",
-  break: "Перерыв",
-  long: "Длинный перерыв",
+  focus: msg("Фокус"),
+  break: msg("Перерыв"),
+  long: msg("Длинный перерыв"),
 };
 
 // ─────────────────────────── Ритм ───────────────────────────
@@ -51,7 +51,7 @@ const RHYTHM_KEYS: Array<keyof Rhythm> = ["focus", "brk", "long", "every"];
 
 function limitError(key: keyof Rhythm): string {
   const [low, high] = RHYTHM_LIMITS[key];
-  return key === "every" ? `От ${low} до ${high}` : `От ${low} до ${high} мин`;
+  return key === "every" ? t("От {low} до {high}", { low, high }) : t("От {low} до {high} мин", { low, high });
 }
 
 function inLimits(key: keyof Rhythm, value: unknown): value is number {
@@ -80,7 +80,7 @@ export function checkRhythm(draft: RhythmDraft): { rhythm: Rhythm | null; errors
     else errors[key] = limitError(key);
   }
   if (!errors.brk && !errors.long && (values.long as number) < (values.brk as number)) {
-    errors.long = "Не короче перерыва";
+    errors.long = t("Не короче перерыва");
   }
   if (Object.keys(errors).length) return { rhythm: null, errors };
   return { rhythm: values as Rhythm, errors };
@@ -98,7 +98,12 @@ export function rhythmLabel(rhythm: Rhythm): string {
 
 /** «Фокус 25 мин, перерыв 5, длинный 15 после 4 сессий»: подсказка на кнопке ритма. */
 export function rhythmHint(rhythm: Rhythm): string {
-  return `Фокус ${rhythm.focus} мин, перерыв ${rhythm.brk}, длинный ${rhythm.long} после ${rhythm.every} сессий`;
+  return t("Фокус {focus} мин, перерыв {brk}, длинный {long} после {every} сессий", {
+    focus: rhythm.focus,
+    brk: rhythm.brk,
+    long: rhythm.long,
+    every: rhythm.every,
+  });
 }
 
 export function phaseSeconds(rhythm: Rhythm, phase: TimerPhase): number {
@@ -403,12 +408,7 @@ export type CycleDot = "done" | "now" | "todo";
 
 /** «сессия», «сессии», «сессий». */
 export function sessionsWord(count: number): string {
-  const hundred = count % 100;
-  const ten = hundred % 10;
-  if (hundred > 10 && hundred < 20) return "сессий";
-  if (ten === 1) return "сессия";
-  if (ten >= 2 && ten <= 4) return "сессии";
-  return "сессий";
+  return plural(count, "сессия", "сессии", "сессий");
 }
 
 /** Где ученик в цикле: точка на фокус, текущий отмечен. */
@@ -419,15 +419,21 @@ export function cycleDots(phase: TimerPhase, done: number, every: number): { dot
   const dots = Array.from({ length: every }, (_, index): CycleDot =>
     index < filled ? "done" : phase === "focus" && index === filled ? "now" : "todo",
   );
-  if (phase === "long") return { dots, label: "Длинный перерыв" };
+  if (phase === "long") return { dots, label: t("Длинный перерыв") };
   const left = every - filled;
-  return { dots, label: `Ещё ${left} ${sessionsWord(left)} до длинного перерыва` };
+  return { dots, label: plural(
+      left,
+      "Ещё {n} сессия до длинного перерыва",
+      "Ещё {n} сессии до длинного перерыва",
+      "Ещё {n} сессий до длинного перерыва",
+    ),
+  };
 }
 
 /** Зов, когда фаза кончилась: на вкладке, на кнопке и в плашке. */
 export function alarmTitle(next: TimerPhase): string {
-  if (next === "focus") return "Пора работать!";
-  return next === "long" ? "Пора на длинный перерыв!" : "Пора на перерыв!";
+  if (next === "focus") return t("Пора работать!");
+  return next === "long" ? t("Пора на длинный перерыв!") : t("Пора на перерыв!");
 }
 
 /**
@@ -455,7 +461,7 @@ export function tabTitle({
   blink: boolean;
 }): string {
   if (alarm && !alarm.auto) return blink ? alarmTitle(alarm.next) : base;
-  const clock = `${clockOf(remaining)} · ${PHASE_LABEL[phase]}`;
+  const clock = `${clockOf(remaining)} · ${t(PHASE_LABEL[phase])}`;
   if (running) return clock;
   if (started) return `⏸ ${clock}`;
   return base;
@@ -464,13 +470,13 @@ export function tabTitle({
 /** Текст системного уведомления. Название сессии, если есть, идёт второй строкой. */
 export function alarmNotice(next: TimerPhase, rhythm: Rhythm, name: string): { title: string; body: string } {
   const minutes = Math.round(phaseSeconds(rhythm, next) / 60);
-  const length = `${minutes} ${minutesWord(minutes)}`;
+  const length = plural(minutes, "{n} минута", "{n} минуты", "{n} минут");
   const title =
     next === "focus"
-      ? "Перерыв закончился, пора работать"
+      ? t("Перерыв закончился, пора работать")
       : next === "long"
-        ? `Пора на длинный перерыв: ${length}`
-        : `Пора на перерыв: ${length}`;
+        ? t("Пора на длинный перерыв: {length}", { length })
+        : t("Пора на перерыв: {length}", { length });
   return { title, body: name.trim() };
 }
 

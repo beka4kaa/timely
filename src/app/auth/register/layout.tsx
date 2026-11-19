@@ -1,20 +1,26 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = {
-  title: 'Регистрация',
-  description: 'Создайте аккаунт TimelyPlan для дневника, целей, расписания и учебных инструментов.',
-  alternates: {
-    canonical: '/auth/register',
-  },
-  robots: {
-    index: false,
-    follow: false,
-  },
-  openGraph: {
-    title: 'Регистрация | TimelyPlan',
-    description: 'Создайте аккаунт TimelyPlan для дневника, целей, расписания и учебных инструментов.',
-    url: '/auth/register',
-  },
+import { serverT } from '@/lib/i18n/server'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await serverT()
+  const description = t('Создайте аккаунт TimelyPlan для дневника, целей, расписания и учебных инструментов.')
+  return {
+    title: t('Регистрация'),
+    description,
+    alternates: {
+      canonical: '/auth/register',
+    },
+    robots: {
+      index: false,
+      follow: false,
+    },
+    openGraph: {
+      title: t('Регистрация | TimelyPlan'),
+      description,
+      url: '/auth/register',
+    },
+  }
 }
 
 export default function RegisterLayout({ children }: { children: React.ReactNode }) {

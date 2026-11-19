@@ -3,6 +3,8 @@
 // Числа присылает сервер (`usage` в потоке), здесь только подписи. Без React и без
 // запросов: чистые функции, проверяются тестом.
 
+import { getLocale, msg, t } from "../../lib/i18n";
+
 export interface AskUsage {
   model: string;
   model_name: string;
@@ -22,9 +24,9 @@ export interface AskUsage {
 }
 
 const LEVEL_NAMES: Record<string, string> = {
-  low: "низкое",
-  high: "высокое",
-  max: "максимальное",
+  low: msg("низкое"),
+  high: msg("высокое"),
+  max: msg("максимальное"),
 };
 
 /** Такие ключи ещё лежат в браузерах учеников. */
@@ -37,30 +39,36 @@ export function renamedModelKey(key: string): string {
 /** В истории чатов лежат записи со старыми названиями: показываем их новыми словами. */
 function modelLabel(name: string): string {
   if (!/^GLM/i.test(name)) return name;
-  return /flash/i.test(name) ? "Быстрая" : "Умная";
+  return /flash/i.test(name) ? t("Быстрая") : t("Умная");
 }
 
 /** 3214 → «3 214». Неразрывный пробел: число не должно переноситься. */
 export function countLabel(value: number): string {
-  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const group = getLocale() === "en" ? "," : " ";
+  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, group);
+}
+
+/** Десятичный разделитель: запятая по-русски, точка по-английски. */
+function decimalMark(): string {
+  return getLocale() === "en" ? "." : ",";
 }
 
 function trimmed(value: number): string {
-  return String(Math.round(value * 10) / 10).replace(".", ",");
+  return String(Math.round(value * 10) / 10).replace(".", decimalMark());
 }
 
 /** 3214 → «3,2 тыс.», 1048576 → «1 млн». */
 export function shortCount(value: number): string {
   if (value < 1000) return String(Math.round(value));
-  if (value < 1_000_000) return `${trimmed(value / 1000)} тыс.`;
-  return `${trimmed(value / 1_000_000)} млн`;
+  if (value < 1_000_000) return t("{n} тыс.", { n: trimmed(value / 1000) });
+  return t("{n} млн", { n: trimmed(value / 1_000_000) });
 }
 
 export function costLabel(value: number): string {
   if (value <= 0) return "$0";
-  if (value < 0.0001) return "меньше $0,0001";
+  if (value < 0.0001) return t("меньше $0,0001");
   const digits = value < 0.01 ? 4 : value < 1 ? 3 : 2;
-  return `$${value.toFixed(digits).replace(".", ",")}`;
+  return `$${value.toFixed(digits).replace(".", decimalMark())}`;
 }
 
 /**
@@ -78,12 +86,19 @@ export function contextPercent(usage: AskUsage): number {
 
 /** Строка под ответом. */
 export function usageLine(usage: AskUsage): string {
-  const parts = [`вход ${countLabel(usage.input_tokens)}`, `выход ${countLabel(usage.output_tokens)}`];
-  if (usage.reasoning_tokens) parts.push(`из них рассуждение ${countLabel(usage.reasoning_tokens)}`);
-  if (usage.cached_input_tokens) parts.push(`из кэша ${countLabel(usage.cached_input_tokens)}`);
-  parts.push(`${usage.cost_estimated ? "примерно " : ""}${costLabel(usage.cost_usd)}`);
-  const level = LEVEL_NAMES[usage.reasoning] ?? usage.reasoning;
-  return `${modelLabel(usage.model_name)}, рассуждение ${level}: ${parts.join(", ")}`;
+  const parts = [
+    t("вход {n}", { n: countLabel(usage.input_tokens) }),
+    t("выход {n}", { n: countLabel(usage.output_tokens) }),
+  ];
+  if (usage.reasoning_tokens) parts.push(t("из них рассуждение {n}", { n: countLabel(usage.reasoning_tokens) }));
+  if (usage.cached_input_tokens) parts.push(t("из кэша {n}", { n: countLabel(usage.cached_input_tokens) }));
+  parts.push(`${usage.cost_estimated ? t("примерно") + " " : ""}${costLabel(usage.cost_usd)}`);
+  const level = LEVEL_NAMES[usage.reasoning] ? t(LEVEL_NAMES[usage.reasoning]) : usage.reasoning;
+  return t("{model}, рассуждение {level}: {parts}", {
+    model: modelLabel(usage.model_name),
+    level,
+    parts: parts.join(", "),
+  });
 }
 
 /** Последний ответ, у которого есть расход: по нему показывается окно. */

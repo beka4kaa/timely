@@ -5,6 +5,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 import { paperPopover } from "./paper";
@@ -94,7 +95,7 @@ export function ConfirmingAction({
         }
       }}
     >
-      {busy ? "Секунду…" : failed ? "Не удалось. Ещё раз?" : armed ? confirm : label}
+      {busy ? t("Секунду…") : failed ? t("Не удалось. Ещё раз?") : armed ? confirm : label}
     </button>
   );
 }

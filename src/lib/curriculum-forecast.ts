@@ -9,6 +9,8 @@
 // сроков вообще не было; привести к `true` — ещё хуже. `null` обязан дожить до
 // компонента как `null`.
 
+import { dateLocale, msg, plural, t } from "./i18n";
+
 export type ForecastRisk = "low" | "medium" | "high";
 
 export interface PlanForecast {
@@ -84,25 +86,25 @@ const WARNINGS: Record<string, string> = {
   // «Невозможно» не пишем: бэкенд ограничивает расчёт пятью годами, и «нет»
   // здесь значит «не при таком темпе», а не «никогда».
   horizon_exceeded:
-    "При таком темпе курс выходит за пять лет, дальше расчёт не идёт. Добавь занятий в неделю.",
+    msg("При таком темпе курс выходит за пять лет, дальше расчёт не идёт. Добавь занятий в неделю."),
   deadline_unreachable_at_any_pace:
-    "К этому сроку не успеть, даже если заниматься каждый день. Сдвинь срок или сократи программу.",
+    msg("К этому сроку не успеть, даже если заниматься каждый день. Сдвинь срок или сократи программу."),
   sessions_per_week_capped_by_available_days:
-    "Занятий в неделю больше, чем дней для учёбы. Лишние перенесены на следующую неделю.",
+    msg("Занятий в неделю больше, чем дней для учёбы. Лишние перенесены на следующую неделю."),
   forecast_skipped_zero_duration:
-    "У программы нулевая длительность, поэтому прогноз не считался.",
-  forecast_not_possible: "Прогноз посчитать не удалось.",
+    msg("У программы нулевая длительность, поэтому прогноз не считался."),
+  forecast_not_possible: msg("Прогноз посчитать не удалось."),
 };
 
 export function forecastWarningMessage(code: string): string {
-  return WARNINGS[code] ?? code;
+  return WARNINGS[code] ? t(WARNINGS[code]) : code;
 }
 
 /** Текстовая подпись риска. Цветом одним риск не показываем никогда. */
 export function riskLabel(value: ForecastRisk): string {
-  if (value === "low") return "Запас есть";
-  if (value === "medium") return "Впритык";
-  return "Темп напряжённый";
+  if (value === "low") return t("Запас есть");
+  if (value === "medium") return t("Впритык");
+  return t("Темп напряжённый");
 }
 
 /** Дата человеческим языком: «20 мая 2026». */
@@ -110,7 +112,7 @@ export function formatPlanDate(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("ru-RU", {
+  return date.toLocaleDateString(dateLocale(), {
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -122,7 +124,7 @@ export function formatShortDate(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return date.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" });
 }
 
 /**
@@ -142,7 +144,7 @@ function localDay(iso: string): Date {
 export function dayMonth(iso: string, now: Date = new Date()): string {
   const date = localDay(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  const text = date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  const text = date.toLocaleDateString(dateLocale(), { day: "numeric", month: "long" });
   return date.getFullYear() === now.getFullYear() ? text : `${text} ${date.getFullYear()}`;
 }
 
@@ -151,7 +153,10 @@ export function finishRange(from: string, to: string, now: Date = new Date()): s
   const a = localDay(from);
   const b = localDay(to);
   const sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
-  return sameMonth ? `${a.getDate()} и ${dayMonth(to, now)}` : `${dayMonth(from, now)} и ${dayMonth(to, now)}`;
+  return t("{from} и {to}", {
+    from: sameMonth ? a.getDate() : dayMonth(from, now),
+    to: dayMonth(to, now),
+  });
 }
 
 /**
@@ -183,7 +188,7 @@ export function courseLede(
   const latest = realistic ?? expected;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (latest && localDay(latest) < today) {
-    return [rhythm, `По прогнозу курс должен был закончиться ${dayMonth(latest, now)}`, "Пересчитай темп"]
+    return [rhythm, t("По прогнозу курс должен был закончиться {date}", { date: dayMonth(latest, now) }), t("Пересчитай темп")]
       .filter(Boolean)
       .map((part) => `${part}.`)
       .join(" ");
@@ -191,27 +196,18 @@ export function courseLede(
 
   let finish = "";
   if (optimistic && realistic && optimistic !== realistic) {
-    finish = `Закончишь между ${finishRange(optimistic, realistic, now)}`;
+    finish = t("Закончишь между {range}", { range: finishRange(optimistic, realistic, now) });
   } else if (expected) {
-    finish = `Закончишь к ${dayMonth(expected, now)}`;
+    finish = t("Закончишь к {date}", { date: dayMonth(expected, now) });
   }
   if (finish && risk) finish += `, ${risk}`;
 
   return [rhythm, finish].filter(Boolean).map((part) => `${part}.`).join(" ");
 }
 
-function sessionsWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (tens >= 11 && tens <= 14) return "занятий";
-  if (ones === 1) return "занятие";
-  if (ones >= 2 && ones <= 4) return "занятия";
-  return "занятий";
-}
-
 /** «24 занятия», а не «24 занятий». */
 export function sessionsCountLabel(count: number): string {
-  return `${count} ${sessionsWord(count)}`;
+  return plural(count, "{n} занятие", "{n} занятия", "{n} занятий");
 }
 
 /** Ритм словами: «3 занятия в неделю по 45 минут». */
@@ -220,9 +216,10 @@ export function rhythmLine(
   minutesPerSession: number | null,
 ): string | null {
   if (!sessionsPerWeek || !minutesPerSession) return null;
-  return `${sessionsPerWeek} ${sessionsWord(
-    sessionsPerWeek,
-  )} в неделю по ${minutesPerSession} минут`;
+  return t("{sessions} в неделю по {minutes} минут", {
+    sessions: plural(sessionsPerWeek, "{n} занятие", "{n} занятия", "{n} занятий"),
+    minutes: minutesPerSession,
+  });
 }
 
 /**
@@ -239,11 +236,14 @@ export function paceAdvice(
   const required = forecast.requiredSessionsPerWeek;
   if (!required) return null;
   const current = forecast.sessionsPerWeek;
-  const when = desiredDeadline ? `к ${formatPlanDate(desiredDeadline)}` : "к сроку";
+  const when = desiredDeadline ? t("к {date}", { date: formatPlanDate(desiredDeadline) }) : t("к сроку");
+  const sessions = (n: number) => plural(n, "{n} занятие", "{n} занятия", "{n} занятий");
   if (!current) {
-    return `Чтобы успеть ${when}, нужно ${required} ${sessionsWord(required)} в неделю.`;
+    return t("Чтобы успеть {when}, нужно {sessions} в неделю.", { when, sessions: sessions(required) });
   }
-  return `Чтобы успеть ${when}, нужно ${required} ${sessionsWord(
-    required,
-  )} в неделю вместо ${current}.`;
+  return t("Чтобы успеть {when}, нужно {sessions} в неделю вместо {current}.", {
+    when,
+    sessions: sessions(required),
+    current,
+  });
 }

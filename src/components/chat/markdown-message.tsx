@@ -23,6 +23,7 @@ import remarkMath from "remark-math";
 
 // Относительный путь намеренно: компонент прогоняется в тесте без сборщика
 // Next, а значит без алиаса `@/` — см. комментарий о тестируемости выше.
+import { t } from "../../lib/i18n";
 import { isSkillName, skillLabel } from "../../lib/skill-names";
 
 /**
@@ -155,7 +156,7 @@ function buildComponents(s: Scale): Components {
         const label = skillLabel(text);
         return (
           <span
-            title={label ? `Помощник ${label}` : undefined}
+            title={label ? t("Помощник {label}", { label }) : undefined}
             className={`inline-flex items-center gap-1 rounded-full border border-tm-accent-line bg-tm-bg px-1.5 py-[1px] align-baseline font-sans ${s.code} font-medium text-tm-accent`}
           >
             <span

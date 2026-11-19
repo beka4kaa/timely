@@ -4,12 +4,14 @@
 // Сервер по-прежнему принимает модель и уровень рассуждения; «Максимум» из выбора убран,
 // а у тех, кто выбрал его раньше, он показывается и отправляется как High.
 
+import { msg } from "./i18n";
+
 export type AskLevel = "instant" | "medium" | "high";
 
 export const ASK_LEVELS: { key: AskLevel; name: string; note: string }[] = [
-  { key: "instant", name: "Instant", note: "Быстрая модель, отвечает сразу" },
-  { key: "medium", name: "Medium", note: "Умная модель, рассуждает коротко" },
-  { key: "high", name: "High", note: "Умная модель, думает дольше и тратит больше" },
+  { key: "instant", name: "Instant", note: msg("Быстрая модель, отвечает сразу") },
+  { key: "medium", name: "Medium", note: msg("Умная модель, рассуждает коротко") },
+  { key: "high", name: "High", note: msg("Умная модель, думает дольше и тратит больше") },
 ];
 
 const CHOICES: Record<AskLevel, { model: string; reasoning: string }> = {

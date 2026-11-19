@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { t } from "@/lib/i18n";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 
 /** Столько принимает `CustomUser.bio`. */
@@ -46,8 +47,8 @@ export function BioEditor({
           rows={2}
           value={value}
           maxLength={BIO_LIMIT}
-          aria-label="О себе"
-          placeholder="Что учишь и зачем"
+          aria-label={t("О себе")}
+          placeholder={t("Что учишь и зачем")}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -62,7 +63,7 @@ export function BioEditor({
         />
       </span>
       <p className="small-note pf-bio-note">
-        {value.length} из {BIO_LIMIT}. Видишь только ты.
+        {t("{n} из {max}. Видишь только ты.", { n: value.length, max: BIO_LIMIT })}
       </p>
     </div>
   );

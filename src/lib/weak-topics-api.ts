@@ -4,6 +4,7 @@
 // camelCase и snake_case. `/api/subjects/reorder` и `/api/subtopics/{id}/review` сломаны,
 // их здесь нет намеренно.
 
+import { msg, t } from "@/lib/i18n";
 import { WEAK_TOPICS_KEY } from "@/components/now/now-resources";
 import { invalidateResources } from "@/lib/resource-cache";
 import type { ReviewRating } from "@/types/mind";
@@ -17,11 +18,11 @@ export const WEAK_PAGE_SUBJECTS_KEY = "weak:subjects";
  * Без этой проверки отказ выглядел бы как «тем пока нет».
  */
 async function listFrom<T>(response: Response, what: string): Promise<T[]> {
-  if (!response.ok) throw new Error(`${what} не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("{what} не загрузились ({status})", { what: t(what), status: response.status }));
   const body = (await response.json()) as T[] | { results?: T[] };
   if (Array.isArray(body)) return body;
   if (Array.isArray(body?.results)) return body.results;
-  throw new Error(`${what} не загрузились`);
+  throw new Error(t("{what} не загрузились", { what: t(what) }));
 }
 
 async function send<T>(url: string, method: string, body?: unknown): Promise<T> {
@@ -30,16 +31,16 @@ async function send<T>(url: string, method: string, body?: unknown): Promise<T> 
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`Запрос не прошёл (${response.status})`);
+  if (!response.ok) throw new Error(t("Запрос не прошёл ({status})", { status: response.status }));
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }
 
 export async function fetchAllTopics(): Promise<WeakTopic[]> {
-  return listFrom<WeakTopic>(await fetch("/api/topics?filter=all"), "Темы");
+  return listFrom<WeakTopic>(await fetch("/api/topics?filter=all"), msg("Темы"));
 }
 
 export async function fetchSubjects(): Promise<WeakSubject[]> {
-  return listFrom<WeakSubject>(await fetch("/api/subjects"), "Предметы");
+  return listFrom<WeakSubject>(await fetch("/api/subjects"), msg("Предметы"));
 }
 
 export function createSubject(name: string): Promise<WeakSubject> {

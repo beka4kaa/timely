@@ -4,6 +4,8 @@
 
 import type { ReactNode } from "react";
 
+import { t } from "@/lib/i18n";
+
 import { scheduleLabel, type HabitSchedule } from "./habit-schedule";
 import { SchedulePicker } from "./schedule-picker";
 
@@ -39,7 +41,7 @@ export function AiOffer({ say, actions, children }: { say: string; actions: Offe
 export function AiThinking() {
   return (
     <div className="ai-out card" role="status">
-      <p className="q-status shine">Думаю…</p>
+      <p className="q-status shine">{t("Думаю…")}</p>
     </div>
   );
 }
@@ -64,7 +66,7 @@ export function HabitOffer({
 }) {
   const goal = goals.find((row) => row.id === goalId);
   return (
-    <AiOffer say={`Это привычка. Добавлю карточку${goal ? " и свяжу с целью:" : ":"}`} actions={actions}>
+    <AiOffer say={goal ? t("Это привычка. Добавлю карточку и свяжу с целью:") : t("Это привычка. Добавлю карточку:")} actions={actions}>
       <ul className="q-diff">
         <li>
           <span className="nm">{name}</span>
@@ -83,7 +85,7 @@ export function HabitOffer({
         <SchedulePicker value={schedule} onChange={onSchedule} />
       </div>
       {goals.length > 0 ? (
-        <div className="gs-chips gr-offer-goals" role="group" aria-label="К какой цели ведёт привычка">
+        <div className="gs-chips gr-offer-goals" role="group" aria-label={t("К какой цели ведёт привычка")}>
           {goals.map((row) => (
             <button
               key={row.id}

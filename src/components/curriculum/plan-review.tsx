@@ -6,6 +6,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { t } from "@/lib/i18n";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { coverTitle } from "@/lib/curriculum-cover";
@@ -40,24 +41,24 @@ export function PlanGenerationStep({ onClose }: { onClose?: () => void } = {}) {
   // Модель думает минуту-полторы: это как раз то ожидание, которое показывает маскот.
   useEffect(() => {
     if (!busy) return;
-    mascot.thinkStart("Составляю программу");
-    mascot.thought("Читаю оглавление и подбираю темы");
-    return () => mascot.thinkEnd(useCurriculumStore.getState().error ? undefined : "Готово");
+    mascot.thinkStart(t("Составляю программу"));
+    mascot.thought(t("Читаю оглавление и подбираю темы"));
+    return () => mascot.thinkEnd(useCurriculumStore.getState().error ? undefined : t("Готово"));
   }, [busy]);
 
-  const title = document ? coverTitle(document.title) : "Книга";
+  const title = document ? coverTitle(document.title) : t("Книга");
 
   return (
     <>
-      <WizardHead title="Учебник прочитан">
+      <WizardHead title={t("Учебник прочитан")}>
         {goalId
-          ? `Книга «${title}» разобрана. Теперь составлю программу по её разделам.`
-          : `Книга «${title}» загружена без предмета, поэтому программу не с чем связать. Загрузи её заново из карточки предмета.`}
+          ? t("Книга «{title}» разобрана. Теперь составлю программу по её разделам.", { title })
+          : t("Книга «{title}» загружена без предмета, поэтому программу не с чем связать. Загрузи её заново из карточки предмета.", { title })}
       </WizardHead>
 
       {busy ? (
         <p className="wz-hint" role="status">
-          Составляю программу, обычно это занимает 30–90 секунд.
+          {t("Составляю программу, обычно это занимает 30–90 секунд.")}
         </p>
       ) : null}
 
@@ -94,12 +95,12 @@ export function PlanGenerationStep({ onClose }: { onClose?: () => void } = {}) {
                 onClick={() => void requestPlan()}
                 disabled={busy}
               >
-                {busy ? "Составляю…" : question.skip}
+                {busy ? t("Составляю…") : question.skip}
               </button>
               {summary?.skipped === "quota" ? (
                 onClose ? (
                   <button type="button" className="btn btn-line" onClick={onClose} disabled={busy}>
-                    Подождать
+                    {t("Подождать")}
                   </button>
                 ) : null
               ) : (
@@ -109,7 +110,7 @@ export function PlanGenerationStep({ onClose }: { onClose?: () => void } = {}) {
                   onClick={() => void restartIngestion()}
                   disabled={busy}
                 >
-                  Обработать заново
+                  {t("Обработать заново")}
                 </button>
               )}
             </>
@@ -120,7 +121,7 @@ export function PlanGenerationStep({ onClose }: { onClose?: () => void } = {}) {
               onClick={() => (mustAsk && !error ? setAsking(true) : void requestPlan())}
               disabled={busy}
             >
-              {busy ? "Составляю…" : error ? "Попробовать снова" : "Составить программу"}
+              {busy ? t("Составляю…") : error ? t("Попробовать снова") : t("Составить программу")}
             </button>
           )}
         </div>

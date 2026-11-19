@@ -27,7 +27,7 @@ import {
   Triangle,
   type LucideIcon,
 } from "lucide-react";
-import { appLink, DEMO_URL } from "@/components/landing/app-url";
+import { appLink, demoLink } from "@/components/landing/app-url";
 import { ChatDemo } from "@/components/landing/chat-demo";
 import { LANDING_COPY, type LandingLocale, type SubjectKey } from "@/components/landing/copy";
 import { Faq } from "@/components/landing/faq";
@@ -179,6 +179,7 @@ function SubjectRow({
 
 export function LandingPage({ locale }: { locale: LandingLocale }) {
   const copy = LANDING_COPY[locale];
+  const demo = demoLink(locale);
   const { hero, inside } = copy;
   // Слова заголовка проявляются по очереди; слайм занимает в этой очереди одно место.
   const afterAt = wordCount(hero.before) + 1;
@@ -208,8 +209,8 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
             <a href="#faq" className={styles.navLink}>
               {copy.nav.faq}
             </a>
-            {DEMO_URL ? (
-              <a href={DEMO_URL} className={styles.navLink}>
+            {demo ? (
+              <a href={demo} className={styles.navLink}>
                 {copy.nav.demo}
               </a>
             ) : null}
@@ -217,10 +218,10 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
           <div className={styles.headerActions}>
             <LangSwitch locale={locale} label={copy.lang.label} names={copy.lang} />
             <ThemeSwitch labels={copy.theme} />
-            <Link href={appLink("/auth/signin")} className={styles.signIn}>
+            <Link href={appLink("/auth/signin", locale)} className={styles.signIn}>
               {copy.header.signIn}
             </Link>
-            <Link href={appLink()} className={styles.darkButton} aria-label={copy.header.open}>
+            <Link href={appLink("", locale)} className={styles.darkButton} aria-label={copy.header.open}>
               <span className={styles.openFull}>{copy.header.open}</span>
               <span className={styles.openShort} aria-hidden="true">
                 {copy.header.openShort}
@@ -259,7 +260,7 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
             </p>
 
             <div className={styles.intro} style={{ "--d": "850ms" } as CSSProperties}>
-              <HeroPrompt copy={copy.prompt} />
+              <HeroPrompt copy={copy.prompt} locale={locale} />
             </div>
           </div>
         </ScrollFx>
@@ -339,7 +340,7 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
 
           <div className={styles.container}>
             <p className={styles.moreWrap}>
-              <Link href={appLink("/curriculum")} className={styles.moreLink}>
+              <Link href={appLink("/curriculum", locale)} className={styles.moreLink}>
                 {copy.subjects.more}
                 <ArrowRight size={16} />
               </Link>
@@ -479,16 +480,16 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
                   <h2 className={styles.ctaTitle}>{copy.cta.title}</h2>
                   <p className={styles.ctaSub}>{copy.cta.sub}</p>
                   <div className={styles.ctaActions}>
-                    <Link href={appLink()} className={styles.darkButton}>
+                    <Link href={appLink("", locale)} className={styles.darkButton}>
                       {copy.cta.open}
                       <ArrowUpRight size={17} strokeWidth={2.2} aria-hidden="true" />
                     </Link>
-                    {DEMO_URL ? (
-                      <a href={DEMO_URL} className={styles.lightButton}>
+                    {demo ? (
+                      <a href={demo} className={styles.lightButton}>
                         {copy.cta.demo}
                       </a>
                     ) : null}
-                    <Link href={appLink("/auth/register")} className={styles.lightButton}>
+                    <Link href={appLink("/auth/register", locale)} className={styles.lightButton}>
                       {copy.cta.register}
                     </Link>
                   </div>
@@ -519,7 +520,7 @@ export function LandingPage({ locale }: { locale: LandingLocale }) {
               <ul className={styles.footerLinks}>
                 {column.links.map(([label, path]) => (
                   <li key={label}>
-                    <Link href={appLink(path)}>{label}</Link>
+                    <Link href={appLink(path, locale)}>{label}</Link>
                   </li>
                 ))}
               </ul>

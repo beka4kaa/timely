@@ -5,17 +5,19 @@
 
 import Link from "next/link";
 
+import { t } from "@/lib/i18n";
 import { longDateLabel, type WeekDay } from "@/lib/now-feed";
 
 export function WeekStrip({ days }: { days: WeekDay[] }) {
   if (!days.length) return <span className="now-skel is-week" aria-hidden="true" />;
   return (
-    <nav className="weekline" aria-label="Дни недели">
+    <nav className="weekline" aria-label={t("Дни недели")}>
       {days.map((day) => {
         const date = longDateLabel(day.dateKey);
-        const label = `${day.isToday ? `Сегодня, ${date.charAt(0).toLowerCase()}${date.slice(1)}` : date}${
-          day.test ? `, ${day.test}` : ""
-        }. Открыть неделю`;
+        const dayLabel = day.isToday
+          ? t("Сегодня, {date}", { date: `${date.charAt(0).toLowerCase()}${date.slice(1)}` })
+          : date;
+        const label = t("{day}. Открыть неделю", { day: day.test ? `${dayLabel}, ${day.test}` : dayLabel });
         return (
           <Link
             key={day.dateKey}

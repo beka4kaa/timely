@@ -9,7 +9,7 @@ import { useEffect } from "react";
 
 import { initialsOf } from "@/components/shell/sidebar";
 import { getLeaderboardUser, listGlobalLeaderboard, useMe } from "@/lib/contest-api";
-import { ru } from "@/lib/contest-view";
+import { plural, t } from "@/lib/i18n";
 import { buildBoard, countryName, grouped } from "@/lib/rating-view";
 import { useResource } from "@/lib/resource-cache";
 
@@ -34,21 +34,21 @@ export default function PlayerProfilePage() {
   return (
     <div className="content view">
       <Link className="back" href="/dashboard/leaderboard">
-        Рейтинг
+        {t("Рейтинг")}
       </Link>
       {!known || (!user && player.error) ? (
         <section className="ct-note card" role="alert">
-          <h2>Профиль не открылся</h2>
-          <p>Такого ученика нет, или пропала связь.</p>
+          <h2>{t("Профиль не открылся")}</h2>
+          <p>{t("Такого ученика нет, или пропала связь.")}</p>
           {known ? (
             <button className="btn btn-line" type="button" onClick={player.reload}>
-              Повторить
+              {t("Повторить")}
             </button>
           ) : null}
         </section>
       ) : !user ? (
         <p className="small-note" role="status">
-          Загружаю профиль…
+          {t("Загружаю профиль…")}
         </p>
       ) : (
         <>
@@ -69,12 +69,12 @@ export default function PlayerProfilePage() {
           <div className="pf-stats pf-stats-auto pf-stats-plain" style={{ "--n": row ? 2 : 1 } as React.CSSProperties}>
             <div className="pf-stat">
               <b>{grouped(user.overall_elo)}</b>
-              <span>{ru(user.overall_elo, "балл", "балла", "баллов")}</span>
+              <span>{plural(user.overall_elo, "балл", "балла", "баллов")}</span>
             </div>
             {row ? (
               <div className="pf-stat">
                 <b>#{grouped(row.place)}</b>
-                <span>место в рейтинге</span>
+                <span>{t("место в рейтинге")}</span>
               </div>
             ) : null}
           </div>
@@ -82,7 +82,7 @@ export default function PlayerProfilePage() {
           {user.ratings.length ? (
             <section className="pf-sec">
               <div className="pf-sec-head">
-                <h2 className="sec">Рейтинг по предметам</h2>
+                <h2 className="sec">{t("Рейтинг по предметам")}</h2>
               </div>
               <ul className="pf-now">
                 {user.ratings.map((rating) => (
@@ -99,7 +99,7 @@ export default function PlayerProfilePage() {
             </section>
           ) : null}
 
-          <p className="small-note">Описание, дни занятий и бейджи ученик видит только сам.</p>
+          <p className="small-note">{t("Описание, дни занятий и бейджи ученик видит только сам.")}</p>
         </>
       )}
     </div>

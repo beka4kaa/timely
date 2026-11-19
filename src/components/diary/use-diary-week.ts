@@ -36,6 +36,7 @@ import {
   type LessonPatchFn,
   type LessonSlot,
 } from "@/lib/diary-undo";
+import { t } from "@/lib/i18n";
 import { lessonTitle } from "@/lib/now-feed";
 import { dataChanged, useDataChanged } from "@/lib/data-changed";
 import { invalidateResources } from "@/lib/resource-cache";
@@ -56,7 +57,7 @@ async function json<T>(response: Response, message: string): Promise<T> {
 
 async function readWeek(weekStart: string): Promise<DiaryWeek> {
   const response = await fetch(`/api/diary/week?weekStart=${encodeURIComponent(weekStart)}`);
-  return json<DiaryWeek>(response, "Дневник не загрузился");
+  return json<DiaryWeek>(response, t("Дневник не загрузился"));
 }
 
 async function putWeek(week: DiaryWeek): Promise<DiaryWeek> {
@@ -65,7 +66,7 @@ async function putWeek(week: DiaryWeek): Promise<DiaryWeek> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(week),
   });
-  return json<DiaryWeek>(response, "Неделя не сохранилась");
+  return json<DiaryWeek>(response, t("Неделя не сохранилась"));
 }
 
 async function patchWeek(body: Record<string, unknown>): Promise<DiaryWeek> {
@@ -74,7 +75,7 @@ async function patchWeek(body: Record<string, unknown>): Promise<DiaryWeek> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return json<DiaryWeek>(response, "Запись не сохранилась");
+  return json<DiaryWeek>(response, t("Запись не сохранилась"));
 }
 
 async function patchLinks(weekId: string, dayId: string, links: YoutubeLink[]): Promise<void> {
@@ -83,7 +84,7 @@ async function patchLinks(weekId: string, dayId: string, links: YoutubeLink[]): 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ weekId, dayId, links }),
   });
-  if (!response.ok) throw new Error(`Ссылки не сохранились (${response.status})`);
+  if (!response.ok) throw new Error(t("Ссылки не сохранились ({status})", { status: response.status }));
 }
 
 // ───────────────────────────── Поиск урока ───────────────────────────────────
@@ -110,7 +111,7 @@ async function patchLesson(
 
   const fresh = await readWeek(answer.weekStart);
   const found = locateBySlot(fresh, target.slot);
-  if (!found) throw new LessonChangedError("Этого урока на неделе больше нет");
+  if (!found) throw new LessonChangedError(t("Этого урока на неделе больше нет"));
   return patchWeek({
     weekId: fresh.id,
     dayId: found.day.id,
@@ -128,7 +129,7 @@ async function rewriteLesson(
   const fresh = await readWeek(weekStart);
   const found =
     locateById(fresh, target.dayId, target.lessonId) ?? locateBySlot(fresh, target.slot);
-  if (!found) throw new LessonChangedError("Этого урока на неделе больше нет");
+  if (!found) throw new LessonChangedError(t("Этого урока на неделе больше нет"));
   return putWeek(
     mapLesson(fresh, found.day.id, found.lesson.id, (lesson) => ({ ...lesson, ...patch })),
   );
@@ -284,18 +285,18 @@ export function useDiaryWeek(weekStart: string | null) {
     if (!canUndo()) return;
     void enqueue(() => performUndo(applyLessonValue, restoreSnapshot))
       .then((label) => {
-        if (label) toast("Отменено", { description: label });
+        if (label) toast(t("Отменено"), { description: label });
       })
-      .catch(() => failed("Не получилось отменить. Попробуй ещё раз."));
+      .catch(() => failed(t("Не получилось отменить. Попробуй ещё раз.")));
   }, [applyLessonValue, enqueue, failed, restoreSnapshot]);
 
   const redo = useCallback(() => {
     if (!canRedo()) return;
     void enqueue(() => performRedo(applyLessonValue))
       .then((label) => {
-        if (label) toast("Возвращено", { description: label });
+        if (label) toast(t("Возвращено"), { description: label });
       })
-      .catch(() => failed("Не получилось вернуть. Попробуй ещё раз."));
+      .catch(() => failed(t("Не получилось вернуть. Попробуй ещё раз.")));
   }, [applyLessonValue, enqueue, failed]);
 
   const setGrade = useCallback(
@@ -320,9 +321,9 @@ export function useDiaryWeek(weekStart: string | null) {
           gradeField: field,
           before,
           after: value,
-          label: `${lessonTitle(lesson)}: оценка ${value ?? "убрана"}`,
+          label: t("{title}: оценка {value}", { title: lessonTitle(lesson), value: value ?? t("убрана") }),
         });
-      }).catch(() => failed("Оценка не сохранилась. Попробуй ещё раз."));
+      }).catch(() => failed(t("Оценка не сохранилась. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek],
   );
@@ -355,15 +356,15 @@ export function useDiaryWeek(weekStart: string | null) {
           ...target,
           before,
           after,
-          label: after ? `${lessonTitle(lesson)}: ${after}` : `${lessonTitle(lesson)}: задание удалено`,
+          label: after ? `${lessonTitle(lesson)}: ${after}` : t("{title}: задание удалено", { title: lessonTitle(lesson) }),
         });
         if (!after) {
-          toast("Задание удалено", {
+          toast(t("Задание удалено"), {
             description: `${lessonTitle(lesson)}: ${before}`,
-            action: { label: "Отменить", onClick: undo },
+            action: { label: t("Отменить"), onClick: undo },
           });
         }
-      }).catch(() => failed("Задание не сохранилось. Попробуй ещё раз."));
+      }).catch(() => failed(t("Задание не сохранилось. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek, undo],
   );
@@ -379,7 +380,7 @@ export function useDiaryWeek(weekStart: string | null) {
       );
       void enqueue(async () => {
         publish(await rewriteLesson(current.weekStart, target, { homeworkDone: done }));
-      }).catch(() => failed("Отметка не сохранилась. Попробуй ещё раз."));
+      }).catch(() => failed(t("Отметка не сохранилась. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek],
   );
@@ -392,7 +393,7 @@ export function useDiaryWeek(weekStart: string | null) {
       setWeek(mapLesson(current, day.id, lesson.id, (item) => ({ ...item, notes })));
       void enqueue(async () => {
         publish(await patchLesson(target, { field: "notes", value: notes }));
-      }).catch(() => failed("Заметка не сохранилась. Попробуй ещё раз."));
+      }).catch(() => failed(t("Заметка не сохранилась. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek],
   );
@@ -407,7 +408,7 @@ export function useDiaryWeek(weekStart: string | null) {
       );
       void enqueue(async () => {
         publish(await patchLesson(target, { linkedSubjectIds }));
-      }).catch(() => failed("Предметы не сохранились. Попробуй ещё раз."));
+      }).catch(() => failed(t("Предметы не сохранились. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek],
   );
@@ -433,7 +434,7 @@ export function useDiaryWeek(weekStart: string | null) {
           fresh = await readWeek(current.weekStart);
         }
         publish(fresh);
-      }).catch(() => failed("Ссылка не сохранилась. Попробуй ещё раз."));
+      }).catch(() => failed(t("Ссылка не сохранилась. Попробуй ещё раз.")));
     },
     [enqueue, failed, publish, setWeek],
   );
@@ -452,23 +453,23 @@ export function useDiaryWeek(weekStart: string | null) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ weekStart: target }),
         });
-        const next = await json<DiaryWeek>(response, "Шаблон не применился");
+        const next = await json<DiaryWeek>(response, t("Шаблон не применился"));
         clearUndoHistory();
         if (snapshot) {
           pushTemplateUndo({
             weekId: snapshot.id,
             weekSnapshot: snapshot,
-            label: `Шаблон на неделю ${weekRangeLabel(target)}`,
+            label: t("Шаблон на неделю {range}", { range: weekRangeLabel(target) }),
           });
         }
         publish(next);
       });
-      toast("Шаблон применён", {
-        description: "Оценки и задания этой недели сброшены.",
-        action: { label: "Отменить", onClick: undo },
+      toast(t("Шаблон применён"), {
+        description: t("Оценки и задания этой недели сброшены."),
+        action: { label: t("Отменить"), onClick: undo },
       });
     } catch {
-      toast.error("Не удалось применить шаблон");
+      toast.error(t("Не удалось применить шаблон"));
     } finally {
       setApplying(false);
     }

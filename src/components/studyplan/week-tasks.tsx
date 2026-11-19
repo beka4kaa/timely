@@ -10,7 +10,7 @@ import { useSubjects } from "@/components/diary/lesson-dialog";
 import { useDiaryPlan } from "@/components/diary/use-diary-plan";
 import type { DiaryWeekApi } from "@/components/diary/use-diary-week";
 import { groupWeek, localDateKey, mondayOf, taskCount } from "@/lib/diary-tasks";
-import { plural } from "@/lib/now-feed";
+import { plural, t } from "@/lib/i18n";
 
 export function WeekTasks({ api, weekStart }: { api: DiaryWeekApi; weekStart: string | null }) {
   const plan = useDiaryPlan();
@@ -45,8 +45,8 @@ export function WeekTasks({ api, weekStart }: { api: DiaryWeekApi; weekStart: st
   const pastCount = taskCount(past);
 
   return (
-    <section className="wk-tasks" aria-label="Задано">
-      <h2 className="wk-tasks-h">Задано</h2>
+    <section className="wk-tasks" aria-label={t("Задано")}>
+      <h2 className="wk-tasks-h">{t("Задано")}</h2>
 
       {status === "loading" || !week ? (
         <div className="card wk-tasks-skel" aria-busy="true">
@@ -57,9 +57,9 @@ export function WeekTasks({ api, weekStart }: { api: DiaryWeekApi; weekStart: st
 
       {status === "error" ? (
         <div className="card wk-tasks-note" role="alert">
-          <p>Дневник не загрузился.</p>
+          <p>{t("Дневник не загрузился.")}</p>
           <button type="button" className="btn btn-line" onClick={api.reload}>
-            Попробовать снова
+            {t("Попробовать снова")}
           </button>
         </div>
       ) : null}
@@ -79,9 +79,9 @@ export function WeekTasks({ api, weekStart }: { api: DiaryWeekApi; weekStart: st
           ))}
 
           {!isPastWeek && !upcoming.length ? (
-            <p className="wk-tasks-empty">На этой неделе больше ничего не задано.</p>
+            <p className="wk-tasks-empty">{t("На этой неделе больше ничего не задано.")}</p>
           ) : null}
-          {isPastWeek && !past.length ? <p className="wk-tasks-empty">На этой неделе ничего не было задано.</p> : null}
+          {isPastWeek && !past.length ? <p className="wk-tasks-empty">{t("На этой неделе ничего не было задано.")}</p> : null}
 
           {!isPastWeek && past.length ? (
             <button
@@ -91,8 +91,8 @@ export function WeekTasks({ api, weekStart }: { api: DiaryWeekApi; weekStart: st
               onClick={() => setShowPast((value) => !value)}
             >
               {showPast
-                ? "Скрыть прошедшие дни"
-                : `Прошедшие дни${pastCount ? `, ${pastCount} ${plural(pastCount, ["задание", "задания", "заданий"])}` : ""}`}
+                ? t("Скрыть прошедшие дни")
+                : `${t("Прошедшие дни")}${pastCount ? `, ${plural(pastCount, "{n} задание", "{n} задания", "{n} заданий")}` : ""}`}
             </button>
           ) : null}
           {!isPastWeek && showPast

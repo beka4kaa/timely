@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { bookLabel } from "@/lib/book-label";
 import {
   layoutWeek,
@@ -570,7 +571,7 @@ export function PlanCalendar({
       className={cx("cal card plan-cal", noAllDay && "no-all", draggingId && "is-dragging")}
       data-mode={mode}
     >
-      <div className="cal-days" role="tablist" aria-label="День недели">
+      <div className="cal-days" role="tablist" aria-label={t("День недели")}>
         <span aria-hidden="true" />
         {columns.map((column) => {
           const studied = column.blocks.filter(
@@ -613,7 +614,7 @@ export function PlanCalendar({
               </Link>
             ))}
             {(dueByDay.get(column.dateKey)?.length ?? 0) > MAX_DUES_IN_DAY ? (
-              <small className="due-more">ещё {(dueByDay.get(column.dateKey)?.length ?? 0) - MAX_DUES_IN_DAY}</small>
+              <small className="due-more">{t("ещё {n}", { n: (dueByDay.get(column.dateKey)?.length ?? 0) - MAX_DUES_IN_DAY })}</small>
             ) : null}
           </div>
         ))}
@@ -623,7 +624,7 @@ export function PlanCalendar({
         ref={bodyRef}
         className="cal-body"
         tabIndex={0}
-        aria-label="Занятия по часам"
+        aria-label={t("Занятия по часам")}
         onPointerDown={onPointerDown}
         onClick={onClick}
         onKeyDown={onKeyDown}
@@ -650,7 +651,7 @@ export function PlanCalendar({
               <div
                 className="nowline"
                 role="img"
-                aria-label={`Сейчас ${clock(nowMinutes)}`}
+                aria-label={t("Сейчас {time}", { time: clock(nowMinutes) })}
                 style={{ top: `calc(${nowMinutes / 60} * var(--hh))` }}
               />
             ) : null}
@@ -709,10 +710,10 @@ export function PlanCalendar({
                 `${dayShort(column.dateKey)} ${time}`,
                 subject,
                 durationLabel(entry.duration_minutes),
-                entry.fixed && !own ? "закреплено" : "",
-                state?.done ? "сделано" : "",
-                state?.missed ? "пропущено" : "",
-                draftSchedule ? "предложенное расписание" : "",
+                entry.fixed && !own ? t("закреплено") : "",
+                state?.done ? t("сделано") : "",
+                state?.missed ? t("пропущено") : "",
+                draftSchedule ? t("предложенное расписание") : "",
               ]
                 .filter(Boolean)
                 .join(", ");
@@ -793,7 +794,7 @@ function DraftBlock({ draft }: { draft: PlanDraft }) {
       aria-hidden="true"
       style={{ "--s": draft.startMinutes / 60, "--d": draft.durationMinutes } as CSSProperties}
     >
-      <b>{draft.title.trim() || "Новое занятие"}</b>
+      <b>{draft.title.trim() || t("Новое занятие")}</b>
       <small>{clockRange(draft.startMinutes, draft.durationMinutes)}</small>
     </div>
   );
@@ -811,7 +812,7 @@ function SchoolBand({ day, onOpen }: { day: SchoolDay; onOpen?: (lesson: SchoolL
         const from = Math.max(parseClock(lesson.start) ?? start, start);
         const to = Math.min(Math.max(parseClock(lesson.end) ?? from + 40, from + 15), end);
         const time = `${lesson.start.replace(/^0/, "")}–${lesson.end.replace(/^0/, "")}`;
-        const note = lesson.grade ? `оценка ${lesson.grade}` : lesson.task === "open" ? "есть задание" : lesson.task === "done" ? "задание сделано" : "";
+        const note = lesson.grade ? t("оценка {grade}", { grade: lesson.grade }) : lesson.task === "open" ? t("есть задание") : lesson.task === "done" ? t("задание сделано") : "";
         return (
           <button
             key={lesson.lessonId}
@@ -833,7 +834,7 @@ function SchoolBand({ day, onOpen }: { day: SchoolDay; onOpen?: (lesson: SchoolL
               {lesson.grade ? (
                 <b>{lesson.grade}</b>
               ) : lesson.task !== "none" ? (
-                <em className={lesson.task === "done" ? "is-done" : undefined}>дз</em>
+                <em className={lesson.task === "done" ? "is-done" : undefined}>{t("дз")}</em>
               ) : null}
             </span>
           </button>

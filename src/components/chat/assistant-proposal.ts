@@ -10,7 +10,7 @@ import type { DayOfWeek, LessonGrades, TemplateLessonSlot } from "@/types/diary"
 
 import { DAY_OF_WEEK_LABELS, DAYS_ORDER } from "../../types/diary";
 import type { LessonValues, TimetableLesson } from "../diary/diary-edits";
-import { plural } from "../habits/habit-days";
+import { dateLocale, getLocale, msg, plural, t } from "../../lib/i18n";
 import { scheduleLabel, scheduleOf, type SchedulePatch } from "../habits/habit-schedule";
 
 export type ProposalState = "applied" | "dismissed" | "undone" | "stale";
@@ -186,20 +186,30 @@ export interface ProposalRow {
 
 const dayLabel = (iso: string) => {
   const [year, month, day] = iso.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  return new Date(year, month - 1, day).toLocaleDateString(dateLocale(), { day: "numeric", month: "long" });
 };
 
-const howOften = (raw: Partial<SchedulePatch>) => scheduleLabel(scheduleOf(raw)).toLowerCase();
+/** По-английски с большой буквы всегда: «I», «I’ll», дни недели и месяцы. */
+const ENGLISH_CAPITALS =
+  /^(?:I(?=$|[\s’'])|(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs)?|Fri|Sat(?:ur)?|Sun)(?:day)?\b|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b)/;
+
+/** В середине фразы: по-русски всё строчными, по-английски только первая буква, и не у имён. */
+const lowerFirst = (text: string) => {
+  if (getLocale() === "ru") return text.toLowerCase();
+  return ENGLISH_CAPITALS.test(text) ? text : text.charAt(0).toLowerCase() + text.slice(1);
+};
+
+const howOften = (raw: Partial<SchedulePatch>) => lowerFirst(scheduleLabel(scheduleOf(raw)));
 
 function newHabitNote(proposal: Extract<AssistantProposal, { kind: "new_habit" }>): string {
-  const goal = proposal.goal_title ? `к цели «${proposal.goal_title}»` : "";
+  const goal = proposal.goal_title ? t("к цели «{goal}»", { goal: proposal.goal_title }) : "";
   if (!goal) return howOften(proposal);
   return scheduleOf(proposal).frequency === "daily" ? goal : `${howOften(proposal)}, ${goal}`;
 }
 
 type StudyPlanProposal = Extract<AssistantProposal, { kind: "study_plan" }>;
 
-const sessionsLabel = (count: number) => `${count} ${plural(count, "занятие", "занятия", "занятий")}`;
+const sessionsLabel = (count: number) => plural(count, "{n} занятие", "{n} занятия", "{n} занятий");
 
 function periodLabel(from: string, to: string): string {
   if (from === to) return dayLabel(from);
@@ -221,67 +231,76 @@ function studyPlanWhen(proposal: StudyPlanProposal): string {
 }
 
 function studyPlanRows(proposal: StudyPlanProposal): ProposalRow[] {
-  const note = proposal.is_new ? "новый предмет" : proposal.path === "extra_sessions" ? "к тому, что уже есть" : "";
+  const note = proposal.is_new ? t("новый предмет") : proposal.path === "extra_sessions" ? t("к тому, что уже есть") : "";
   const rows = [{ name: proposal.subject, note }];
-  if (proposal.sessions) rows.push({ name: "Занятия", note: studyPlanWhen(proposal) });
-  if (proposal.left_topics) rows.push({ name: "Остальные темы", note: `ещё ${proposal.left_topics} можно поставить потом` });
-  if (proposal.approves_plan) rows.push({ name: "Программа", note: "подтвержу" });
+  if (proposal.sessions) rows.push({ name: t("Занятия"), note: studyPlanWhen(proposal) });
+  if (proposal.left_topics) rows.push({ name: t("Остальные темы"), note: t("ещё {n} можно поставить потом", { n: proposal.left_topics }) });
+  if (proposal.approves_plan) rows.push({ name: t("Программа"), note: t("подтвержу") });
   return rows;
 }
 
 const BLOCK_ACTIONS: Record<BlockAction, { heading: string; done: string; summary: string }> = {
-  cancel: { heading: "Отменю занятия:", done: "Занятия отменены.", summary: "отменить занятия" },
-  restore: { heading: "Верну занятия:", done: "Занятия возвращены.", summary: "вернуть занятия" },
-  pin: { heading: "Закреплю занятия:", done: "Занятия закреплены.", summary: "закрепить занятия" },
-  unpin: { heading: "Сниму закрепление:", done: "Закрепление снято.", summary: "открепить занятия" },
+  cancel: { heading: msg("Отменю занятия:"), done: msg("Занятия отменены."), summary: msg("отменить занятия") },
+  restore: { heading: msg("Верну занятия:"), done: msg("Занятия возвращены."), summary: msg("вернуть занятия") },
+  pin: { heading: msg("Закреплю занятия:"), done: msg("Занятия закреплены."), summary: msg("закрепить занятия") },
+  unpin: { heading: msg("Сниму закрепление:"), done: msg("Закрепление снято."), summary: msg("открепить занятия") },
 };
 
 function goalChangeNote({ fields, before }: Extract<AssistantProposal, { kind: "goal_change" }>): string {
   const parts: string[] = [];
-  if (fields.title) parts.push(`название «${fields.title}»`);
-  if (fields.dueDate === null) parts.push("срок убрать");
-  else if (fields.dueDate) parts.push(before.dueDate ? `срок ${dayLabel(before.dueDate)} → ${dayLabel(fields.dueDate)}` : `срок ${dayLabel(fields.dueDate)}`);
-  if (fields.isMain !== undefined) parts.push(fields.isMain ? "сделаю главной" : "больше не главная");
-  if (fields.status === "done") parts.push("закрою");
-  if (fields.status === "archived") parts.push("уберу в архив, вернуть можно");
+  if (fields.title) parts.push(t("название «{title}»", { title: fields.title }));
+  if (fields.dueDate === null) parts.push(t("срок убрать"));
+  else if (fields.dueDate) {
+    parts.push(
+      before.dueDate
+        ? t("срок {from} → {to}", { from: dayLabel(before.dueDate), to: dayLabel(fields.dueDate) })
+        : t("срок {date}", { date: dayLabel(fields.dueDate) }),
+    );
+  }
+  if (fields.isMain !== undefined) parts.push(fields.isMain ? t("сделаю главной") : t("больше не главная"));
+  if (fields.status === "done") parts.push(t("закрою"));
+  if (fields.status === "archived") parts.push(t("уберу в архив, вернуть можно"));
   return parts.join(", ");
 }
 
 function habitChangeNote(proposal: Extract<AssistantProposal, { kind: "habit_change" }>): string {
-  if (proposal.delete) return "отметки удалятся, вернуть нельзя";
+  if (proposal.delete) return t("отметки удалятся, вернуть нельзя");
   const parts: string[] = [];
-  if (proposal.fields.name) parts.push(`название «${proposal.fields.name}»`);
-  if (proposal.fields.goal !== undefined) parts.push(proposal.fields.goal ? `к цели «${proposal.goal_title}»` : "без цели");
+  if (proposal.fields.name) parts.push(t("название «{title}»", { title: proposal.fields.name }));
+  if (proposal.fields.goal !== undefined) {
+    parts.push(proposal.fields.goal ? t("к цели «{goal}»", { goal: proposal.goal_title ?? "" }) : t("без цели"));
+  }
   return parts.join(", ");
 }
 
 function topicChangeNote(proposal: Extract<AssistantProposal, { kind: "topic_change" }>): string {
-  if (proposal.delete) return "вернуть нельзя";
-  if (proposal.reviewed) return "отмечу, что повторил";
+  if (proposal.delete) return t("вернуть нельзя");
+  if (proposal.reviewed) return t("отмечу, что повторил");
   const parts: string[] = [];
-  if (proposal.fields.name) parts.push(`название «${proposal.fields.name}»`);
-  if (proposal.new_subject) parts.push(`в предмет «${proposal.new_subject}»`);
+  if (proposal.fields.name) parts.push(t("название «{title}»", { title: proposal.fields.name }));
+  if (proposal.new_subject) parts.push(t("в предмет «{subject}»", { subject: proposal.new_subject }));
   return parts.join(", ");
 }
 
 /** Удаление уносит всё, что к предмету привязано: об этом надо сказать до нажатия. */
 function subjectChangeNote(proposal: Extract<AssistantProposal, { kind: "subject_change" }>): string {
-  if (!proposal.delete) return `название «${proposal.new_name}»`;
+  if (!proposal.delete) return t("название «{title}»", { title: proposal.new_name ?? "" });
   const parts = [
-    proposal.blocks ? `${proposal.blocks} ${plural(proposal.blocks, "занятие", "занятия", "занятий")}` : "",
-    proposal.topics ? `${proposal.topics} ${plural(proposal.topics, "тему", "темы", "тем")} на повторение` : "",
-    proposal.books ? `${proposal.books} ${plural(proposal.books, "книгу", "книги", "книг")}` : "",
-    proposal.chats ? `${proposal.chats} ${plural(proposal.chats, "разговор", "разговора", "разговоров")}` : "",
+    proposal.blocks ? plural(proposal.blocks, "{n} занятие", "{n} занятия", "{n} занятий") : "",
+    proposal.topics ? plural(proposal.topics, "{n} тему на повторение", "{n} темы на повторение", "{n} тем на повторение") : "",
+    proposal.books ? plural(proposal.books, "{n} книгу", "{n} книги", "{n} книг") : "",
+    proposal.chats ? plural(proposal.chats, "{n} разговор", "{n} разговора", "{n} разговоров") : "",
   ].filter(Boolean);
-  if (!parts.length) return "вернуть нельзя";
-  const last = parts.pop();
-  return `удалю ${parts.length ? `${parts.join(", ")} и ${last}` : last}, вернуть нельзя`;
+  if (!parts.length) return t("вернуть нельзя");
+  const last = parts.pop() ?? "";
+  const list = parts.length ? t("{a} и {b}", { a: parts.join(", "), b: last }) : last;
+  return t("удалю {list}, вернуть нельзя", { list });
 }
 
 const GRADE_NAMES: Record<keyof LessonGrades, string> = {
-  exercises: "оценка",
-  test: "оценка за тест",
-  retelling: "оценка за пересказ",
+  exercises: msg("оценка"),
+  test: msg("оценка за тест"),
+  retelling: msg("оценка за пересказ"),
 };
 
 const oneLine = (text: string) => text.split(/\s+/).filter(Boolean).join(" ");
@@ -296,19 +315,19 @@ function shortened(text: string): string {
 function textChange(label: string, removal: string, after: string | undefined, before: string | undefined): string | null {
   if (after === undefined) return null;
   const was = shortened(before ?? "");
-  if (!after) return was ? `${removal} «${was}»` : removal;
-  return was ? `${label}: ${was} → ${oneLine(after)}` : `${label}: ${oneLine(after)}`;
+  if (!after) return was ? `${t(removal)} «${was}»` : t(removal);
+  return was ? `${t(label)}: ${was} → ${oneLine(after)}` : `${t(label)}: ${oneLine(after)}`;
 }
 
 function lessonChangeNote({ fields, before }: LessonChange): string {
-  const parts = [textChange("домашка", "убрать домашку", fields.homework, before.homework)];
+  const parts = [textChange(msg("домашка"), msg("убрать домашку"), fields.homework, before.homework)];
   for (const [field, value] of Object.entries(fields.grades ?? {})) {
     const was = before.grades?.[field as keyof LessonGrades] ?? null;
-    const name = GRADE_NAMES[field as keyof LessonGrades];
-    if (value === null) parts.push(was === null ? "убрать оценку" : `убрать оценку ${was}`);
+    const name = t(GRADE_NAMES[field as keyof LessonGrades]);
+    if (value === null) parts.push(was === null ? t("убрать оценку") : t("убрать оценку {grade}", { grade: was }));
     else parts.push(was === null ? `${name}: ${value}` : `${name}: ${was} → ${value}`);
   }
-  parts.push(textChange("заметка", "убрать заметку", fields.notes, before.notes));
+  parts.push(textChange(msg("заметка"), msg("убрать заметку"), fields.notes, before.notes));
   return parts.filter(Boolean).join(", ");
 }
 
@@ -317,7 +336,7 @@ const lessonChangeName = (change: LessonChange) => `${change.subject}, ${dayLabe
 type TimetableProposal = Extract<AssistantProposal, { kind: "school_timetable" }>;
 
 const clock = (time: string) => time.replace(/^0/, "");
-const weekdayName = (day: number) => DAY_OF_WEEK_LABELS[DAYS_ORDER[day]];
+const weekdayName = (day: number) => t(DAY_OF_WEEK_LABELS[DAYS_ORDER[day]]);
 
 function timetableDays({ lessons, clear_weekdays }: TimetableProposal): number[] {
   return Array.from(new Set([...lessons.map((lesson) => lesson.weekday), ...clear_weekdays])).sort((a, b) => a - b);
@@ -334,13 +353,13 @@ function timetableRows(proposal: TimetableProposal): ProposalRow[] {
       .filter((slot) => slot.weekday === day)
       .map((slot) => `${slot.name} ${clock(slot.start)}`)
       .join(", ");
-    return { name: weekdayName(day), note: [added, gone && `уберу: ${gone}`].filter(Boolean).join("; ") || "уроков не будет" };
+    return { name: weekdayName(day), note: [added, gone && t("уберу: {list}", { list: gone })].filter(Boolean).join("; ") || t("уроков не будет") };
   });
   const named = days.map((day) => DAYS_ORDER[day]);
   if (proposal.before_slots.some((slot) => !named.includes(slot.dayOfWeek))) {
-    rows.push({ name: "Остальные дни", note: "останутся как есть" });
+    rows.push({ name: t("Остальные дни"), note: t("останутся как есть") });
   }
-  rows.push({ name: "Недели с оценками и заданиями", note: "останутся как есть" });
+  rows.push({ name: t("Недели с оценками и заданиями"), note: t("останутся как есть") });
   return rows;
 }
 
@@ -348,37 +367,37 @@ function timetableRows(proposal: TimetableProposal): ProposalRow[] {
 export function proposalHeading(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
-      return "Добавлю привычку:";
+      return t("Добавлю привычку:");
     case "habit_schedule":
-      return "Поменяю, как часто:";
+      return t("Поменяю, как часто:");
     case "mark_habit":
-      return proposal.done ? "Отмечу за сегодня:" : "Сниму отметку за сегодня:";
+      return proposal.done ? t("Отмечу за сегодня:") : t("Сниму отметку за сегодня:");
     case "new_goal":
-      return "Добавлю цель:";
+      return t("Добавлю цель:");
     case "goal_progress":
-      return "Поменяю прогресс:";
+      return t("Поменяю прогресс:");
     case "new_topics":
-      return "Запишу в повторение, первое завтра:";
+      return t("Запишу в повторение, первое завтра:");
     case "mark_homework":
-      return proposal.done ? "Отмечу задание сделанным:" : "Сниму отметку с задания:";
+      return proposal.done ? t("Отмечу задание сделанным:") : t("Сниму отметку с задания:");
     case "study_plan":
-      return proposal.path === "extra_sessions" ? "Добавлю занятия:" : "Настрою предмет:";
+      return proposal.path === "extra_sessions" ? t("Добавлю занятия:") : t("Настрою предмет:");
     case "block_changes":
-      return BLOCK_ACTIONS[proposal.action].heading;
+      return t(BLOCK_ACTIONS[proposal.action].heading);
     case "commitment_removal":
-      return "Уберу занятое время:";
+      return t("Уберу занятое время:");
     case "goal_change":
-      return "Поменяю цель:";
+      return t("Поменяю цель:");
     case "habit_change":
-      return proposal.delete ? "Удалю привычку:" : "Поменяю привычку:";
+      return proposal.delete ? t("Удалю привычку:") : t("Поменяю привычку:");
     case "topic_change":
-      return proposal.delete ? "Удалю тему:" : "Поменяю тему:";
+      return proposal.delete ? t("Удалю тему:") : t("Поменяю тему:");
     case "subject_change":
-      return proposal.delete ? "Удалю предмет:" : "Поменяю предмет:";
+      return proposal.delete ? t("Удалю предмет:") : t("Поменяю предмет:");
     case "diary_changes":
-      return "Запишу в дневник:";
+      return t("Запишу в дневник:");
     case "school_timetable":
-      return "Запишу школьное расписание:";
+      return t("Запишу школьное расписание:");
     default:
       return "";
   }
@@ -397,9 +416,9 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
       return [
         {
           name: proposal.title,
-          note: proposal.deadline ? `к ${dayLabel(proposal.deadline)}` : proposal.scope === "study" ? "учёба" : "общая",
+          note: proposal.deadline ? t("к {date}", { date: dayLabel(proposal.deadline) }) : proposal.scope === "study" ? t("учёба") : t("общая"),
         },
-        ...proposal.habits.map((name) => ({ name, note: "привычка" })),
+        ...proposal.habits.map((name) => ({ name, note: t("привычка") })),
       ];
     case "goal_progress":
       return [{ name: proposal.title, note: `${proposal.before}% → ${proposal.progress}%` }];
@@ -414,7 +433,7 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
     case "commitment_removal":
       return proposal.items.map((item) => ({
         name: item.title,
-        note: item.weekday_name ? `${item.weekday_name}, ${item.start_time}` : "разово",
+        note: item.weekday_name ? `${t(item.weekday_name)}, ${item.start_time}` : t("разово"),
       }));
     case "goal_change":
       return [{ name: proposal.title, note: goalChangeNote(proposal) }];
@@ -437,23 +456,23 @@ export function proposalRows(proposal: AssistantProposal): ProposalRow[] {
 export function batchRows(proposal: AssistantProposal): ProposalRow[] {
   switch (proposal.kind) {
     case "new_habit":
-      return [{ name: `Привычка «${proposal.name}»`, note: newHabitNote(proposal) }];
+      return [{ name: t("Привычка «{name}»", { name: proposal.name }), note: newHabitNote(proposal) }];
     case "new_goal":
       return proposalRows(proposal).map((row, index) =>
-        index ? row : { name: `Цель «${proposal.title}»`, note: proposal.deadline ? `срок ${dayLabel(proposal.deadline)}` : row.note },
+        index ? row : { name: t("Цель «{title}»", { title: proposal.title }), note: proposal.deadline ? t("срок {date}", { date: dayLabel(proposal.deadline) }) : row.note },
       );
     case "new_topics":
-      return proposal.topics.map((topic) => ({ name: topic.title, note: `в повторение, ${topic.subject}` }));
+      return proposal.topics.map((topic) => ({ name: topic.title, note: t("в повторение, {subject}", { subject: topic.subject }) }));
     case "goal_change":
-      return [{ name: `Цель «${proposal.title}»`, note: goalChangeNote(proposal) }];
+      return [{ name: t("Цель «{title}»", { title: proposal.title }), note: goalChangeNote(proposal) }];
     case "habit_change":
-      return [{ name: `Привычка «${proposal.name}»`, note: habitChangeNote(proposal) }];
+      return [{ name: t("Привычка «{name}»", { name: proposal.name }), note: habitChangeNote(proposal) }];
     case "topic_change":
-      return [{ name: `Тема «${proposal.name}»`, note: topicChangeNote(proposal) }];
+      return [{ name: t("Тема «{name}»", { name: proposal.name }), note: topicChangeNote(proposal) }];
     case "subject_change":
-      return [{ name: `Предмет «${proposal.name}»`, note: subjectChangeNote(proposal) }];
+      return [{ name: t("Предмет «{name}»", { name: proposal.name }), note: subjectChangeNote(proposal) }];
     default: {
-      const heading = proposalHeading(proposal).replace(/:$/, "").toLowerCase();
+      const heading = lowerFirst(proposalHeading(proposal).replace(/:$/, ""));
       return proposalRows(proposal).map((row) => (row.note ? row : { ...row, note: heading }));
     }
   }
@@ -463,49 +482,51 @@ export function batchRows(proposal: AssistantProposal): ProposalRow[] {
 export function proposalDoneText(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
-      return `Привычка «${proposal.name}» добавлена.`;
+      return t("Привычка «{name}» добавлена.", { name: proposal.name });
     case "habit_schedule":
-      return `«${proposal.name}» теперь ${howOften(proposal)}.`;
+      return t("«{name}» теперь {often}.", { name: proposal.name, often: howOften(proposal) });
     case "mark_habit":
-      return proposal.done ? `«${proposal.name}» отмечено за сегодня.` : `Отметка с «${proposal.name}» снята.`;
+      return proposal.done
+        ? t("«{name}» отмечено за сегодня.", { name: proposal.name })
+        : t("Отметка с «{name}» снята.", { name: proposal.name });
     case "new_goal":
-      return `Цель «${proposal.title}» добавлена.`;
+      return t("Цель «{title}» добавлена.", { title: proposal.title });
     case "goal_progress":
-      return `Прогресс теперь ${proposal.progress}%.`;
+      return t("Прогресс теперь {progress}%.", { progress: proposal.progress });
     case "new_topics":
-      return proposal.topics.length === 1 ? "Тема записана в повторение." : "Темы записаны в повторение.";
+      return proposal.topics.length === 1 ? t("Тема записана в повторение.") : t("Темы записаны в повторение.");
     case "mark_homework":
-      return proposal.done ? "Задание отмечено сделанным." : "Отметка с задания снята.";
+      return proposal.done ? t("Задание отмечено сделанным.") : t("Отметка с задания снята.");
     case "revision":
-      return "План обновлён.";
+      return t("План обновлён.");
     case "commitments":
-      return "Занятое время записано.";
+      return t("Занятое время записано.");
     case "study_windows":
-      return "Время занятий обновлено.";
+      return t("Время занятий обновлено.");
     case "study_plan":
       return proposal.sessions
-        ? `«${proposal.subject}»: ${sessionsLabel(proposal.sessions)} в календаре.`
-        : `Предмет «${proposal.subject}» добавлен.`;
+        ? t("«{subject}»: {sessions} в календаре.", { subject: proposal.subject, sessions: sessionsLabel(proposal.sessions) })
+        : t("Предмет «{subject}» добавлен.", { subject: proposal.subject });
     case "block_changes":
-      return BLOCK_ACTIONS[proposal.action].done;
+      return t(BLOCK_ACTIONS[proposal.action].done);
     case "commitment_removal":
-      return "Занятое время убрано.";
+      return t("Занятое время убрано.");
     case "goal_change":
-      return `Цель «${proposal.fields.title ?? proposal.title}» обновлена.`;
+      return t("Цель «{title}» обновлена.", { title: proposal.fields.title ?? proposal.title });
     case "habit_change":
       return proposal.delete
-        ? `Привычка «${proposal.name}» удалена.`
-        : `Привычка «${proposal.fields.name ?? proposal.name}» обновлена.`;
+        ? t("Привычка «{name}» удалена.", { name: proposal.name })
+        : t("Привычка «{name}» обновлена.", { name: proposal.fields.name ?? proposal.name });
     case "topic_change":
-      return proposal.delete ? `Тема «${proposal.name}» удалена.` : "Тема обновлена.";
+      return proposal.delete ? t("Тема «{name}» удалена.", { name: proposal.name }) : t("Тема обновлена.");
     case "subject_change":
       return proposal.delete
-        ? `Предмет «${proposal.name}» удалён.`
-        : `Предмет теперь называется «${proposal.new_name}».`;
+        ? t("Предмет «{name}» удалён.", { name: proposal.name })
+        : t("Предмет теперь называется «{name}».", { name: proposal.new_name ?? "" });
     case "diary_changes":
-      return "Записано в дневник.";
+      return t("Записано в дневник.");
     case "school_timetable":
-      return "Школьное расписание записано.";
+      return t("Школьное расписание записано.");
   }
 }
 
@@ -521,59 +542,75 @@ export function canUndoProposal(proposal: AssistantProposal): boolean {
 export function proposalSummary(proposal: AssistantProposal): string {
   switch (proposal.kind) {
     case "new_habit":
-      return `новая привычка «${proposal.name}», ${howOften(proposal)}`;
+      return t("новая привычка «{name}», {often}", { name: proposal.name, often: howOften(proposal) });
     case "habit_schedule":
-      return `«${proposal.name}» ${howOften(proposal)} вместо «${howOften(proposal.before)}»`;
+      return t("«{name}» {often} вместо «{before}»", {
+        name: proposal.name,
+        often: howOften(proposal),
+        before: howOften(proposal.before),
+      });
     case "mark_habit":
-      return proposal.done ? `отметить «${proposal.name}» за сегодня` : `снять отметку с «${proposal.name}»`;
+      return proposal.done
+        ? t("отметить «{name}» за сегодня", { name: proposal.name })
+        : t("снять отметку с «{name}»", { name: proposal.name });
     case "new_goal":
-      return `новая цель «${proposal.title}»`;
+      return t("новая цель «{title}»", { title: proposal.title });
     case "goal_progress":
-      return `прогресс цели «${proposal.title}»: ${proposal.before}% → ${proposal.progress}%`;
+      return t("прогресс цели «{title}»: {before}% → {progress}%", {
+        title: proposal.title,
+        before: proposal.before,
+        progress: proposal.progress,
+      });
     case "new_topics":
-      return `в повторение: ${proposal.topics.map((topic) => topic.title).join(", ")}`;
+      return t("в повторение: {list}", { list: proposal.topics.map((topic) => topic.title).join(", ") });
     case "mark_homework":
-      return `${proposal.done ? "отметить задание" : "снять отметку с задания"} по предмету «${proposal.subject}»`;
+      return proposal.done
+        ? t("отметить задание по предмету «{subject}»", { subject: proposal.subject })
+        : t("снять отметку с задания по предмету «{subject}»", { subject: proposal.subject });
     case "revision":
-      return "изменение расписания";
+      return t("изменение расписания");
     case "commitments":
-      return `занятое время: ${proposal.items.map((item) => item.title).join(", ")}`;
+      return t("занятое время: {list}", { list: proposal.items.map((item) => item.title).join(", ") });
     case "study_windows":
-      return "новое время занятий";
+      return t("новое время занятий");
     case "study_plan": {
-      const name = `${proposal.is_new ? "новый предмет" : "предмет"} «${proposal.subject}»`;
+      const name = proposal.is_new
+        ? t("новый предмет «{subject}»", { subject: proposal.subject })
+        : t("предмет «{subject}»", { subject: proposal.subject });
       return proposal.sessions ? `${name}, ${studyPlanWhen(proposal)}` : name;
     }
     case "block_changes":
-      return `${BLOCK_ACTIONS[proposal.action].summary}: ${proposal.titles.join(", ")}`;
+      return t("{action}: {list}", { action: t(BLOCK_ACTIONS[proposal.action].summary), list: proposal.titles.join(", ") });
     case "commitment_removal":
-      return `убрать занятое время: ${proposal.items.map((item) => item.title).join(", ")}`;
+      return t("убрать занятое время: {list}", { list: proposal.items.map((item) => item.title).join(", ") });
     case "goal_change":
-      return `поменять цель «${proposal.title}»: ${goalChangeNote(proposal)}`;
+      return t("поменять цель «{title}»: {note}", { title: proposal.title, note: goalChangeNote(proposal) });
     case "habit_change":
       return proposal.delete
-        ? `удалить привычку «${proposal.name}»`
-        : `поменять привычку «${proposal.name}»: ${habitChangeNote(proposal)}`;
+        ? t("удалить привычку «{name}»", { name: proposal.name })
+        : t("поменять привычку «{name}»: {note}", { name: proposal.name, note: habitChangeNote(proposal) });
     case "topic_change":
       return proposal.delete
-        ? `удалить тему «${proposal.name}»`
-        : `поменять тему «${proposal.name}»: ${topicChangeNote(proposal)}`;
+        ? t("удалить тему «{name}»", { name: proposal.name })
+        : t("поменять тему «{name}»: {note}", { name: proposal.name, note: topicChangeNote(proposal) });
     case "subject_change":
       return proposal.delete
-        ? `удалить предмет «${proposal.name}»`
-        : `переименовать предмет «${proposal.name}» в «${proposal.new_name}»`;
+        ? t("удалить предмет «{name}»", { name: proposal.name })
+        : t("переименовать предмет «{name}» в «{new_name}»", { name: proposal.name, new_name: proposal.new_name ?? "" });
     case "diary_changes":
-      return `в дневник: ${proposal.changes.map((change) => `${lessonChangeName(change)}, ${lessonChangeNote(change)}`).join("; ")}`;
+      return t("в дневник: {list}", {
+        list: proposal.changes.map((change) => `${lessonChangeName(change)}, ${lessonChangeNote(change)}`).join("; "),
+      });
     case "school_timetable":
-      return `школьное расписание: ${timetableDays(proposal).map((day) => weekdayName(day).toLowerCase()).join(", ")}`;
+      return t("школьное расписание: {list}", { list: timetableDays(proposal).map((day) => lowerFirst(weekdayName(day))).join(", ") });
   }
 }
 
 const DECISION: Record<ProposalState, string> = {
-  applied: "ученик применил",
-  dismissed: "ученик отказался",
-  undone: "ученик применил, потом вернул как было",
-  stale: "устарело",
+  applied: msg("ученик применил"),
+  dismissed: msg("ученик отказался"),
+  undone: msg("ученик применил, потом вернул как было"),
+  stale: msg("устарело"),
 };
 
 /**
@@ -583,7 +620,10 @@ const DECISION: Record<ProposalState, string> = {
 export function historyContent(turn: { content: string; proposals?: AssistantProposal[] }): string {
   const notes = (turn.proposals ?? []).map(
     (proposal) =>
-      `[Предложение: ${proposalSummary(proposal)}. ${proposal.state ? DECISION[proposal.state] : "ждёт решения ученика"}.]`,
+      t("[Предложение: {summary}. {decision}.]", {
+        summary: proposalSummary(proposal),
+        decision: proposal.state ? t(DECISION[proposal.state]) : t("ждёт решения ученика"),
+      }),
   );
   return [turn.content, ...notes].join("\n");
 }

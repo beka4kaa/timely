@@ -1,11 +1,13 @@
 "use client"
 
-// Память демо в браузере: язык тура и день, на который данные гостя уже собраны.
+// Память демо в браузере: язык тура, шаг тура при смене языка и день, на который данные гостя уже собраны.
 // Отдельно от тура, чтобы страница входа не тянула его код.
 
-import { pickDemoLang, type DemoLang } from "@/lib/demo-mode"
+import type { DemoLang } from "@/lib/demo-mode"
+import { getLocale } from "@/lib/i18n"
 
-export const DEMO_LANG_KEY = "timely.demo.lang"
+/** Тур, прерванный сменой языка: с какого шага продолжить после перезагрузки. */
+export const DEMO_TOUR_RESUME_KEY = "timely.demo.tour-at"
 /** День, на который данные гостя уже собраны в этой вкладке. */
 export const DEMO_FRESH_KEY = "timely.demo.fresh"
 
@@ -29,10 +31,12 @@ export function todayKey(): string {
   return new Date().toDateString()
 }
 
+/**
+ * Язык тура — язык всего кабинета. При первом заходе его берёт из браузера
+ * src/lib/demo-mock/install.ts, дальше он живёт в куке.
+ */
 export function savedDemoLang(): DemoLang {
-  const saved = readStore("local", DEMO_LANG_KEY)
-  if (saved === "ru" || saved === "en") return saved
-  return pickDemoLang(typeof navigator === "undefined" ? undefined : navigator.languages)
+  return getLocale()
 }
 
 export function markDemoFresh() {

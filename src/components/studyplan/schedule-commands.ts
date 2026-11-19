@@ -7,6 +7,8 @@
 // идёт в режиме `plan`: он только готовит предложение, а применяет его сам ученик. Совет
 // без изменений остаётся за `/advice`.
 
+import { msg, t } from "../../lib/i18n";
+
 export type ScheduleAssistantMode = "advice" | "plan";
 export type ScheduleCommandId = "start" | "plan" | "advice";
 
@@ -37,22 +39,22 @@ const COMMAND_DEFINITIONS = [
     id: "start",
     command: "/start",
     aliases: ["/start-plan", "/start_plan"],
-    title: "Создать расписание",
-    description: "Ответить на короткие вопросы и получить первый черновик.",
+    title: msg("Создать расписание"),
+    description: msg("Ответить на короткие вопросы и получить первый черновик."),
   },
   {
     id: "plan",
     command: "/plan",
     aliases: [],
-    title: "Изменить расписание",
-    description: "Перенести занятия, разгрузить день или восстановить план.",
+    title: msg("Изменить расписание"),
+    description: msg("Перенести занятия, разгрузить день или восстановить план."),
   },
   {
     id: "advice",
     command: "/advice",
-    aliases: ["/совет"],
-    title: "Только совет",
-    description: "Оценить нагрузку и подсказать, ничего не меняя.",
+    aliases: ["/совет"], // i18n-skip
+    title: msg("Только совет"),
+    description: msg("Оценить нагрузку и подсказать, ничего не меняя."),
   },
 ] as const;
 
@@ -62,6 +64,8 @@ export const DEFAULT_SCHEDULE_MODE: ScheduleAssistantMode = "plan";
 export function scheduleCommands(): ScheduleCommand[] {
   return COMMAND_DEFINITIONS.map((definition) => ({
     ...definition,
+    title: t(definition.title),
+    description: t(definition.description),
     aliases: [...definition.aliases],
   }));
 }
@@ -141,7 +145,7 @@ export function resolveScheduleSubmission(
   if (message.startsWith("/")) {
     return {
       kind: "error",
-      message: "Неизвестная команда. Доступны /start, /plan и /advice.",
+      message: t("Неизвестная команда. Доступны /start, /plan и /advice."),
     };
   }
   return { kind: "message", message, mode: pendingMode };

@@ -4,15 +4,17 @@
 // и выбор. Синий — по умолчанию и без атрибута, остальные ставят `data-accent` на <html>.
 // Выбор живёт в этом браузере, как тема.
 
+import { msg } from "./i18n";
+
 export type AccentKey = "blue" | "violet" | "green" | "orange" | "pink" | "mono";
 
 export const ACCENTS: { key: AccentKey; name: string }[] = [
-  { key: "blue", name: "Синий" },
-  { key: "violet", name: "Фиолетовый" },
-  { key: "green", name: "Зелёный" },
-  { key: "orange", name: "Оранжевый" },
-  { key: "pink", name: "Розовый" },
-  { key: "mono", name: "Без цвета" },
+  { key: "blue", name: msg("Синий") },
+  { key: "violet", name: msg("Фиолетовый") },
+  { key: "green", name: msg("Зелёный") },
+  { key: "orange", name: msg("Оранжевый") },
+  { key: "pink", name: msg("Розовый") },
+  { key: "mono", name: msg("Без цвета") },
 ];
 
 export const DEFAULT_ACCENT: AccentKey = "blue";

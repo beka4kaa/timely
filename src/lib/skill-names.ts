@@ -1,3 +1,5 @@
+import { msg, t } from "./i18n";
+
 // Имена инструментов помощника — чтобы подсветить их как скиллы, а не как код.
 //
 // Помощник в ответе ссылается на свои инструменты: «идентификатор берётся из
@@ -28,15 +30,15 @@ const SKILLS = new Set<string>(SCHEDULE_SKILLS);
 
 /** Человеческие названия: ученику «list_courses» ничего не говорит. */
 const SKILL_LABELS: Record<string, string> = {
-  get_schedule: "смотрю расписание",
-  find_free_slots: "ищу свободные окна",
-  explain_schedule: "разбираю день",
-  propose_move_blocks: "переношу занятия",
-  propose_load_reduction: "разгружаю день",
-  propose_recovery_plan: "собираю план догона",
-  propose_fixed_commitments: "записываю занятость",
-  list_courses: "смотрю программы",
-  propose_study_plan: "настраиваю предмет",
+  get_schedule: msg("смотрю расписание"),
+  find_free_slots: msg("ищу свободные окна"),
+  explain_schedule: msg("разбираю день"),
+  propose_move_blocks: msg("переношу занятия"),
+  propose_load_reduction: msg("разгружаю день"),
+  propose_recovery_plan: msg("собираю план догона"),
+  propose_fixed_commitments: msg("записываю занятость"),
+  list_courses: msg("смотрю программы"),
+  propose_study_plan: msg("настраиваю предмет"),
 };
 
 /**
@@ -53,5 +55,6 @@ export function isSkillName(value: string): boolean {
 
 /** Подпись скилла для подсказки. Пусто — скилл неизвестен. */
 export function skillLabel(value: string): string {
-  return SKILL_LABELS[value.trim()] ?? "";
+  const label = SKILL_LABELS[value.trim()];
+  return label ? t(label) : "";
 }

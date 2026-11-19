@@ -15,6 +15,7 @@ import {
 import { Loader2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SUBJECT_COLORS, SUBJECT_EMOJIS, Subject } from '@/types/mind'
+import { t } from '@/lib/i18n'
 
 interface AddSubjectDialogProps {
     open: boolean
@@ -67,15 +68,15 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Новый предмет</DialogTitle>
+                    <DialogTitle>{t('Новый предмет')}</DialogTitle>
                     <DialogDescription>
-                        Добавьте предмет для изучения
+                        {t('Добавьте предмет для изучения')}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="name">Название</Label>
+                        <Label htmlFor="name">{t('Название')}</Label>
                         <Input
                             id="name"
                             placeholder="A Level Physics"
@@ -85,7 +86,7 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Эмодзи</Label>
+                        <Label>{t('Эмодзи')}</Label>
                         <div className="flex flex-wrap gap-2">
                             {SUBJECT_EMOJIS.map((e) => (
                                 <button
@@ -103,7 +104,7 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
                     </div>
 
                     <div className="grid gap-2">
-                        <Label>Цвет</Label>
+                        <Label>{t('Цвет')}</Label>
                         <div className="flex gap-2">
                             {SUBJECT_COLORS.map((c) => (
                                 <button
@@ -124,18 +125,18 @@ export function AddSubjectDialog({ open, onOpenChange, onSubjectAdded }: AddSubj
 
                 <DialogFooter className="mt-4">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
-                        Отмена
+                        {t('Отмена')}
                     </Button>
                     <Button onClick={handleSubmit} disabled={!name.trim() || loading}>
                         {loading ? (
                             <>
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Создание...
+                                {t('Создание...')}
                             </>
                         ) : (
                             <>
                                 <Plus className="h-4 w-4 mr-2" />
-                                Создать
+                                {t('Создать')}
                             </>
                         )}
                     </Button>

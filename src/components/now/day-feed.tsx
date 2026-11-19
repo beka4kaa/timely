@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useAskRail } from "@/contexts/ask-rail";
+import { msg, t } from "@/lib/i18n";
 import {
   attachLabel,
   closedByRejecting,
@@ -38,17 +39,42 @@ import type { DiaryLesson } from "@/types/diary";
 
 import { invalidatePlan } from "./now-resources";
 
+/**
+ * Тексты отказов, которые сервер пишет по-русски с названиями занятий внутри
+ * (`backend/studyplan/revisions.py`): точным ключом их не найти, поэтому узнаём по шаблону.
+ */
+const BACKEND_PATTERNS: Array<[RegExp, string]> = [
+  [/^Блок «(.+)» закреплён и не переносится\.$/, msg("Блок «{a}» закреплён и не переносится.")], // i18n-skip
+  [/^Блок «(.+)» отменён — перенос ничего не изменит\.$/, msg("Блок «{a}» отменён — перенос ничего не изменит.")], // i18n-skip
+  [/^Блок «(.+)» уже в работе или завершён — перенос ничего не изменит\.$/, msg("Блок «{a}» уже в работе или завершён — перенос ничего не изменит.")], // i18n-skip
+  [/^Блок «(.+)» нельзя ставить так рано\.$/, msg("Блок «{a}» нельзя ставить так рано.")], // i18n-skip
+  [/^Блок «(.+)» нельзя ставить так поздно\.$/, msg("Блок «{a}» нельзя ставить так поздно.")], // i18n-skip
+  [/^Блок «(.+)» нельзя ставить на этот день недели\.$/, msg("Блок «{a}» нельзя ставить на этот день недели.")], // i18n-skip
+  [/^Занятие короче (\d+) минут не имеет смысла\.$/, msg("Занятие короче {a} минут не имеет смысла.")], // i18n-skip
+  [/^«(.+)» и «(.+)» пересеклись бы по времени\.$/, msg("«{a}» и «{b}» пересеклись бы по времени.")], // i18n-skip
+  [/^«(.+)» пересёкся бы с «(.+)» из другого курса\.$/, msg("«{a}» пересёкся бы с «{b}» из другого курса.")], // i18n-skip
+];
+
+/** Русский текст, пришедший с сервера, на языке интерфейса. Незнакомый остаётся как есть. */
+function backendText(message: string): string {
+  for (const [pattern, key] of BACKEND_PATTERNS) {
+    const match = pattern.exec(message);
+    if (match) return t(key, { a: match[1], b: match[2] ?? "" });
+  }
+  return t(message);
+}
+
 /** Ошибку сервера словами ученика, а не «Failed to fetch» или «Not found.». */
 function humanError(
   error: unknown,
-  staleText = "Расписание уже изменилось, это предложение устарело.",
+  staleText = t("Расписание уже изменилось, это предложение устарело."),
 ): string {
   if (error instanceof StudyplanApiError) {
     if (error.isStale) return staleText;
-    if (/[а-яё]/i.test(error.message)) return error.message;
+    if (/[а-яё]/i.test(error.message)) return backendText(error.message); // i18n-skip
   }
-  if (error instanceof TypeError) return "Нет связи с сервером, попробуй ещё раз.";
-  return "Не получилось, попробуй ещё раз.";
+  if (error instanceof TypeError) return t("Нет связи с сервером, попробуй ещё раз.");
+  return t("Не получилось, попробуй ещё раз.");
 }
 
 // ──────────────────────────────── Записи ─────────────────────────────────────
@@ -89,15 +115,15 @@ function EntryStep({
           <time>{formatMinutes(entry.start)}</time>
           <span className="t">
             {entry.busy.title}
-            {entry.phase === "current" ? <small>идёт</small> : null}
+            {entry.phase === "current" ? <small>{t("идёт")}</small> : null}
           </span>
-          <span className="s">занято</span>
+          <span className="s">{t("занято")}</span>
           <span className="d">{formatMinutes(entry.end)}</span>
         </div>
       ) : (
         <div className="row row-free">
           <time>{formatMinutes(entry.start)}</time>
-          <span className="t">свободно {nbsp(durationLabel(entry.minutes))}</span>
+          <span className="t">{t("свободно {time}", { time: nbsp(durationLabel(entry.minutes)) })}</span>
         </div>
       )}
     </li>
@@ -117,18 +143,18 @@ function BlockNote({ entry }: { entry: Extract<TimelineEntry, { kind: "block" }>
     return (
       <>
         <Icon name="check" />
-        <span className="sr-only"> готово</span>
+        <span className="sr-only"> {t("готово")}</span>
       </>
     );
   }
-  if (block.status === "partially_completed") return <small>частично</small>;
-  if (block.status === "missed") return <small>пропущено</small>;
-  if (block.status === "skipped") return <small>пропущено намеренно</small>;
+  if (block.status === "partially_completed") return <small>{t("частично")}</small>;
+  if (block.status === "missed") return <small>{t("пропущено")}</small>;
+  if (block.status === "skipped") return <small>{t("пропущено намеренно")}</small>;
   if (block.schedule_status === "proposed" || block.schedule_status === "draft") {
-    return <small>предложение</small>;
+    return <small>{t("предложение")}</small>;
   }
-  if (block.review_step) return <small>{block.review_step}-е повторение</small>;
-  if (block.fixed) return <small>закреплено</small>;
+  if (block.review_step) return <small>{t("{n}-е повторение", { n: block.review_step })}</small>;
+  if (block.fixed) return <small>{t("закреплено")}</small>;
   return null;
 }
 
@@ -148,7 +174,7 @@ function BlockRow({
         {detail ? `${topic}: ${detail}` : topic}
         <BlockNote entry={entry} />
       </span>
-      <span className="s">{block.course_plan_title?.trim() || "Занятие"}</span>
+      <span className="s">{block.course_plan_title?.trim() || t("Занятие")}</span>
       <span className="d">{durationLabel(block.duration_minutes)}</span>
     </Link>
   );
@@ -171,15 +197,15 @@ function SchoolRow({
       <summary className="row">
         <time>{formatMinutes(entry.start)}</time>
         <span className="t">
-          Школа
-          {current ? <small>сейчас {lessonTitle(current)}</small> : null}
+          {t("Школа")}
+          {current ? <small>{t("сейчас {title}", { title: lessonTitle(current) })}</small> : null}
         </span>
         <span className="s">
           {count} {plural(count, ["урок", "урока", "уроков"])}
         </span>
         <span className="d">{formatMinutes(entry.end)}</span>
       </summary>
-      <ul className="school-list" aria-label="Уроки">
+      <ul className="school-list" aria-label={t("Уроки")}>
         {school.lessons.map((lesson) => (
           <SchoolLesson
             key={lesson.id}
@@ -191,7 +217,7 @@ function SchoolRow({
         ))}
         <li className="school-foot">
           <Link className="link" href="/dashboard/plan">
-            Открыть неделю
+            {t("Открыть неделю")}
           </Link>
         </li>
       </ul>
@@ -222,13 +248,13 @@ function SchoolLesson({
       {title}
       {grade !== null ? (
         <span className={`g g${Math.max(grade, 3)}`}>
-          <span className="sr-only">оценка </span>
+          <span className="sr-only">{t("оценка")} </span>
           {grade}
         </span>
       ) : lesson.id === school.currentId ? (
-        <span className="none is-now">идёт</span>
+        <span className="none is-now">{t("идёт")}</span>
       ) : past ? (
-        <span className="none">без оценки</span>
+        <span className="none">{t("без оценки")}</span>
       ) : (
         <span className="none">{lesson.startTime}</span>
       )}
@@ -318,7 +344,7 @@ function RevisionCard({
       await confirmRevision(revision.id);
       setApplied(true);
       setPhase("idle");
-      announce("Изменение принято. Его можно вернуть.");
+      announce(t("Изменение принято. Его можно вернуть."));
       mascot.hop(1);
       scheduleMoved();
     } catch (failure) {
@@ -330,7 +356,7 @@ function RevisionCard({
     begin();
     try {
       await rejectRevision(revision.id);
-      announce("Предложение отклонено.");
+      announce(t("Предложение отклонено."));
       onDone(revision);
       invalidatePlan(closedByRejecting(revision));
     } catch (failure) {
@@ -342,18 +368,18 @@ function RevisionCard({
     begin();
     try {
       await undoRevision(revision.id);
-      announce("Вернули как было.");
+      announce(t("Вернули как было."));
       onDone(revision);
       scheduleMoved();
     } catch (failure) {
-      fail(failure, "После этого план уже менялся, вернуть как было нельзя.");
+      fail(failure, t("После этого план уже менялся, вернуть как было нельзя."));
     }
   };
 
-  const notice = gone ? "Это предложение больше не действует." : error;
+  const notice = gone ? t("Это предложение больше не действует.") : error;
   const subline = applied
-    ? "Готово, план обновлён."
-    : revision.reason?.trim() || (request ? "Тогда предлагаю так:" : "");
+    ? t("Готово, план обновлён.")
+    : revision.reason?.trim() || (request ? t("Тогда предлагаю так:") : "");
 
   return (
     <li className="step is-rev">
@@ -363,7 +389,7 @@ function RevisionCard({
         </span>
         <div>
           <p className="rev-title" id={titleId}>
-            {request ? `«${request}»` : "Предлагаю поменять план"}
+            {request ? t("«{request}»", { request }) : t("Предлагаю поменять план")}
           </p>
           {subline ? <p className="rev-sub">{subline}</p> : null}
           {rows.length ? (
@@ -374,20 +400,20 @@ function RevisionCard({
                   <span className="chg">
                     {row.kind === "created" ? (
                       <>
-                        <span className="sr-only">добавится: </span>
+                        <span className="sr-only">{t("добавится:")} </span>
                         <b>{nbsp(row.to)}</b>
                       </>
                     ) : row.kind === "removed" ? (
                       <>
-                        <span className="sr-only">было: </span>
-                        {nbsp(row.from)}, <b>уберём</b>
+                        <span className="sr-only">{t("было:")} </span>
+                        {nbsp(row.from)}, <b>{t("уберём")}</b>
                       </>
                     ) : (
                       <>
-                        <span className="sr-only">было: </span>
+                        <span className="sr-only">{t("было:")} </span>
                         {nbsp(row.from)}
                         <span aria-hidden="true"> → </span>
-                        <span className="sr-only">, станет: </span>
+                        <span className="sr-only">{t(", станет:")} </span>
                         <b>{nbsp(row.to)}</b>
                       </>
                     )}
@@ -403,7 +429,7 @@ function RevisionCard({
           ) : null}
           {blocked ? (
             <p className="rev-blocked" id={blockedId}>
-              {blocked}
+              {backendText(blocked)}
             </p>
           ) : null}
           <div className="q-acts">
@@ -414,7 +440,7 @@ function RevisionCard({
                 className="btn btn-line"
                 onClick={() => onDone(revision)}
               >
-                Понятно
+                {t("Понятно")}
               </button>
             ) : applied ? (
               <button
@@ -424,7 +450,7 @@ function RevisionCard({
                 disabled={phase === "busy"}
                 onClick={() => void undo()}
               >
-                Вернуть как было
+                {t("Вернуть как было")}
               </button>
             ) : (
               <>
@@ -443,7 +469,7 @@ function RevisionCard({
                     else void accept();
                   }}
                 >
-                  Применить
+                  {t("Применить")}
                 </button>
                 <button
                   type="button"
@@ -453,9 +479,9 @@ function RevisionCard({
                     if (phase !== "busy") void reject();
                   }}
                 >
-                  Не надо
+                  {t("Не надо")}
                 </button>
-                {blocked ? null : <small>Можно будет вернуть</small>}
+                {blocked ? null : <small>{t("Можно будет вернуть")}</small>}
               </>
             )}
           </div>
@@ -522,7 +548,7 @@ function UnmarkedLine({
     prompt({
       target: "schedule",
       scheduleId: latest.schedule,
-      text: `Я не сделал(а) эти занятия: ${titles}. Перенеси их на ближайшие свободные окна.`,
+      text: t("Я не сделал(а) эти занятия: {titles}. Перенеси их на ближайшие свободные окна.", { titles }),
       send: true,
     });
   };
@@ -530,22 +556,28 @@ function UnmarkedLine({
   return (
     <div className="late-line" data-attach={`${topic}, ${dayMonthLabel(dateKey)}`}>
       <p>
-        Без отметки: {topic}, {nbsp(dayMonthLabel(dateKey))}
+        {t("Без отметки: {topic}, {date}", { topic, date: nbsp(dayMonthLabel(dateKey)) })}
         {more > 0
-          ? ` и ещё ${nbsp(`${more} ${plural(more, ["занятие", "занятия", "занятий"])}`)}`
+          ? ` ${t("и ещё {count}", {
+              count: nbsp(`${more} ${plural(more, ["занятие", "занятия", "занятий"])}`),
+            })}`
           : ""}
       </p>
       <span className="late-acts">
         <button type="button" className="btn btn-text" onClick={move}>
-          Перенести
+          {t("Перенести")}
         </button>
         <button
           type="button"
           className="btn btn-text"
           onClick={() => onHide(blocks.map((block) => block.id), topic)}
-          aria-label={`Скрыть «${topic}»${more > 0 ? " и остальные" : ""}: уже сделано`}
+          aria-label={
+            more > 0
+              ? t("Скрыть «{topic}» и остальные: уже сделано", { topic })
+              : t("Скрыть «{topic}»: уже сделано", { topic })
+          }
         >
-          Скрыть
+          {t("Скрыть")}
         </button>
       </span>
     </div>
@@ -607,7 +639,7 @@ export function DayFeed({
     const next = Array.from(new Set([...hidden.filter((id) => present.has(id)), ...ids]));
     setHidden(next);
     writeHidden(next);
-    setMessage(`Скрыто: «${title}».`);
+    setMessage(t("Скрыто: «{title}».", { title }));
     // Кнопка, на которой был фокус, исчезла вместе со строкой.
     document.getElementById("now-title")?.focus();
   };
@@ -617,7 +649,7 @@ export function DayFeed({
       <p className="sr-only" role="status" aria-live="polite">
         {message}
       </p>
-      <ol className="day" aria-label="Расписание на день">
+      <ol className="day" aria-label={t("Расписание на день")}>
         {before.map((entry, index) => (
           <EntryStep
             key={entryKey(entry)}

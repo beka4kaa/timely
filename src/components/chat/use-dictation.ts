@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getLocale } from "@/lib/i18n";
 import { heardFrom, recognitionCtor, type RecognitionLike } from "@/lib/dictation";
 
 export function useDictation(onText: (text: string, final: boolean) => void) {
@@ -21,7 +22,7 @@ export function useDictation(onText: (text: string, final: boolean) => void) {
     const Ctor = recognitionCtor();
     if (!Ctor || recognition.current) return;
     const rec = new Ctor();
-    rec.lang = "ru-RU";
+    rec.lang = getLocale() === "en" ? "en-US" : "ru-RU";
     rec.interimResults = true;
     rec.continuous = false;
     rec.onresult = (event) => {

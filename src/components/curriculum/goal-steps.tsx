@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import { BOOKS_ENABLED } from "@/config/features";
 import type { Balance, Level } from "@/lib/curriculum-api";
+import { msg, t } from "@/lib/i18n";
 import type { LevelPair } from "@/lib/curriculum-levels";
 import { useCurriculumStore } from "@/stores/curriculum-store";
 
@@ -17,9 +18,9 @@ import { LevelSpan } from "./level-span";
 import { WizardHead } from "./wizard-head";
 
 const EXAMPLES = [
-  "Хочу научиться решать задачи по механике за 10 класс",
-  "Разобраться в линейной алгебре с нуля к сессии",
-  "Подтянуть органическую химию перед экзаменом",
+  msg("Хочу научиться решать задачи по механике за 10 класс"),
+  msg("Разобраться в линейной алгебре с нуля к сессии"),
+  msg("Подтянуть органическую химию перед экзаменом"),
 ];
 
 /** Короче этого по фразе не понять, что учить. */
@@ -35,10 +36,10 @@ export function GoalStep() {
 
   return (
     <>
-      <WizardHead title="Что хочешь выучить?">
+      <WizardHead title={t("Что хочешь выучить?")}>
         {BOOKS_ENABLED
-          ? "Напиши своими словами. Программу составлю по твоему учебнику, со ссылками на страницы."
-          : "Напиши своими словами, что хочешь выучить. Предмет появится на полке."}
+          ? t("Напиши своими словами. Программу составлю по твоему учебнику, со ссылками на страницы.")
+          : t("Напиши своими словами, что хочешь выучить. Предмет появится на полке.")}
       </WizardHead>
 
       <form
@@ -50,39 +51,39 @@ export function GoalStep() {
         }}
       >
         <label className="field">
-          Цель
+          {t("Цель")}
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="Например: хочу научиться решать задачи по механике"
+            placeholder={t("Например: хочу научиться решать задачи по механике")}
             rows={4}
             disabled={busy}
           />
         </label>
         {length > 0 && length < MIN_GOAL_LENGTH ? (
           <p className="cur-err" role="status">
-            Напиши чуть подробнее, чтобы было понятно, что учить.
+            {t("Напиши чуть подробнее, чтобы было понятно, что учить.")}
           </p>
         ) : null}
 
-        <div className="gs-chips" role="group" aria-label="Примеры">
+        <div className="gs-chips" role="group" aria-label={t("Примеры")}>
           {EXAMPLES.map((example) => (
             <button
               key={example}
               type="button"
               className="gs-chip"
-              aria-pressed={text === example}
-              onClick={() => setText(example)}
+              aria-pressed={text === t(example)}
+              onClick={() => setText(t(example))}
               disabled={busy}
             >
-              {example}
+              {t(example)}
             </button>
           ))}
         </div>
 
         <div className="cur-acts">
           <button type="submit" className="btn btn-main" disabled={!canSubmit}>
-            {busy ? "Разбираю цель…" : "Продолжить"}
+            {busy ? t("Разбираю цель…") : t("Продолжить", undefined, "мастер")}
           </button>
         </div>
       </form>
@@ -91,16 +92,16 @@ export function GoalStep() {
 }
 
 const BALANCES: { value: Balance; label: string; hint: string }[] = [
-  { value: "theory", label: "Больше теории", hint: "разбор и формулировки" },
-  { value: "balanced", label: "Поровну", hint: "теория и задачи вместе" },
-  { value: "practice", label: "Больше практики", hint: "упор на задачи" },
+  { value: "theory", label: msg("Больше теории"), hint: msg("разбор и формулировки") },
+  { value: "balanced", label: msg("Поровну"), hint: msg("теория и задачи вместе") },
+  { value: "practice", label: msg("Больше практики"), hint: msg("упор на задачи") },
 ];
 
 /** Быстрые сроки. Расчёт даты это арифметика календаря, а не оценка прогноза. */
 const QUICK_DEADLINES: { label: string; months: number }[] = [
-  { label: "Через месяц", months: 1 },
-  { label: "Через три", months: 3 },
-  { label: "Через полгода", months: 6 },
+  { label: msg("Через месяц"), months: 1 },
+  { label: msg("Через три"), months: 3 },
+  { label: msg("Через полгода"), months: 6 },
 ];
 
 function isoAfterMonths(months: number): string {
@@ -163,8 +164,8 @@ export function GoalConfirmStep() {
 
   return (
     <>
-      <WizardHead title="Под кого строим курс">
-        Так я понял твою цель. Поправь, если что-то не так.
+      <WizardHead title={t("Под кого строим курс")}>
+        {t("Так я понял твою цель. Поправь, если что-то не так.")}
       </WizardHead>
 
       <form
@@ -179,22 +180,22 @@ export function GoalConfirmStep() {
 
         <div className="cur-form-two">
           <label className="field">
-            Предмет
+            {t("Предмет")}
             <input
               value={subject}
               onChange={(event) => setSubject(event.target.value)}
-              placeholder="Физика"
+              placeholder={t("Физика")}
               disabled={busy}
               aria-invalid={subjectMissing}
             />
-            {subjectMissing ? <span className="cur-err">Напиши предмет, без него курс не найти на полке.</span> : null}
+            {subjectMissing ? <span className="cur-err">{t("Напиши предмет, без него курс не найти на полке.")}</span> : null}
           </label>
           <label className="field">
-            Раздел
+            {t("Раздел")}
             <input
               value={direction}
               onChange={(event) => setDirection(event.target.value)}
-              placeholder="Механика"
+              placeholder={t("Механика")}
               disabled={busy}
             />
           </label>
@@ -204,7 +205,7 @@ export function GoalConfirmStep() {
 
         <div className="wz-block">
           <p className="wz-label" id="curriculum-balance-label">
-            Теория и практика
+            {t("Теория и практика")}
           </p>
           <div className="opts" role="group" aria-labelledby="curriculum-balance-label">
             {BALANCES.map((option) => (
@@ -215,8 +216,8 @@ export function GoalConfirmStep() {
                 disabled={busy}
                 onClick={() => setBalance(option.value)}
               >
-                {option.label}
-                <span>{option.hint}</span>
+                {t(option.label)}
+                <span>{t(option.hint)}</span>
               </button>
             ))}
           </div>
@@ -224,11 +225,11 @@ export function GoalConfirmStep() {
 
         <div className="wz-block">
           <p className="wz-label" id="curriculum-deadline-label">
-            Когда хочешь закончить
+            {t("Когда хочешь закончить")}
           </p>
           <div className="wz-deadline" role="group" aria-labelledby="curriculum-deadline-label">
             <label className="field wz-date">
-              <span className="sr-only">Дата</span>
+              <span className="sr-only">{t("Дата")}</span>
               <input
                 type="date"
                 value={finishDate}
@@ -249,7 +250,7 @@ export function GoalConfirmStep() {
                     onClick={() => setFinishDate(iso)}
                     disabled={busy}
                   >
-                    {quick.label}
+                    {t(quick.label)}
                   </button>
                 );
               })}
@@ -261,19 +262,19 @@ export function GoalConfirmStep() {
                   onClick={() => setFinishDate("")}
                   disabled={busy}
                 >
-                  Без срока
+                  {t("Без срока")}
                 </button>
               ) : null}
             </div>
           </div>
           <p className="wz-hint">
-            Это пожелание, а не обещание: успеваешь или нет, посчитаю, когда программа будет готова.
+            {t("Это пожелание, а не обещание: успеваешь или нет, посчитаю, когда программа будет готова.")}
           </p>
         </div>
 
         <div className="cur-acts">
           <button type="submit" className="btn btn-main" disabled={busy}>
-            {busy ? "Сохраняю…" : "Всё верно"}
+            {busy ? t("Сохраняю…") : t("Всё верно")}
           </button>
         </div>
       </form>

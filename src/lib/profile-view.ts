@@ -2,7 +2,8 @@
 // Здесь нет React и нет сети, поэтому всё проверяется тестами.
 
 import type { Contest, Submission } from "./contest-api";
-import { contestResult, ru, shortDate } from "./contest-view";
+import { contestResult, shortDate } from "./contest-view";
+import { dateLocale, decimal, plural, t } from "./i18n";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -100,7 +101,7 @@ export function heatCells(
   today: Date,
   weeks = 52,
 ): HeatCell[] {
-  const format = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long" });
+  const format = new Intl.DateTimeFormat(dateLocale(), { day: "numeric", month: "long" });
   const todayKey = dayKeyOf(today);
   const fromMonday = (today.getDay() + 6) % 7;
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - fromMonday - (weeks - 1) * 7);
@@ -111,8 +112,8 @@ export function heatCells(
     const future = key > todayKey;
     const day = future ? undefined : activity.get(key);
     let note = "";
-    if (day?.seconds) note = `: ${Math.max(1, Math.round(day.seconds / 60))} мин фокуса`;
-    else if (day?.habit) note = ": привычки";
+    if (day?.seconds) note = t(": {n} мин фокуса", { n: Math.max(1, Math.round(day.seconds / 60)) });
+    else if (day?.habit) note = t(": привычки");
     cells.push({
       key,
       level: levelOf(day),
@@ -156,7 +157,7 @@ export function weekBars(
 /** Подписи под столбиками: первый месяц, средний и последний, без повторов. */
 export function monthAxis(bars: readonly WeekBar[]): string[] {
   if (!bars.length) return [];
-  const format = new Intl.DateTimeFormat("ru-RU", { month: "long" });
+  const format = new Intl.DateTimeFormat(dateLocale(), { month: "long" });
   const picks = [bars[0], bars[Math.floor(bars.length / 2)], bars[bars.length - 1]];
   return Array.from(new Set(picks.map((bar) => format.format(bar.monday))));
 }
@@ -166,8 +167,8 @@ export function hoursAndMinutes(seconds: number): string {
   const minutes = Math.round(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  if (!hours) return `${rest} мин`;
-  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+  if (!hours) return t("{n} мин", { n: rest });
+  return rest ? t("{h} ч {m} мин", { h: hours, m: rest }) : t("{n} ч", { n: hours });
 }
 
 /** Часы для счётчика: «64» или «2,5». Меньше шести минут счётчиком не считается. */
@@ -176,11 +177,11 @@ export function hoursStat(seconds: number): { value: string; label: string } | n
   if (hours < 0.1) return null;
   if (hours >= 10) {
     const whole = Math.round(hours);
-    return { value: String(whole), label: `${ru(whole, "час", "часа", "часов")} в фокусе` };
+    return { value: String(whole), label: plural(whole, "час в фокусе", "часа в фокусе", "часов в фокусе") };
   }
   const tenth = Math.round(hours * 10) / 10;
-  if (Number.isInteger(tenth)) return { value: String(tenth), label: `${ru(tenth, "час", "часа", "часов")} в фокусе` };
-  return { value: String(tenth).replace(".", ","), label: "часа в фокусе" };
+  if (Number.isInteger(tenth)) return { value: String(tenth), label: plural(tenth, "час в фокусе", "часа в фокусе", "часов в фокусе") };
+  return { value: decimal(tenth), label: t("часа в фокусе") };
 }
 
 /** Принятые решения, по одному на задачу, самые свежие сверху. */
@@ -315,8 +316,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "7",
       size: 25,
       kind: "",
-      name: "Неделя подряд",
-      how: week ? `7 дней занятий подряд, ${shortDate(`${week}T12:00:00`)}` : "Занимайся 7 дней подряд",
+      name: t("Неделя подряд"),
+      how: week ? t("7 дней занятий подряд, {date}", { date: shortDate(`${week}T12:00:00`) }) : t("Занимайся 7 дней подряд"),
       earned: Boolean(week),
     },
     {
@@ -327,8 +328,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "30",
       size: 23,
       kind: "",
-      name: "30 дней занятий",
-      how: month ? `Тридцатый день занятий, ${shortDate(`${month}T12:00:00`)}` : "Набери 30 дней занятий",
+      name: t("30 дней занятий"),
+      how: month ? t("Тридцатый день занятий, {date}", { date: shortDate(`${month}T12:00:00`) }) : t("Набери 30 дней занятий"),
       earned: Boolean(month),
     },
     {
@@ -339,8 +340,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "10",
       size: 23,
       kind: "",
-      name: "10 часов фокуса",
-      how: focus ? `10 часов в фокусе, ${shortDate(`${focus}T12:00:00`)}` : "Набери 10 часов в помодоро",
+      name: t("10 часов фокуса"),
+      how: focus ? t("10 часов в фокусе, {date}", { date: shortDate(`${focus}T12:00:00`) }) : t("Набери 10 часов в помодоро"),
       earned: Boolean(focus),
     },
     {
@@ -351,8 +352,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: topicArt.glyph,
       size: topicArt.size,
       kind: "math",
-      name: "Тема усвоена",
-      how: firstTopic ? firstTopic.name : "Усвой первую тему в «Слабых темах»",
+      name: t("Тема усвоена"),
+      how: firstTopic ? firstTopic.name : t("Усвой первую тему в «Слабых темах»"),
       earned: Boolean(firstTopic),
     },
     {
@@ -363,8 +364,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "5",
       size: 25,
       kind: "",
-      name: "Пять тем",
-      how: mastered.length >= 5 ? `Усвоено тем: ${mastered.length}` : "Усвой пять тем",
+      name: t("Пять тем"),
+      how: mastered.length >= 5 ? t("Усвоено тем: {n}", { n: mastered.length }) : t("Усвой пять тем"),
       earned: mastered.length >= 5,
     },
     {
@@ -372,11 +373,11 @@ export function computeBadges(input: BadgeInput): Badge[] {
       shape: "star",
       from: "#ffd54f",
       to: "#ff9f1c",
-      glyph: "№1",
+      glyph: t("№1"),
       size: 15,
       kind: "dark",
-      name: "Первый контест",
-      how: contest ? `${contest.title}, ${shortDate(contest.start_time)}` : "Участвуй в контесте",
+      name: t("Первый контест"),
+      how: contest ? `${contest.title}, ${shortDate(contest.start_time)}` : t("Участвуй в контесте"),
       earned: Boolean(contest),
     },
     {
@@ -387,8 +388,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "+100",
       size: 14,
       kind: "",
-      name: "Сотня баллов",
-      how: hundred ? `100 баллов за неделю, ${shortDate(hundred)}` : "Набери 100 баллов за неделю",
+      name: t("Сотня баллов"),
+      how: hundred ? t("100 баллов за неделю, {date}", { date: shortDate(hundred) }) : t("Набери 100 баллов за неделю"),
       earned: Boolean(hundred),
     },
     {
@@ -399,8 +400,8 @@ export function computeBadges(input: BadgeInput): Badge[] {
       glyph: "§",
       size: 25,
       kind: "math",
-      name: "Курс пройден",
-      how: finished ?? "Пройди курс или материал до конца",
+      name: t("Курс пройден"),
+      how: finished ?? t("Пройди курс или материал до конца"),
       earned: Boolean(finished),
     },
   ];

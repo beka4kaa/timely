@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Wand2, Loader2, Sparkles } from 'lucide-react'
 import { toast } from "sonner"
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 
 interface FastTopicAddProps {
     subjectId: string
@@ -44,13 +45,13 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
             const data = await res.json()
             
             // Count total subtopics
-            const totalSubtopics = data.topics.reduce((sum: number, t: any) => 
-                sum + (t.subtopics?.length || 0), 0)
+            const totalSubtopics = data.topics.reduce((sum: number, topic: any) => 
+                sum + (topic.subtopics?.length || 0), 0)
 
-            toast.success("✨ Темы добавлены!", {
+            toast.success(t("✨ Темы добавлены!"), {
                 description: totalSubtopics > 0 
-                    ? `Добавлено ${data.topics.length} тем и ${totalSubtopics} подтем`
-                    : `Добавлено ${data.topics.length} новых тем`,
+                    ? t('Добавлено {topics} тем и {subtopics} подтем', { topics: data.topics.length, subtopics: totalSubtopics })
+                    : t('Добавлено {topics} новых тем', { topics: data.topics.length }),
             })
 
             setText('')
@@ -59,8 +60,8 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
 
         } catch (error) {
             console.error(error)
-            toast.error("Ошибка", {
-                description: "Не удалось сгенерировать темы. Попробуйте еще раз.",
+            toast.error(t("Ошибка"), {
+                description: t("Не удалось сгенерировать темы. Попробуйте еще раз."),
             })
         } finally {
             setLoading(false)
@@ -81,20 +82,16 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-purple-500" />
-                        Быстрое добавление тем
+                        {t('Быстрое добавление тем')}
                     </DialogTitle>
                     <DialogDescription>
-                        Вставьте список тем, план урока или описание задач. AI сам создаст структурированные темы для {subjectName}.
+                        {t('Вставьте список тем, план урока или описание задач. AI сам создаст структурированные темы для {subjectName}.', { subjectName })}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="grid gap-4 py-4">
                     <Textarea
-                        placeholder="Пример: 
-- Основы кинематики
-- Законы Ньютона
-- Работа и энергия
-Или просто описание того что нужно изучить..."
+                        placeholder={t("Пример: \n- Основы кинематики\n- Законы Ньютона\n- Работа и энергия\nИли просто описание того что нужно изучить...")}
                         className="min-h-[150px]"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
@@ -102,7 +99,7 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
                 </div>
 
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>Отмена</Button>
+                    <Button variant="outline" onClick={() => setOpen(false)}>{t('Отмена')}</Button>
                     <Button
                         onClick={handleGenerate}
                         disabled={!text.trim() || loading}
@@ -111,12 +108,12 @@ export function FastTopicAddDialog({ subjectId, subjectName, onTopicsAdded, trig
                         {loading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Генерация...
+                                {t('Генерация...')}
                             </>
                         ) : (
                             <>
                                 <Wand2 className="mr-2 h-4 w-4" />
-                                Сгенерировать
+                                {t('Сгенерировать')}
                             </>
                         )}
                     </Button>

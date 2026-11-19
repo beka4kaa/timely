@@ -1,6 +1,7 @@
 import type { IconName } from "../components/shell/icons";
 import { BOARD_ENABLED } from "./features.ts";
 import { SECTION_LABEL } from "../lib/curriculum-books.ts";
+import { msg } from "../lib/i18n/index.ts";
 
 export interface DashboardNavigationAccess {
   is_admin?: boolean;
@@ -204,55 +205,55 @@ export interface DashboardSection {
 }
 
 const dashboardSections: DashboardSection[] = [
-  { key: "now", kind: "page", title: "Сейчас", icon: "now", url: "/dashboard", items: [] },
-  { key: "tutor", kind: "page", title: "Тьютор", icon: "chat", url: "/dashboard/chat", items: [] },
+  { key: "now", kind: "page", title: msg("Сейчас"), icon: "now", url: "/dashboard", items: [] },
+  { key: "tutor", kind: "page", title: msg("Тьютор"), icon: "chat", url: "/dashboard/chat", items: [] },
   {
     key: "week",
     kind: "page",
-    title: "Неделя",
+    title: msg("Неделя"),
     icon: "plan",
     url: "/dashboard/plan",
     // Дневник и план стали одной неделей. Шаблон уроков и оценки живут по старым адресам.
     aliases: ["/dashboard/diary"],
     items: [],
   },
-  { key: "focus", kind: "page", title: "Помодоро", icon: "timer", url: "/dashboard/pomodoro", items: [] },
+  { key: "focus", kind: "page", title: msg("Помодоро"), icon: "timer", url: "/dashboard/pomodoro", items: [] },
   {
     key: "study",
     kind: "group",
-    title: "Учёба",
+    title: msg("Учёба"),
     icon: "diary",
     url: "/dashboard/weaknesses",
     items: [
-      { title: "Слабые темы", url: "/dashboard/weaknesses", icon: "target" },
+      { title: msg("Слабые темы"), url: "/dashboard/weaknesses", icon: "target" },
       // Курсы — опора для учёбы, поэтому здесь, а не отдельной «Библиотекой».
       { title: SECTION_LABEL, url: "/dashboard/curriculum", icon: "book" },
       // Доска жжёт токены: в продакшене она выключена, пока не докажет ценность.
       ...(BOARD_ENABLED
-        ? ([{ title: "Научная доска", url: "/dashboard/whiteboard", icon: "board" }] as const)
+        ? ([{ title: msg("Научная доска"), url: "/dashboard/whiteboard", icon: "board" }] as const)
         : []),
     ],
   },
   {
     key: "growth",
     kind: "group",
-    title: "Рост",
+    title: msg("Рост"),
     icon: "mountain",
     url: "/dashboard/goals",
     items: [
-      { title: "Цели", url: "/dashboard/goals", icon: "mountain" },
-      { title: "Привычки", url: "/dashboard/habits", icon: "flame" },
+      { title: msg("Цели"), url: "/dashboard/goals", icon: "mountain" },
+      { title: msg("Привычки"), url: "/dashboard/habits", icon: "flame" },
     ],
   },
   {
     key: "contests",
     kind: "group",
-    title: "Соревнования",
+    title: msg("Соревнования"),
     icon: "flag",
     url: "/dashboard/arena/solve",
     items: [
-      { title: "Контесты", url: "/dashboard/arena/solve", icon: "flag" },
-      { title: "Рейтинг", url: "/dashboard/leaderboard", icon: "medal" },
+      { title: msg("Контесты"), url: "/dashboard/arena/solve", icon: "flag" },
+      { title: msg("Рейтинг"), url: "/dashboard/leaderboard", icon: "medal" },
     ],
   },
 ];

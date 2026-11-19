@@ -10,6 +10,7 @@
 // бэкенда, где полей `phase*` может не оказаться.
 
 import { resetPhrase } from "./ai-limit.ts";
+import { fill, msg, plural, t } from "./i18n";
 
 /** Статусы пайплайна из `Document.Status` на бэкенде. */
 export type IngestionStatusCode =
@@ -39,22 +40,22 @@ export interface PhaseDescriptor {
 export const PHASES: readonly PhaseDescriptor[] = [
   {
     key: "checking",
-    label: "Проверяем файл",
+    label: msg("Проверяем файл"),
     statuses: ["uploaded", "queued", "validating"],
   },
   {
     key: "reading",
-    label: "Читаем страницы",
+    label: msg("Читаем страницы"),
     statuses: ["extracting_native_text", "classifying_pages", "ocr"],
   },
   {
     key: "structuring",
-    label: "Разбираем структуру",
+    label: msg("Разбираем структуру"),
     statuses: ["reconstructing_structure", "extracting_blocks", "chunking"],
   },
   {
     key: "indexing",
-    label: "Готовим поиск по книге",
+    label: msg("Готовим поиск по книге"),
     statuses: ["indexing", "quality_check", "ready"],
   },
 ];
@@ -122,41 +123,41 @@ export const FAILURES_BEFORE_WARNING = 3;
 export const ERROR_MESSAGES: Record<string, string> = {
   // Самый вероятный случай в реальности: скан без подключённого распознавания.
   no_content:
-    "Не удалось извлечь текст. Похоже, это скан страниц, а распознавание пока не подключено.",
-  no_file: "Файл книги не нашёлся в хранилище. Попробуй загрузить его заново.",
-  pdf_unreadable: "Файл повреждён или это не PDF — открыть его не удалось.",
-  epub_unreadable: "EPUB повреждён или не содержит читаемого текста.",
-  unsupported_document_type: "Такой формат не подходит. Загрузи PDF или EPUB.",
-  no_pages: "В документе не нашлось ни одной страницы с текстом.",
-  storage_unavailable: "Хранилище файлов сейчас недоступно. Попробуй позже.",
+    msg("Не удалось извлечь текст. Похоже, это скан страниц, а распознавание пока не подключено."),
+  no_file: msg("Файл книги не нашёлся в хранилище. Попробуй загрузить его заново."),
+  pdf_unreadable: msg("Файл повреждён или это не PDF — открыть его не удалось."),
+  epub_unreadable: msg("EPUB повреждён или не содержит читаемого текста."),
+  unsupported_document_type: msg("Такой формат не подходит. Загрузи PDF или EPUB."),
+  no_pages: msg("В документе не нашлось ни одной страницы с текстом."),
+  storage_unavailable: msg("Хранилище файлов сейчас недоступно. Попробуй позже."),
   queue_unavailable:
-    "Очередь обработки сейчас недоступна. Файл сохранён, попробуй позже.",
+    msg("Очередь обработки сейчас недоступна. Файл сохранён, попробуй позже."),
   stalled:
-    "Обработка прервалась и давно не двигается. Файл сохранён, запусти обработку заново.",
-  ingest_timeout: "Обработка заняла слишком много времени и была остановлена.",
+    msg("Обработка прервалась и давно не двигается. Файл сохранён, запусти обработку заново."),
+  ingest_timeout: msg("Обработка заняла слишком много времени и была остановлена."),
   ocr_failed:
-    "Сканы не распознались: сервис распознавания не ответил. Попробуй ещё раз позже.",
-  internal_error: "Во время обработки произошла ошибка. Мы уже знаем о ней.",
+    msg("Сканы не распознались: сервис распознавания не ответил. Попробуй ещё раз позже."),
+  internal_error: msg("Во время обработки произошла ошибка. Мы уже знаем о ней."),
 };
 
 export function ingestionErrorMessage(code: string, fallback = ""): string {
-  if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
-  return fallback || "Обработать документ не удалось.";
+  if (ERROR_MESSAGES[code]) return t(ERROR_MESSAGES[code]);
+  return fallback ? t(fallback) : t("Обработать документ не удалось.");
 }
 
 export function ingestionFailureTitle(stalled: boolean): string {
-  return stalled ? "Обработка прервалась" : "Прочитать учебник не удалось";
+  return stalled ? t("Обработка прервалась") : t("Прочитать учебник не удалось");
 }
 
 const WARNING_MESSAGES: Record<string, string> = {
   ocr_not_configured:
-    "Часть страниц выглядит как сканы, а распознавание не подключено. Их текст в программу не попадёт.",
-  antivirus_not_configured: "Проверка файла антивирусом не настроена.",
+    msg("Часть страниц выглядит как сканы, а распознавание не подключено. Их текст в программу не попадёт."),
+  antivirus_not_configured: msg("Проверка файла антивирусом не настроена."),
   // Сигнал для эксплуатации, а не для ученика: точный счётчик токенов не
   // загрузился, и книга разбита приближённо. Границы фрагментов при этом
   // отличаются от эталонных, хотя версия обработки та же.
   tokenizer_fallback_heuristic:
-    "Точный счётчик токенов недоступен, поэтому книга разбита приближённо.",
+    msg("Точный счётчик токенов недоступен, поэтому книга разбита приближённо."),
 };
 
 /**
@@ -167,16 +168,19 @@ const WARNING_MESSAGES: Record<string, string> = {
  * прятать предупреждение хуже, чем показать его технично.
  */
 export function ingestionWarningMessage(code: string): string {
-  if (WARNING_MESSAGES[code]) return WARNING_MESSAGES[code];
+  if (WARNING_MESSAGES[code]) return t(WARNING_MESSAGES[code]);
 
   const ocrLimit = /^ocr_limited_to_(\d+)_of_(\d+)_pages$/.exec(code);
   if (ocrLimit) {
-    return `Распознано только ${ocrLimit[1]} страниц из ${ocrLimit[2]}, остальные пропущены ради скорости.`;
+    return t("Распознано только {done} страниц из {total}, остальные пропущены ради скорости.", {
+      done: ocrLimit[1],
+      total: ocrLimit[2],
+    });
   }
 
   const pageLimit = /^processed_only_(\d+)_of_(\d+)_pages$/.exec(code);
   if (pageLimit) {
-    return `Обработано ${pageLimit[1]} страниц из ${pageLimit[2]}.`;
+    return t("Обработано {done} страниц из {total}.", { done: pageLimit[1], total: pageLimit[2] });
   }
 
   return code;
@@ -204,22 +208,22 @@ export function checkFileBeforeUpload(file: {
   const name = file.name.toLowerCase();
   const hasAllowedExtension = ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
   if (!hasAllowedExtension) {
-    return { ok: false, error: "Поддерживаются только файлы PDF и EPUB." };
+    return { ok: false, error: t("Поддерживаются только файлы PDF и EPUB.") };
   }
   if (file.size === 0) {
-    return { ok: false, error: "Файл пустой." };
+    return { ok: false, error: t("Файл пустой.") };
   }
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round(file.size / 1024 / 1024);
-    return { ok: false, error: `Файл слишком большой: ${mb} МБ при лимите 60 МБ.` };
+    return { ok: false, error: t("Файл слишком большой: {mb} МБ при лимите 60 МБ.", { mb }) };
   }
   return { ok: true };
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  if (bytes < 1024) return t("{n} Б", { n: bytes });
+  if (bytes < 1024 * 1024) return t("{n} КБ", { n: Math.round(bytes / 1024) });
+  return t("{n} МБ", { n: (bytes / 1024 / 1024).toFixed(1) });
 }
 
 // ─────────────────────────────── Цитаты ──────────────────────────────────────
@@ -246,7 +250,9 @@ export function formatSource(source: TopicSource): string {
   const to = source.page_end;
   if (typeof from === "number" && from > 0) {
     parts.push(
-      typeof to === "number" && to > from ? `стр. ${from}–${to}` : `стр. ${from}`,
+      typeof to === "number" && to > from
+        ? t("стр. {from}–{to}", { from, to })
+        : t("стр. {from}", { from }),
     );
   }
   return parts.join(", ");
@@ -276,9 +282,9 @@ export function formatMinutes(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return "—";
   const hours = Math.floor(minutes / 60);
   const rest = Math.round(minutes % 60);
-  if (hours === 0) return `${rest} мин`;
-  if (rest === 0) return `${hours} ч`;
-  return `${hours} ч ${rest} мин`;
+  if (hours === 0) return t("{n} мин", { n: rest });
+  if (rest === 0) return t("{n} ч", { n: hours });
+  return t("{h} ч {m} мин", { h: hours, m: rest });
 }
 
 /** Прошедшее время на экране ожидания: «2:05». */
@@ -303,23 +309,6 @@ export type OcrSummary = {
 };
 
 type Summary = Partial<OcrSummary> | null | undefined;
-
-function pluralForm(n: number): "one" | "few" | "many" {
-  if (n % 10 === 1 && n % 100 !== 11) return "one";
-  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return "few";
-  return "many";
-}
-
-/** «страница-скан / страницы-скана / страниц-сканов» после числа. */
-function scanNoun(n: number): string {
-  const form = pluralForm(n);
-  return form === "one" ? "страница-скан" : form === "few" ? "страницы-скана" : "страниц-сканов";
-}
-
-/** После «из N». */
-function scanNounAfterFrom(n: number): string {
-  return pluralForm(n) === "one" ? "страницы-скана" : "страниц-сканов";
-}
 
 function read(summary: Summary) {
   return {
@@ -350,28 +339,59 @@ export function ocrNotice(
   const now = options.now ?? new Date();
 
   if (skipped === "quota" || skipped === "window") {
-    const verb = pluralForm(scanned) === "one" ? "Не распознана" : "Не распознано";
-    const head = `${verb} ${scanned} ${scanNoun(scanned)}:`;
+    const head = plural(
+      scanned,
+      "Не распознана {n} страница-скан",
+      "Не распознано {n} страницы-скана",
+      "Не распознано {n} страниц-сканов",
+    );
     if (skipped === "window") {
-      const tariff = summary?.plan === "free" ? "на бесплатном тарифе" : "на твоём тарифе";
-      return `${head} ${tariff} столько не распознать за раз.`;
+      return summary?.plan === "free"
+        ? t("{head}: на бесплатном тарифе столько не распознать за раз.", { head })
+        : t("{head}: на твоём тарифе столько не распознать за раз.", { head });
     }
     const phrase = resetPhrase(summary?.reset_at, now);
-    const base = `${head} не хватило лимита.`;
-    if (options.hasProgram) return phrase ? `${base} Он восстановится ${phrase}.` : base;
+    const base = t("{head}: не хватило лимита.", { head });
+    if (options.hasProgram) {
+      return phrase ? t("{base} Он восстановится {when}.", { base, when: phrase }) : base;
+    }
     return phrase
-      ? `${base} Он восстановится ${phrase}, тогда нажми «Обработать заново».`
-      : `${base} Нажми «Обработать заново», когда он восстановится.`;
+      ? t("{base} Он восстановится {when}, тогда нажми «Обработать заново».", { base, when: phrase })
+      : t("{base} Нажми «Обработать заново», когда он восстановится.", { base });
   }
 
   if (attempted > 0 && scanned > attempted) {
     if (recognized >= attempted) {
-      return `Распознаны первые ${attempted} ${scanNoun(attempted)} из ${scanned}: больше за одну обработку нельзя.`;
+      return fill(
+        plural(
+          attempted,
+          "Распознаны первые {n} страница-скан из {total}: больше за одну обработку нельзя.",
+          "Распознаны первые {n} страницы-скана из {total}: больше за одну обработку нельзя.",
+          "Распознаны первые {n} страниц-сканов из {total}: больше за одну обработку нельзя.",
+        ),
+        { total: scanned },
+      );
     }
-    return `Распознано ${recognized} из ${scanned} ${scanNounAfterFrom(scanned)}: больше ${attempted} за одну обработку нельзя.`;
+    return fill(
+      plural(
+        scanned,
+        "Распознано {recognized} из {n} страницы-скана: больше {attempted} за одну обработку нельзя.",
+        "Распознано {recognized} из {n} страниц-сканов: больше {attempted} за одну обработку нельзя.",
+        "Распознано {recognized} из {n} страниц-сканов: больше {attempted} за одну обработку нельзя.",
+      ),
+      { recognized, attempted },
+    );
   }
   if (attempted > 0 && recognized < attempted) {
-    return `Распознано ${recognized} из ${attempted} ${scanNounAfterFrom(attempted)}.`;
+    return fill(
+      plural(
+        attempted,
+        "Распознано {recognized} из {n} страницы-скана.",
+        "Распознано {recognized} из {n} страниц-сканов.",
+        "Распознано {recognized} из {n} страниц-сканов.",
+      ),
+      { recognized },
+    );
   }
   return null;
 }
@@ -380,7 +400,7 @@ export function planProfilingNotice(warnings: string[] | undefined): string | nu
   const partial = (warnings ?? []).some(
     (w) => w === "plan_profiling_skipped" || w === "plan_profiling_partial",
   );
-  return partial ? "Программа составлена без подробного разбора глав." : null;
+  return partial ? t("Программа составлена без подробного разбора глав.") : null;
 }
 
 /** Вопрос перед программой, когда часть сканов не распознана, и подпись кнопки «без них». */
@@ -388,19 +408,26 @@ export function scansQuestion(
   count: number,
   reason: "quota" | "failed" = "quota",
 ): { text: string; skip: string } {
-  const form = pluralForm(count);
-  const verb = form === "one" ? "не попадёт" : "не попадут";
-  const noun = form === "one" ? "страница" : form === "few" ? "страницы" : "страниц";
+  const what = plural(
+    count,
+    "не попадёт {n} страница",
+    "не попадут {n} страницы",
+    "не попадут {n} страниц",
+  );
   const single = count === 1;
-  const skip = single ? "Составить без неё" : "Составить без них";
+  const skip = single ? t("Составить без неё") : t("Составить без них");
   if (reason === "failed") {
     return {
-      text: `В программу ${verb} ${count} ${noun}: ${single ? "её" : "их"} не удалось распознать. Обработать книгу заново или составить без ${single ? "неё" : "них"}?`,
+      text: single
+        ? t("В программу {what}: её не удалось распознать. Обработать книгу заново или составить без неё?", { what })
+        : t("В программу {what}: их не удалось распознать. Обработать книгу заново или составить без них?", { what }),
       skip,
     };
   }
   return {
-    text: `В программу ${verb} ${count} ${noun}. Подождать лимит и распознать ${single ? "её" : "их"} или составить без ${single ? "неё" : "них"}?`,
+    text: single
+      ? t("В программу {what}. Подождать лимит и распознать её или составить без неё?", { what })
+      : t("В программу {what}. Подождать лимит и распознать их или составить без них?", { what }),
     skip,
   };
 }

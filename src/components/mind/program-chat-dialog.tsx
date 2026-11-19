@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { MessageSquare, Wand2, Loader2, Send } from 'lucide-react'
 import { toast } from "sonner"
+import { t } from '@/lib/i18n'
 
 interface ProgramChatDialogProps {
     programId: string
@@ -42,14 +43,14 @@ export function ProgramChatDialog({ programId, onProgramUpdated }: ProgramChatDi
             const data = await res.json()
 
             setLastResponse(data.message)
-            toast.success("Программа обновлена!")
+            toast.success(t("Программа обновлена!"))
 
             setInput('')
             onProgramUpdated()
 
         } catch (error) {
             console.error(error)
-            toast.error("Ошибка обновления")
+            toast.error(t("Ошибка обновления"))
         } finally {
             setLoading(false)
         }
@@ -60,17 +61,17 @@ export function ProgramChatDialog({ programId, onProgramUpdated }: ProgramChatDi
             <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2">
                     <MessageSquare className="h-4 w-4 text-purple-500" />
-                    Изменить программу
+                    {t('Изменить программу')}
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Wand2 className="h-5 w-5 text-purple-500" />
-                        AI Редактор Программы
+                        {t('AI Редактор Программы')}
                     </DialogTitle>
                     <DialogDescription>
-                        Напишите, что нужно изменить. Например: &quot;Перенеси физику на начало недели&quot; или &quot;Сделай упор на математику&quot;.
+                        {t('Напишите, что нужно изменить. Например: «Перенеси физику на начало недели» или «Сделай упор на математику».')}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -82,7 +83,7 @@ export function ProgramChatDialog({ programId, onProgramUpdated }: ProgramChatDi
                     )}
 
                     <Textarea
-                        placeholder="Ваш запрос..."
+                        placeholder={t('Ваш запрос...')}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         className="min-h-[100px]"
@@ -106,7 +107,7 @@ export function ProgramChatDialog({ programId, onProgramUpdated }: ProgramChatDi
                         ) : (
                             <>
                                 <Send className="h-4 w-4 mr-2" />
-                                Отправить
+                                {t('Отправить')}
                             </>
                         )}
                     </Button>

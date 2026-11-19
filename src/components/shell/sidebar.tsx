@@ -23,6 +23,7 @@ import {
   type DashboardSection,
   type DashboardSectionKey,
 } from "@/config/dashboard-navigation";
+import { t } from "@/lib/i18n";
 import { groupSignal, openGroupsFor, readOpenGroups, toggleGroup, writeOpenGroups } from "@/lib/nav-groups";
 import { useDashboardShell } from "@/contexts/dashboard-shell";
 import { linkClosesDrawer } from "@/components/shell/drawer-swipe";
@@ -35,7 +36,7 @@ const GROUP_KEYS: DashboardSectionKey[] = getDashboardSections()
 
 export function initialsOf(name: string | null | undefined): string {
   const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "Я";
+  if (!parts.length) return t("Я");
   return parts
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
@@ -86,11 +87,11 @@ function Signal({ count, live }: { count: number | null; live: boolean }) {
   return (
     <>
       {count ? (
-        <span className="nav-count" title={`${count} к повторению`}>
+        <span className="nav-count" title={t("{count} к повторению", { count })}>
           {count}
         </span>
       ) : null}
-      {live ? <span className="live" title="Книга ещё обрабатывается" /> : null}
+      {live ? <span className="live" title={t("Книга ещё обрабатывается")} /> : null}
     </>
   );
 }
@@ -121,20 +122,20 @@ function NavGroup({
       <button
         className="nav-item nav-group-btn"
         type="button"
-        title={section.title}
+        title={t(section.title)}
         aria-expanded={open}
         aria-controls={subId}
         onClick={onToggle}
       >
         <Icon name={section.icon} />
-        <span className="nav-text">{section.title}</span>
+        <span className="nav-text">{t(section.title)}</span>
         {open ? null : <Signal {...groupSignal(section, status)} />}
         <Icon name="chev-r" className="nav-chev" />
       </button>
       <div className="nav-sub" id={subId} data-open={open || undefined}>
         <div className="nav-sub-in" ref={subRef}>
           {section.items.map((item) => (
-            <NavItem key={item.url} href={item.url} title={item.title} icon={item.icon} current={itemUrl === item.url}>
+            <NavItem key={item.url} href={item.url} title={t(item.title)} icon={item.icon} current={itemUrl === item.url}>
               <Signal
                 count={item.url === "/dashboard/weaknesses" && status.dueReviews > 0 ? status.dueReviews : null}
                 live={item.url === "/dashboard/curriculum" && status.ingesting}
@@ -302,7 +303,7 @@ export function Sidebar() {
   };
 
   const sections = getDashboardSections();
-  const name = session?.user?.name || "Ученик";
+  const name = session?.user?.name || t("Ученик");
 
   return (
     <aside
@@ -311,19 +312,19 @@ export function Sidebar() {
       className="sidebar glass"
       data-sb={showChats ? "chats" : "main"}
       data-drawer={isPhone ? (drawerOpen ? "open" : "closed") : undefined}
-      aria-label="Навигация"
+      aria-label={t("Навигация")}
       onClick={closeOnLink}
     >
       <div className="sb-head">
-        <Link className="brand" href="/dashboard" aria-label="Timely, на главную">
+        <Link className="brand" href="/dashboard" aria-label={t("Timely, на главную")}>
           <SlimeMark />
           <span className="brand-word">Timely</span>
         </Link>
         <button
           className="icon-btn sb-collapse"
           type="button"
-          title={collapsed ? "Развернуть панель" : "Свернуть панель"}
-          aria-label={collapsed ? "Развернуть панель" : "Свернуть панель"}
+          title={collapsed ? t("Развернуть панель") : t("Свернуть панель")}
+          aria-label={collapsed ? t("Развернуть панель") : t("Свернуть панель")}
           onClick={toggleCollapsed}
         >
           <Icon name="panel" />
@@ -356,12 +357,12 @@ export function Sidebar() {
               <div className="nav-group" key={section.key}>
                 <NavItem
                   href={section.url}
-                  title={section.title}
+                  title={t(section.title)}
                   icon={section.icon}
                   current={itemUrl === section.url}
                   onClick={chatClick(section.url)}
                 >
-                  {section.key === "now" && status.live ? <span className="live" title="Идёт занятие" /> : null}
+                  {section.key === "now" && status.live ? <span className="live" title={t("Идёт занятие")} /> : null}
                 </NavItem>
               </div>
             ),
@@ -372,13 +373,13 @@ export function Sidebar() {
             <button
               className="icon-btn sb-back"
               type="button"
-              title="Назад в меню"
-              aria-label="Назад в меню"
+              title={t("Назад в меню")}
+              aria-label={t("Назад в меню")}
               onClick={() => setMenuInChat(true)}
             >
               <Icon name="chev-l" />
             </button>
-            <span className="sb-title">Чаты</span>
+            <span className="sb-title">{t("Чаты")}</span>
           </div>
           <div className="sb-chats-slot" ref={setChatsSlot} />
         </div>
@@ -392,8 +393,8 @@ export function Sidebar() {
         <button
           className="icon-btn theme-btn"
           type="button"
-          aria-label="Сменить тему"
-          title="Сменить тему"
+          aria-label={t("Сменить тему")}
+          title={t("Сменить тему")}
           onClick={toggleTheme}
         >
           <Icon name="moon" className="moon" />

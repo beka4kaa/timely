@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MindSession } from '@/types/mind'
+import { dateLocale, t } from '@/lib/i18n'
 
 interface SessionsListProps {
     className?: string
@@ -38,7 +39,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
 
     // Group sessions by date
     const groupedSessions = sessions.reduce((acc, session) => {
-        const date = new Date(session.startedAt).toLocaleDateString('ru-RU', {
+        const date = new Date(session.startedAt).toLocaleDateString(dateLocale(), {
             weekday: 'long',
             day: 'numeric',
             month: 'long',
@@ -51,7 +52,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
     }, {} as Record<string, MindSession[]>)
 
     const formatTime = (dateStr: string) => {
-        return new Date(dateStr).toLocaleTimeString('ru-RU', {
+        return new Date(dateStr).toLocaleTimeString(dateLocale(), {
             hour: '2-digit',
             minute: '2-digit',
         })
@@ -61,8 +62,8 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
         if (!minutes) return '—'
         const h = Math.floor(minutes / 60)
         const m = minutes % 60
-        if (h > 0) return `${h}ч ${m}м`
-        return `${m}м`
+        if (h > 0) return t('{h}ч {m}м', { h, m })
+        return t('{m}м', { m })
     }
 
     if (loading) {
@@ -78,7 +79,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
             <Card className="border-dashed">
                 <CardContent className="p-8 text-center text-muted-foreground">
                     <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Нет записей за последние дни</p>
+                    <p>{t('Нет записей за последние дни')}</p>
                 </CardContent>
             </Card>
         )
@@ -94,7 +95,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
                         <div className="flex items-center justify-between px-2">
                             <h3 className="font-medium capitalize">{date}</h3>
                             <Badge variant="secondary">
-                                Всего: {formatDuration(totalMinutes)}
+                                {t('Всего:')} {formatDuration(totalMinutes)}
                             </Badge>
                         </div>
 
@@ -102,10 +103,10 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
                             <table className="w-full text-sm">
                                 <thead className="bg-muted/50">
                                     <tr>
-                                        <th className="text-left p-3 font-medium">Задача</th>
-                                        <th className="text-left p-3 font-medium">Начало</th>
-                                        <th className="text-left p-3 font-medium">Конец</th>
-                                        <th className="text-left p-3 font-medium">Длительность</th>
+                                        <th className="text-left p-3 font-medium">{t('Задача')}</th>
+                                        <th className="text-left p-3 font-medium">{t('Начало')}</th>
+                                        <th className="text-left p-3 font-medium">{t('Конец')}</th>
+                                        <th className="text-left p-3 font-medium">{t('Длительность')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -134,7 +135,7 @@ export function SessionsList({ className, refreshTrigger }: SessionsListProps) {
                                                     </Badge>
                                                 ) : (
                                                     <Badge variant="outline" className="text-amber-500">
-                                                        В процессе
+                                                        {t('В процессе')}
                                                     </Badge>
                                                 )}
                                             </td>

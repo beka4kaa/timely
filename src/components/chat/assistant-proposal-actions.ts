@@ -90,7 +90,7 @@ function lessonEdits(changes: LessonChange[], undo: boolean): LessonEdit[] {
 
 type TimetableProposal = Extract<AssistantProposal, { kind: "school_timetable" }>;
 
-const TIMETABLE_CHANGED = "Школьное расписание уже поменялось";
+const TIMETABLE_CHANGED = "Школьное расписание уже поменялось"; // i18n-skip
 
 /** Поверх чужих правок не пишем: карточка считает от того расписания, которое видела. */
 async function applyTimetable(proposal: TimetableProposal): Promise<ProposalUndo> {
@@ -285,7 +285,7 @@ export async function applyProposal(proposal: AssistantProposal): Promise<Propos
     }
     case "block_changes": {
       const changed = await changeBlocks(proposal.block_ids, proposal.action);
-      if (!changed.length) throw new StudyplanApiError("Занятия уже поменялись.", 409, "stale_revision");
+      if (!changed.length) throw new StudyplanApiError("Занятия уже поменялись.", 409, "stale_revision"); // i18n-skip
       invalidatePlan();
       return { blockIds: changed };
     }

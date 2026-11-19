@@ -11,7 +11,8 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 import { dashboardViewOf } from "@/config/dashboard-navigation";
-import { bellSoundOf, bellUnlocked, ringBell, unlockBell } from "@/lib/pomodoro-bell";
+import { msg, t } from "@/lib/i18n";
+import { bellSoundOf, bellUnlocked, listenForHush, ringBell, unlockBell } from "@/lib/pomodoro-bell";
 import { alarmNotice, alarmTitle, ringBursts, shouldNotify, tabTitle, type TimerPhase } from "@/lib/pomodoro-cycle";
 import { readSessionName } from "@/lib/pomodoro-names";
 import { askNoticePermission, noticePermission, showNotice, type NoticeHandle } from "@/lib/pomodoro-notify";
@@ -41,15 +42,16 @@ export function primeAlerts(): void {
 
 /** Кнопка, которая запускает следующую фазу, когда та ждёт. */
 export const START_LABEL: Record<TimerPhase, string> = {
-  focus: "Начать",
-  break: "Начать перерыв",
-  long: "Начать длинный перерыв",
+  focus: msg("Начать"),
+  break: msg("Начать перерыв"),
+  long: msg("Начать длинный перерыв"),
 };
 
 export function PomodoroAlerts() {
   useTabTitle();
   useUnlockOnTouch();
   useBell();
+  useHushOnInput();
   useAlarmNotice();
   return <AlarmBar />;
 }
@@ -123,7 +125,7 @@ function useTabTitle() {
   }, []);
 }
 
-/** Звонок в каждой вкладке, где звук разблокирован. «Тихо» в любой из них глушит все. */
+/** Звонок в каждой вкладке, где звук разблокирован. Нажатие в любой из них глушит все. */
 function useBell() {
   const at = usePomodoroStore((state) => state.alarm?.at ?? null);
   const auto = usePomodoroStore((state) => state.alarm?.auto ?? false);
@@ -140,8 +142,25 @@ function useBell() {
 }
 
 /**
+ * Звонок замолкает от любого нажатия или клавиши на странице: кнопки «Тихо» больше нет.
+ * Нажатие на «Начать» сначала начинает перерыв, звонок замолкает уже после.
+ */
+function useHushOnInput() {
+  const at = usePomodoroStore((state) => state.alarm?.at ?? null);
+
+  useEffect(() => {
+    if (at === null) return;
+    return listenForHush(window, () => {
+      const state = usePomodoroStore.getState();
+      // Нажатие могло само начать следующую фазу: тогда звонка уже нет.
+      if (state.alarm?.at === at) state.dismissAlarm();
+    });
+  }, [at]);
+}
+
+/**
  * Системное уведомление. Показывает только ведущая вкладка, чтобы не было двух.
- * Ученик начал перерыв или нажал «Тихо»: уведомление убирается, оно уже не нужно.
+ * Ученик начал перерыв или заглушил звонок нажатием: уведомление убирается, оно уже не нужно.
  */
 function useAlarmNotice() {
   const leader = usePomodoroStore((state) => state.leader);
@@ -163,7 +182,7 @@ function useAlarmNotice() {
       usePomodoroStore.getState().dismissAlarm(),
     ).then((note) => {
       entry.note = note;
-      // Пока уведомление появлялось, ученик уже начал следующую фазу или нажал «Тихо».
+      // Пока уведомление появлялось, ученик уже начал следующую фазу или заглушил звонок.
       if (note && !entry.auto && usePomodoroStore.getState().alarm?.at !== entry.at) note.close();
     });
   }, [leader, notify, at, notifiedAt]);
@@ -175,13 +194,12 @@ function useAlarmNotice() {
   }, [at]);
 }
 
-/** На других страницах: «Пора на перерыв!», начать или замолчать, не уходя со страницы. */
+/** На других страницах: «Пора на перерыв!» и «Начать», не уходя со страницы. Любое нажатие глушит звонок. */
 function AlarmBar() {
   const path = useDashboardPath();
   const waiting = usePomodoroStore(selectWaiting);
   const next = usePomodoroStore((state) => state.alarm?.next ?? null);
   const toggle = usePomodoroStore((state) => state.toggle);
-  const dismissAlarm = usePomodoroStore((state) => state.dismissAlarm);
 
   // На самой странице таймера те же кнопки уже под циферблатом.
   if (!waiting || next === null || dashboardViewOf(path) === "focus") return null;
@@ -200,10 +218,7 @@ function AlarmBar() {
             toggle();
           }}
         >
-          Начать
-        </button>
-        <button className="btn btn-text" type="button" onClick={dismissAlarm}>
-          Тихо
+          {t("Начать")}
         </button>
       </div>
     </div>

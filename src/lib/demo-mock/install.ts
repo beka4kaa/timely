@@ -8,6 +8,8 @@
 // public/demo/fixtures.json. Настоящие сервера демо не видят: ни данных, ни нагрузки.
 
 import { BACKEND_URL } from "@/lib/api-utils";
+import { IS_DEMO, pickDemoLang } from "@/lib/demo-mode";
+import { cookieLocale, writeLocaleCookie } from "@/lib/i18n/cookie";
 
 import { computeShift, todayIn } from "./dates";
 import { inDemoBrowser } from "./host";
@@ -87,3 +89,11 @@ export function installDemoFetch(): void {
 }
 
 if (inDemoBrowser()) installDemoFetch();
+
+// В демо приходят проверяющие из разных стран: при первом заходе язык берётся из браузера
+// (русский тем, у кого русский или казахский), дальше живёт в куке, как в кабинете. Модуль
+// грузится раньше кабинета, поэтому переводы уже прочтут этот выбор. Словарь здесь не нужен:
+// только кука, иначе он грузился бы и на лендинге.
+if (typeof window !== "undefined" && (IS_DEMO || inDemoBrowser()) && !cookieLocale(document.cookie)) {
+  writeLocaleCookie(pickDemoLang(navigator.languages));
+}

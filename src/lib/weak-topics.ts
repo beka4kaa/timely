@@ -4,6 +4,7 @@
 // Шанс вспомнить ученику не показываем ни числом, ни графиком: его считает сервер по FSRS
 // (`recallProbability`), и он нужен только для порядка тем.
 
+import { dateLocale, msg, t } from "./i18n";
 import { plural } from "./mind-srs";
 import type { Topic, TopicStatus } from "../types/mind";
 
@@ -64,12 +65,12 @@ export function dayDiff(from: Date, to: Date): number {
 export type ReviewGroup = "late" | "today" | "tomorrow" | "week" | "later" | "none";
 
 export const REVIEW_GROUPS: Array<{ key: ReviewGroup; title: string }> = [
-  { key: "late", title: "Просрочено" },
-  { key: "today", title: "На сегодня" },
-  { key: "tomorrow", title: "Завтра" },
-  { key: "week", title: "На этой неделе" },
-  { key: "later", title: "Позже" },
-  { key: "none", title: "Без срока" },
+  { key: "late", title: msg("Просрочено") },
+  { key: "today", title: msg("На сегодня") },
+  { key: "tomorrow", title: msg("Завтра") },
+  { key: "week", title: msg("На этой неделе") },
+  { key: "later", title: msg("Позже") },
+  { key: "none", title: msg("Без срока") },
 ];
 
 export function reviewGroup(nextReviewAt: string | null, now: Date): ReviewGroup {
@@ -82,30 +83,38 @@ export function reviewGroup(nextReviewAt: string | null, now: Date): ReviewGroup
   return diff <= daysLeftInWeek ? "week" : "later";
 }
 
-const ON_WEEKDAY = ["в воскресенье", "в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
+const ON_WEEKDAY = [
+  msg("в воскресенье"),
+  msg("в понедельник"),
+  msg("во вторник"),
+  msg("в среду"),
+  msg("в четверг"),
+  msg("в пятницу"),
+  msg("в субботу"),
+];
 
 function agoLabel(days: number): string {
-  if (days === 0) return "сегодня";
-  if (days === 1) return "вчера";
-  if (days < 14) return `${days} ${plural(days, "день", "дня", "дней")} назад`;
+  if (days === 0) return t("сегодня");
+  if (days === 1) return t("вчера");
+  if (days < 14) return plural(days, "{n} день назад", "{n} дня назад", "{n} дней назад");
   if (days < 60) {
     const weeks = Math.floor(days / 7);
-    return `${weeks} ${plural(weeks, "неделю", "недели", "недель")} назад`;
+    return plural(weeks, "{n} неделю назад", "{n} недели назад", "{n} недель назад");
   }
   const months = Math.floor(days / 30);
-  return `${months} ${plural(months, "месяц", "месяца", "месяцев")} назад`;
+  return plural(months, "{n} месяц назад", "{n} месяца назад", "{n} месяцев назад");
 }
 
 /** Подпись срока в строке темы. */
 export function whenLabel(nextReviewAt: string | null, now: Date): string {
-  if (!nextReviewAt) return "без срока";
+  if (!nextReviewAt) return t("без срока");
   const date = new Date(nextReviewAt);
   const group = reviewGroup(nextReviewAt, now);
   if (group === "late") return agoLabel(-dayDiff(now, date));
-  if (group === "today") return "сегодня";
-  if (group === "tomorrow") return "завтра";
-  if (group === "week") return ON_WEEKDAY[date.getDay()];
-  return date.toLocaleDateString("ru-RU", {
+  if (group === "today") return t("сегодня");
+  if (group === "tomorrow") return t("завтра");
+  if (group === "week") return t(ON_WEEKDAY[date.getDay()]);
+  return date.toLocaleDateString(dateLocale(), {
     day: "numeric",
     month: "long",
     ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
@@ -114,14 +123,14 @@ export function whenLabel(nextReviewAt: string | null, now: Date): string {
 
 /** Подпись под предметом на карточке: когда тему повторяли в прошлый раз. */
 export function lastTimeLabel(lastRevisedAt: string | null, now: Date): string {
-  if (!lastRevisedAt) return "первое повторение";
-  return `прошлый раз ${agoLabel(Math.max(0, -dayDiff(now, new Date(lastRevisedAt))))}`;
+  if (!lastRevisedAt) return t("первое повторение");
+  return t("прошлый раз {when}", { when: agoLabel(Math.max(0, -dayDiff(now, new Date(lastRevisedAt)))) });
 }
 
 function byReviewDate(a: WeakTopic, b: WeakTopic): number {
   const left = a.nextReviewAt ? new Date(a.nextReviewAt).getTime() : Infinity;
   const right = b.nextReviewAt ? new Date(b.nextReviewAt).getTime() : Infinity;
-  return left - right || a.name.localeCompare(b.name, "ru");
+  return left - right || a.name.localeCompare(b.name, dateLocale());
 }
 
 /** Темы одной группы списка, ближайшие сверху. */
@@ -219,7 +228,7 @@ export function coverOf(
 // ── «Что сегодня изучил» ──────────────────────────────────────────────────────
 
 function normalized(text: string): string {
-  return text.trim().toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ");
+  return text.trim().toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " "); // i18n-skip
 }
 
 /** Предмет ровно с таким названием, без учёта регистра. */

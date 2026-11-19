@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import type { CourseModule } from "@/lib/curriculum-api";
 import type { CourseStates, StepState } from "@/lib/curriculum-course-progress";
 import { formatMinutes } from "@/lib/curriculum-progress";
-import { plural } from "@/lib/now-feed";
+import { plural, t } from "@/lib/i18n";
 
 import { PlanTopicRow } from "./plan-topic-row";
 
@@ -48,7 +48,7 @@ export function PlanModuleStrip({
     <details
       className={current ? "mod is-cur card" : "mod"}
       open={open}
-      data-attach={`Глава «${courseModule.title}»`}
+      data-attach={t("Глава «{title}»", { title: courseModule.title })}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
@@ -60,7 +60,7 @@ export function PlanModuleStrip({
           {courseModule.title}
         </span>
         <span className="m mc">
-          {count} {plural(count, ["тема", "темы", "тем"])}, {formatMinutes(minutes)}
+          {plural(count, "{n} тема", "{n} темы", "{n} тем")}, {formatMinutes(minutes)}
         </span>
       </summary>
 
@@ -85,9 +85,9 @@ export function PlanModuleStrip({
             <button
               type="button"
               className="btn btn-text"
-              onClick={() => onAsk(`Что важно понять в главе «${courseModule.title}»?`)}
+              onClick={() => onAsk(t("Что важно понять в главе «{title}»?", { title: courseModule.title }))}
             >
-              Спросить про главу
+              {t("Спросить про главу")}
             </button>
           </p>
         </>

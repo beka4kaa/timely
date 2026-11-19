@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { t } from "@/lib/i18n";
 import { COMMITMENTS_KEY, invalidatePlan } from "@/components/now/now-resources";
 import { listPlans, type CoursePlanSummary } from "@/lib/curriculum-api";
 import { invalidateResources } from "@/lib/resource-cache";
@@ -189,7 +190,7 @@ export function useSchedule() {
                 course_plan_title:
                   calendarBlock.course_plan_title ??
                   planById.get(block.course_plan)?.title ??
-                  "Учебная программа",
+                  t("Учебная программа"),
               };
             }),
         ]),
@@ -226,7 +227,7 @@ export function useSchedule() {
       setData({
         state: "error",
         message:
-          error instanceof Error ? error.message : "Не удалось загрузить расписание.",
+          error instanceof Error ? t(error.message) : t("Не удалось загрузить расписание."),
       });
       return null;
     }
@@ -288,11 +289,11 @@ export function useSchedule() {
         return true;
       } catch (error) {
         if (error instanceof StudyplanApiError && error.isStale) {
-          setNotice("Календарь обновился: здесь была другая версия.");
+          setNotice(t("Календарь обновился: здесь была другая версия."));
           await loadChanged({ calendarOnly: true });
         } else {
           setNotice(
-            error instanceof Error ? error.message : "Перенести не получилось.",
+            error instanceof Error ? t(error.message) : t("Перенести не получилось."),
           );
         }
         return false;
@@ -312,7 +313,7 @@ export function useSchedule() {
       setNotice(null);
       await loadChanged({ calendarOnly: true });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Отменить уже нельзя.");
+      setNotice(error instanceof Error ? t(error.message) : t("Отменить уже нельзя."));
       if (error instanceof StudyplanApiError && error.isStale) {
         setLastRevision(null);
         await loadChanged({ calendarOnly: true });
@@ -332,7 +333,7 @@ export function useSchedule() {
         return true;
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Подтвердить не получилось.",
+          error instanceof Error ? t(error.message) : t("Подтвердить не получилось."),
         );
         return false;
       } finally {
@@ -355,9 +356,7 @@ export function useSchedule() {
         await loadChanged();
       } catch (error) {
         setNotice(
-          error instanceof Error
-            ? error.message
-            : "Добавить программу в расписание не получилось.",
+          error instanceof Error ? t(error.message) : t("Добавить программу в расписание не получилось."),
         );
       } finally {
         setBusy(false);
@@ -383,7 +382,7 @@ export function useSchedule() {
         return result.changed;
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Отменить не получилось.",
+          error instanceof Error ? t(error.message) : t("Отменить не получилось."),
         );
         return [];
       } finally {
@@ -402,7 +401,7 @@ export function useSchedule() {
         await loadChanged({ calendarOnly: true });
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Вернуть не получилось.",
+          error instanceof Error ? t(error.message) : t("Вернуть не получилось."),
         );
       } finally {
         setBusy(false);
@@ -423,7 +422,7 @@ export function useSchedule() {
         return true;
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Не получилось изменить.",
+          error instanceof Error ? t(error.message) : t("Не получилось изменить."),
         );
         return false;
       } finally {
@@ -474,7 +473,7 @@ export function useSchedule() {
         };
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Сохранить не получилось.",
+          error instanceof Error ? t(error.message) : t("Сохранить не получилось."),
         );
         return null;
       } finally {
@@ -503,7 +502,7 @@ export function useSchedule() {
         return true;
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Перенести не получилось.",
+          error instanceof Error ? t(error.message) : t("Перенести не получилось."),
         );
         return false;
       } finally {
@@ -523,7 +522,7 @@ export function useSchedule() {
         await loadChanged();
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Удалить не получилось.",
+          error instanceof Error ? t(error.message) : t("Удалить не получилось."),
         );
       } finally {
         setBusy(false);
@@ -562,7 +561,7 @@ export function useSchedule() {
         return { ...item, id: created.id };
       } catch (error) {
         setNotice(
-          error instanceof Error ? error.message : "Вернуть не получилось.",
+          error instanceof Error ? t(error.message) : t("Вернуть не получилось."),
         );
         return null;
       } finally {

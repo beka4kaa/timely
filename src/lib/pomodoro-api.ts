@@ -3,6 +3,7 @@
 
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch } from "@/lib/auth-fetch";
+import { t } from "@/lib/i18n";
 import {
   EMPTY_SUMMARY,
   type FocusSessionPayload,
@@ -19,7 +20,7 @@ export async function fetchSessions(
   signal?: AbortSignal,
 ): Promise<FocusSessionRow[]> {
   const response = await authFetch(`${BASE}/?days=${days}`, { signal });
-  if (!response.ok) throw new Error(`Не удалось загрузить сессии (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось загрузить сессии ({status})", { status: response.status }));
   const data = await response.json();
   return Array.isArray(data) ? data : [];
 }
@@ -34,7 +35,7 @@ export async function fetchSummary(
     tz_offset: String(timezoneOffsetMinutes()),
   });
   const response = await authFetch(`${BASE}/summary/?${params}`, { signal });
-  if (!response.ok) throw new Error(`Не удалось загрузить сводку (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось загрузить сводку ({status})", { status: response.status }));
   return { ...EMPTY_SUMMARY, ...(await response.json()) };
 }
 
@@ -43,7 +44,7 @@ export async function createSession(payload: FocusSessionPayload): Promise<void>
     method: "POST",
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`Не удалось сохранить сессию (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось сохранить сессию ({status})", { status: response.status }));
 }
 
 /** «Очистить день» — удаляет сессии за один локальный день. */
@@ -53,7 +54,7 @@ export async function clearDay(date: string): Promise<void> {
     tz_offset: String(timezoneOffsetMinutes()),
   });
   const response = await authFetch(`${BASE}/clear-day/?${params}`, { method: "DELETE" });
-  if (!response.ok) throw new Error(`Не удалось очистить день (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось очистить день ({status})", { status: response.status }));
 }
 
 // ── Идущий таймер, общий для всех устройств ──
@@ -74,7 +75,7 @@ function remotePayload(data: unknown): RemoteTimerState {
 
 export async function fetchTimerState(signal?: AbortSignal): Promise<RemoteTimerState> {
   const response = await authFetch(STATE_URL, { signal });
-  if (!response.ok) throw new Error(`Не удалось загрузить таймер (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось загрузить таймер ({status})", { status: response.status }));
   return remotePayload(await response.json());
 }
 
@@ -91,6 +92,6 @@ export async function saveTimerState(
     body: JSON.stringify({ state, base_version: baseVersion }),
   });
   if (response.status === 409) return { ok: false, current: remotePayload(await response.json()) };
-  if (!response.ok) throw new Error(`Не удалось сохранить таймер (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось сохранить таймер ({status})", { status: response.status }));
   return { ok: true, version: remotePayload(await response.json()).version };
 }

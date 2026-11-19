@@ -10,6 +10,7 @@ import { useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { CommitmentsCard, RevisionCard, StudyWindowsCard } from "@/components/studyplan/revision-cards";
+import { msg, t } from "@/lib/i18n";
 
 import { applyAll, dismissAll, isStaleError, undoAll } from "./assistant-batch";
 import {
@@ -50,7 +51,7 @@ export function AssistantProposals({
 }
 
 const nothing = () => undefined;
-const STALE_TEXT = "Это предложение устарело: с тех пор всё поменялось.";
+const STALE_TEXT = msg("Это предложение устарело: с тех пор всё поменялось.");
 
 function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; onChange: ProposalChange }) {
   const [busy, setBusy] = useState(false);
@@ -81,7 +82,7 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
   const dismiss = () =>
     run(async () => {
       const failure = await dismissAll(proposals, dismissProposal, onChange, isStaleError);
-      if (failure) setFailed(proposalFailureText(failure.error, "Отменить не получилось. Попробуй ещё раз."));
+      if (failure) setFailed(proposalFailureText(failure.error, t("Отменить не получилось. Попробуй ещё раз.")));
     });
   const revert = () =>
     run(async () => {
@@ -89,23 +90,23 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
         (await undoAll(proposals, undoProposal, onChange, isStaleError)) ??
         // Что ещё ждало решения, после отмены уже не нужно.
         (await dismissAll(proposals, dismissProposal, onChange, isStaleError));
-      if (failure) setFailed(proposalFailureText(failure.error, "Вернуть не получилось. Попробуй ещё раз."));
+      if (failure) setFailed(proposalFailureText(failure.error, t("Вернуть не получилось. Попробуй ещё раз.")));
     });
 
   if (!waiting.length && !applied.length) {
-    if (proposals.some((item) => item.state === "undone")) return <p className="q-status">Вернул как было.</p>;
-    return staleOnes.length ? <p className="q-status">{STALE_TEXT}</p> : null;
+    if (proposals.some((item) => item.state === "undone")) return <p className="q-status">{t("Вернул как было.")}</p>;
+    return staleOnes.length ? <p className="q-status">{t(STALE_TEXT)}</p> : null;
   }
 
   const canRevert = applied.some(canUndoProposal);
   const revertButton = (
     <button className="btn btn-text" type="button" disabled={busy} onClick={() => void revert()}>
-      Вернуть как было
+      {t("Вернуть как было")}
     </button>
   );
   const dismissButton = (
     <button className="btn btn-text" type="button" disabled={busy} onClick={() => void dismiss()}>
-      Не надо
+      {t("Не надо")}
     </button>
   );
   const plain = waiting.filter((item) => !["revision", "commitments", "study_windows"].includes(item.kind));
@@ -119,23 +120,26 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
       ))}
       {staleOnes.map((item) => (
         <p className="q-status" key={item.id}>
-          Устарело: {proposalSummary(item)}. С тех пор всё поменялось.
+          {t("Устарело: {summary}. С тех пор всё поменялось.", { summary: proposalSummary(item) })}
         </p>
       ))}
       {waiting.length && applyFailed ? (
         <>
           <p className="q-status" role="alert">
-            {applied.length ? `Применено ${applied.length} из ${applied.length + waiting.length}. ` : ""}Не вышло: {applyFailed}
+            {applied.length
+              ? `${t("Применено {done} из {total}.", { done: applied.length, total: applied.length + waiting.length })} `
+              : ""}
+            {t("Не вышло: {reason}", { reason: applyFailed })}
           </p>
           <div className="q-acts">
             <button className="btn btn-main" type="button" disabled={busy} onClick={() => void accept()}>
-              Повторить
+              {t("Повторить")}
             </button>
             {canRevert ? revertButton : dismissButton}
             {/* Применённое может и остаться: от сбоя отказывается только то, что не вышло. */}
             {applied.length ? (
               <button className="btn btn-text" type="button" disabled={busy} onClick={() => void dismiss()}>
-                Оставить как есть
+                {t("Оставить как есть")}
               </button>
             ) : null}
           </div>
@@ -143,7 +147,7 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
       ) : null}
       {waiting.length && !applyFailed ? (
         <>
-          <p className="q-status">Сделаю так:</p>
+          <p className="q-status">{t("Сделаю так:")}</p>
           {plain.length ? (
             <ul className="q-diff">
               {plain.flatMap(batchRows).map((row, index) => (
@@ -159,7 +163,7 @@ function BatchCard({ proposals, onChange }: { proposals: AssistantProposal[]; on
           ))}
           <div className="q-acts">
             <button className="btn btn-main" type="button" disabled={busy} onClick={() => void accept()}>
-              Применить
+              {t("Применить")}
             </button>
             {dismissButton}
           </div>
@@ -220,17 +224,17 @@ function ProposalCard({ proposal, onChange }: { proposal: AssistantProposal; onC
       const undo = await applyProposal(proposal);
       onChange(proposal.id, { state: "applied", undo });
       mascot.hop(0.7);
-    }, "Применить не получилось. Попробуй ещё раз.");
+    }, t("Применить не получилось. Попробуй ещё раз."));
   const dismiss = () =>
     run(async () => {
       await dismissProposal(proposal);
       onChange(proposal.id, { state: "dismissed" });
-    }, "Отменить не получилось. Попробуй ещё раз.");
+    }, t("Отменить не получилось. Попробуй ещё раз."));
   const revert = () =>
     run(async () => {
       await undoProposal(proposal);
       onChange(proposal.id, { state: "undone" });
-    }, "Вернуть не получилось. Попробуй ещё раз.");
+    }, t("Вернуть не получилось. Попробуй ещё раз."));
 
   const error = failed ? (
     <p className="q-status" role="alert">
@@ -240,9 +244,9 @@ function ProposalCard({ proposal, onChange }: { proposal: AssistantProposal; onC
 
   if (proposal.state === "dismissed") return null;
   if (proposal.state === "stale") {
-    return <p className="q-status">{STALE_TEXT}</p>;
+    return <p className="q-status">{t(STALE_TEXT)}</p>;
   }
-  if (proposal.state === "undone") return <p className="q-status">Вернул как было.</p>;
+  if (proposal.state === "undone") return <p className="q-status">{t("Вернул как было.")}</p>;
   if (proposal.state === "applied") {
     return (
       <div className="a-prop">
@@ -250,7 +254,7 @@ function ProposalCard({ proposal, onChange }: { proposal: AssistantProposal; onC
         {canUndoProposal(proposal) ? (
           <div className="q-acts">
             <button className="btn btn-text" type="button" disabled={busy} onClick={() => void revert()}>
-              Вернуть как было
+              {t("Вернуть как было")}
             </button>
           </div>
         ) : null}
@@ -307,10 +311,10 @@ function ProposalCard({ proposal, onChange }: { proposal: AssistantProposal; onC
       </ul>
       <div className="q-acts">
         <button className="btn btn-main" type="button" disabled={busy} onClick={() => void accept()}>
-          Применить
+          {t("Применить")}
         </button>
         <button className="btn btn-text" type="button" disabled={busy} onClick={() => void dismiss()}>
-          Не надо
+          {t("Не надо")}
         </button>
       </div>
       {error}

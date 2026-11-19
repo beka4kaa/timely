@@ -14,6 +14,7 @@
 "use client";
 
 import { ArrowDown } from "lucide-react";
+import { t } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
@@ -82,18 +83,18 @@ export function PlanStructureEditor({
       onPlanChange(result.plan);
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не получилось сохранить изменения.");
+      setError(cause instanceof Error ? cause.message : t("Не получилось сохранить изменения."));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <section className="course-edit" aria-label="Правка состава">
+    <section className="course-edit" aria-label={t("Правка состава")}>
       <div className="course-edit-head">
-        <h2 className="sec">Состав программы</h2>
+        <h2 className="sec">{t("Состав программы")}</h2>
         <span className="muted num">
-          Тем: {totalTopics}, часов: {Math.round(totalMinutes / 60)}
+          {t("Тем: {topics}, часов: {hours}", { topics: totalTopics, hours: Math.round(totalMinutes / 60) })}
         </span>
         <button
           type="button"
@@ -102,7 +103,7 @@ export function PlanStructureEditor({
           disabled={busy}
         >
           <Icon name="undo" />
-          Вернуть как было
+          {t("Вернуть как было")}
         </button>
       </div>
 
@@ -110,27 +111,28 @@ export function PlanStructureEditor({
         <section key={module.external_id} className="card course-sheet">
           <div className="edit-row is-module">
             <label className="field">
-              <span className="sr-only">Название главы</span>
+              <span className="sr-only">{t("Название главы")}</span>
               <input
                 value={module.title || ""}
                 onChange={(event) => patchModule(moduleIndex, { title: event.target.value })}
               />
             </label>
             <OrderButtons
-              noun="главу"
+              upLabel={t("Поднять главу")}
+              downLabel={t("Опустить главу")}
               onUp={() => setDraft((current) => move(current, moduleIndex, moduleIndex - 1))}
               onDown={() => setDraft((current) => move(current, moduleIndex, moduleIndex + 1))}
             />
           </div>
 
           {module.topics.length === 0 ? (
-            <p className="muted">Все темы убраны, глава исчезнет при сохранении.</p>
+            <p className="muted">{t("Все темы убраны, глава исчезнет при сохранении.")}</p>
           ) : null}
 
           {module.topics.map((topic, topicIndex) => (
             <div key={topic.external_id} className="edit-row">
               <label className="field">
-                <span className="sr-only">Название темы</span>
+                <span className="sr-only">{t("Название темы")}</span>
                 <input
                   value={topic.title || ""}
                   onChange={(event) =>
@@ -143,7 +145,7 @@ export function PlanStructureEditor({
                 />
               </label>
               <label className="field edit-min">
-                <span className="sr-only">Минут на тему</span>
+                <span className="sr-only">{t("Минут на тему")}</span>
                 <input
                   type="number"
                   min={0}
@@ -163,9 +165,10 @@ export function PlanStructureEditor({
                   }
                 />
               </label>
-              <span className="muted">мин</span>
+              <span className="muted">{t("мин")}</span>
               <OrderButtons
-                noun="тему"
+                upLabel={t("Поднять тему")}
+                downLabel={t("Опустить тему")}
                 onUp={() =>
                   patchModule(moduleIndex, {
                     topics: move(module.topics, topicIndex, topicIndex - 1),
@@ -179,8 +182,8 @@ export function PlanStructureEditor({
               />
               <button
                 type="button"
-                aria-label="Убрать тему"
-                title="Убрать тему"
+                aria-label={t("Убрать тему")}
+                title={t("Убрать тему")}
                 className="icon-btn"
                 onClick={() =>
                   patchModule(moduleIndex, {
@@ -201,7 +204,7 @@ export function PlanStructureEditor({
         </p>
       ) : null}
       {totalTopics === 0 ? (
-        <p className="cur-err">В программе должна остаться хотя бы одна тема.</p>
+        <p className="cur-err">{t("В программе должна остаться хотя бы одна тема.")}</p>
       ) : null}
 
       <div className="cur-acts">
@@ -211,10 +214,10 @@ export function PlanStructureEditor({
           disabled={busy || totalTopics === 0}
           onClick={() => void save()}
         >
-          {busy ? "Сохраняю…" : "Сохранить изменения"}
+          {busy ? t("Сохраняю…") : t("Сохранить изменения")}
         </button>
         <button type="button" className="btn btn-text" disabled={busy} onClick={onClose}>
-          Отмена
+          {t("Отмена")}
         </button>
       </div>
     </section>
@@ -222,20 +225,22 @@ export function PlanStructureEditor({
 }
 
 function OrderButtons({
-  noun,
+  upLabel,
+  downLabel,
   onUp,
   onDown,
 }: {
-  noun: string;
+  upLabel: string;
+  downLabel: string;
   onUp: () => void;
   onDown: () => void;
 }) {
   return (
     <span className="edit-order">
-      <button type="button" aria-label={`Поднять ${noun}`} title="Выше" className="icon-btn" onClick={onUp}>
+      <button type="button" aria-label={upLabel} title={t("Выше")} className="icon-btn" onClick={onUp}>
         <Icon name="arrow-up" />
       </button>
-      <button type="button" aria-label={`Опустить ${noun}`} title="Ниже" className="icon-btn" onClick={onDown}>
+      <button type="button" aria-label={downLabel} title={t("Ниже")} className="icon-btn" onClick={onDown}>
         <ArrowDown className="i" />
       </button>
     </span>

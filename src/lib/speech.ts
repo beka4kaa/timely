@@ -7,6 +7,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import { getLocale } from "./i18n";
+
 let speaking: string | null = null;
 const listeners = new Set<() => void>();
 
@@ -48,10 +50,10 @@ export function speak(id: string, text: string): void {
   synth.cancel();
   const parts = phrases(text);
   if (!parts.length) return notify(null);
-  const voice = synth.getVoices().find((item) => item.lang.toLowerCase().startsWith("ru"));
+  const voice = synth.getVoices().find((item) => item.lang.toLowerCase().startsWith(getLocale()));
   parts.forEach((part, index) => {
     const utterance = new SpeechSynthesisUtterance(part);
-    utterance.lang = "ru-RU";
+    utterance.lang = getLocale() === "en" ? "en-US" : "ru-RU";
     if (voice) utterance.voice = voice;
     utterance.rate = 1;
     if (index === parts.length - 1) {

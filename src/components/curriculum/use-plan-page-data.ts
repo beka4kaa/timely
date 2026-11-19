@@ -11,6 +11,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { t } from "@/lib/i18n";
 
 import {
   type CoursePlan,
@@ -63,20 +64,20 @@ function classify(error: unknown): { kind: PlanPageErrorKind; message: string } 
     if (error.status === 404) {
       return {
         kind: "not_found",
-        message: "Такой программы нет. Возможно, её удалили или построили заново.",
+        message: t("Такой программы нет. Возможно, её удалили или построили заново."),
       };
     }
     if (error.status === 401 || error.status === 403) {
       // Не винить ссылку в проблеме доступа: ссылка рабочая, аккаунт другой.
       return {
         kind: "forbidden",
-        message: "Эта программа принадлежит другому аккаунту.",
+        message: t("Эта программа принадлежит другому аккаунту."),
       };
     }
   }
   return {
     kind: "network",
-    message: "Не получилось загрузить программу. Проверь интернет и попробуй ещё раз.",
+    message: t("Не получилось загрузить программу. Проверь интернет и попробуй ещё раз."),
   };
 }
 
@@ -188,7 +189,7 @@ export function useApprovePlan(planId: string, onApproved: (plan: CoursePlan) =>
       setError(
         cause instanceof CurriculumApiError
           ? cause.message
-          : "Не получилось подтвердить программу. Попробуй ещё раз.",
+          : t("Не получилось подтвердить программу. Попробуй ещё раз."),
       );
     } finally {
       setBusy(false);

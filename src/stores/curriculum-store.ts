@@ -16,6 +16,7 @@
 import { create } from "zustand";
 
 import { limitMessage } from "@/lib/ai-limit";
+import { t } from "@/lib/i18n";
 import {
   type CoursePlan,
   type CurriculumDocument,
@@ -161,19 +162,19 @@ function toWizardError(error: unknown): WizardError {
     return {
       code: "timeout",
       message:
-        "Модель не ответила за семь минут. Обычно помогает повторить попытку.",
+        t("Модель не ответила за семь минут. Обычно помогает повторить попытку."),
     };
   }
   // Сетевой сбой fetch тоже даёт бесполезное «Failed to fetch».
   if (error instanceof TypeError) {
     return {
       code: "network",
-      message: "Не получилось связаться с сервером. Проверь интернет.",
+      message: t("Не получилось связаться с сервером. Проверь интернет."),
     };
   }
   if (error instanceof Error)
     return { code: "unexpected", message: error.message };
-  return { code: "unexpected", message: "Что-то пошло не так." };
+  return { code: "unexpected", message: t("Что-то пошло не так.") };
 }
 
 function isAbortError(error: unknown): boolean {

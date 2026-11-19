@@ -9,18 +9,21 @@ import { useEffect, useState } from "react";
 
 import { IconSprite } from "@/components/shell/icons";
 import { fetchSharedChat, type SharedChatPage } from "@/lib/curriculum-api";
+import { useT } from "@/lib/i18n/react";
 
 import { chatTitle } from "./chat-title";
 import { MarkdownMessage } from "./markdown-message";
 
-function sharedOn(iso: string): string {
+function sharedOn(iso: string, locale: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? ""
-    : date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+    : date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" });
 }
 
 export function SharedChatView({ token, home }: { token: string; home: string }) {
+  // Страницу рисует сервер, поэтому язык из `useT()`: он совпадает на сервере и в браузере.
+  const { t, dateLocale } = useT();
   /** `undefined` — грузится, `null` — ссылки нет. */
   const [chat, setChat] = useState<SharedChatPage | null | undefined>(undefined);
   const [failed, setFailed] = useState(false);
@@ -51,26 +54,28 @@ export function SharedChatView({ token, home }: { token: string; home: string })
             Timely
           </a>
           <a className="btn btn-line" href={home}>
-            Что такое Timely
+            {t("Что такое Timely")}
           </a>
         </header>
 
         {failed ? (
           <p className="share-missing" role="alert">
-            Разговор не загрузился. Проверь интернет и обнови страницу.
+            {t("Разговор не загрузился. Проверь интернет и обнови страницу.")}
           </p>
         ) : chat === undefined ? (
-          <p className="small-note">Открываю разговор…</p>
+          <p className="small-note">{t("Открываю разговор…")}</p>
         ) : chat === null ? (
           <div className="share-missing">
-            <h1 className="share-title">Ссылки больше нет</h1>
-            <p>Её удалили, или в адресе ошибка.</p>
+            <h1 className="share-title">{t("Ссылки больше нет")}</h1>
+            <p>{t("Её удалили, или в адресе ошибка.")}</p>
           </div>
         ) : (
           <article>
             <h1 className="share-title">{chatTitle(chat.title)}</h1>
             <p className="share-when">
-              Разговор с тьютором Timely{chat.shared_at ? `, ${sharedOn(chat.shared_at)}` : ""}
+              {chat.shared_at
+                ? t("Разговор с тьютором Timely, {date}", { date: sharedOn(chat.shared_at, dateLocale) })
+                : t("Разговор с тьютором Timely")}
             </p>
             <div className="share-log">
               {chat.messages.map((message, index) =>
@@ -89,9 +94,9 @@ export function SharedChatView({ token, home }: { token: string; home: string })
         )}
 
         <footer className="share-foot">
-          <span>Timely помогает учиться: план на день, тьютор и повторение.</span>
+          <span>{t("Timely помогает учиться: план на день, тьютор и повторение.")}</span>
           <a className="btn btn-main" href={home}>
-            Попробовать
+            {t("Попробовать")}
           </a>
         </footer>
       </div>

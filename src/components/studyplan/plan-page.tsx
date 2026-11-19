@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePageSchedule } from "@/contexts/active-schedule";
 import { useAskRail } from "@/contexts/ask-rail";
+import { getLocale, plural, t } from "@/lib/i18n";
 import {
   applyStudyWindows,
   createCommitment,
@@ -90,12 +91,7 @@ const FRESH_MS = 700;
 
 /** «1 занятие», «2 занятия», «5 занятий». */
 function blockWord(count: number): string {
-  const tens = count % 100;
-  if (tens >= 11 && tens <= 14) return "занятий";
-  const units = count % 10;
-  if (units === 1) return "занятие";
-  if (units >= 2 && units <= 4) return "занятия";
-  return "занятий";
+  return plural(count, "{n} занятие", "{n} занятия", "{n} занятий");
 }
 
 // ───────────────────────────── История действий ──────────────────────────────
@@ -454,8 +450,8 @@ export function StudyPlanPage() {
       closeCard();
       const count = blockIds.length + commitments.length;
       showToast({
-        text: blockIds.length ? `Убрано: ${count} ${blockWord(count)}` : "Удалено",
-        action: "Вернуть",
+        text: blockIds.length ? t("Убрано: {blocks}", { blocks: blockWord(count) }) : t("Удалено"),
+        action: t("Вернуть"),
         onAction: () => void undo(),
       });
     },
@@ -476,8 +472,8 @@ export function StudyPlanPage() {
       const sameStart = Date.parse(entry.start_at) === startAt.getTime();
       const text =
         sameStart && duration !== entry.duration_minutes
-          ? `Теперь ${durationLabel(duration)}`
-          : `Перенесено на ${dayShort(dateKeyAt)}, ${clock(startMinutes)}`;
+          ? t("Теперь {duration}", { duration: durationLabel(duration) })
+          : t("Перенесено на {day}, {time}", { day: dayShort(dateKeyAt), time: clock(startMinutes) });
 
       if (isCommitmentEntry(entry)) {
         const done = await getSchedule().moveEvent(entry.commitment_id, startAt, duration);
@@ -490,7 +486,7 @@ export function StudyPlanPage() {
             { startAt, duration },
           ),
         );
-        showToast({ text, action: "Вернуть как было", onAction: () => void undo() });
+        showToast({ text, action: t("Вернуть как было"), onAction: () => void undo() });
         return;
       }
 
@@ -507,7 +503,7 @@ export function StudyPlanPage() {
           return null;
         },
       });
-      showToast({ text, action: "Вернуть как было", onAction: () => void undo() });
+      showToast({ text, action: t("Вернуть как было"), onAction: () => void undo() });
     },
     [displayTimeZone, getSchedule, remember, showToast, undo],
   );
@@ -515,7 +511,7 @@ export function StudyPlanPage() {
   const saveDraft = useCallback(async () => {
     if (!draft || saving) return;
     setSaving(true);
-    const title = draft.title.trim() || "Новое занятие";
+    const title = draft.title.trim() || t("Новое занятие");
     const created = await getSchedule().addEvent({
       title,
       startAt: toInstant(draft.dateKey, draft.startMinutes, displayTimeZone),
@@ -530,8 +526,8 @@ export function StudyPlanPage() {
     mascot.hop(0.42, "quiet");
     remember(createdStep(getSchedule, created));
     showToast({
-      text: `Поставил на ${dayShort(draft.dateKey)}, ${clock(draft.startMinutes)}`,
-      action: "Убрать",
+      text: t("Поставил на {day}, {time}", { day: dayShort(draft.dateKey), time: clock(draft.startMinutes) }),
+      action: t("Убрать"),
       onAction: () => void undo(),
     });
   }, [displayTimeZone, draft, getSchedule, remember, saving, showToast, undo]);
@@ -540,9 +536,12 @@ export function StudyPlanPage() {
   const askAboutDraft = useCallback(() => {
     if (!draft) return;
     const name = draft.title.trim();
+    const day = getLocale() === "ru" ? fullDayLabel(draft.dateKey).toLowerCase() : fullDayLabel(draft.dateKey);
     prompt({
       target: "schedule",
-      text: `Поставь ${name ? `«${name}»` : "занятие"}: ${fullDayLabel(draft.dateKey).toLowerCase()}, в ${clock(draft.startMinutes)}, ${draft.durationMinutes} минут`,
+      text: name
+        ? t("Поставь «{name}»: {day}, в {time}, {n} минут", { name, day, time: clock(draft.startMinutes), n: draft.durationMinutes })
+        : t("Поставь занятие: {day}, в {time}, {n} минут", { day, time: clock(draft.startMinutes), n: draft.durationMinutes }),
       send: true,
     });
     setDraft(null);
@@ -563,7 +562,7 @@ export function StudyPlanPage() {
       const done = await getSchedule().confirm(id);
       if (!done) return;
       mascot.hop(1);
-      showToast({ text: "Расписание подтверждено" });
+      showToast({ text: t("Расписание подтверждено") });
     },
     [getSchedule, showToast],
   );
@@ -600,8 +599,8 @@ export function StudyPlanPage() {
   useEffect(() => {
     if (selectedCount < 2) return;
     showToast({
-      text: `Выбрано: ${selectedCount} ${blockWord(selectedCount)}`,
-      action: "Убрать из плана",
+      text: t("Выбрано: {blocks}", { blocks: blockWord(selectedCount) }),
+      action: t("Убрать из плана"),
       onAction: () => void removeSelectedRef.current(),
     });
   }, [selectedCount, showToast]);
@@ -657,7 +656,7 @@ export function StudyPlanPage() {
     // блоков, и такое решение принимает он сам.
     onStudyWindows: async (proposal) => {
       const active = ready?.schedules.find((item) => item.id === assistantScheduleId);
-      if (!active?.template) throw new Error("Расписание ещё не загрузилось.");
+      if (!active?.template) throw new Error(t("Расписание ещё не загрузилось."));
       // Прежние окна нужны только для замены: их идентификаторы есть лишь в самом шаблоне.
       const previousSlotIds = proposal.replace
         ? (await listTemplates()).find((item) => item.id === active.template)?.slots.map((slot) => slot.id) ?? []
@@ -697,22 +696,22 @@ export function StudyPlanPage() {
   return (
     <div className="content view plan-view">
       <header className="head">
-        <h1 className="title">Неделя</h1>
+        <h1 className="title">{t("Неделя")}</h1>
         {ready ? (
           <div className="head-tools">
             <button className="btn btn-line" type="button" onClick={goToday}>
-              Сегодня
+              {t("Сегодня")}
             </button>
             <div className="pager">
-              <button className="icon-btn" type="button" aria-label="Назад" onClick={() => stepView(-1)}>
+              <button className="icon-btn" type="button" aria-label={t("Назад")} onClick={() => stepView(-1)}>
                 <Icon name="chev-l" />
               </button>
               <span>{mode === "day" ? fullDayLabel(activeDay) : weekLabel(schedule.days)}</span>
-              <button className="icon-btn" type="button" aria-label="Вперёд" onClick={() => stepView(1)}>
+              <button className="icon-btn" type="button" aria-label={t("Вперёд")} onClick={() => stepView(1)}>
                 <Icon name="chev-r" />
               </button>
             </div>
-            <div className="tabs plan-mode" role="group" aria-label="Масштаб">
+            <div className="tabs plan-mode" role="group" aria-label={t("Масштаб")}>
               {(["week", "day"] as Mode[]).map((value) => (
                 <button
                   key={value}
@@ -723,27 +722,27 @@ export function StudyPlanPage() {
                     dismissAll();
                   }}
                 >
-                  {value === "week" ? "Неделя" : "День"}
+                  {value === "week" ? t("Неделя") : t("День")}
                 </button>
               ))}
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="btn btn-line plan-setup" type="button">
-                  Настроить
+                  {t("Настроить")}
                   <Icon name="chev-d" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="plan-setup-menu">
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard/diary/grades">Оценки за четверть</Link>
+                  <Link href="/dashboard/diary/grades">{t("Оценки за четверть")}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard/diary/schedule">Шаблон уроков</Link>
+                  <Link href="/dashboard/diary/schedule">{t("Шаблон уроков")}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={!diary.week} onSelect={() => setShowVideos(true)}>
-                  Видео и трансляции
+                  {t("Видео и трансляции")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -752,14 +751,14 @@ export function StudyPlanPage() {
       </header>
 
       {schedule.data.state === "loading" ? (
-        <div className="cal card plan-skel" aria-busy="true" aria-label="Загружаю расписание" />
+        <div className="cal card plan-skel" aria-busy="true" aria-label={t("Загружаю расписание")} />
       ) : null}
 
       {schedule.data.state === "error" ? (
         <div className="card plan-error" role="alert">
-          <p>{schedule.data.message}</p>
+          <p>{t(schedule.data.message)}</p>
           <button className="btn btn-line" type="button" onClick={() => void schedule.reload()}>
-            Попробовать снова
+            {t("Попробовать снова")}
           </button>
         </div>
       ) : null}
@@ -775,7 +774,7 @@ export function StudyPlanPage() {
             onAsk={() =>
               prompt({
                 target: "schedule",
-                text: "Программа не помещается в свободное время. Что подвинуть?",
+                text: t("Программа не помещается в свободное время. Что подвинуть?"),
                 send: true,
               })
             }
@@ -783,9 +782,9 @@ export function StudyPlanPage() {
 
           {!hasSchedule && !railOpen && school.length ? (
             <div className="card plan-hint">
-              <span>Своих занятий пока нет. Ответь на пару вопросов, и они встанут в свободное от школы время.</span>
+              <span>{t("Своих занятий пока нет. Ответь на пару вопросов, и они встанут в свободное от школы время.")}</span>
               <button className="btn btn-line" type="button" onClick={startSetup}>
-                Настроить занятия
+                {t("Настроить занятия")}
               </button>
             </div>
           ) : null}
@@ -821,16 +820,16 @@ export function StudyPlanPage() {
             >
               {!hasSchedule && !railOpen && !school.length ? (
                 <div className="plan-empty">
-                  <h2>Расписания пока нет</h2>
-                  <p>Ответь на пару вопросов, и появится черновик недели. В календарь он попадёт, только когда ты его подтвердишь.</p>
+                  <h2>{t("Расписания пока нет")}</h2>
+                  <p>{t("Ответь на пару вопросов, и появится черновик недели. В календарь он попадёт, только когда ты его подтвердишь.")}</p>
                   <button className="btn btn-main" type="button" onClick={startSetup}>
-                    Настроить расписание
+                    {t("Настроить расписание")}
                   </button>
                 </div>
               ) : null}
             </PlanCalendar>
 
-            <aside className="cal-side" aria-label="Задания и ближайшие сроки">
+            <aside className="cal-side" aria-label={t("Задания и ближайшие сроки")}>
               <WeekTasks api={diary} weekStart={diaryWeekStart} />
               <SoonCard items={soon} todayKey={todayKey} />
             </aside>
@@ -859,7 +858,7 @@ export function StudyPlanPage() {
                 onMove={() => moveViaAssistant(card)}
                 onTogglePinned={(pinned) => {
                   void schedule.setPinned([card.id], pinned).then((done) => {
-                    if (done) showToast({ text: pinned ? "Закреплено: занятие стоит на месте" : "Теперь можно двигать" });
+                    if (done) showToast({ text: pinned ? t("Закреплено: занятие стоит на месте") : t("Теперь можно двигать") });
                   });
                 }}
                 onRemove={() => void removeEntries([card])}
@@ -870,7 +869,7 @@ export function StudyPlanPage() {
           {draft ? (
             <CalPopover
               anchor=".blk.draft"
-              label="Новое занятие"
+              label={t("Новое занятие")}
               autoFocus={false}
               layoutKey={`${draft.dateKey}:${draft.startMinutes}:${mode}`}
               onClose={() => setDraft(null)}
@@ -892,7 +891,7 @@ export function StudyPlanPage() {
 
       <Dialog open={showVideos} onOpenChange={setShowVideos}>
         <DialogContent className="plan-videos">
-          <DialogTitle>Видео и трансляции</DialogTitle>
+          <DialogTitle>{t("Видео и трансляции")}</DialogTitle>
           {diary.week ? <WeekVideos week={diary.week} today={localDateKey(new Date())} api={diary} /> : null}
         </DialogContent>
       </Dialog>
@@ -927,9 +926,9 @@ function ProposalLine({
   if (selected?.feasible) {
     return (
       <div className="plan-line card" role="status">
-        <span>Это черновик: новое расписание показано пунктиром.</span>
+        <span>{t("Это черновик: новое расписание показано пунктиром.")}</span>
         <button className="btn btn-main" type="button" disabled={busy} onClick={() => onConfirm(selected.id)}>
-          Подтвердить
+          {t("Подтвердить")}
         </button>
       </div>
     );
@@ -937,9 +936,9 @@ function ProposalLine({
   if (selected) {
     return (
       <div className="plan-line card" role="status">
-        <span>Программа не помещается в свободное время.</span>
+        <span>{t("Программа не помещается в свободное время.")}</span>
         <button className="btn btn-line" type="button" disabled={busy} onClick={onAsk}>
-          Спросить, что подвинуть
+          {t("Спросить, что подвинуть")}
         </button>
       </div>
     );
@@ -947,9 +946,9 @@ function ProposalLine({
   if (waiting) {
     return (
       <div className="plan-line card" role="status">
-        <span>Есть черновик расписания, он ждёт подтверждения.</span>
+        <span>{t("Есть черновик расписания, он ждёт подтверждения.")}</span>
         <button className="btn btn-line" type="button" onClick={() => onShow(waiting.id)}>
-          Показать
+          {t("Показать")}
         </button>
       </div>
     );
@@ -960,7 +959,7 @@ function ProposalLine({
 function SoonCard({ items, todayKey }: { items: Due[]; todayKey: string }) {
   return (
     <section className="scard card">
-      <h2>Скоро</h2>
+      <h2>{t("Скоро")}</h2>
       {items.length ? (
         <ul className="soon">
           {items.map((due) => (
@@ -974,8 +973,8 @@ function SoonCard({ items, todayKey }: { items: Due[]; todayKey: string }) {
         </ul>
       ) : (
         <p className="small-note">
-          Близких сроков нет. Они появятся из контрольных в дневнике и{" "}
-          <Link href="/dashboard/goals">целей</Link> с датой.
+          {t("Близких сроков нет. Они появятся из контрольных в дневнике и")}{" "}
+          <Link href="/dashboard/goals">{t("целей")}</Link> {t("с датой.")}
         </p>
       )}
     </section>
@@ -1008,7 +1007,7 @@ function PlanToast({
       <div className={`toast plan-toast${atTop ? " at-top" : ""}`} role="alert">
         <span>{notice}</span>
         <button className="btn btn-text" type="button" onClick={onDismissNotice}>
-          Понятно
+          {t("Понятно")}
         </button>
       </div>
     );
@@ -1022,7 +1021,7 @@ function PlanToast({
           {toast.action}
         </button>
       ) : (
-        <button className="icon-btn" type="button" aria-label="Закрыть" onClick={onDismissToast}>
+        <button className="icon-btn" type="button" aria-label={t("Закрыть")} onClick={onDismissToast}>
           <Icon name="x" />
         </button>
       )}

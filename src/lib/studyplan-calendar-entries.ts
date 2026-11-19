@@ -3,6 +3,7 @@ import {
   toInstant,
   weekdayOf,
 } from "./studyplan-calendar.ts";
+import { t } from "./i18n";
 import { OCCUPIED_ACCENT } from "./studyplan-visuals.ts";
 
 export type CalendarScheduleStatus =
@@ -360,11 +361,11 @@ export function entryAccent<T extends CalendarBlock & { course_plan: string }>(
 
 export function commitmentKindLabel(kind: string): string {
   const labels: Record<string, string> = {
-    school: "Школа",
-    tutor: "Репетитор",
-    exam: "Экзамен",
-    family: "Семейное",
-    other: "Занятое время",
+    school: t("Школа"),
+    tutor: t("Репетитор"),
+    exam: t("Экзамен"),
+    family: t("Семейное"),
+    other: t("Занятое время"),
   };
-  return labels[kind] ?? "Занятое время";
+  return labels[kind] ?? t("Занятое время");
 }

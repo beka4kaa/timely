@@ -3,11 +3,12 @@
 // Все звуки считаются здесь же, в коде: ни файлов, ни внешних адресов, ни лицензий.
 // Рецепты — из навыка ui-sound-design (колокольчик через негармонические обертоны,
 // одна общая AudioContext, громкость никогда не уводится в ноль). Каждый звук укладывается
-// в такт звонка (`BELL_EVERY_MS`) и повторяется, пока не нажмёшь «Тихо».
+// в такт звонка (`BELL_EVERY_MS`) и повторяется, пока не нажмёшь куда угодно на странице.
 //
 // Браузер даёт играть звук только после клика, поэтому `unlockBell` вызывается в
 // обработчике «Начать». После этого звонок звучит и на свёрнутой вкладке.
 
+import { getLocale, msg, t } from "./i18n";
 import type { TimerPhase } from "./pomodoro";
 import { BELL_EVERY_MS } from "./pomodoro-cycle";
 
@@ -79,12 +80,12 @@ export type BellTone = "chime" | "bowl" | "marimba" | "harp" | "alarm";
 export type BellSound = BellTone | "voice";
 
 export const BELL_SOUNDS: { key: BellSound; name: string; note: string }[] = [
-  { key: "chime", name: "Колокольчик", note: "Мягкий двойной звон" },
-  { key: "bowl", name: "Поющая чаша", note: "Низкий тёплый звук" },
-  { key: "marimba", name: "Маримба", note: "Три деревянные ноты вверх" },
-  { key: "harp", name: "Арфа", note: "Перебор струн" },
-  { key: "voice", name: "Голос", note: "Скажет, что блок закончился" },
-  { key: "alarm", name: "Будильник", note: "Громкий звонок, как раньше" },
+  { key: "chime", name: msg("Колокольчик"), note: msg("Мягкий двойной звон") },
+  { key: "bowl", name: msg("Поющая чаша"), note: msg("Низкий тёплый звук") },
+  { key: "marimba", name: msg("Маримба"), note: msg("Три деревянные ноты вверх") },
+  { key: "harp", name: msg("Арфа"), note: msg("Перебор струн") },
+  { key: "voice", name: msg("Голос"), note: msg("Скажет, что блок закончился") },
+  { key: "alarm", name: msg("Будильник"), note: msg("Громкий звонок, как раньше") },
 ];
 
 export const DEFAULT_BELL: BellSound = "chime";
@@ -95,10 +96,10 @@ export function bellSoundOf(raw: unknown): BellSound {
 
 /** Что скажет голос, когда фаза кончилась. `next` — что начинается теперь. */
 export function bellPhrase(next: TimerPhase): string {
-  if (next === "focus") return "Перерыв закончился. Пора продолжать.";
+  if (next === "focus") return t("Перерыв закончился. Пора продолжать.");
   return next === "long"
-    ? "Блок закончился. Время на длинный перерыв."
-    : "Блок закончился. Время отдохнуть.";
+    ? t("Блок закончился. Время на длинный перерыв.")
+    : t("Блок закончился. Время отдохнуть.");
 }
 
 /** Обертон: во сколько раз выше основного тона, громкость и время затухания в секундах. */
@@ -281,8 +282,9 @@ function speak(text: string, volume: number): () => void {
   if (!synth || typeof SpeechSynthesisUtterance === "undefined") return () => undefined;
   try {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "ru-RU";
-    const voice = synth.getVoices().find((item) => item.lang.toLowerCase().startsWith("ru"));
+    const speechLang = getLocale() === "en" ? "en" : "ru";
+    utterance.lang = speechLang === "en" ? "en-US" : "ru-RU";
+    const voice = synth.getVoices().find((item) => item.lang.toLowerCase().startsWith(speechLang));
     if (voice) utterance.voice = voice;
     utterance.volume = Math.min(1, volume);
     utterance.rate = 0.95;
@@ -361,4 +363,33 @@ export function ringBell(
   } catch {
     return silence;
   }
+}
+
+const HUSH_EVENTS = ["click", "keydown"] as const;
+
+/**
+ * Звонок глушит любое нажатие или клавиша на странице: отдельной кнопки «Тихо» нет.
+ *
+ * Слушаем в фазе перехвата, а `onHush` зовём уже после события. Так кнопка под курсором
+ * («Начать» перерыв) успевает сработать, а обработчик, остановивший всплытие, не мешает.
+ * Несколько событий подряд глушат один раз. Возвращает отписку; она же отменяет ещё не
+ * случившееся `onHush`.
+ */
+export function listenForHush(target: EventTarget, onHush: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const hush = () => {
+    if (timer !== null) return;
+    timer = setTimeout(() => {
+      timer = null;
+      onHush();
+    }, 0);
+  };
+  // Объект, а не `true`: так отписка снимает слушатель везде, в том числе в Node, где идут тесты.
+  const capture = { capture: true };
+  for (const type of HUSH_EVENTS) target.addEventListener(type, hush, capture);
+  return () => {
+    for (const type of HUSH_EVENTS) target.removeEventListener(type, hush, capture);
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
 }

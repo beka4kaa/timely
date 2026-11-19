@@ -8,6 +8,7 @@
 // Модуль без React и без запросов, поэтому покрыт тестами (`diary-plan.test.ts`).
 // Импорты с «.ts» — ради `node --test` без сборщика.
 
+import { t } from "./i18n";
 import { dayPhrase, daysBetween, parseClock } from "./now-feed.ts";
 import { formatMinutes, shiftDateKey, toInstant, weekdayOf, zonedDateKey, zonedMinutes } from "./studyplan-calendar.ts";
 
@@ -177,5 +178,5 @@ export function plannedEntryFor<T extends PlannedEntry>(
 /** «сегодня в 17:15», «в пятницу в 16:00». */
 export function planWhenLabel(start: Date | string, today: string, timeZone: string): string {
   const day = dayPhrase(zonedDateKey(start, timeZone), today);
-  return `${day} в ${formatMinutes(zonedMinutes(start, timeZone))}`;
+  return t("{day} в {time}", { day, time: formatMinutes(zonedMinutes(start, timeZone)) });
 }

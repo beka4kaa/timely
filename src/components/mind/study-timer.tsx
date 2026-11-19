@@ -22,6 +22,7 @@ import {
     Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 import { MindSession } from '@/types/mind'
 
 interface StudyTimerProps {
@@ -142,12 +143,12 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
                                     {isRunning ? (
                                         <>
                                             <Pause className="h-5 w-5 mr-2" />
-                                            Пауза
+                                            {t('Пауза')}
                                         </>
                                     ) : (
                                         <>
                                             <Play className="h-5 w-5 mr-2" />
-                                            Продолжить
+                                            {t('Продолжить')}
                                         </>
                                     )}
                                 </Button>
@@ -162,7 +163,7 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
                                     ) : (
                                         <>
                                             <Square className="h-5 w-5 mr-2" />
-                                            Завершить
+                                            {t('Завершить')}
                                         </>
                                     )}
                                 </Button>
@@ -172,17 +173,17 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
                         <>
                             <Clock className="h-16 w-16 text-muted-foreground mb-4" />
                             <h2 className="text-2xl font-bold text-white mb-2">
-                                Трекер учёбы
+                                {t('Трекер учёбы')}
                             </h2>
                             <p className="text-muted-foreground mb-6">
-                                Отслеживайте время, которое вы тратите на обучение
+                                {t('Отслеживайте время, которое вы тратите на обучение')}
                             </p>
                             <Button
                                 size="lg"
                                 onClick={() => setShowStartDialog(true)}
                             >
                                 <Play className="h-5 w-5 mr-2" />
-                                Начать работу
+                                {t('Начать работу')}
                             </Button>
                         </>
                     )}
@@ -193,14 +194,14 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
             <Dialog open={showStartDialog} onOpenChange={setShowStartDialog}>
                 <DialogContent className="max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Начать сессию</DialogTitle>
+                        <DialogTitle>{t('Начать сессию')}</DialogTitle>
                         <DialogDescription>
-                            Над чем вы собираетесь работать?
+                            {t('Над чем вы собираетесь работать?')}
                         </DialogDescription>
                     </DialogHeader>
 
                     <Input
-                        placeholder="Например: Подготовка к экзамену по физике"
+                        placeholder={t('Например: Подготовка к экзамену по физике')}
                         value={taskName}
                         onChange={(e) => setTaskName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleStart()}
@@ -208,7 +209,7 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
 
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowStartDialog(false)}>
-                            Отмена
+                            {t('Отмена')}
                         </Button>
                         <Button onClick={handleStart} disabled={!taskName.trim() || loading}>
                             {loading ? (
@@ -216,7 +217,7 @@ export function StudyTimer({ className, onSessionEnd }: StudyTimerProps) {
                             ) : (
                                 <>
                                     <Play className="h-4 w-4 mr-2" />
-                                    Начать
+                                    {t('Начать')}
                                 </>
                             )}
                         </Button>

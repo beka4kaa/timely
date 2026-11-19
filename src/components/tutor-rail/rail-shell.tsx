@@ -11,13 +11,14 @@ import { useEffect, useRef, type MutableRefObject, type ReactNode } from "react"
 import { Icon } from "@/components/shell/icons";
 import { useQuick } from "@/components/shell/quick/quick-context";
 import { useAskRail } from "@/contexts/ask-rail";
+import { msg, t } from "@/lib/i18n";
 
 export function RailShell({
   mode,
   edgeLabel,
   title,
   onNew,
-  newLabel = "Новый чат",
+  newLabel = msg("Новый чат"),
   feedRef,
   unseen = false,
   children,
@@ -163,15 +164,15 @@ export function RailShell({
 
   return (
     <div className={`quick${quick.listening ? " listening" : ""}`} data-state={state} ref={hostRef}>
-      <div className="q-suggest" aria-label="Подсказки" ref={quick.setSuggestSlot} />
-      <div className="q-win glass" role="dialog" aria-label={edgeLabel} ref={winRef}>
+      <div className="q-suggest" aria-label={t("Подсказки")} ref={quick.setSuggestSlot} />
+      <div className="q-win glass" role="dialog" aria-label={t(edgeLabel)} ref={winRef}>
         {title || onNew ? (
           <div className="q-top">
             {title}
             {onNew ? (
-              <button className="q-tool q-new" type="button" title={newLabel} onClick={onNew}>
+              <button className="q-tool q-new" type="button" title={t(newLabel)} onClick={onNew}>
                 <Icon name="plus" />
-                <span>{newLabel}</span>
+                <span>{t(newLabel)}</span>
               </button>
             ) : null}
           </div>
@@ -180,23 +181,23 @@ export function RailShell({
           {children}
         </div>
         {footer}
-        <button className="q-close" type="button" aria-label="Закрыть" title="Закрыть" onClick={toggle}>
+        <button className="q-close" type="button" aria-label={t("Закрыть")} title={t("Закрыть")} onClick={toggle}>
           <Icon name="x" />
         </button>
       </div>
       <div className="q-pickbar glass">
         <Icon name="cursor" />
-        <span>Нажми на урок</span>
+        <span>{t("Нажми на урок")}</span>
         <button className="btn btn-text q-pick-cancel" type="button" onClick={quick.stopPick}>
-          Отмена
+          {t("Отмена")}
         </button>
       </div>
       <div className="q-pill glass">
         <button
           className="q-pill-btn q-open"
           type="button"
-          title={unseen ? "Есть ответ" : "Быстрый запрос"}
-          aria-label={unseen ? "Есть ответ, открыть" : "Быстрый запрос"}
+          title={unseen ? t("Есть ответ") : t("Быстрый запрос")}
+          aria-label={unseen ? t("Есть ответ, открыть") : t("Быстрый запрос")}
           data-unseen={unseen || undefined}
           onClick={openRail}
         >
@@ -208,8 +209,8 @@ export function RailShell({
             <button
               className="q-pill-btn q-voice"
               type="button"
-              title="Сказать голосом"
-              aria-label="Сказать голосом"
+              title={t("Сказать голосом")}
+              aria-label={t("Сказать голосом")}
               onClick={() => {
                 openRail();
                 quick.listen();

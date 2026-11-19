@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useSmoothInput } from "@/components/shell/smooth-input";
+import { t } from "@/lib/i18n";
 import { understand, type Understood, type UnderstoodKind } from "@/lib/understand";
 
 const STEP_MS = 900;
@@ -58,7 +59,7 @@ export function AiLine({
           autoComplete="off"
         />
       </span>
-      <button className="send" type="submit" aria-label="Отправить">
+      <button className="send" type="submit" aria-label={t("Отправить")}>
         <Icon name="arrow-up" />
       </button>
     </form>
@@ -92,17 +93,17 @@ export function useUnderstand(expect: UnderstoodKind, steps: readonly string[]) 
         current.current = null;
         setThinking(false);
       });
-      mascot.thought(steps[0]);
+      mascot.thought(t(steps[0]));
       const timers = steps.slice(1).map((step, index) =>
         window.setTimeout(() => {
-          if (current.current === mine) mascot.thought(step);
+          if (current.current === mine) mascot.thought(t(step));
         }, STEP_MS * (index + 1)),
       );
       const result = await understand(text, expect);
       timers.forEach((timer) => window.clearTimeout(timer));
       if (current.current !== mine) return;
       current.current = null;
-      mascot.thinkEnd("Готово");
+      mascot.thinkEnd(t("Готово"));
       setThinking(false);
       done(result);
     },

@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/popover";
 import { useActiveSchedule } from "@/contexts/active-schedule";
 import { useAskRail } from "@/contexts/ask-rail";
+import { dateLocale, msg, t } from "@/lib/i18n";
 import { closedByRejecting } from "@/lib/now-feed";
 import {
   StudyplanApiError,
@@ -182,7 +183,7 @@ export function ScheduleRail() {
   useEffect(() => {
     if (thinking && !thinkingRef.current) {
       thinkingRef.current = true;
-      mascot.thinkStart(lastQuestion || "Запрос", () => {
+      mascot.thinkStart(lastQuestion || t("Запрос"), () => {
         thinkingRef.current = false;
         abortRef.current?.abort();
       });
@@ -191,14 +192,14 @@ export function ScheduleRail() {
       const proposal =
         state.revision || state.commitments?.length || state.studyWindows || state.proposals.length;
       if (openRef.current) {
-        mascot.thinkEnd(state.status === "error" ? undefined : proposal ? "Есть вариант" : "Готово");
+        mascot.thinkEnd(state.status === "error" ? undefined : proposal ? t("Есть вариант") : t("Готово"));
         return;
       }
       mascot.thinkEnd();
       const text =
-        state.status === "error" ? state.error : proposal ? "Есть вариант. Открой, чтобы посмотреть." : answerPreview(state.answer);
+        state.status === "error" ? state.error : proposal ? t("Есть вариант. Открой, чтобы посмотреть.") : answerPreview(state.answer);
       if (!text) return;
-      mascot.remind(lastQuestion || "Запрос", text, openRail, { stay: true, long: true });
+      mascot.remind(lastQuestion || t("Запрос"), text, openRail, { stay: true, long: true });
       setUnseen(true);
     }
   }, [lastQuestion, openRail, state, thinking]);
@@ -350,8 +351,8 @@ export function ScheduleRail() {
         {
           role: "assistant",
           content: result.feasible
-            ? "Черновик готов. Проверь занятия в календаре и подтверди расписание."
-            : "Черновик готов, но программа не помещается в свободное время. Скажи, что подвинуть, или добавь дни.",
+            ? t("Черновик готов. Проверь занятия в календаре и подтверди расписание.")
+            : t("Черновик готов, но программа не помещается в свободное время. Скажи, что подвинуть, или добавь дни."),
         },
       ]);
       void notifyApplied(createdId)
@@ -374,7 +375,7 @@ export function ScheduleRail() {
 
   const setupAlreadyExists = useCallback(() => {
     setSetupOpen(false);
-    setTurns([{ role: "assistant", content: "Расписание уже появилось. Что в нём поменять?" }]);
+    setTurns([{ role: "assistant", content: t("Расписание уже появилось. Что в нём поменять?") }]);
     notifyApplied();
   }, [notifyApplied]);
 
@@ -382,7 +383,7 @@ export function ScheduleRail() {
     setState((current) => ({
       ...current,
       status: "error",
-      error: error instanceof Error ? error.message : fallback,
+      error: error instanceof Error ? t(error.message) : fallback,
       errorCode: null,
     }));
   }, []);
@@ -419,7 +420,7 @@ export function ScheduleRail() {
           ...current,
           revision: stale ? null : current.revision,
           status: "error",
-          error: error instanceof Error ? error.message : "Применить не получилось.",
+          error: error instanceof Error ? t(error.message) : t("Применить не получилось."),
           errorCode: null,
         }));
         invalidatePlan(stale ? (item) => item.schedule === revision.schedule : undefined);
@@ -439,10 +440,10 @@ export function ScheduleRail() {
       invalidatePlan((item) => item.schedule === applied.schedule);
       await notifyApplied();
       setApplied(null);
-      setNote("План снова прежний.");
+      setNote(t("План снова прежний."));
     } catch (error) {
       if (error instanceof StudyplanApiError && (error.isStale || error.isClosed)) setApplied(null);
-      failed(error, "Вернуть не получилось.");
+      failed(error, t("Вернуть не получилось."));
     } finally {
       setApplying(false);
     }
@@ -454,10 +455,10 @@ export function ScheduleRail() {
       try {
         await saveCommitments(items);
         setState((current) => ({ ...current, commitments: null }));
-        setNote("Готово, занятое время записано.");
+        setNote(t("Готово, занятое время записано."));
         mascot.hop(1);
       } catch (error) {
-        failed(error, "Записать не получилось.");
+        failed(error, t("Записать не получилось."));
       } finally {
         setApplying(false);
       }
@@ -471,10 +472,10 @@ export function ScheduleRail() {
       try {
         await saveStudyWindows(proposal);
         setState((current) => ({ ...current, studyWindows: null }));
-        setNote("Готово, время занятий обновлено.");
+        setNote(t("Готово, время занятий обновлено."));
         mascot.hop(1);
       } catch (error) {
-        failed(error, "Записать ритм не вышло.");
+        failed(error, t("Записать ритм не вышло."));
       } finally {
         setApplying(false);
       }
@@ -534,8 +535,8 @@ export function ScheduleRail() {
   return (
     <RailShell
       mode="schedule"
-      edgeLabel="Помощник по расписанию"
-      newLabel="Заново"
+      edgeLabel={msg("Помощник по расписанию")}
+      newLabel={msg("Заново")}
       onNew={hasAnswer && !setupOpen ? clear : undefined}
       feedRef={feedRef}
       unseen={unseen}
@@ -568,7 +569,7 @@ export function ScheduleRail() {
             showSuggestions={!hasAnswer}
           />
         ) : !ready ? (
-          <p className="q-status">Загружаю расписание…</p>
+          <p className="q-status">{t("Загружаю расписание…")}</p>
         ) : null
       }
     >
@@ -585,7 +586,7 @@ export function ScheduleRail() {
       {showExchange && !finished && lastQuestion ? <p className="q-q">{lastQuestion}</p> : null}
 
       {showExchange && thinking ? (
-        <p className="q-status shine">{stage ? `${stageLabel(stage)}…` : "Думаю…"}</p>
+        <p className="q-status shine">{stage ? `${stageLabel(stage)}…` : t("Думаю…")}</p>
       ) : null}
 
       {showExchange && !finished && lastAnswer ? (
@@ -628,10 +629,10 @@ export function ScheduleRail() {
 
       {showExchange && applied ? (
         <>
-          <p className="q-say">Готово, план обновлён.</p>
+          <p className="q-say">{t("Готово, план обновлён.")}</p>
           <div className="q-acts">
             <button className="btn btn-text" type="button" disabled={applying} onClick={() => void undoApplied()}>
-              Вернуть как было
+              {t("Вернуть как было")}
             </button>
             <button
               className="btn btn-text"
@@ -642,7 +643,7 @@ export function ScheduleRail() {
                 toggle();
               }}
             >
-              Закрыть
+              {t("Закрыть")}
             </button>
           </div>
         </>
@@ -656,15 +657,16 @@ export function ScheduleRail() {
           // не сделал не так: красная строка тут врала бы про серьёзность. Поле ввода на
           // месте: как только модель подключат, просьбу можно повторить тем же движением.
           <>
-            <p className="q-say">Помощник сейчас не на связи.</p>
+            <p className="q-say">{t("Помощник сейчас не на связи.")}</p>
             <p className="q-status">
-              Менять план через него пока нельзя. Занятия можно двигать прямо в календаре: перетащи
-              их мышью или нажми на пустое место, чтобы поставить новое.
+              {t(
+                "Менять план через него пока нельзя. Занятия можно двигать прямо в календаре: перетащи их мышью или нажми на пустое место, чтобы поставить новое.",
+              )}
             </p>
           </>
         ) : (
           <p className="q-status" role="alert">
-            {state.error}
+            {t(state.error)}
           </p>
         )
       ) : null}
@@ -697,16 +699,16 @@ function ScheduleTargetPicker({
         <button
           className="q-tool ps-target"
           type="button"
-          title="Какое расписание правит помощник"
+          title={t("Какое расписание правит помощник")}
           disabled={disabled}
         >
           <Icon name="plan" />
-          <span>{selected?.title ?? "Расписание"}</span>
+          <span>{selected?.title ?? t("Расписание")}</span>
           <Icon name="chev-d" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-72 p-0">
-        <div className="q-book-menu" aria-label="Какое расписание править">
+        <div className="q-book-menu" aria-label={t("Какое расписание править")}>
           {options.map((option) => (
             <button
               key={option.id}
@@ -719,7 +721,7 @@ function ScheduleTargetPicker({
               }}
             >
               <span>{option.title}</span>
-              <small>{option.statusLabel.toLocaleLowerCase("ru-RU")}</small>
+              <small>{option.statusLabel.toLocaleLowerCase(dateLocale())}</small>
             </button>
           ))}
           <button
@@ -730,7 +732,7 @@ function ScheduleTargetPicker({
               onStart();
             }}
           >
-            <span>Новое расписание</span>
+            <span>{t("Новое расписание")}</span>
             <small>/start</small>
           </button>
         </div>

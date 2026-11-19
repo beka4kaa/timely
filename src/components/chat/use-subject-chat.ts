@@ -67,7 +67,7 @@ export const MAX_STORED_TURNS = 40;
 
 /** Ключи прежнего хранения в браузере: `timely.ask.<uuid предмета>`. */
 const LEGACY_PREFIX = "timely.ask.";
-const LEGACY_TITLE = "Прежний разговор";
+const LEGACY_TITLE = "Прежний разговор"; // i18n-skip
 
 export interface UseSubjectChatOptions {
   /** Предмет текущего разговора. `null` — без книги. */
@@ -294,18 +294,18 @@ export function useSubjectChat({
             patchLast({ stage: "", toolLabel: undefined, durationMs: Date.now() - startedAt });
           } else if (event === "error") {
             failed = true;
-            patchLast({ stage: "", toolLabel: undefined, error: String(data.error ?? "Ошибка") });
+            patchLast({ stage: "", toolLabel: undefined, error: String(data.error ?? "Ошибка") }); // i18n-skip
           }
         }
         if (!answer && !failed) {
-          patchLast({ stage: "", toolLabel: undefined, error: "Пустой ответ." });
+          patchLast({ stage: "", toolLabel: undefined, error: "Пустой ответ." }); // i18n-skip
         }
       } catch (error) {
         if (!controller.signal.aborted) {
           patchLast({
             stage: "",
             error:
-              error instanceof Error ? error.message : "Не удалось спросить.",
+              error instanceof Error ? error.message : "Не удалось спросить.", // i18n-skip
           });
         }
       } finally {

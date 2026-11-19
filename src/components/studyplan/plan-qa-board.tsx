@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 
+import { t } from "@/lib/i18n";
 import { toInstant, weekDays, zonedDateKey } from "@/lib/studyplan-calendar";
 
 import { PlanCalendar } from "./plan-calendar";
@@ -25,8 +26,8 @@ function hhmm(value: string): number {
 }
 
 const PLANS = [
-  { id: "plan-physics", title: "Механика, 10 класс" },
-  { id: "plan-math", title: "Алгебра и начала анализа" },
+  { id: "plan-physics", title: "Механика, 10 класс" }, // i18n-skip
+  { id: "plan-math", title: "Алгебра и начала анализа" }, // i18n-skip
   { id: "plan-ml", title: "_OceanofPDF.com_Hands-On_Machine_Learning" },
   { id: "plan-english", title: "English Grammar in Use" },
 ];
@@ -48,22 +49,22 @@ interface Spec {
 /** Сценарии из задания: пересечения, длинный, короткий, отменённый, предложение. */
 const SPECS: Spec[] = [
   // Два занятия в один час — проверка дорожек.
-  { id: "a", day: 1, time: "16:00", minutes: 60, title: "Кинематика: разбор", plan: "plan-physics" },
-  { id: "b", day: 1, time: "16:00", minutes: 45, title: "Производная", plan: "plan-math", activity: "independent_practice" },
+  { id: "a", day: 1, time: "16:00", minutes: 60, title: "Кинематика: разбор", plan: "plan-physics" }, // i18n-skip
+  { id: "b", day: 1, time: "16:00", minutes: 45, title: "Производная", plan: "plan-math", activity: "independent_practice" }, // i18n-skip
   // Три в один час — проверка потолка дорожек.
-  { id: "c", day: 2, time: "17:00", minutes: 60, title: "Градиентный спуск", plan: "plan-ml", activity: "guided_practice" },
+  { id: "c", day: 2, time: "17:00", minutes: 60, title: "Градиентный спуск", plan: "plan-ml", activity: "guided_practice" }, // i18n-skip
   { id: "d", day: 2, time: "17:00", minutes: 60, title: "Present Perfect", plan: "plan-english" },
-  { id: "e", day: 2, time: "17:15", minutes: 45, title: "Интегралы", plan: "plan-math" },
+  { id: "e", day: 2, time: "17:15", minutes: 45, title: "Интегралы", plan: "plan-math" }, // i18n-skip
   // Длинный и короткий.
-  { id: "f", day: 3, time: "09:00", minutes: 180, title: "Проект: пайплайн распознавания", plan: "plan-ml", activity: "project" },
-  { id: "g", day: 3, time: "13:00", minutes: 15, title: "Короткое повторение", plan: "plan-physics", activity: "review" },
+  { id: "f", day: 3, time: "09:00", minutes: 180, title: "Проект: пайплайн распознавания", plan: "plan-ml", activity: "project" }, // i18n-skip
+  { id: "g", day: 3, time: "13:00", minutes: 15, title: "Короткое повторение", plan: "plan-physics", activity: "review" }, // i18n-skip
   // Предложение и отменённое.
-  { id: "h", day: 4, time: "10:00", minutes: 90, title: "Динамика: законы Ньютона", plan: "plan-physics", proposal: true },
-  { id: "i", day: 4, time: "15:00", minutes: 60, title: "Отменённое занятие", plan: "plan-math", status: "cancelled" },
-  { id: "j", day: 5, time: "11:00", minutes: 60, title: "Пропущено", plan: "plan-english", status: "missed" },
-  { id: "k", day: 5, time: "13:00", minutes: 60, title: "Сделано", plan: "plan-ml", status: "completed" },
+  { id: "h", day: 4, time: "10:00", minutes: 90, title: "Динамика: законы Ньютона", plan: "plan-physics", proposal: true }, // i18n-skip
+  { id: "i", day: 4, time: "15:00", minutes: 60, title: "Отменённое занятие", plan: "plan-math", status: "cancelled" }, // i18n-skip
+  { id: "j", day: 5, time: "11:00", minutes: 60, title: "Пропущено", plan: "plan-english", status: "missed" }, // i18n-skip
+  { id: "k", day: 5, time: "13:00", minutes: 60, title: "Сделано", plan: "plan-ml", status: "completed" }, // i18n-skip
   // Раннее занятие — проверка расширения шкалы вверх.
-  { id: "l", day: 6, time: "06:15", minutes: 45, title: "Утренний повтор", plan: "plan-physics", activity: "review" },
+  { id: "l", day: 6, time: "06:15", minutes: 45, title: "Утренний повтор", plan: "plan-physics", activity: "review" }, // i18n-skip
 ];
 
 function buildEntries(days: string[]): CalendarEntry[] {
@@ -97,7 +98,7 @@ function buildEntries(days: string[]): CalendarEntry[] {
       schedule_version: 1,
       schedule_status: spec.proposal ? "proposed" : "active",
       schedule_timezone: TZ,
-      course_plan_title: COURSE_TITLE.get(spec.plan) ?? "Программа",
+      course_plan_title: COURSE_TITLE.get(spec.plan) ?? "Программа", // i18n-skip
       calendar_entry: "learning_block",
     } as unknown as CalendarEntry;
   });
@@ -107,7 +108,7 @@ function buildEntries(days: string[]): CalendarEntry[] {
     const start = toInstant(days[index], 8 * 60, TZ);
     return {
       id: `school-${index}`,
-      title: "Школа",
+      title: "Школа", // i18n-skip
       start_at: start.toISOString(),
       end_at: new Date(start.getTime() + 6 * 3600000).toISOString(),
       duration_minutes: 360,
@@ -140,18 +141,18 @@ export function PlanQaBoard() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Стенд календаря</h1>
+        <h1 className="title">{t("Стенд календаря")}</h1>
         <div className="head-tools">
-          <span className="head-note">выделено: {selectedIds.length}</span>
+          <span className="head-note">{t("выделено: {n}", { n: selectedIds.length })}</span>
           <button className="btn btn-line" type="button" onClick={() => setEmpty((value) => !value)}>
-            {empty ? "С занятиями" : "Пустая неделя"}
+            {empty ? t("С занятиями") : t("Пустая неделя")}
           </button>
           <button
             className="btn btn-line"
             type="button"
             onClick={() => setMode((value) => (value === "week" ? "day" : "week"))}
           >
-            {mode === "week" ? "День" : "Неделя"}
+            {mode === "week" ? t("День") : t("Неделя")}
           </button>
         </div>
       </header>

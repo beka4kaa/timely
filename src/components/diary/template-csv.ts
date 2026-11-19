@@ -16,7 +16,9 @@ export function exportTemplateCsv(
   subjectName: (id: string) => string | undefined,
   blockLabel: (slot: SlotDraft) => string,
 ): void {
-  const rows = [["День", "№", "Начало", "Конец", "Тип", "Предмет / Название"].map(csvCell).join(",")];
+  // Колонки формата импорта остаются русскими.
+  const header = ["День", "№", "Начало", "Конец", "Тип", "Предмет / Название"]; // i18n-skip
+  const rows = [header.map(csvCell).join(",")];
   for (const day of DAYS_ORDER) {
     for (const slot of week[day]) {
       const isLesson = slot.blockType === "lesson";

@@ -12,6 +12,7 @@
 
 
 import Link from "next/link";
+import { t } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
@@ -177,7 +178,7 @@ function PlanPageBody({
   // Все темы пройдены: прогноз больше ничего не значит.
   const courseDone = isCourseDone(allTopicsCount, states, progress?.progress ?? null);
   const lede = courseDone
-    ? "Курс пройден."
+    ? t("Курс пройден.")
     : courseLede(forecast, {
         sessionsPerWeek: plan.recommended_sessions_per_week,
         minutesPerSession: plan.recommended_session_minutes,
@@ -194,27 +195,27 @@ function PlanPageBody({
   return (
     <div className="content view cur-page">
       <Link className="back" href="/dashboard/curriculum">
-        {SECTION_LABEL}
+        {t(SECTION_LABEL)}
       </Link>
 
       <header className="head">
         <h1 className="title">{plan.title}</h1>
         <div className="head-tools">
           {siblings.length > 1 && siblingIndex >= 0 ? (
-            <nav className="pager" aria-label="Другие курсы предмета">
+            <nav className="pager" aria-label={t("Другие курсы предмета")}>
               <Link
                 className="icon-btn"
-                aria-label="Предыдущий курс"
+                aria-label={t("Предыдущий курс")}
                 href={`/dashboard/curriculum/plan/${siblings[(siblingIndex - 1 + siblings.length) % siblings.length].id}`}
               >
                 <Icon name="chev-l" />
               </Link>
               <span>
-                {siblingIndex + 1} из {siblings.length}
+                {t("{n} из {total}", { n: siblingIndex + 1, total: siblings.length })}
               </span>
               <Link
                 className="icon-btn"
-                aria-label="Следующий курс"
+                aria-label={t("Следующий курс")}
                 href={`/dashboard/curriculum/plan/${siblings[(siblingIndex + 1) % siblings.length].id}`}
               >
                 <Icon name="chev-r" />
@@ -235,7 +236,7 @@ function PlanPageBody({
       {lede ? (
         <p className="lede">{lede}</p>
       ) : (
-        <p className="lede">Ритм занятий не задан, без него календарь не построить.</p>
+        <p className="lede">{t("Ритм занятий не задан, без него календарь не построить.")}</p>
       )}
 
       {plan.objective && plan.objective !== plan.title ? (
@@ -254,18 +255,17 @@ function PlanPageBody({
       ) : null}
 
       {plan.status === "archived" ? (
-        <p className="cur-alert">Это прежняя версия программы, её заменила более новая.</p>
+        <p className="cur-alert">{t("Это прежняя версия программы, её заменила более новая.")}</p>
       ) : null}
       {plan.status === "rejected" ? (
         <p className="cur-alert is-bad">
-          Эту программу забраковала проверка, поэтому начать по ней занятия нельзя. Построй её заново:
-          учебник и цель сохранены.
+          {t("Эту программу забраковала проверка, поэтому начать по ней занятия нельзя. Построй её заново: учебник и цель сохранены.")}
         </p>
       ) : null}
       {blockers.length > 0 ? (
         <div className="cur-alert is-bad">
           <div>
-            Проверка оставила замечания
+            {t("Проверка оставила замечания")}
             <ul className="cur-alert-list">
               {blockers.map((finding, index) => (
                 <li key={`${finding.kind}-${index}`}>{finding.message}</li>
@@ -275,10 +275,10 @@ function PlanPageBody({
         </div>
       ) : null}
       {degraded ? (
-        <p className="cur-alert">Учебник не загрузился, поэтому страницы книги недоступны. Сама программа показана полностью.</p>
+        <p className="cur-alert">{t("Учебник не загрузился, поэтому страницы книги недоступны. Сама программа показана полностью.")}</p>
       ) : null}
       {sourceDeleted ? (
-        <p className="cur-alert">Источник этой программы удалён, поэтому ссылок на страницы нет.</p>
+        <p className="cur-alert">{t("Источник этой программы удалён, поэтому ссылок на страницы нет.")}</p>
       ) : null}
 
       {pacing ? (
@@ -305,7 +305,10 @@ function PlanPageBody({
       {book || material ? (
         <div
           className="src-book course-src"
-          data-attach={`${book ? "Книга" : kindLabel(material?.kind ?? "custom")} «${sourceTitle}»`}
+          data-attach={t("{kind} «{title}»", {
+            kind: book ? t("Книга") : kindLabel(material?.kind ?? "custom"),
+            title: sourceTitle,
+          })}
         >
           <span className={`book mini ${coverClass(goal?.normalized_subject || sourceTitle)}`} aria-hidden="true" />
           <span>
@@ -318,11 +321,16 @@ function PlanPageBody({
             )}
             <small>
               {book
-                ? [coverAuthor(book.authors), book.page_count > 0 ? `${book.page_count} стр.` : ""]
+                ? [coverAuthor(book.authors), book.page_count > 0 ? t("{n} стр.", { n: book.page_count }) : ""]
                     .filter(Boolean)
                     .join(", ")
                 : material
-                  ? `${kindLabel(material.kind)}, пройдено ${material.completed_units} из ${material.total_units} ${material.units_word}`
+                  ? t("{kind}, пройдено {done} из {total} {word}", {
+                      kind: kindLabel(material.kind),
+                      done: material.completed_units,
+                      total: material.total_units,
+                      word: material.units_word ? t(material.units_word) : "",
+                    })
                   : ""}
             </small>
             {coverage ? <small>{coverage}</small> : null}
@@ -332,8 +340,7 @@ function PlanPageBody({
 
       {everythingUnsourced ? (
         <p className="cur-alert">
-          Ни одна тема не сослалась на страницы учебника: программа построена по смыслу, а не по разделам
-          книги.
+          {t("Ни одна тема не сослалась на страницы учебника: программа построена по смыслу, а не по разделам книги.")}
         </p>
       ) : null}
 
@@ -348,11 +355,11 @@ function PlanPageBody({
           onAsk={ask}
         />
       ) : (
-        <p className="cur-alert">В программе пока нет ни одной главы. Построй её заново.</p>
+        <p className="cur-alert">{t("В программе пока нет ни одной главы. Построй её заново.")}</p>
       )}
 
       {plan.created_at ? (
-        <p className="course-foot">Программа построена {formatPlanDate(plan.created_at)}</p>
+        <p className="course-foot">{t("Программа построена {date}", { date: formatPlanDate(plan.created_at) })}</p>
       ) : null}
     </div>
   );
@@ -360,7 +367,7 @@ function PlanPageBody({
 
 /** «5» → «глава 5», а напечатанное в книге «Глава 5» остаётся как есть. */
 function chapterWord(label: string): string {
-  return /^\d/.test(label) ? `глава ${label}` : label;
+  return /^\d/.test(label) ? t("глава {label}", { label }) : label;
 }
 
 function CourseNotes({
@@ -382,25 +389,30 @@ function CourseNotes({
   // «не успеешь».
   const lines = [
     feasible === true && deadline ? (
-      <li key="deadline">Успеваешь к сроку: {dayMonth(deadline)}.</li>
+      <li key="deadline">{t("Успеваешь к сроку: {date}.", { date: dayMonth(deadline) })}</li>
     ) : null,
     feasible === false && deadline ? (
       <li key="deadline" className="is-bad">
-        К {dayMonth(deadline)} при таком темпе не выходит.{advice ? ` ${advice}` : ""}
+        {t("К {date} при таком темпе не выходит.", { date: dayMonth(deadline) })}
+        {advice ? ` ${advice}` : ""}
       </li>
     ) : null,
     ...milestones.map((milestone) => (
       <li key={milestone.id}>
-        Веха: {milestone.title}
-        {milestone.moduleLabel ? `, ${chapterWord(milestone.moduleLabel)}` : ""}.
+        {milestone.moduleLabel
+          ? t("Веха: {title}, {chapter}.", {
+              title: milestone.title,
+              chapter: chapterWord(milestone.moduleLabel),
+            })
+          : t("Веха: {title}.", { title: milestone.title })}
       </li>
     )),
     ...warnings.map((code) => <li key={code}>{forecastWarningMessage(code)}</li>),
     noSchedule ? (
       <li key="no-schedule">
-        Расписания пока нет, поэтому прогресс не растёт.{" "}
+        {t("Расписания пока нет, поэтому прогресс не растёт.")}{" "}
         <Link className="link" href="/dashboard/plan">
-          Разложить по дням
+          {t("Разложить по дням")}
         </Link>
       </li>
     ) : null,

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { t } from "@/lib/i18n";
 import { TIPS, TIP_INTERVAL_MS, nextTip, quoted, type TipKind } from "@/lib/pomodoro-tips";
 
 const OUT_MS = 260;
@@ -49,9 +50,9 @@ export function PomodoroTip({ mode }: { mode: TipKind | "any" }) {
   useEffect(() => () => clearTimeout(swapTimer.current), []);
 
   return (
-    <button className="fp-tip" type="button" title="Другой совет" onClick={swap}>
+    <button className="fp-tip" type="button" title={t("Другой совет")} onClick={swap}>
       <span className="fp-tip-t" data-leaving={leaving || undefined} key={index ?? "none"} aria-live="polite">
-        {index === null ? " " : quoted(TIPS[index].text)}
+        {index === null ? " " : quoted(t(TIPS[index].text))}
       </span>
     </button>
   );

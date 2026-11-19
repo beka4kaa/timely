@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useEffect, type ReactNode } from "react";
 
+import { msg, t } from "@/lib/i18n";
 import { ContestApiError, getContest, type Contest } from "@/lib/contest-api";
 import { contestStateAt, plaqueOf } from "@/lib/contest-view";
 import { useResource } from "@/lib/resource-cache";
@@ -16,9 +17,9 @@ import { ContestHero } from "./contest-plaques";
 export type ContestTab = "tasks" | "table" | "attempts";
 
 const TABS: Array<{ tab: ContestTab; label: string; path: string }> = [
-  { tab: "tasks", label: "Задачи", path: "" },
-  { tab: "table", label: "Таблица", path: "/table" },
-  { tab: "attempts", label: "Все решения", path: "/attempts" },
+  { tab: "tasks", label: msg("Задачи"), path: "" },
+  { tab: "table", label: msg("Таблица"), path: "/table" },
+  { tab: "attempts", label: msg("Все решения"), path: "/attempts" },
 ];
 
 /** Ключи кэша с косой чертой в конце: префикс «…:12/» не задевает контест 123. */
@@ -70,29 +71,29 @@ export function ContestShell({ id, tab, compact = false, children }: {
     <div className={`content view${compact ? " cx-task-view" : ""}`}>
       {compact ? (
         <Link className="back" href={`/dashboard/arena/solve/${id}`}>
-          {data?.title ?? "Контест"}
+          {data?.title ?? t("Контест")}
         </Link>
       ) : (
         <Link className="back" href="/dashboard/arena/solve">
-          Контесты
+          {t("Контесты")}
         </Link>
       )}
       {missing ? (
         <section className="ct-note card" role="alert">
-          <h2>Такого контеста нет</h2>
-          <p>Возможно, его убрали. Остальные контесты в списке.</p>
+          <h2>{t("Такого контеста нет")}</h2>
+          <p>{t("Возможно, его убрали. Остальные контесты в списке.")}</p>
         </section>
       ) : !data && contest.error ? (
         <section className="ct-note card" role="alert">
-          <h2>Контест не загрузился</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Контест не загрузился")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={contest.reload}>
-            Повторить
+            {t("Повторить")}
           </button>
         </section>
       ) : !data || !now ? (
         <p className="small-note" role="status">
-          Загружаю контест…
+          {t("Загружаю контест…")}
         </p>
       ) : compact ? (
         children(data, now, contest.reload)
@@ -100,14 +101,14 @@ export function ContestShell({ id, tab, compact = false, children }: {
         <>
           <ContestHero plaque={plaqueOf(data)} now={now} />
           {data.description ? <p className="cx-about">{data.description}</p> : null}
-          <nav className="tabs cx-tabs" aria-label="Разделы контеста">
+          <nav className="tabs cx-tabs" aria-label={t("Разделы контеста")}>
             {TABS.map((item) => (
               <Link
                 key={item.tab}
                 href={`/dashboard/arena/solve/${id}${item.path}`}
                 aria-current={item.tab === tab ? "page" : undefined}
               >
-                {item.label}
+                {t(item.label)}
               </Link>
             ))}
           </nav>

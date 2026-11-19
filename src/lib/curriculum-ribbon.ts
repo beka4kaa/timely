@@ -15,6 +15,8 @@
 // иначе у каждого документа без страниц вырастает фантомный отрезок на нулевой
 // странице, а ветка «страниц нет — рисуем по разделам» не срабатывает никогда.
 
+import { plural, t } from "./i18n";
+
 export interface RibbonSource {
   section_path?: string | null;
   page_start?: number | null;
@@ -451,8 +453,10 @@ export function buildRibbon(input: RibbonInput): RibbonModel {
  * без отдельного хелпера, а не потому, что так короче.
  */
 export function coverageCaption(model: RibbonModel): string {
-  const noun = model.scale === "pages" ? "Страниц" : "Разделов";
-  return `${noun} в программе: ${model.claimedUnits} из ${model.totalUnits}`;
+  const vars = { claimed: model.claimedUnits, total: model.totalUnits };
+  return model.scale === "pages"
+    ? t("Страниц в программе: {claimed} из {total}", vars)
+    : t("Разделов в программе: {claimed} из {total}", vars);
 }
 
 /** Сколько пропусков называем словами. Дальше список длиннее самой полосы. */
@@ -481,17 +485,14 @@ export function gapsCaption(model: RibbonModel): string {
     .join(", ");
 
   const rest = model.gaps.length - NAMED_GAPS;
-  const tail = rest > 0 ? ` и ещё ${rest} ${spanWord(rest)}` : "";
-  const prefix = model.scale === "pages" ? "Не вошли: стр. " : "Не вошли разделы: ";
+  const tail =
+    rest > 0
+      ? " " + plural(rest, "и ещё {n} участок", "и ещё {n} участка", "и ещё {n} участков")
+      : "";
+  const head =
+    model.scale === "pages"
+      ? t("Не вошли: стр. {list}", { list: named })
+      : t("Не вошли разделы: {list}", { list: named });
 
-  return `${prefix}${named}${tail}`;
-}
-
-function spanWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (tens >= 11 && tens <= 14) return "участков";
-  if (ones === 1) return "участок";
-  if (ones >= 2 && ones <= 4) return "участка";
-  return "участков";
+  return `${head}${tail}`;
 }

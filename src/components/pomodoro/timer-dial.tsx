@@ -5,6 +5,7 @@
 
 import type { ReactNode } from "react";
 
+import { t } from "@/lib/i18n";
 import { clockOf, type TimerPhase } from "@/lib/pomodoro";
 import type { CycleDot } from "@/lib/pomodoro-cycle";
 import { dialSubtitle, dialTicks, tickClass } from "@/lib/pomodoro.logic";
@@ -49,7 +50,7 @@ export function TimerDial({ phase, remaining, planned, elapsed, running, now, cy
       </svg>
       <div className="dial-mid">
         {editor ?? (name ? (
-          <button className="dial-name" type="button" title="Поменять название" onClick={onName}>
+          <button className="dial-name" type="button" title={t("Поменять название")} onClick={onName}>
             {name}
           </button>
         ) : null)}

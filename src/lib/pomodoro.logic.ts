@@ -1,6 +1,7 @@
 // Чистые функции, которые превращают агрегаты бэкенда в данные для графиков.
 // Вынесены отдельно от компонентов, чтобы покрыть тестами без рендера React.
 
+import { dateLocale, msg, plural, t } from "./i18n";
 import {
   DAY_GOAL_MIN,
   HEAT_WEEKS,
@@ -55,7 +56,7 @@ export interface HeatWeek {
 }
 
 function longDateLabel(date: Date): string {
-  return date.toLocaleDateString("ru-RU", {
+  return date.toLocaleDateString(dateLocale(), {
     weekday: "short",
     day: "numeric",
     month: "long",
@@ -98,7 +99,7 @@ export function buildHeatWeeks(
         level: heatLevel(seconds),
         isToday: dayKey(date) === todayKey,
         isFuture,
-        tooltipTitle: seconds > 0 ? `${hm(seconds)} учёбы` : "Без занятий",
+        tooltipTitle: seconds > 0 ? t("{time} учёбы", { time: hm(seconds) }) : t("Без занятий"),
         tooltipSub: longDateLabel(date),
       });
 
@@ -140,7 +141,7 @@ export function summarizeHeat(weeks: HeatWeek[]): HeatStats {
     totalSeconds,
     best: best
       ? {
-          label: best.date.toLocaleDateString("ru-RU", {
+          label: best.date.toLocaleDateString(dateLocale(), {
             day: "numeric",
             month: "long",
           }),
@@ -186,7 +187,7 @@ function buildBars(
     ratio: max > 0 ? row.seconds / max : 0,
     label: label(row.date),
     isToday: row.isToday,
-    tooltipTitle: row.seconds > 0 ? `${hm(row.seconds)} учёбы` : "Без занятий",
+    tooltipTitle: row.seconds > 0 ? t("{time} учёбы", { time: hm(row.seconds) }) : t("Без занятий"),
     tooltipSub: longDateLabel(row.date),
   }));
 }
@@ -196,7 +197,7 @@ export function buildWeekBars(
   daily: Record<string, number>,
   today: Date,
 ): DayBar[] {
-  return buildBars(daily, today, 7, (date) => RU_DAYS[date.getDay()], 60 * 60);
+  return buildBars(daily, today, 7, (date) => t(RU_DAYS[date.getDay()]), 60 * 60);
 }
 
 export function sumSeconds(bars: DayBar[]): number {
@@ -261,12 +262,7 @@ export function buildTodayStats(
 }
 
 export function minutesWord(count: number): string {
-  const hundred = count % 100;
-  const ten = hundred % 10;
-  if (hundred > 10 && hundred < 20) return "минут";
-  if (ten === 1) return "минута";
-  if (ten >= 2 && ten <= 4) return "минуты";
-  return "минут";
+  return plural(count, "минута", "минуты", "минут");
 }
 
 /** «16:55» в зоне браузера. */
@@ -324,7 +320,7 @@ export function tickClass(index: number, elapsedSeconds: number, remainingSecond
   return index === gone && remainingSeconds > 0 ? "now" : "";
 }
 
-const BREAK_WORD: Record<TimerPhase, string> = { focus: "", break: "перерыв", long: "длинный перерыв" };
+const BREAK_WORD: Record<TimerPhase, string> = { focus: "", break: msg("перерыв"), long: msg("длинный перерыв") };
 
 /**
  * Подпись под цифрами: когда закончится или что стоит на паузе. Длину нетронутой фазы
@@ -346,9 +342,9 @@ export function dialSubtitle({
   now: number;
 }): string {
   const end = clockTime(new Date(now + remaining * 1000));
-  const word = BREAK_WORD[phase];
-  if (running) return word ? `${word}, до ${end}` : `до ${end}`;
-  if (remaining < planned) return `пауза, до ${end}`;
+  const word = t(BREAK_WORD[phase]);
+  if (running) return word ? t("{word}, до {end}", { word, end }) : t("до {end}", { end });
+  if (remaining < planned) return t("пауза, до {end}", { end });
   return word;
 }
 

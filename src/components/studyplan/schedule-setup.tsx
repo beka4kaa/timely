@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import {
   StudyplanApiError,
   type ScheduleSetupCreatedResponse,
@@ -21,6 +22,7 @@ import {
 
 import {
   prepareScheduleSetupAnswer,
+  scheduleSetupOptionText,
   scheduleSetupSummaryRows,
 } from "./schedule-setup.logic";
 
@@ -111,10 +113,11 @@ export function ScheduleSetup({
         setStep(Math.max(1, response.step ?? 1));
         setTotalSteps(Math.max(1, response.total_steps_hint ?? 4));
         setNotice(
-          response.notice ||
-            (response.fallback
-              ? "Продолжим с базовыми настройками расписания."
-              : ""),
+          response.notice
+            ? t(response.notice)
+            : response.fallback
+              ? t("Продолжим с базовыми настройками расписания.")
+              : "",
         );
         setSelectedOption("");
         setOtherOpen(false);
@@ -148,8 +151,8 @@ export function ScheduleSetup({
         setErrorCode(code);
         setError(
           caught instanceof Error
-            ? caught.message
-            : "Не удалось продолжить настройку.",
+            ? t(caught.message)
+            : t("Не удалось продолжить настройку."),
         );
         setPhase(
           caught instanceof StudyplanApiError && caught.status === 409
@@ -226,7 +229,7 @@ export function ScheduleSetup({
         await onCreated(result);
       } catch {
         if (requestNumberRef.current === requestNumber) {
-          setError("Черновик создан. Если календарь не обновился, перезагрузи страницу.");
+          setError(t("Черновик создан. Если календарь не обновился, перезагрузи страницу."));
         }
       }
     } catch (caught) {
@@ -244,8 +247,8 @@ export function ScheduleSetup({
       setErrorCode(code);
       setError(
         caught instanceof Error
-          ? caught.message
-          : "Не удалось создать предложение расписания.",
+          ? t(caught.message)
+          : t("Не удалось создать предложение расписания."),
       );
       // Итог остаётся видимым: подтверждение идемпотентно и его можно повторить.
       setPhase("summary");
@@ -256,14 +259,15 @@ export function ScheduleSetup({
 
   if (phase === "intro") {
     return (
-      <SetupCard phase={phase} title="Настроим твою неделю">
+      <SetupCard phase={phase} title={t("Настроим твою неделю")}>
         <p className="q-status">
-          Ответь на несколько коротких вопросов. Сначала покажу черновик: в расписание
-          ничего не попадёт без твоего подтверждения.
+          {t(
+            "Ответь на несколько коротких вопросов. Сначала покажу черновик: в расписание ничего не попадёт без твоего подтверждения.",
+          )}
         </p>
         <div className="q-acts">
           <button className="btn btn-main" type="button" onClick={begin}>
-            Настроить расписание
+            {t("Настроить расписание")}
           </button>
           {onCancel ? <CancelButton onClick={cancel} /> : null}
         </div>
@@ -274,16 +278,16 @@ export function ScheduleSetup({
   if (phase === "blocked") {
     const noPlans = errorCode === "no_active_course_plans";
     return (
-      <SetupCard phase={phase} title={noPlans ? "Сначала нужна учебная программа" : "Нужен ещё один шаг"}>
+      <SetupCard phase={phase} title={noPlans ? t("Сначала нужна учебная программа") : t("Нужен ещё один шаг")}>
         <p className="q-status">{error}</p>
         <div className="q-acts">
           {noPlans ? (
             <Link href="/dashboard/curriculum" className="btn btn-main">
-              Создать программу
+              {t("Создать программу")}
             </Link>
           ) : null}
           <button className="btn btn-text" type="button" onClick={begin}>
-            Проверить снова
+            {t("Проверить снова")}
           </button>
           {onCancel ? <CancelButton onClick={cancel} /> : null}
         </div>
@@ -293,16 +297,16 @@ export function ScheduleSetup({
 
   if (phase === "error") {
     return (
-      <SetupCard phase={phase} title="Не удалось продолжить">
+      <SetupCard phase={phase} title={t("Не удалось продолжить")}>
         <p className="q-status" role="alert">
           {error}
         </p>
         <div className="q-acts">
           <button className="btn btn-main" type="button" onClick={() => void loadStep(retryRef.current)}>
-            Повторить
+            {t("Повторить")}
           </button>
           <button className="btn btn-text" type="button" onClick={begin}>
-            Начать заново
+            {t("Начать заново")}
           </button>
           {onCancel ? <CancelButton onClick={cancel} /> : null}
         </div>
@@ -312,8 +316,8 @@ export function ScheduleSetup({
 
   if (phase === "created") {
     return (
-      <SetupCard phase={phase} title="Черновик готов">
-        <p className="q-status">Проверь занятия в календаре и подтверди расписание отдельной кнопкой.</p>
+      <SetupCard phase={phase} title={t("Черновик готов")}>
+        <p className="q-status">{t("Проверь занятия в календаре и подтверди расписание отдельной кнопкой.")}</p>
         {error ? (
           <p className="q-status" role="alert">
             {error}
@@ -323,33 +327,36 @@ export function ScheduleSetup({
     );
   }
 
-  const title = summary ? "Такой ритм подойдёт?" : question?.text ?? "Готовлю следующий вопрос…";
+  const title = summary ? t("Такой ритм подойдёт?") : question ? t(question.text) : t("Готовлю следующий вопрос…");
 
   return (
     <SetupCard phase={phase} title={title} step={step} totalSteps={totalSteps}>
-      {notice ? <p className="q-cite">{notice}</p> : null}
+      {notice ? <p className="q-cite">{t(notice)}</p> : null}
 
-      {phase === "loading" ? <p className="q-status shine">Подбираю следующий вопрос…</p> : null}
+      {phase === "loading" ? <p className="q-status shine">{t("Подбираю следующий вопрос…")}</p> : null}
 
       {phase === "question" && question ? (
         <div className="ps-opts">
-          {question.options.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className="ps-opt"
-              disabled={Boolean(selectedOption)}
-              aria-pressed={selectedOption === option.id}
-              onClick={() => answerQuestion(option.id, option.id, "option")}
-            >
-              {option.label}
-              {option.description ? <small>{option.description}</small> : null}
-            </button>
-          ))}
+          {question.options.map((option) => {
+            const text = scheduleSetupOptionText(question.id, option);
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className="ps-opt"
+                disabled={Boolean(selectedOption)}
+                aria-pressed={selectedOption === option.id}
+                onClick={() => answerQuestion(option.id, option.id, "option")}
+              >
+                {text.label}
+                {text.description ? <small>{text.description}</small> : null}
+              </button>
+            );
+          })}
 
           {question.has_more ? (
             <Link href="/dashboard/curriculum" className="ps-opt is-quiet">
-              Показать все программы
+              {t("Показать все программы")}
             </Link>
           ) : null}
 
@@ -362,7 +369,7 @@ export function ScheduleSetup({
                 setError("");
               }}
             >
-              Другое, напишу сам
+              {t("Другое, напишу сам")}
             </button>
           ) : null}
 
@@ -384,9 +391,9 @@ export function ScheduleSetup({
                   setError("");
                 }}
                 placeholder={customPlaceholder(question.id)}
-                aria-label="Свой ответ"
+                aria-label={t("Свой ответ")}
               />
-              <button className="send" type="submit" disabled={!otherValue.trim()} aria-label="Сохранить свой ответ">
+              <button className="send" type="submit" disabled={!otherValue.trim()} aria-label={t("Сохранить свой ответ")}>
                 <Icon name="arrow-up" />
               </button>
             </form>
@@ -412,7 +419,7 @@ export function ScheduleSetup({
               </li>
             ))}
           </ul>
-          <p className="q-cite">Создам только черновик: ты проверишь занятия в календаре и подтвердишь их отдельно.</p>
+          <p className="q-cite">{t("Создам только черновик: ты проверишь занятия в календаре и подтвердишь их отдельно.")}</p>
           {error ? (
             <p className="q-status" role="alert">
               {error}
@@ -425,10 +432,10 @@ export function ScheduleSetup({
               disabled={phase === "creating"}
               onClick={() => void createProposal()}
             >
-              {phase === "creating" ? "Создаю…" : "Показать в календаре"}
+              {phase === "creating" ? t("Создаю…") : t("Показать в календаре")}
             </button>
             <button className="btn btn-text" type="button" disabled={phase === "creating"} onClick={begin}>
-              Заново
+              {t("Заново")}
             </button>
             {onCancel ? <CancelButton onClick={cancel} /> : null}
           </div>
@@ -447,7 +454,7 @@ export function ScheduleSetup({
 function CancelButton({ onClick }: { onClick: () => void }) {
   return (
     <button className="btn btn-text" type="button" onClick={onClick}>
-      Не сейчас
+      {t("Не сейчас")}
     </button>
   );
 }
@@ -477,12 +484,12 @@ function SetupCard({
         <p
           className="ps-step"
           role="progressbar"
-          aria-label={`Шаг ${activeStep} из ${totalSteps}`}
+          aria-label={t("Шаг {step} из {total}", { step: activeStep, total: totalSteps })}
           aria-valuemin={1}
           aria-valuemax={totalSteps}
           aria-valuenow={activeStep}
         >
-          Шаг {activeStep} из {totalSteps}
+          {t("Шаг {step} из {total}", { step: activeStep, total: totalSteps })}
         </p>
       ) : null}
       <h2 className="q-say">{title}</h2>
@@ -492,10 +499,10 @@ function SetupCard({
 }
 
 function customPlaceholder(questionId: string): string {
-  if (questionId === "weekdays") return "Например: пн, ср, пт";
-  if (questionId === "start_time") return "Например: 18:30";
-  if (questionId === "session_minutes") return "От 15 до 120 минут";
-  return "Короткий ответ";
+  if (questionId === "weekdays") return t("Например: пн, ср, пт");
+  if (questionId === "start_time") return t("Например: 18:30");
+  if (questionId === "session_minutes") return t("От 15 до 120 минут");
+  return t("Короткий ответ");
 }
 
 function isAbortError(error: unknown): boolean {

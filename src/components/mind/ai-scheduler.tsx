@@ -17,6 +17,7 @@ import {
     Wand2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 
 interface ScheduleBlock {
     type: 'LESSON' | 'BREAK'
@@ -113,17 +114,17 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
             <CardHeader>
                 <div className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-purple-500" />
-                    <CardTitle>AI Планировщик</CardTitle>
+                    <CardTitle>{t('AI Планировщик')}</CardTitle>
                 </div>
                 <CardDescription>
-                    Gemini проанализирует ваши предметы и создаст оптимальное расписание
+                    {t('Gemini проанализирует ваши предметы и создаст оптимальное расписание')}
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 {/* Settings */}
                 <div className="flex items-end gap-4">
                     <div className="flex-1">
-                        <Label htmlFor="hours">Сколько часов учиться?</Label>
+                        <Label htmlFor="hours">{t('Сколько часов учиться?')}</Label>
                         <Input
                             id="hours"
                             type="number"
@@ -142,12 +143,12 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                         {loading ? (
                             <>
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Генерация...
+                                {t('Генерация...')}
                             </>
                         ) : (
                             <>
                                 <Wand2 className="h-4 w-4 mr-2" />
-                                Сгенерировать
+                                {t('Сгенерировать')}
                             </>
                         )}
                     </Button>
@@ -157,7 +158,7 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                 {error && (
                     <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400">
                         <AlertCircle className="h-4 w-4" />
-                        <span>{error}</span>
+                        <span>{t(error)}</span>
                     </div>
                 )}
 
@@ -165,9 +166,9 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                 {schedule && (
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                            <h3 className="font-medium">Предложенное расписание</h3>
+                            <h3 className="font-medium">{t('Предложенное расписание')}</h3>
                             <Badge variant="secondary">
-                                {getTotalDuration()} мин
+                                {t('{n} мин', { n: getTotalDuration() })}
                             </Badge>
                         </div>
 
@@ -192,7 +193,7 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                                                 {block.startTime}
                                             </Badge>
                                             <Badge variant="secondary" className="text-xs">
-                                                {block.durationMinutes} мин
+                                                {t('{n} мин', { n: block.durationMinutes })}
                                             </Badge>
                                         </div>
                                         {block.reason && (
@@ -204,7 +205,7 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                                             <div className="flex gap-2 mt-2">
                                                 {block.segments.map((seg, i) => (
                                                     <Badge key={i} variant="outline" className="text-xs">
-                                                        {seg.title}: {seg.durationMinutes}м
+                                                        {seg.title}: {t('{n}м', { n: seg.durationMinutes })}
                                                     </Badge>
                                                 ))}
                                             </div>
@@ -217,13 +218,13 @@ export function AIScheduler({ className, onApplySchedule }: AISchedulerProps) {
                         <div className="flex gap-2">
                             <Button onClick={applySchedule} className="flex-1">
                                 <Check className="h-4 w-4 mr-2" />
-                                Применить расписание
+                                {t('Применить расписание')}
                             </Button>
                             <Button
                                 variant="outline"
                                 onClick={() => setSchedule(null)}
                             >
-                                Отмена
+                                {t('Отмена')}
                             </Button>
                         </div>
                     </div>

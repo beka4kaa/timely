@@ -3,6 +3,7 @@
 // Всё, из чего складывается свой профиль. Ключи общие с «Контестами» и «Рейтингом»:
 // один запрос на все три страницы.
 
+import { t } from "@/lib/i18n";
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch } from "@/lib/auth-fetch";
 import { listContests, listGlobalLeaderboard, listMySubmissions } from "@/lib/contest-api";
@@ -18,13 +19,13 @@ const YEAR_DAYS = 371;
 
 async function fetchHabits(): Promise<HabitCalendar[]> {
   const response = await authFetch(`${BACKEND_URL}/api/habits/`);
-  if (!response.ok) throw new Error(`Привычки не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("Привычки не загрузились ({status})", { status: response.status }));
   return response.json();
 }
 
 async function fetchTopics(): Promise<BadgeTopic[]> {
   const response = await authFetch(`${BACKEND_URL}/api/mind/topics/`);
-  if (!response.ok) throw new Error(`Темы не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("Темы не загрузились ({status})", { status: response.status }));
   const body = (await response.json()) as BadgeTopic[] | { results?: BadgeTopic[] };
   return Array.isArray(body) ? body : (body.results ?? []);
 }

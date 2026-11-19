@@ -7,10 +7,11 @@
 // шаблон, — но читать «пн 9:00, вт 9:00, ср 9:00, чт 9:00, пт 9:00» ученику
 // незачем.
 
+import { msg, t } from "../../lib/i18n";
 import { durationLabel } from "../../lib/studyplan-visuals.ts";
 import type { ParsedStudyWindow } from "../../lib/studyplan-chat.ts";
 
-const SHORT_DAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+const SHORT_DAYS = [msg("пн"), msg("вт"), msg("ср"), msg("чт"), msg("пт"), msg("сб"), msg("вс")];
 
 /**
  * «пн–пт, 9:00, 3 ч» вместо пяти одинаковых строк.
@@ -33,8 +34,8 @@ export function groupWindows(windows: readonly ParsedStudyWindow[]): string[] {
     const last = run[run.length - 1];
     const days =
       run.length === 1
-        ? SHORT_DAYS[first.weekday]
-        : `${SHORT_DAYS[first.weekday]}–${SHORT_DAYS[last.weekday]}`;
+        ? t(SHORT_DAYS[first.weekday])
+        : `${t(SHORT_DAYS[first.weekday])}–${t(SHORT_DAYS[last.weekday])}`;
     lines.push(
       `${days}, ${first.start_time}, ${durationLabel(first.duration_minutes)}`,
     );

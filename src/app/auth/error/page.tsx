@@ -4,87 +4,89 @@ import { Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AuthShell, authStyles } from '@/components/auth/auth-shell'
+import { useT } from '@/lib/i18n/react'
 
 function AuthErrorContent() {
+  const { t } = useT()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
   const errorMessages: Record<string, { title: string; description: string; solutions: string[] }> = {
     'OAuthSignin': {
-      title: 'Ошибка OAuth авторизации',
-      description: 'Не удалось начать процесс авторизации через Google',
+      title: t('Ошибка OAuth авторизации'),
+      description: t('Не удалось начать процесс авторизации через Google'),
       solutions: [
-        'Проверьте что GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET правильно установлены',
-        'Убедитесь что NEXTAUTH_URL соответствует текущему домену',
-        'Проверьте настройки в Google Cloud Console'
+        t('Проверьте что GOOGLE_CLIENT_ID и GOOGLE_CLIENT_SECRET правильно установлены'),
+        t('Убедитесь что NEXTAUTH_URL соответствует текущему домену'),
+        t('Проверьте настройки в Google Cloud Console')
       ]
     },
     'OAuthCallback': {
-      title: 'Ошибка OAuth callback',
-      description: 'Google вернул ошибку при авторизации',
+      title: t('Ошибка OAuth callback'),
+      description: t('Google вернул ошибку при авторизации'),
       solutions: [
-        'Проверьте что redirect URI в Google Console правильный',
-        'Формат: https://yourdomain.com/api/auth/callback/google',
-        'Убедитесь что домен добавлен в Authorized origins'
+        t('Проверьте что redirect URI в Google Console правильный'),
+        t('Формат: https://yourdomain.com/api/auth/callback/google'),
+        t('Убедитесь что домен добавлен в Authorized origins')
       ]
     },
     'OAuthCreateAccount': {
-      title: 'Ошибка создания аккаунта',
-      description: 'Не удалось создать аккаунт в базе данных',
+      title: t('Ошибка создания аккаунта'),
+      description: t('Не удалось создать аккаунт в базе данных'),
       solutions: [
-        'Проверьте подключение к базе данных',
-        'Убедитесь что схема Prisma актуальна',
-        'Проверьте логи сервера для деталей'
+        t('Проверьте подключение к базе данных'),
+        t('Убедитесь что схема Prisma актуальна'),
+        t('Проверьте логи сервера для деталей')
       ]
     },
     'EmailCreateAccount': {
-      title: 'Ошибка создания email аккаунта',
-      description: 'Проблема с созданием аккаунта через email',
+      title: t('Ошибка создания email аккаунта'),
+      description: t('Проблема с созданием аккаунта через email'),
       solutions: [
-        'Проверьте что email provider настроен',
-        'Убедитесь что SMTP настройки правильные'
+        t('Проверьте что email provider настроен'),
+        t('Убедитесь что SMTP настройки правильные')
       ]
     },
     'Callback': {
-      title: 'Общая ошибка callback',
-      description: 'Неопределенная ошибка в процессе авторизации',
+      title: t('Общая ошибка callback'),
+      description: t('Неопределенная ошибка в процессе авторизации'),
       solutions: [
-        'Проверьте все environment variables',
-        'Убедитесь что NEXTAUTH_SECRET установлен',
-        'Проверьте логи сервера для деталей'
+        t('Проверьте все environment variables'),
+        t('Убедитесь что NEXTAUTH_SECRET установлен'),
+        t('Проверьте логи сервера для деталей')
       ]
     },
     'OAuthAccountNotLinked': {
-      title: 'Аккаунт не связан',
-      description: 'Email уже используется другим провайдером',
+      title: t('Аккаунт не связан'),
+      description: t('Email уже используется другим провайдером'),
       solutions: [
-        'Войдите через тот же провайдер, что использовали ранее',
-        'Или используйте другой email адрес'
+        t('Войдите через тот же провайдер, что использовали ранее'),
+        t('Или используйте другой email адрес')
       ]
     },
     'EmailSignin': {
-      title: 'Ошибка входа по email',
-      description: 'Не удалось отправить email для входа',
+      title: t('Ошибка входа по email'),
+      description: t('Не удалось отправить email для входа'),
       solutions: [
-        'Проверьте email настройки',
-        'Убедитесь что SMTP сервер доступен'
+        t('Проверьте email настройки'),
+        t('Убедитесь что SMTP сервер доступен')
       ]
     },
     'CredentialsSignin': {
-      title: 'Неверные учетные данные',
-      description: 'Email или пароль неправильные',
+      title: t('Неверные учетные данные'),
+      description: t('Email или пароль неправильные'),
       solutions: [
-        'Проверьте email и пароль',
-        'Убедитесь что аккаунт существует'
+        t('Проверьте email и пароль'),
+        t('Убедитесь что аккаунт существует')
       ]
     },
     'SessionRequired': {
-      title: 'Требуется авторизация',
-      description: 'Для доступа к этой странице нужно войти в систему',
+      title: t('Требуется авторизация'),
+      description: t('Для доступа к этой странице нужно войти в систему'),
       solutions: [
-        'Войдите в систему',
-        'Проверьте что сессия не истекла'
+        t('Войдите в систему'),
+        t('Проверьте что сессия не истекла')
       ]
     }
   }
@@ -93,20 +95,20 @@ function AuthErrorContent() {
 
   return (
     <AuthShell
-      title={currentError?.title || 'Не получилось войти'}
-      subtitle={currentError?.description || 'Произошла неожиданная ошибка при авторизации.'}
-      footer="Если ошибка повторяется, напишите администратору."
+      title={currentError?.title || t('Не получилось войти')}
+      subtitle={currentError?.description || t('Произошла неожиданная ошибка при авторизации.')}
+      footer={t('Если ошибка повторяется, напишите администратору.')}
     >
       {error && (
         <p className={authStyles.notice}>
-          Код ошибки: <strong>{error}</strong>
+          {t('Код ошибки:')} <strong>{error}</strong>
           {errorDescription && <> — {errorDescription}</>}
         </p>
       )}
 
       {currentError?.solutions && (
         <details className={authStyles.details}>
-          <summary>Что можно проверить</summary>
+          <summary>{t('Что можно проверить')}</summary>
           <ul>
             {currentError.solutions.map((solution, index) => (
               <li key={index}>{solution}</li>
@@ -117,10 +119,10 @@ function AuthErrorContent() {
 
       <div className={authStyles.actions}>
         <Link href="/auth/signin" className={authStyles.primary}>
-          Попробовать снова
+          {t('Попробовать снова')}
         </Link>
         <Link href="/" className={authStyles.secondary}>
-          На главную
+          {t('На главную')}
         </Link>
       </div>
     </AuthShell>
@@ -128,11 +130,12 @@ function AuthErrorContent() {
 }
 
 export default function AuthErrorPage() {
+  const { t } = useT()
   return (
     <Suspense
       fallback={
         <div className="grid min-h-svh place-items-center bg-tm-bg text-sm text-tm-muted">
-          Загрузка…
+          {t('Загрузка…')}
         </div>
       }
     >

@@ -7,6 +7,7 @@
 
 import { useRouter } from "next/navigation";
 
+import { t } from "@/lib/i18n";
 import { usePageSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
 import { daySummary, longDateLabel } from "@/lib/now-feed";
@@ -34,7 +35,7 @@ export function NowPage() {
     return (
       <div className="content view" aria-busy="true">
         <header className="head">
-          <h1 className="sr-only">Сейчас</h1>
+          <h1 className="sr-only">{t("Сейчас")}</h1>
           <span className="now-skel is-title" aria-hidden="true" />
           <span className="now-skel is-week" aria-hidden="true" />
         </header>
@@ -121,10 +122,10 @@ export function NowPage() {
 
           {data.diaryError ? (
             <div className="late-line" role="status">
-              <p>Дневник сейчас не отвечает. Уроки и задания появятся, когда он ответит.</p>
+              <p>{t("Дневник сейчас не отвечает. Уроки и задания появятся, когда он ответит.")}</p>
               <span className="late-acts">
                 <button type="button" className="btn btn-text" onClick={data.reloadDiary}>
-                  Повторить
+                  {t("Повторить")}
                 </button>
               </span>
             </div>
@@ -139,7 +140,7 @@ export function NowPage() {
               ) : null}
               <span className="late-acts">
                 <button type="button" className="btn btn-text" onClick={editPlan}>
-                  Изменить план
+                  {t("Изменить план")}
                 </button>
               </span>
             </div>
@@ -147,7 +148,7 @@ export function NowPage() {
         </div>
 
         {hasSide ? (
-          <aside className="side" aria-label="Что впереди">
+          <aside className="side" aria-label={t("Что впереди")}>
             <TestTile tests={data.tests} topics={data.topics.data ?? []} today={today} />
             {!denied ? <ContestTile contest={data.contest} today={today} /> : null}
             <HomeworkTile homework={data.homework} today={today} />

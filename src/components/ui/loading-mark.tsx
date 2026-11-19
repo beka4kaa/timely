@@ -8,7 +8,11 @@
  *
  * `size` — ширина слайма в пикселях; прыжок, тень и точки масштабируются от неё
  * (в CSS всё в `em`). Цвет точек — `currentColor`.
+ *
+ * Экран загрузки рисует и сервер, поэтому подпись берёт язык из `useT()`, а не из `t()`.
  */
+
+import { useT } from "@/lib/i18n/react";
 
 const BODY =
   "M199.7 160.0C199.6 155.9 199.1 149.1 198.1 144.1C197.1 139.1 195.6 134.4 193.7 130.0C191.8 125.6 189.4 121.3 186.7 117.4" +
@@ -30,6 +34,7 @@ interface LoadingMarkProps {
 }
 
 export function LoadingMark({ size = 56, label, className }: LoadingMarkProps) {
+  const { t } = useT();
   return (
     <div role="status" aria-live="polite" className={`loading-mark ${className ?? ""}`} style={{ fontSize: size }}>
       <div className="lm-stage" aria-hidden="true">
@@ -56,7 +61,7 @@ export function LoadingMark({ size = 56, label, className }: LoadingMarkProps) {
         <i />
         <i />
       </div>
-      {label ? <span className="lm-label">{label}</span> : <span className="sr-only">Загрузка</span>}
+      {label ? <span className="lm-label">{label}</span> : <span className="sr-only">{t("Загрузка")}</span>}
     </div>
   );
 }

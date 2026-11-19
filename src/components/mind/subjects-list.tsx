@@ -14,6 +14,7 @@ import {
     X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 import { Subject } from '@/types/mind'
 import { AddSubjectDialog } from './add-subject-dialog'
 import { toast } from 'sonner'
@@ -51,7 +52,7 @@ export function SubjectsList({ className }: SubjectsListProps) {
     }, [fetchSubjects])
 
     const handleDeleteSubject = async (id: string) => {
-        if (!confirm('Удалить предмет и все его темы?')) return
+        if (!confirm(t('Удалить предмет и все его темы?'))) return
 
         try {
             await fetch(`/api/subjects/${id}`, { method: 'DELETE' })
@@ -62,7 +63,7 @@ export function SubjectsList({ className }: SubjectsListProps) {
     }
 
     const handleDeleteTopic = async (topicId: string, subjectId: string) => {
-        if (!confirm('Удалить эту тему?')) return
+        if (!confirm(t('Удалить эту тему?'))) return
 
         try {
             const res = await fetch(`/api/topics/${topicId}`, { method: 'DELETE' })
@@ -71,19 +72,19 @@ export function SubjectsList({ className }: SubjectsListProps) {
                     if (s.id === subjectId) {
                         return {
                             ...s,
-                            topics: s.topics?.filter(t => t.id !== topicId)
+                            topics: s.topics?.filter(row => row.id !== topicId)
                         }
                     }
                     return s
                 }))
-                toast.success('Тема удалена')
+                toast.success(t('Тема удалена'))
             } else {
                 const data = await res.json().catch(() => ({}))
-                toast.error(data.error || 'Не удалось удалить тему')
+                toast.error(data.error ? t(data.error) : t('Не удалось удалить тему'))
             }
         } catch (error) {
             console.error('Error deleting topic:', error)
-            toast.error('Ошибка при удалении темы')
+            toast.error(t('Ошибка при удалении темы'))
         }
     }
 
@@ -103,10 +104,10 @@ export function SubjectsList({ className }: SubjectsListProps) {
     return (
         <div className={cn("space-y-6", className)}>
             <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Предметы</h2>
+                <h2 className="text-xl font-semibold">{t('Предметы')}</h2>
                 <Button onClick={() => setShowAddSubject(true)}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Добавить предмет
+                    {t('Добавить предмет')}
                 </Button>
             </div>
 
@@ -114,7 +115,7 @@ export function SubjectsList({ className }: SubjectsListProps) {
                 <Card className="border-dashed">
                     <CardContent className="p-8 text-center text-muted-foreground">
                         <BookOpen className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Нет предметов. Добавьте первый предмет для начала.</p>
+                        <p>{t('Нет предметов. Добавьте первый предмет для начала.')}</p>
                     </CardContent>
                 </Card>
             ) : (
@@ -145,7 +146,7 @@ export function SubjectsList({ className }: SubjectsListProps) {
                                 <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
                                     <div className="flex items-center gap-1">
                                         <BookOpen className="h-4 w-4" />
-                                        <span>{subject.topics?.length || 0} тем</span>
+                                        <span>{t('{n} тем', { n: subject.topics?.length || 0 })}</span>
                                     </div>
                                 </div>
 
@@ -180,7 +181,7 @@ export function SubjectsList({ className }: SubjectsListProps) {
                                         onClick={() => handleAddTopic(subject.id)}
                                     >
                                         <Plus className="h-4 w-4 mr-2" />
-                                        Тема
+                                        {t('Тема')}
                                     </Button>
                                     <FastTopicAddDialog
                                         subjectId={subject.id}

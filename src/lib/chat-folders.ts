@@ -10,6 +10,8 @@
 // Отдельным модулем, потому что порядок и границы здесь важнее разметки: внутри
 // группы свежие сверху, предметы идут в порядке каталога.
 
+import { msg } from "./i18n";
+
 export interface FolderSubject {
   goalId: string;
   title: string;
@@ -31,7 +33,7 @@ interface FoldableChat {
 }
 
 /** Подпись группы для разговоров, у которых предмета нет. */
-export const NO_BOOK_FOLDER = "Общие";
+export const NO_BOOK_FOLDER = msg("Общие");
 
 export function buildChatFolders<T extends FoldableChat>(
   chats: T[],

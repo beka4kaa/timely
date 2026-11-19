@@ -9,6 +9,7 @@ import { useFullAccessDenied } from "@/components/full-access-gate";
 import { useShellStatus } from "@/components/nav/use-shell-status";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { dashboardViewOf } from "@/config/dashboard-navigation";
+import { t } from "@/lib/i18n";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -78,12 +79,15 @@ export function ViewTracker() {
     }
     const timer = window.setTimeout(() => {
       window.localStorage.setItem(REMIND_DAY_KEY, today);
-      const text = dueReviews === 1 ? "Одна тема ждёт повторения" : `Тем ждут повторения: ${dueReviews}`;
+      const text =
+        dueReviews === 1
+          ? t("Одна тема ждёт повторения")
+          : t("Тем ждут повторения: {n}", { n: dueReviews });
       if (readFlag(REMIND_MASCOT_KEY, true)) {
-        mascot.remind("Пора повторить", text, () => router.push("/dashboard/weaknesses"));
+        mascot.remind(t("Пора повторить"), text, () => router.push("/dashboard/weaknesses"));
       }
       if (readFlag(REMIND_PUSH_KEY, false) && "Notification" in window && Notification.permission === "granted") {
-        const note = new Notification("Пора повторить", { body: text, icon: "/logo.svg" });
+        const note = new Notification(t("Пора повторить"), { body: text, icon: "/logo.svg" });
         note.onclick = () => {
           window.focus();
           router.push("/dashboard/weaknesses");

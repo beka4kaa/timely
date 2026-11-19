@@ -21,6 +21,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { plural, t } from "../../lib/i18n";
+
 export interface ThinkingStage {
   /** Стабильный ключ: по нему этап узнаётся между кадрами. */
   key: string;
@@ -44,14 +46,7 @@ interface ThinkingNoteProps {
 function formatSeconds(ms: number): string {
   const seconds = Math.max(1, Math.round(ms / 1000));
   // 1 секунду, 2–4 секунды, 5+ секунд — иначе выходит «Думал 2 секунд».
-  const mod10 = seconds % 10;
-  const mod100 = seconds % 100;
-  let word = "секунд";
-  if (mod10 === 1 && mod100 !== 11) word = "секунду";
-  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-    word = "секунды";
-  }
-  return `${seconds} ${word}`;
+  return plural(seconds, "{n} секунду", "{n} секунды", "{n} секунд");
 }
 
 export function ThinkingNote({
@@ -121,7 +116,7 @@ export function ThinkingNote({
                 </span>
                 {index === 0 && (
                   <span className="ml-auto shrink-0 tabular-nums text-[11px] text-tm-muted">
-                    {Math.max(0, Math.round(elapsed / 1000))}с
+                    {t("{n}с", { n: Math.max(0, Math.round(elapsed / 1000)) })}
                   </span>
                 )}
               </motion.div>
@@ -140,7 +135,7 @@ export function ThinkingNote({
                   >
                     <ChevronRight className="h-3 w-3" />
                   </motion.span>
-                  ход рассуждений
+                  {t("ход рассуждений")}
                 </button>
                 {expanded && (
                   <div
@@ -168,7 +163,7 @@ export function ThinkingNote({
 
   // ── Работа окончена: одна тихая строка ──
   const parts = [
-    durationMs ? `Думал ${formatSeconds(durationMs)}` : "Ход работы",
+    durationMs ? t("Думал {time}", { time: formatSeconds(durationMs) }) : t("Ход работы"),
     summary,
   ].filter(Boolean);
 

@@ -21,7 +21,8 @@ import {
   useMe,
   type LeaderboardUser,
 } from "@/lib/contest-api";
-import { ownSubmissions, ru } from "@/lib/contest-view";
+import { ownSubmissions } from "@/lib/contest-view";
+import { plural, t } from "@/lib/i18n";
 import {
   buildBoard,
   countryIn,
@@ -48,7 +49,7 @@ function profileHref(row: { id: number; me?: boolean }): string {
 }
 
 function nameOf(row: BoardRow): string {
-  return row.me ? "Ты" : row.name;
+  return row.me ? t("Ты") : row.name;
 }
 
 function initialsOfRow(row: BoardRow, myName: string): string {
@@ -56,19 +57,19 @@ function initialsOfRow(row: BoardRow, myName: string): string {
 }
 
 function pointsWord(value: number, subject: string | null): string {
-  return subject ? ru(value, "очко", "очка", "очков") : ru(value, "балл", "балла", "баллов");
+  return subject ? plural(value, "очко", "очка", "очков") : plural(value, "балл", "балла", "баллов");
 }
 
 /** Подпись под именем. Скрытому ученику своя строка напоминает, что её никто больше не видит. */
 function whereOf(row: BoardRow, hidden: boolean): string {
-  return row.me && hidden ? "видно только тебе" : countryName(row.countryCode);
+  return row.me && hidden ? t("видно только тебе") : countryName(row.countryCode);
 }
 
 function Podium({ rows, myName, hidden }: { rows: readonly BoardRow[]; myName: string; hidden: boolean }) {
   const first = rows.slice(0, 3);
   if (!first.length) return null;
   return (
-    <section className="podium" aria-label="Первые трое">
+    <section className="podium" aria-label={t("Первые трое")}>
       {first.map((row, index) => (
         <Link key={row.id} className={`pod r${index + 1}`} href={profileHref(row)}>
           <span className="pod-av" aria-hidden="true">
@@ -129,23 +130,27 @@ function MeCard({
   const share = shareToNext(me, near);
   const ahead = near.above ? near.above.points - me.points : 0;
   const behind = near.below ? me.points - near.below.points : 0;
-  const unit = subject ? "рейтинга" : pointsWord(me.points, null);
+  const unit = subject ? t("рейтинга") : pointsWord(me.points, null);
 
   return (
     <>
-      <section className="me-card glass" aria-label="Твоё место">
+      <section className="me-card glass" aria-label={t("Твоё место")}>
         <p className="me-place">
           <b>#{grouped(me.place)}</b>
           <span>{whereText}</span>
         </p>
         <p className="me-sub">
           {grouped(me.points)} {unit}
-          {!subject && gain > 0 ? `, +${grouped(gain)} за неделю` : ""}
+          {!subject && gain > 0 ? t(", +{gain} за неделю", { gain: grouped(gain) }) : ""}
         </p>
         <p className="me-next">
           {near.above
-            ? `До ${grouped(near.above.place)}-го места ${grouped(ahead)} ${pointsWord(ahead, subject)}`
-            : "Ты на первом месте"}
+            ? t("До {place}-го места {points} {unit}", {
+                place: grouped(near.above.place),
+                points: grouped(ahead),
+                unit: pointsWord(ahead, subject),
+              })
+            : t("Ты на первом месте")}
         </p>
         {share !== null ? (
           <span className="tube rb-tube">
@@ -153,24 +158,24 @@ function MeCard({
           </span>
         ) : null}
         <Link className="btn btn-main" href="/dashboard/arena/solve">
-          К контестам
+          {t("К контестам")}
         </Link>
       </section>
       {invite}
       {near.above || near.below ? (
-        <section className="rb-card card" aria-label="Рядом с тобой">
-          <h2>Рядом с тобой</h2>
+        <section className="rb-card card" aria-label={t("Рядом с тобой")}>
+          <h2>{t("Рядом с тобой")}</h2>
           <ul>
             {near.above ? (
               <li>
                 <Link href={profileHref(near.above)}>{near.above.name}</Link>
-                <span className="m">впереди на {grouped(ahead)}</span>
+                <span className="m">{t("впереди на {n}", { n: grouped(ahead) })}</span>
               </li>
             ) : null}
             {near.below ? (
               <li>
                 <Link href={profileHref(near.below)}>{near.below.name}</Link>
-                <span className="m">позади на {grouped(behind)}</span>
+                <span className="m">{t("позади на {n}", { n: grouped(behind) })}</span>
               </li>
             ) : null}
           </ul>
@@ -183,18 +188,20 @@ function MeCard({
 /** Показ в рейтинге только по согласию, поэтому сначала видно, что именно увидят другие. */
 function JoinBoard({ name, joining, onJoin }: { name: string; joining: boolean; onJoin: () => void }) {
   return (
-    <section className="rb-card card rb-invite" aria-label="Показ в рейтинге">
-      <h2>Тебя видишь только ты</h2>
+    <section className="rb-card card rb-invite" aria-label={t("Показ в рейтинге")}>
+      <h2>{t("Тебя видишь только ты")}</h2>
       <p className="rb-text">
-        Если покажешь себя, другие ученики увидят «{name}», страну, баллы и рейтинг по предметам. Почту и описание никто
-        не увидит. Выключить можно в{" "}
+        {t(
+          "Если покажешь себя, другие ученики увидят «{name}», страну, баллы и рейтинг по предметам. Почту и описание никто не увидит. Выключить можно в",
+          { name },
+        )}{" "}
         <Link className="link" href="/dashboard/settings">
-          настройках
+          {t("настройках")}
         </Link>
         .
       </p>
       <button className="btn btn-line" type="button" disabled={joining} onClick={onJoin}>
-        {joining ? "Сохраняю…" : "Показать меня"}
+        {joining ? t("Сохраняю…") : t("Показать меня")}
       </button>
     </section>
   );
@@ -235,12 +242,16 @@ function Board({
 
   const me = rows.find((row) => row.me) ?? null;
   const lines = visibleLines(rows, limit);
-  const whereTitle = country ? countryName(country) : "Все ученики";
-  const whereText = country ? countryIn(country) : "среди всех";
+  const whereTitle = country ? countryName(country) : t("Все ученики");
+  const whereText = country ? countryIn(country) : t("среди всех");
   const title = subject ? `${whereTitle}, ${subject.toLowerCase()}` : whereTitle;
   const hidden = hiddenAs !== null;
   // Без профиля (скажем, запрос не дошёл) говорить о месте нечего.
-  const noPlace = subject ? `По предмету «${subject}» у тебя ещё нет рейтинга.` : myUser ? "В этой таблице тебя нет." : null;
+  const noPlace = subject
+    ? t("По предмету «{subject}» у тебя ещё нет рейтинга.", { subject })
+    : myUser
+      ? t("В этой таблице тебя нет.")
+      : null;
   const invite = hiddenAs !== null ? <JoinBoard name={hiddenAs} joining={joining} onJoin={onJoin} /> : null;
 
   return (
@@ -249,10 +260,10 @@ function Board({
         <Podium rows={rows} myName={myName} hidden={hidden} />
       ) : (
         <section className="ct-note card ct-gap">
-          <h2>В этой таблице пока никого</h2>
-          <p>Выбери другой предмет или посмотри всех учеников.</p>
+          <h2>{t("В этой таблице пока никого")}</h2>
+          <p>{t("Выбери другой предмет или посмотри всех учеников.")}</p>
           <button className="btn btn-line" type="button" onClick={() => onSubject(null)}>
-            Все предметы
+            {t("Все предметы")}
           </button>
         </section>
       )}
@@ -264,7 +275,7 @@ function Board({
               <div className="lb-head">
                 <h2>{title}</h2>
                 <span>
-                  {grouped(rows.length)} {ru(rows.length, "участник", "участника", "участников")}
+                  {grouped(rows.length)} {plural(rows.length, "участник", "участника", "участников")}
                 </span>
               </div>
               <ol>
@@ -274,7 +285,10 @@ function Board({
                   ) : (
                     <li key={`gap-${index}`} className="lr-gap">
                       <button className="rb-gap" type="button" onClick={() => setLimit((value) => value + MORE_ROWS)}>
-                        ещё {grouped(line.count)} {ru(line.count, "человек", "человека", "человек")}
+                        {t("ещё {count} {people}", {
+                          count: grouped(line.count),
+                          people: plural(line.count, "человек", "человека", "человек"),
+                        })}
                       </button>
                     </li>
                   ),
@@ -290,30 +304,30 @@ function Board({
           ) : (
             <>
               {meLoading || !noPlace ? null : (
-                <section className="rb-card card" aria-label="Твоё место">
-                  <h2>Твоего места здесь пока нет</h2>
+                <section className="rb-card card" aria-label={t("Твоё место")}>
+                  <h2>{t("Твоего места здесь пока нет")}</h2>
                   <p className="rb-text">{noPlace}</p>
                 </section>
               )}
               {invite}
             </>
           )}
-          <section className="rb-card card quiet" aria-label="Откуда берутся баллы">
-            <h2>Откуда берутся баллы</h2>
+          <section className="rb-card card quiet" aria-label={t("Откуда берутся баллы")}>
+            <h2>{t("Откуда берутся баллы")}</h2>
             <ul>
               <li>
-                <span>Старт у всех</span>
+                <span>{t("Старт у всех")}</span>
                 <span className="m">{grouped(1200)}</span>
               </li>
               <li>
-                <span>Решение приняли</span>
-                <span className="m">+ баллы задачи</span>
+                <span>{t("Решение приняли")}</span>
+                <span className="m">{t("+ баллы задачи")}</span>
               </li>
             </ul>
           </section>
           {myUser?.ratings.length ? (
-            <section className="rb-card card quiet" aria-label="Твой рейтинг по предметам">
-              <h2>Твой рейтинг по предметам</h2>
+            <section className="rb-card card quiet" aria-label={t("Твой рейтинг по предметам")}>
+              <h2>{t("Твой рейтинг по предметам")}</h2>
               <ul className="subj-rate">
                 {myUser.ratings.map((rating) => (
                   <li key={rating.discipline_name}>
@@ -352,10 +366,10 @@ export default function LeaderboardPage() {
     setJoining(true);
     try {
       setMe(await updateMe({ show_in_leaderboard: true }));
-      toast.success("Теперь другие видят тебя в рейтинге");
+      toast.success(t("Теперь другие видят тебя в рейтинге"));
       mascot.react("happy", 1);
     } catch {
-      toast.error("Не сохранилось. Попробуй ещё раз.");
+      toast.error(t("Не сохранилось. Попробуй ещё раз."));
     } finally {
       setJoining(false);
     }
@@ -373,14 +387,14 @@ export default function LeaderboardPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Рейтинг</h1>
+        <h1 className="title">{t("Рейтинг")}</h1>
       </header>
 
       <div className="rb-filters">
         {subjects.length && !isGroups ? (
-          <div className="tabs scroll" role="group" aria-label="Предмет">
+          <div className="tabs scroll" role="group" aria-label={t("Предмет")}>
             <button type="button" aria-pressed={subject === null} onClick={() => setSubject(null)}>
-              Все
+              {t("Все")}
             </button>
             {subjects.map((name) => (
               <button key={name} type="button" aria-pressed={subject === name} onClick={() => setSubject(name)}>
@@ -389,9 +403,9 @@ export default function LeaderboardPage() {
             ))}
           </div>
         ) : null}
-        <div className="tabs scroll" role="group" aria-label="Где">
+        <div className="tabs scroll" role="group" aria-label={t("Где")}>
           <button type="button" aria-pressed={where === "world"} onClick={() => setWhere("world")}>
-            Все ученики
+            {t("Все ученики")}
           </button>
           {myCountry ? (
             <button type="button" aria-pressed={isCountry} onClick={() => setWhere({ country: myCountry })}>
@@ -399,7 +413,7 @@ export default function LeaderboardPage() {
             </button>
           ) : null}
           <button type="button" aria-pressed={isGroups} onClick={() => setWhere("groups")}>
-            Мои группы
+            {t("Мои группы")}
           </button>
         </div>
       </div>
@@ -408,22 +422,22 @@ export default function LeaderboardPage() {
         <PrivateLeaderboards meId={meId} />
       ) : !users && board.error ? (
         <section className="ct-note card" role="alert">
-          <h2>Рейтинг не загрузился</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Рейтинг не загрузился")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={board.reload}>
-            Повторить
+            {t("Повторить")}
           </button>
         </section>
       ) : !users ? (
         <p className="small-note" role="status">
-          Загружаю рейтинг…
+          {t("Загружаю рейтинг…")}
         </p>
       ) : !users.length ? (
         <section className="ct-note card">
-          <h2>В рейтинге пока никого</h2>
-          <p>Баллы появятся, когда проверят первое решение. Следи за контестами.</p>
+          <h2>{t("В рейтинге пока никого")}</h2>
+          <p>{t("Баллы появятся, когда проверят первое решение. Следи за контестами.")}</p>
           <Link className="btn btn-line" href="/dashboard/arena/solve">
-            Контесты
+            {t("Контесты")}
           </Link>
         </section>
       ) : (

@@ -8,6 +8,7 @@ import {
   bellPhrase,
   bellSamples,
   bellSoundOf,
+  listenForHush,
   soundSamples,
   type BellTone,
 } from "./pomodoro-bell";
@@ -119,4 +120,30 @@ test("голос говорит, что кончилось и что дальш�
   assert.match(bellPhrase("break"), /^Блок закончился/);
   assert.match(bellPhrase("long"), /длинный перерыв/);
   assert.match(bellPhrase("focus"), /^Перерыв закончился/);
+});
+
+test("любое нажатие или клавиша глушат звонок: один раз и уже после самого нажатия", async () => {
+  const target = new EventTarget();
+  let hushed = 0;
+  const stop = listenForHush(target, () => hushed++);
+  target.dispatchEvent(new Event("click"));
+  target.dispatchEvent(new Event("keydown"));
+  // Сначала срабатывает то, на что нажали («Начать» перерыв), и только потом звонок замолкает.
+  assert.equal(hushed, 0);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(hushed, 1);
+  stop();
+  target.dispatchEvent(new Event("click"));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(hushed, 1);
+});
+
+test("звонок кончился раньше, чем дошла очередь: глушить уже нечего", async () => {
+  const target = new EventTarget();
+  let hushed = 0;
+  const stop = listenForHush(target, () => hushed++);
+  target.dispatchEvent(new Event("click"));
+  stop();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(hushed, 0);
 });

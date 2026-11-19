@@ -14,6 +14,7 @@ import { isOpenGoal, suggestGoalFor, type Goal } from "@/components/goals/goal-l
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useAskRail } from "@/contexts/ask-rail";
 import { useDataChanged } from "@/lib/data-changed";
+import { msg, t } from "@/lib/i18n";
 import { parseHabit, parseSchedule } from "@/lib/understand";
 
 
@@ -24,7 +25,7 @@ import { AiOffer, AiThinking, HabitOffer } from "./habit-offer";
 import { EVERY_DAY, schedulePatch, type HabitSchedule, type SchedulePatch } from "./habit-schedule";
 import { createHabit, deleteHabit, listHabits, markHabit, updateHabit, type Habit } from "./lib";
 
-const STEPS = ["Разбираю, что это", "Ищу, к какой цели"];
+const STEPS = [msg("Разбираю, что это"), msg("Ищу, к какой цели")];
 const UNDO_MS = 6000;
 
 type Offer =
@@ -144,12 +145,12 @@ export function HabitsPage() {
           queue.delete(id);
           commit(rows.current.map((habit) => (habit.id === id ? fresh : habit)));
           // В этом дне лежит заметка или время: сервер их бережёт и запись не удаляет.
-          if (fresh.doneToday !== asked) toast("В этот день есть заметка, поэтому отметка осталась");
+          if (fresh.doneToday !== asked) toast(t("В этот день есть заметка, поэтому отметка осталась"));
           return;
         }
       } catch {
         queue.delete(id);
-        toast.error("Не получилось отметить. Проверь связь и нажми ещё раз");
+        toast.error(t("Не получилось отметить. Проверь связь и нажми ещё раз"));
         void load();
       }
     },
@@ -175,7 +176,7 @@ export function HabitsPage() {
       if (done) {
         mascot.hop(1);
         mascot.react("happy", 1);
-        if (current.dueToday && next.every((row) => !row.dueToday || row.doneToday)) toast("Все привычки на сегодня закрыты");
+        if (current.dueToday && next.every((row) => !row.dueToday || row.doneToday)) toast(t("Все привычки на сегодня закрыты"));
       }
       return { done, streak: marked.streak };
     },
@@ -189,7 +190,7 @@ export function HabitsPage() {
         const fresh = await updateHabit(habit.id, patch, loadedDay.current || localDay());
         commit(rows.current.map((row) => (row.id === habit.id ? fresh : row)));
       } catch {
-        toast.error("Не получилось сохранить. Попробуй ещё раз");
+        toast.error(t("Не получилось сохранить. Попробуй ещё раз"));
         void load();
       }
     },
@@ -211,14 +212,14 @@ export function HabitsPage() {
     const fire = (keepalive: boolean) => {
       deletions.current.delete(habit.id);
       deleteHabit(habit.id, { keepalive }).catch(() => {
-        toast.error("Не получилось удалить привычку");
+        toast.error(t("Не получилось удалить привычку"));
         void load();
       });
     };
-    const toastId = toast("Привычка удалена", {
+    const toastId = toast(t("Привычка удалена"), {
       duration: UNDO_MS,
       action: {
-        label: "Вернуть",
+        label: t("Вернуть"),
         onClick: () => {
           const pending = deletions.current.get(habit.id);
           if (!pending) return;
@@ -246,7 +247,7 @@ export function HabitsPage() {
         document.getElementById(`h${created.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }),
       );
     } catch {
-      toast.error("Не получилось добавить привычку. Попробуй ещё раз");
+      toast.error(t("Не получилось добавить привычку. Попробуй ещё раз"));
     } finally {
       setAdding(false);
     }
@@ -275,18 +276,18 @@ export function HabitsPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Привычки</h1>
+        <h1 className="title">{t("Привычки")}</h1>
         {habits && habits.length > 0 ? (
           <span className="head-note">
-            {todayRows.length > 0 ? `${doneCount} из ${todayRows.length} сегодня` : "Сегодня по плану отдых"}
+            {todayRows.length > 0 ? t("{done} из {total} сегодня", { done: doneCount, total: todayRows.length }) : t("Сегодня по плану отдых")}
           </span>
         ) : null}
       </header>
 
       <AiLine
-        placeholder="Что хочешь делать регулярно? Например: зарядка по будням"
-        short="Что делать регулярно?"
-        label="Новая привычка своими словами"
+        placeholder={t("Что хочешь делать регулярно? Например: зарядка по будням")}
+        short={t("Что делать регулярно?")}
+        label={t("Новая привычка своими словами")}
         onAsk={onAsk}
       />
 
@@ -301,36 +302,36 @@ export function HabitsPage() {
           onGoal={(goalId) => setOffer({ ...offer, goalId })}
           onSchedule={(schedule) => setOffer({ ...offer, schedule })}
           actions={[
-            { label: adding ? "Добавляю…" : "Добавить привычку", main: true, disabled: adding, run: () => void add(offer.name, offer.goalId, offer.schedule) },
-            { label: "Не надо", run: () => setOffer(null) },
+            { label: adding ? t("Добавляю…") : t("Добавить привычку"), main: true, disabled: adding, run: () => void add(offer.name, offer.goalId, offer.schedule) },
+            { label: t("Не надо"), run: () => setOffer(null) },
           ]}
         />
       ) : null}
       {offer?.kind === "goal" ? (
         <AiOffer
-          say="Это больше похоже на цель со сроком."
+          say={t("Это больше похоже на цель со сроком.")}
           actions={[
-            { label: "Открыть как цель", main: true, run: () => router.push(`/dashboard/goals?new=${encodeURIComponent(offer.text)}`) },
-            { label: "Всё равно привычка", run: () => offerHabit(parseHabit(offer.text), parseSchedule(offer.text)) },
+            { label: t("Открыть как цель"), main: true, run: () => router.push(`/dashboard/goals?new=${encodeURIComponent(offer.text)}`) },
+            { label: t("Всё равно привычка"), run: () => offerHabit(parseHabit(offer.text), parseSchedule(offer.text)) },
           ]}
         />
       ) : null}
       {offer?.kind === "topics" ? (
         <AiOffer
-          say="Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах."
+          say={t("Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах.")}
           actions={[
-            { label: "Открыть слабые темы", main: true, run: () => router.push("/dashboard/weaknesses") },
-            { label: "Всё равно привычка", run: () => offerHabit(parseHabit(offer.text), parseSchedule(offer.text)) },
+            { label: t("Открыть слабые темы"), main: true, run: () => router.push("/dashboard/weaknesses") },
+            { label: t("Всё равно привычка"), run: () => offerHabit(parseHabit(offer.text), parseSchedule(offer.text)) },
           ]}
         />
       ) : null}
 
       {habits === null && failed ? (
         <section className="gr-note card" role="alert">
-          <h2>Привычки не загрузились</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Привычки не загрузились")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={() => void load()}>
-            Попробовать ещё раз
+            {t("Попробовать ещё раз")}
           </button>
         </section>
       ) : habits === null ? (
@@ -345,8 +346,8 @@ export function HabitsPage() {
             <use href="#art-slime" />
           </svg>
           <div>
-            <h2>Пока нет привычек</h2>
-            <p>Напиши сверху, что хочешь делать регулярно. Каждый день станет квадратиком на карточке, и отметить можно будет сегодняшний.</p>
+            <h2>{t("Пока нет привычек")}</h2>
+            <p>{t("Напиши сверху, что хочешь делать регулярно. Каждый день станет квадратиком на карточке, и отметить можно будет сегодняшний.")}</p>
           </div>
         </section>
       ) : (

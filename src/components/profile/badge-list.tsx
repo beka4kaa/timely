@@ -1,5 +1,6 @@
 // Бейджи: значки с числом или формулой. Яркий значит заработан по настоящим данным.
 
+import { t } from "@/lib/i18n";
 import type { Badge, BadgeShape } from "@/lib/profile-view";
 
 /** Звезда или печать с волнистым краем: углы скругляет обводка. */
@@ -73,7 +74,7 @@ export function BadgeList({ badges }: { badges: readonly Badge[] }) {
           key={badge.key}
           className={badge.earned ? "badge" : "badge pf-locked"}
           title={badge.how}
-          aria-label={badge.earned ? `${badge.name}: ${badge.how}` : `Ещё нет. ${badge.name}: ${badge.how}`}
+          aria-label={badge.earned ? `${badge.name}: ${badge.how}` : t("Ещё нет. {name}: {how}", { name: badge.name, how: badge.how })}
         >
           <BadgeArt badge={badge} />
           <span>{badge.name}</span>

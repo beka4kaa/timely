@@ -19,6 +19,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appLink } from "./app-url";
+import type { LandingLocale } from "@/lib/landing-locale";
+
 import type { HeroPromptCopy } from "./copy";
 import styles from "./hero-prompt.module.css";
 
@@ -26,7 +28,7 @@ import styles from "./hero-prompt.module.css";
 const CHIP_ICONS: LucideIcon[] = [CalendarDays, Lightbulb, Sigma, Target];
 const MORE_ICONS: LucideIcon[] = [CheckCheck, Repeat2];
 
-export function HeroPrompt({ copy }: { copy: HeroPromptCopy }) {
+export function HeroPrompt({ copy, locale = "ru" }: { copy: HeroPromptCopy; locale?: LandingLocale }) {
   const { examples } = copy;
   const [value, setValue] = useState("");
   const [ghost, setGhost] = useState(examples[0]);
@@ -96,7 +98,7 @@ export function HeroPrompt({ copy }: { copy: HeroPromptCopy }) {
     event?.preventDefault();
     const question = value.trim();
     window.location.assign(
-      question ? appLink(`/chat?q=${encodeURIComponent(question)}`) : appLink("/chat"),
+      question ? appLink(`/chat?q=${encodeURIComponent(question)}`, locale) : appLink("/chat", locale),
     );
   };
 

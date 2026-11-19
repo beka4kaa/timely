@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 
 import { Icon } from "@/components/shell/icons";
 import { BOARD_ENABLED } from "@/config/features";
+import { msg, t } from "@/lib/i18n";
 import { bookLabel } from "@/lib/book-label";
 import { criterionText, splitBlockTitle } from "@/lib/now-feed";
 import { zonedDateKey, zonedMinutes } from "@/lib/studyplan-calendar";
@@ -125,7 +126,7 @@ export function CalPopover({
 
   return createPortal(
     <div ref={ref} className="cal-pop glass" role="dialog" aria-label={label} tabIndex={-1}>
-      <button className="icon-btn pop-x" type="button" aria-label="Закрыть" onClick={() => onClose(true)}>
+      <button className="icon-btn pop-x" type="button" aria-label={t("Закрыть")} onClick={() => onClose(true)}>
         <Icon name="x" />
       </button>
       {children}
@@ -138,26 +139,26 @@ export function CalPopover({
 function lessonAction(block: Extract<CalendarEntry, { course_plan: string }>): { label: string; href: string } {
   const plan = `/dashboard/curriculum/plan/${block.course_plan}`;
   const { topic } = splitBlockTitle(block.title);
-  if (lessonState(block, Date.now()).done) return { label: "Открыть программу", href: plan };
+  if (lessonState(block, Date.now()).done) return { label: t("Открыть программу"), href: plan };
   const running = block.status === "in_progress";
   switch (block.workspace_type) {
     case "smart_board":
-      if (BOARD_ENABLED) return { label: running ? "Продолжить" : "Открыть доску", href: "/dashboard/whiteboard" };
+      if (BOARD_ENABLED) return { label: running ? t("Продолжить") : t("Открыть доску"), href: "/dashboard/whiteboard" };
       break;
     case "book_reader":
-      return { label: running ? "Продолжить" : "Открыть книгу", href: plan };
+      return { label: running ? t("Продолжить") : t("Открыть книгу"), href: plan };
     case "tutor_chat":
       break;
     default:
-      return { label: running ? "Продолжить" : "Открыть программу", href: plan };
+      return { label: running ? t("Продолжить") : t("Открыть программу"), href: plan };
   }
   return {
-    label: running ? "Продолжить" : "Начать",
-    href: `/dashboard/chat?q=${encodeURIComponent(`Давай разберём «${topic}».`)}`,
+    label: running ? t("Продолжить") : t("Начать"),
+    href: `/dashboard/chat?q=${encodeURIComponent(t("Давай разберём «{topic}».", { topic }))}`,
   };
 }
 
-const REVIEW_STEPS = ["через 2 дня", "через неделю", "через три недели"];
+const REVIEW_STEPS = [msg("через 2 дня"), msg("через неделю"), msg("через три недели")];
 
 /** Со строчной буквы, как часть фразы. «СОР написан» остаётся как есть. */
 function sentencePart(text: string): string {
@@ -200,10 +201,10 @@ export function BlockCard({
           {when}
           {own ? "" : `, ${commitmentKindLabel(block.commitment_kind).toLowerCase()}`}
         </p>
-        <p>Планировщик ставит занятия вокруг этого времени.</p>
+        <p>{t("Планировщик ставит занятия вокруг этого времени.")}</p>
         <div className="pop-acts">
           <button className="btn btn-line" type="button" disabled={busy} onClick={onRemove}>
-            {recurring ? "Удалить все повторы" : "Удалить"}
+            {recurring ? t("Удалить все повторы") : t("Удалить")}
           </button>
         </div>
       </>
@@ -221,8 +222,8 @@ export function BlockCard({
   const details = [
     activityLabel(block.activity_type),
     look.statusLabel,
-    block.review_step != null ? `повторение ${REVIEW_STEPS[block.review_step] ?? "по плану"}` : null,
-    block.fixed ? "закреплено" : null,
+    block.review_step != null ? t("повторение {step}", { step: REVIEW_STEPS[block.review_step] ? t(REVIEW_STEPS[block.review_step]) : t("по плану") }) : null,
+    block.fixed ? t("закреплено") : null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -239,9 +240,9 @@ export function BlockCard({
       </p>
       {details ? <p>{details}</p> : null}
       {block.objective ? <p className="pop-note">{block.objective}</p> : null}
-      {completion ? <p className="pop-note">Готово, когда: {sentencePart(criterionText(completion))}.</p> : null}
-      {proposal ? <p>Время предварительное: станет постоянным, когда подтвердишь расписание.</p> : null}
-      {block.detail_level === "outline" ? <p>Тема и дата уже есть, задания появятся ближе к занятию.</p> : null}
+      {completion ? <p className="pop-note">{t("Готово, когда: {criterion}.", { criterion: sentencePart(criterionText(completion)) })}</p> : null}
+      {proposal ? <p>{t("Время предварительное: станет постоянным, когда подтвердишь расписание.")}</p> : null}
+      {block.detail_level === "outline" ? <p>{t("Тема и дата уже есть, задания появятся ближе к занятию.")}</p> : null}
       <div className="pop-acts">
         {action ? (
           <Link className="btn btn-main" href={action.href}>
@@ -250,7 +251,7 @@ export function BlockCard({
         ) : null}
         {state.reschedulable ? (
           <button className="btn btn-text" type="button" onClick={onMove}>
-            Перенести
+            {t("Перенести")}
           </button>
         ) : null}
         {!state.done ? (
@@ -259,16 +260,16 @@ export function BlockCard({
             type="button"
             role="switch"
             aria-checked={block.fixed}
-            title={block.fixed ? "Сейчас стоит на месте" : "Планировщик и мышь не будут его двигать"}
+            title={block.fixed ? t("Сейчас стоит на месте") : t("Планировщик и мышь не будут его двигать")}
             disabled={busy}
             onClick={() => onTogglePinned(!block.fixed)}
           >
-            {block.fixed ? "Открепить" : "Закрепить"}
+            {block.fixed ? t("Открепить") : t("Закрепить")}
           </button>
         ) : null}
         {canRemove ? (
           <button className="btn btn-text" type="button" disabled={busy} onClick={onRemove}>
-            Убрать из плана
+            {t("Убрать из плана")}
           </button>
         ) : null}
       </div>
@@ -304,8 +305,8 @@ export function DraftCard({
       <input
         type="text"
         value={draft.title}
-        placeholder="Что делаем?"
-        aria-label="Название занятия"
+        placeholder={t("Что делаем?")}
+        aria-label={t("Название занятия")}
         autoComplete="off"
         autoFocus
         maxLength={200}
@@ -318,11 +319,11 @@ export function DraftCard({
       </p>
       <div className="pop-acts">
         <button className="btn btn-main" type="submit" disabled={saving}>
-          {saving ? "Сохраняю…" : "Сохранить"}
+          {saving ? t("Сохраняю…") : t("Сохранить")}
         </button>
         {canAsk ? (
           <button className="btn btn-text" type="button" disabled={saving} onClick={onAsk}>
-            Через помощника
+            {t("Через помощника")}
           </button>
         ) : null}
       </div>

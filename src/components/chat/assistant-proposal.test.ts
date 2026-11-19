@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { setLocaleForTests } from "../../lib/i18n";
+
 import { answerPreview } from "./answer-preview.ts";
 import {
   batchRows,
@@ -491,4 +493,15 @@ test("карточка расписания называет, что уйдёт 
     { name: "Среда", note: "Химия 10:00" },
     { name: "Суббота", note: "уберу: Труд 8:00" },
   ]);
+});
+
+test("по-английски в середине фразы дни недели и «I’ll» остаются с большой буквы", () => {
+  setLocaleForTests("en");
+  try {
+    const summary = proposalSummary(TIMETABLE);
+    assert.match(summary, /Monday/);
+    assert.doesNotMatch(summary, /\bmonday\b/);
+  } finally {
+    setLocaleForTests("ru");
+  }
 });

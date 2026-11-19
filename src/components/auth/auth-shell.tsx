@@ -5,6 +5,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { LogoMark } from "@/components/landing/logo-mark";
 import { Slime } from "@/components/landing/slime";
 import { ThemeSwitch } from "@/components/landing/theme-switch";
+import { useT } from "@/lib/i18n/react";
 import styles from "./auth.module.css";
 
 // Общая рамка страниц входа, регистрации и ошибки — в стиле лендинга:
@@ -21,6 +22,7 @@ export function AuthShell({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useT();
   return (
     <div className={styles.page}>
       <div className={styles.clouds} aria-hidden="true">
@@ -40,7 +42,7 @@ export function AuthShell({
       <main className={styles.main}>
         <section className={styles.card}>
           <div className={styles.perch}>
-            <Slime drop interactive label="Слайм Timely" />
+            <Slime drop interactive label={t("Слайм Timely")} />
           </div>
           <h1 className={styles.title}>{title}</h1>
           {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
@@ -117,6 +119,7 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
 }
 
 export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const { t } = useT();
   const [visible, setVisible] = useState(false);
   return (
     <div className={styles.passwordWrap}>
@@ -125,8 +128,8 @@ export function PasswordInput(props: Omit<InputHTMLAttributes<HTMLInputElement>,
         type="button"
         className={styles.eye}
         onClick={() => setVisible((value) => !value)}
-        aria-label={visible ? "Скрыть пароль" : "Показать пароль"}
-        title={visible ? "Скрыть пароль" : "Показать пароль"}
+        aria-label={visible ? t("Скрыть пароль") : t("Показать пароль")}
+        title={visible ? t("Скрыть пароль") : t("Показать пароль")}
       >
         {visible ? <EyeOff size={17} /> : <Eye size={17} />}
       </button>

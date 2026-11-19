@@ -3,13 +3,14 @@
 // Школьное расписание для карточек тьютора. Страница редактора ходит сюда же, в `/api/diary/template`.
 
 import { dataChanged } from "@/lib/data-changed";
+import { t } from "@/lib/i18n";
 import { invalidateResources } from "@/lib/resource-cache";
 import type { TemplateLessonSlot, WeeklyTemplate } from "@/types/diary";
 
 const TEMPLATE_URL = "/api/diary/template";
 
 async function saved(response: Response): Promise<WeeklyTemplate> {
-  if (!response.ok) throw new Error(`Расписание не сохранилось (${response.status})`);
+  if (!response.ok) throw new Error(t("Расписание не сохранилось ({status})", { status: response.status }));
   return response.json() as Promise<WeeklyTemplate>;
 }
 
@@ -19,7 +20,7 @@ function send(method: "POST" | "PUT", body: unknown): Promise<Response> {
 
 export async function activeTemplate(): Promise<WeeklyTemplate | null> {
   const response = await fetch(TEMPLATE_URL);
-  if (!response.ok) throw new Error(`Расписание не загрузилось (${response.status})`);
+  if (!response.ok) throw new Error(t("Расписание не загрузилось ({status})", { status: response.status }));
   return ((await response.json()) as { active: WeeklyTemplate | null }).active;
 }
 
@@ -29,12 +30,12 @@ export async function saveTemplateSlots(id: string, slots: TemplateLessonSlot[])
 
 /** Новое расписание сразу становится действующим. */
 export async function createActiveTemplate(slots: TemplateLessonSlot[]): Promise<WeeklyTemplate> {
-  return saved(await send("POST", { name: "Школьное расписание", slots }));
+  return saved(await send("POST", { name: t("Школьное расписание"), slots }));
 }
 
 export async function removeTemplate(id: string): Promise<void> {
   const response = await fetch(`${TEMPLATE_URL}?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-  if (!response.ok) throw new Error(`Расписание не удалилось (${response.status})`);
+  if (!response.ok) throw new Error(t("Расписание не удалилось ({status})", { status: response.status }));
 }
 
 /**

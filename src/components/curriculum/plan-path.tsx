@@ -11,6 +11,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { t } from "@/lib/i18n";
 
 import type { CourseStates } from "@/lib/curriculum-course-progress";
 import { dayMonth, formatShortDate } from "@/lib/curriculum-forecast";
@@ -153,7 +154,7 @@ export function PlanPath({
           // просрочка, и подписывать её запасом нельзя.
           <div className="path-rest" style={{ "--h": restPct } as React.CSSProperties} aria-hidden="true">
             {overdue ? null : <span className="tube timely-path-block" />}
-            <b>{!overdue && fits(restPct) ? "запас" : "\u00a0"}</b>
+            <b>{!overdue && fits(restPct) ? t("запас") : "\u00a0"}</b>
           </div>
         ) : null}
       </div>
@@ -187,19 +188,19 @@ function axisLabels(path: CoursePath, warp: (atPct: number) => number) {
     (mark) => mark && mark.atPct >= 99.5,
   );
   if (deadlineAtEnd && path.deadline) {
-    labels.push({ key: "end", kind: "end", atPct: 100, text: `срок ${dayMonth(path.deadline.date)}` });
+    labels.push({ key: "end", kind: "end", atPct: 100, text: t("срок {date}", { date: dayMonth(path.deadline.date) }) });
   } else if (lastFinish) {
     labels.push({ key: "end", kind: "end", atPct: 100, text: dayMonth(lastFinish.date) });
   }
 
-  if (path.today) labels.push({ key: "today", kind: "today", atPct: warp(path.today.atPct), text: "сегодня" });
+  if (path.today) labels.push({ key: "today", kind: "today", atPct: warp(path.today.atPct), text: t("сегодня") });
 
   if (path.deadline && !deadlineAtEnd) {
     labels.push({
       key: "deadline",
       kind: path.overshootPct > 0 ? "over" : "mile",
       atPct: warp(path.deadline.atPct),
-      text: `срок ${dayMonth(path.deadline.date)}`,
+      text: t("срок {date}", { date: dayMonth(path.deadline.date) }),
     });
   }
 
@@ -216,15 +217,15 @@ function blockTitle(block: PathBlock): string {
 
 function axisLabel(path: CoursePath, states: CourseStates): string {
   const count = new Set(path.blocks.map((block) => block.moduleId)).size;
-  const parts = [`Путь курса: глав ${count}`];
+  const parts = [t("Путь курса: глав {count}", { count })];
   const current = path.blocks.find((block) => block.moduleId === states.currentModuleId);
-  if (current) parts.push(`сейчас глава «${current.title}»`);
-  if (path.finish.expected) parts.push(`финиш ${dayMonth(path.finish.expected.date)}`);
+  if (current) parts.push(t("сейчас глава «{title}»", { title: current.title }));
+  if (path.finish.expected) parts.push(t("финиш {date}", { date: dayMonth(path.finish.expected.date) }));
   if (path.deadline) {
     parts.push(
       path.overshootPct > 0
-        ? `срок ${dayMonth(path.deadline.date)}, курс выходит за него`
-        : `срок ${dayMonth(path.deadline.date)}, курс укладывается`,
+        ? t("срок {date}, курс выходит за него", { date: dayMonth(path.deadline.date) })
+        : t("срок {date}, курс укладывается", { date: dayMonth(path.deadline.date) }),
     );
   }
   return `${parts.join(", ")}.`;

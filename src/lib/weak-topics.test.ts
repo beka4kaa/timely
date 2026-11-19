@@ -281,3 +281,9 @@ test("созданный карточкой предмет убираем, то�
   );
   assert.deepEqual(subjectsToRemove([], [], []), []);
 });
+
+test("название с лишними пробелами совпадает с тем же предметом", () => {
+  const subjects = [{ name: "Русский язык" }];
+  assert.equal(exactSubject(subjects, "Русский  язык")?.name, "Русский язык");
+  assert.equal(exactSubject(subjects, "русский\tязык")?.name, "Русский язык");
+});

@@ -5,12 +5,13 @@
 // Общий компонент `ThinkingNote` не должен знать ни те, ни другие — он рисует
 // то, что ему дали, поэтому перевод живёт рядом с каждым источником.
 
+import { msg, t } from "../../lib/i18n";
 import type { ThinkingStage } from "./thinking-note";
 
 const LABELS: Record<string, string> = {
-  routing: "Разбираю вопрос",
-  drawing: "Строю схему",
-  ask_clarification: "Уточняю вопрос",
+  routing: msg("Разбираю вопрос"),
+  drawing: msg("Строю схему"),
+  ask_clarification: msg("Уточняю вопрос"),
 };
 
 /**
@@ -23,5 +24,5 @@ const LABELS: Record<string, string> = {
  */
 export function boardStages(stage: string | null | undefined): ThinkingStage[] {
   const key = stage || "routing";
-  return [{ key, label: LABELS[key] ?? "Думаю", done: false }];
+  return [{ key, label: t(LABELS[key] ?? msg("Думаю")), done: false }];
 }

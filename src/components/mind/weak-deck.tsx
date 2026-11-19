@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
+import { t } from "@/lib/i18n";
 import { REVIEW_RATES, intervalLabel, reviewDays } from "@/lib/mind-srs";
 import { coverOf, isDue, lastTimeLabel, whenLabel, type WeakTopic } from "@/lib/weak-topics";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ const MAX_PIPS = 8;
 const FLY_MS = 300;
 
 function questionOf(topic: WeakTopic): string {
-  return `Что ты помнишь про тему «${topic.name}»?`;
+  return t("Что ты помнишь про тему «{name}»?", { name: topic.name });
 }
 
 function readFlag(key: string, fallback: boolean): boolean {
@@ -38,12 +39,12 @@ function useReminderLabel(): { label: string; mascot: boolean } {
   useEffect(() => {
     setState({ mascot: readFlag(REMIND_MASCOT_KEY, true), push: readFlag(REMIND_PUSH_KEY, false) });
   }, []);
-  const label = state.mascot && state.push ? "слайм и браузер" : state.mascot ? "слайм" : state.push ? "браузер" : "выключено";
+  const label = state.mascot && state.push ? t("слайм и браузер") : state.mascot ? t("слайм") : state.push ? t("браузер") : t("выключено");
   return { label, mascot: state.mascot };
 }
 
 function Pips({ done, total }: { done: number; total: number }) {
-  const label = `${Math.min(done + 1, total)} из ${total}`;
+  const label = t("{n} из {total}", { n: Math.min(done + 1, total), total });
   if (total > MAX_PIPS) return <span className="rv-count">{label}</span>;
   return (
     <span className="rv-pips" role="img" aria-label={label}>
@@ -68,25 +69,25 @@ function MemoryPanel({
   reminder: string;
 }) {
   return (
-    <aside className={cn("rv-mem card", rest && "is-rest")} aria-label="Срок повторения">
+    <aside className={cn("rv-mem card", rest && "is-rest")} aria-label={t("Срок повторения")}>
       <div className="rv-now">
         <span>
-          {isDue(topic, now) ? "Пора повторить" : null}
+          {isDue(topic, now) ? t("Пора повторить") : null}
           <small>{topic.name}</small>
         </span>
       </div>
       <ul className="rv-next">
         <li>
-          <span>Повторим</span>
+          <span>{t("Повторим")}</span>
           <b>{nextLabel}</b>
         </li>
         <li>
-          <span>Напомню</span>
+          <span>{t("Напомню")}</span>
           <b>{reminder}</b>
         </li>
       </ul>
       <Link className="link rv-how" href="/dashboard/settings">
-        Как напоминать
+        {t("Как напоминать")}
       </Link>
     </aside>
   );
@@ -195,7 +196,7 @@ export function WeakDeck({
   const promised = shown ? reviewDays(shown, rating) : null;
   const nextLabel = shown
     ? promised === null
-      ? "после оценки"
+      ? t("после оценки")
       : intervalLabel(promised)
     : nearest
       ? whenLabel(nearest.nextReviewAt, now)
@@ -205,21 +206,21 @@ export function WeakDeck({
   const subtopics = shown?.subtopics ?? [];
 
   return (
-    <section className={cn("rv", !panelTopic && "is-solo")} aria-label="Повторение">
+    <section className={cn("rv", !panelTopic && "is-solo")} aria-label={t("Повторение")}>
       <div className="rv-deck" data-left={Math.max(0, left + (flying ? 1 : 0))}>
         <div
           ref={cardRef}
           className={cn("rv-card glass", flying && "fly")}
           tabIndex={-1}
           aria-live="polite"
-          data-attach={shown ? `Тема: ${shown.name}` : undefined}
+          data-attach={shown ? t("Тема: {name}", { name: shown.name }) : undefined}
         >
           {shown && cover ? (
             <>
               <div className="rv-head">
                 <span className={cn("book mini", cover.className)} style={cover.style as React.CSSProperties} aria-hidden="true" />
                 <span className="rv-from">
-                  <b>{shown.subjectName ?? "Без предмета"}</b>
+                  <b>{shown.subjectName ?? t("Без предмета")}</b>
                   <small>{lastTimeLabel(shown.lastRevisedAt, now)}</small>
                 </span>
                 <Pips done={Math.min(done, Math.max(total - 1, 0))} total={total} />
@@ -229,10 +230,10 @@ export function WeakDeck({
                   <h2 className="rv-q">{questionOf(shown)}</h2>
                   <div className="rv-acts">
                     <button className="btn btn-main" type="button" onClick={() => turn(false)}>
-                      Проверить себя
+                      {t("Проверить себя")}
                     </button>
                     <button className="btn btn-text" type="button" onClick={() => turn(true)}>
-                      Не могу вспомнить
+                      {t("Не могу вспомнить")}
                     </button>
                   </div>
                 </>
@@ -241,10 +242,10 @@ export function WeakDeck({
                   <p className="rv-small-q">{questionOf(shown)}</p>
                   <p className="rv-a">
                     {subtopics.length
-                      ? `В эту тему входит: ${subtopics.map((row) => row.title).join(", ")}.`
+                      ? t("В эту тему входит: {list}.", { list: subtopics.map((row) => row.title).join(", ") })
                       : forgot
-                        ? "Ничего страшного. Разбери тему с тьютором или вернись к ней завтра."
-                        : "Оцени честно: от этого зависит, когда тема вернётся."}
+                        ? t("Ничего страшного. Разбери тему с тьютором или вернись к ней завтра.")
+                        : t("Оцени честно: от этого зависит, когда тема вернётся.")}
                   </p>
                   <div
                     className="rv-rates"
@@ -269,7 +270,7 @@ export function WeakDeck({
                     })}
                   </div>
                   <button className="link rv-explain" type="button" onClick={() => onAsk(shown)}>
-                    Разобрать с тьютором
+                    {t("Разобрать с тьютором")}
                   </button>
                 </>
               )}
@@ -279,11 +280,11 @@ export function WeakDeck({
               <svg className="rv-slime" viewBox="0 0 172 122" aria-hidden="true">
                 <use href="#art-slime" />
               </svg>
-              <h2>На сегодня всё</h2>
+              <h2>{t("На сегодня всё")}</h2>
               <p>
                 {nearest
-                  ? `Следующее повторение ${whenLabel(nearest.nextReviewAt, now)}.${mascotReminds ? " Напомню через слайма." : ""}`
-                  : "Пока повторять нечего. Напиши ниже, что изучил, и первое повторение будет завтра."}
+                  ? `${t("Следующее повторение {when}.", { when: whenLabel(nearest.nextReviewAt, now) })}${mascotReminds ? ` ${t("Напомню через слайма.")}` : ""}`
+                  : t("Пока повторять нечего. Напиши ниже, что изучил, и первое повторение будет завтра.")}
               </p>
             </div>
           )}
@@ -305,15 +306,15 @@ export function WeakDeck({
 /** Пустое состояние: тем нет совсем. Приглашение написать, что изучил: поле прямо под карточкой. */
 export function WeakEmpty() {
   return (
-    <section className="rv is-solo" aria-label="Повторение">
+    <section className="rv is-solo" aria-label={t("Повторение")}>
       <div className="rv-deck" data-left="1">
         <div className="rv-card glass">
           <div className="rv-done">
             <svg className="rv-slime" viewBox="0 0 172 122" aria-hidden="true">
               <use href="#art-slime" />
             </svg>
-            <h2>Тем пока нет</h2>
-            <p>Напиши ниже своими словами, что сегодня изучил. Темы заполню сам, а первое повторение поставлю на завтра.</p>
+            <h2>{t("Тем пока нет")}</h2>
+            <p>{t("Напиши ниже своими словами, что сегодня изучил. Темы заполню сам, а первое повторение поставлю на завтра.")}</p>
           </div>
         </div>
       </div>

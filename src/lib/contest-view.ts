@@ -1,6 +1,7 @@
 // Как контест выглядит для ученика: что идёт, что впереди, какого он цвета и чем кончился.
 // Здесь нет React и нет сети, поэтому всё проверяется тестами.
 
+import { dateLocale, msg, plural, t } from "./i18n";
 import type {
   AdminContest,
   Contest,
@@ -28,7 +29,7 @@ export function contestParts(title: string): { number: string | null; kind: stri
   const match = clean.match(/^(.*?)[\s№#]*(\d+)$/);
   const head = match && match[1] ? match[1] : match ? "" : clean;
   const kind = head.replace(/контест/i, " ").replace(/\s+/g, " ").trim();
-  const shown = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : "Контест";
+  const shown = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : t("Контест");
   return { number: match ? match[2] : null, kind: shown };
 }
 
@@ -62,30 +63,30 @@ export function countdown(to: string, now: Date): Array<{ value: number; unit: s
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   if (days > 0) {
-    const parts = [{ value: days, unit: ru(days, "день", "дня", "дней") }];
-    if (hours > 0) parts.push({ value: hours, unit: "ч" });
+    const parts = [{ value: days, unit: plural(days, "день", "дня", "дней") }];
+    if (hours > 0) parts.push({ value: hours, unit: t("ч") });
     return parts;
   }
   const rest = minutes % 60;
   if (hours > 0) {
-    const parts = [{ value: hours, unit: "ч" }];
-    if (rest > 0) parts.push({ value: rest, unit: "мин" });
+    const parts = [{ value: hours, unit: t("ч") }];
+    if (rest > 0) parts.push({ value: rest, unit: t("мин") });
     return parts;
   }
-  return [{ value: rest, unit: "мин" }];
+  return [{ value: rest, unit: t("мин") }];
 }
 
 /** «4 задачи, 90 минут». Без задач только длительность: придумывать число нельзя. */
 export function contestRules(contest: Contest): string {
   const parts: string[] = [];
   const count = contest.tasks.length;
-  if (count) parts.push(`${count} ${ru(count, "задача", "задачи", "задач")}`);
+  if (count) parts.push(plural(count, "{n} задача", "{n} задачи", "{n} задач"));
   const minutes = Math.round((ms(contest.end_time) - ms(contest.start_time)) / 60_000);
   if (minutes >= 2880) {
     const days = Math.round(minutes / 1440);
-    parts.push(`${days} ${ru(days, "день", "дня", "дней")}`);
+    parts.push(plural(days, "{n} день", "{n} дня", "{n} дней"));
   } else if (minutes > 0) {
-    parts.push(`${minutes} ${ru(minutes, "минута", "минуты", "минут")}`);
+    parts.push(plural(minutes, "{n} минута", "{n} минуты", "{n} минут"));
   }
   return parts.join(", ");
 }
@@ -93,15 +94,15 @@ export function contestRules(contest: Contest): string {
 /** «Суббота, 7 ноября, 11:00» в часовом поясе браузера. */
 export function contestDate(iso: string, timeZone?: string): string {
   const date = new Date(iso);
-  const weekday = new Intl.DateTimeFormat("ru-RU", { weekday: "long", timeZone }).format(date);
-  const day = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone }).format(date);
-  const time = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone }).format(date);
+  const weekday = new Intl.DateTimeFormat(dateLocale(), { weekday: "long", timeZone }).format(date);
+  const day = new Intl.DateTimeFormat(dateLocale(), { day: "numeric", month: "long", timeZone }).format(date);
+  const time = new Intl.DateTimeFormat(dateLocale(), { hour: "2-digit", minute: "2-digit", timeZone }).format(date);
   return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${day}, ${time}`;
 }
 
 /** «7 ноября». */
 export function shortDate(iso: string, timeZone?: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone }).format(new Date(iso));
+  return new Intl.DateTimeFormat(dateLocale(), { day: "numeric", month: "long", timeZone }).format(new Date(iso));
 }
 
 /**
@@ -164,11 +165,11 @@ export function reviewPrompt(contest: Contest): string {
   const lines = contest.task_details.map((task, index) => {
     const number = task.number ?? index + 1;
     const condition = (task.review_text || task.condition_text || "").trim();
-    return `${number}. ${task.title || `Задача ${number}`}${condition ? `: ${condition}` : ""}`;
+    return `${number}. ${task.title || t("Задача {number}", { number })}${condition ? `: ${condition}` : ""}`;
   });
   let tasks = lines.join("\n");
   if (tasks.length > REVIEW_LIMIT) tasks = `${tasks.slice(0, REVIEW_LIMIT).trimEnd()}…`;
-  return `Разбери со мной контест «${contest.title}». Вот задачи:\n${tasks}`;
+  return `${t("Разбери со мной контест «{title}». Вот задачи:", { title: contest.title })}\n${tasks}`;
 }
 
 
@@ -212,20 +213,21 @@ export function attemptClock(seconds: number): string {
 }
 
 const ANSWER_ERRORS: Record<string, string> = {
-  no_profile: "Войди в аккаунт, чтобы отвечать.",
-  admin: "Админы не отвечают в контестах.",
-  bad_task: "Такой задачи в контесте нет.",
-  not_running: "Контест сейчас не идёт.",
-  empty: "Впиши ответ.",
-  too_long: "Ответ длиннее 100 знаков.",
-  already_solved: "Эта задача уже решена.",
-  too_many: "Попыток по этой задаче больше нет.",
-  too_fast: "Подожди пару секунд.",
-  no_answer: "У задачи нет ответа.",
+  no_profile: msg("Войди в аккаунт, чтобы отвечать."),
+  admin: msg("Админы не отвечают в контестах."),
+  bad_task: msg("Такой задачи в контесте нет."),
+  not_running: msg("Контест сейчас не идёт."),
+  empty: msg("Впиши ответ."),
+  too_long: msg("Ответ длиннее 100 знаков."),
+  already_solved: msg("Эта задача уже решена."),
+  too_many: msg("Попыток по этой задаче больше нет."),
+  too_fast: msg("Подожди пару секунд."),
+  no_answer: msg("У задачи нет ответа."),
 };
 
 export function answerErrorText(code: string): string {
-  return ANSWER_ERRORS[code] ?? "Не получилось проверить. Попробуй ещё раз.";
+  const known = ANSWER_ERRORS[code];
+  return known ? t(known) : t("Не получилось проверить. Попробуй ещё раз.");
 }
 
 function dayStart(date: Date): number {
@@ -234,19 +236,19 @@ function dayStart(date: Date): number {
 
 /** Метка на плашке в админке: черновик, когда начнётся, идёт или прошёл. */
 export function adminBadge(contest: AdminContest, now: Date): string {
-  if (!contest.is_published) return "Черновик";
-  const people = `${contest.participants} ${ru(contest.participants, "участник", "участника", "участников")}`;
+  if (!contest.is_published) return t("Черновик");
+  const people = plural(contest.participants, "{n} участник", "{n} участника", "{n} участников");
   const state = contestStateAt(contest, now);
-  if (state === "running") return `Идёт, ${people}`;
-  if (state === "ended") return `Прошёл, ${people}`;
+  if (state === "running") return t("Идёт, {people}", { people });
+  if (state === "ended") return t("Прошёл, {people}", { people });
   const start = new Date(contest.start_time);
   const days = Math.round((dayStart(start) - dayStart(now)) / 86_400_000);
   if (days <= 0) {
-    const time = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(start);
-    return `Сегодня в ${time}`;
+    const time = new Intl.DateTimeFormat(dateLocale(), { hour: "2-digit", minute: "2-digit" }).format(start);
+    return t("Сегодня в {time}", { time });
   }
-  if (days === 1) return "Завтра";
-  return `Через ${days} ${ru(days, "день", "дня", "дней")}`;
+  if (days === 1) return t("Завтра");
+  return plural(days, "Через {n} день", "Через {n} дня", "Через {n} дней");
 }
 
 
@@ -282,19 +284,19 @@ export function plaqueOf(contest: Contest | AdminContest): Plaque {
 /** «4 задачи, 3 часа, до 750 баллов». Без задач только длительность: придумывать число нельзя. */
 export function plaqueRules(plaque: Plaque, { duration = true }: { duration?: boolean } = {}): string {
   const parts: string[] = [];
-  if (plaque.taskCount) parts.push(`${plaque.taskCount} ${ru(plaque.taskCount, "задача", "задачи", "задач")}`);
+  if (plaque.taskCount) parts.push(plural(plaque.taskCount, "{n} задача", "{n} задачи", "{n} задач"));
   if (duration) {
     const minutes = Math.round((ms(plaque.end_time) - ms(plaque.start_time)) / 60_000);
     if (minutes >= 2880) {
       const days = Math.round(minutes / 1440);
-      parts.push(`${days} ${ru(days, "день", "дня", "дней")}`);
+      parts.push(plural(days, "{n} день", "{n} дня", "{n} дней"));
     } else if (minutes >= 60 && minutes % 60 === 0) {
       const hours = minutes / 60;
-      parts.push(`${hours} ${ru(hours, "час", "часа", "часов")}`);
+      parts.push(plural(hours, "{n} час", "{n} часа", "{n} часов"));
     } else if (minutes > 0) {
-      parts.push(`${minutes} ${ru(minutes, "минута", "минуты", "минут")}`);
+      parts.push(plural(minutes, "{n} минута", "{n} минуты", "{n} минут"));
     }
   }
-  if (plaque.points > 0) parts.push(`до ${plaque.points} ${ru(plaque.points, "балла", "баллов", "баллов")}`);
+  if (plaque.points > 0) parts.push(plural(plaque.points, "до {n} балла", "до {n} баллов", "до {n} баллов"));
   return parts.join(", ");
 }

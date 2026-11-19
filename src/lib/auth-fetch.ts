@@ -6,6 +6,7 @@
 // never in localStorage, a cookie or a URL.
 
 import { SIGN_IN_PATH } from './demo-mode'
+import { DEFAULT_LOCALE, getLocale } from './i18n'
 
 const TOKEN_ROUTE = '/api/auth/backend-token'
 
@@ -58,7 +59,12 @@ function loadIdentity({ renew = false } = {}): Promise<BackendIdentity> {
 }
 
 function identityHeaders(identity: BackendIdentity): Record<string, string> {
-    return identity.token ? { Authorization: `Bearer ${identity.token}` } : {}
+    const headers: Record<string, string> = identity.token ? { Authorization: `Bearer ${identity.token}` } : {}
+    // Язык интерфейса: на нём отвечает тьютор (backend/ai_engine/language.py). Русский
+    // сервер выбирает сам, поэтому заголовок уходит только с другим языком.
+    const locale = getLocale()
+    if (locale !== DEFAULT_LOCALE) headers['X-Timely-Lang'] = locale
+    return headers
 }
 
 function redirectToSignIn() {

@@ -11,6 +11,7 @@
  *   calcYearStats   — агрегатор: принимает DiaryWeek[] за год, возвращает статистику по всем предметам
  */
 
+import { msg } from './i18n'
 import type { DiaryWeek, LessonGrades } from '@/types/diary'
 import { isLessonBlock, isTestBlock, isFeynmanBlock } from '@/types/diary'
 
@@ -308,8 +309,8 @@ export function calcMonthStats(
 
 /** Имя месяца по индексу 0-11 (кратко, на русском). */
 export const MONTH_SHORT: readonly string[] = [
-  'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн',
-  'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек',
+  msg('Янв'), msg('Фев'), msg('Мар'), msg('Апр'), msg('Май'), msg('Июн'),
+  msg('Июл'), msg('Авг'), msg('Сен'), msg('Окт'), msg('Ноя'), msg('Дек'),
 ]
 
 /**

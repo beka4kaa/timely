@@ -1,7 +1,9 @@
 // Название чата сверху разговора. То же слово, что в списке чатов, пока имени нет.
 
-export const NEW_CHAT_TITLE = "Новый чат";
+import { msg, t } from "../../lib/i18n";
+
+export const NEW_CHAT_TITLE = msg("Новый чат");
 
 export function chatTitle(title: string | null | undefined): string {
-  return title?.trim() || NEW_CHAT_TITLE;
+  return title?.trim() || t(NEW_CHAT_TITLE);
 }

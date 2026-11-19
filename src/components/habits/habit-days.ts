@@ -1,6 +1,7 @@
 // Что считается на карточке привычки: день ученика, квадратики, серия, цвет и значок.
 // Без React и без сети, чтобы всё это проверялось тестами.
 
+import { plural as pluralWord, t } from "../../lib/i18n";
 import type { IconName } from "@/components/shell/icons";
 
 export interface CalDay {
@@ -11,16 +12,12 @@ export interface CalDay {
 }
 
 export function plural(n: number, one: string, few: string, many: string): string {
-  const a = Math.abs(n) % 100;
-  const b = a % 10;
-  if (a > 10 && a < 20) return many;
-  if (b === 1) return one;
-  return b >= 2 && b <= 4 ? few : many;
+  return pluralWord(n, one, few, many);
 }
 
 /** Если привычка не каждый день, то подряд идут не дни, а разы. */
 export function streakWord(n: number, daily = true): string {
-  return `${daily ? plural(n, "день", "дня", "дней") : plural(n, "раз", "раза", "раз")} подряд`;
+  return t("{word} подряд", { word: daily ? plural(n, "день", "дня", "дней") : plural(n, "раз", "раза", "раз") });
 }
 
 /** Сегодняшний день там, где сейчас ученик. `toISOString` дал бы день по UTC. */

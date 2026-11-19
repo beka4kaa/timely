@@ -11,6 +11,8 @@
 import type { AssistantProposal } from "@/components/chat/assistant-proposal";
 import type { ScheduleRevision } from "@/lib/studyplan-api";
 
+import { msg, t } from "./i18n";
+
 /** Событие потока. Своё объявление, а не импорт из `sse.ts`: тот модуль
  *  тянет за собой работу с сетью, а этот обязан оставаться чистым. */
 export interface AssistantSseEvent {
@@ -89,41 +91,41 @@ export const initialAssistantState: AssistantState = {
 
 /** Человеческие названия инструментов: «get_schedule» ученику ничего не говорит. */
 const STAGE_LABELS: Record<string, string> = {
-  get_schedule: "Смотрю расписание",
-  list_courses: "Смотрю программы",
-  find_free_slots: "Ищу свободные окна",
-  explain_schedule: "Разбираю день",
-  propose_move_blocks: "Готовлю перенос",
-  propose_load_reduction: "Разгружаю день",
-  propose_recovery_plan: "Собираю план догона",
-  propose_fixed_commitments: "Записываю занятость",
-  propose_study_windows: "Подбираю время занятий",
-  propose_study_plan: "Готовлю предмет и занятия",
-  propose_block_changes: "Готовлю изменение занятий",
-  propose_commitment_removal: "Готовлю изменение занятости",
-  propose_goal_change: "Готовлю изменение цели",
-  propose_habit_change: "Готовлю изменение привычки",
-  propose_topic_change: "Готовлю изменение темы",
-  propose_subject_change: "Готовлю изменение предмета",
-  open_my_affairs: "Смотрю твои дела",
-  get_diary: "Смотрю дневник",
-  list_habits: "Смотрю привычки",
-  list_goals: "Смотрю цели",
-  list_review_topics: "Смотрю темы",
-  get_focus_stats: "Смотрю помодоро",
-  propose_new_habit: "Готовлю предложение",
-  propose_habit_schedule: "Готовлю предложение",
-  propose_mark_habit: "Готовлю предложение",
-  propose_new_goal: "Готовлю предложение",
-  propose_goal_progress: "Готовлю предложение",
-  propose_new_topics: "Готовлю предложение",
-  propose_mark_homework: "Готовлю предложение",
-  propose_diary_changes: "Готовлю запись в дневник",
-  propose_school_timetable: "Готовлю школьное расписание",
+  get_schedule: msg("Смотрю расписание"),
+  list_courses: msg("Смотрю программы"),
+  find_free_slots: msg("Ищу свободные окна"),
+  explain_schedule: msg("Разбираю день"),
+  propose_move_blocks: msg("Готовлю перенос"),
+  propose_load_reduction: msg("Разгружаю день"),
+  propose_recovery_plan: msg("Собираю план догона"),
+  propose_fixed_commitments: msg("Записываю занятость"),
+  propose_study_windows: msg("Подбираю время занятий"),
+  propose_study_plan: msg("Готовлю предмет и занятия"),
+  propose_block_changes: msg("Готовлю изменение занятий"),
+  propose_commitment_removal: msg("Готовлю изменение занятости"),
+  propose_goal_change: msg("Готовлю изменение цели"),
+  propose_habit_change: msg("Готовлю изменение привычки"),
+  propose_topic_change: msg("Готовлю изменение темы"),
+  propose_subject_change: msg("Готовлю изменение предмета"),
+  open_my_affairs: msg("Смотрю твои дела"),
+  get_diary: msg("Смотрю дневник"),
+  list_habits: msg("Смотрю привычки"),
+  list_goals: msg("Смотрю цели"),
+  list_review_topics: msg("Смотрю темы"),
+  get_focus_stats: msg("Смотрю помодоро"),
+  propose_new_habit: msg("Готовлю предложение"),
+  propose_habit_schedule: msg("Готовлю предложение"),
+  propose_mark_habit: msg("Готовлю предложение"),
+  propose_new_goal: msg("Готовлю предложение"),
+  propose_goal_progress: msg("Готовлю предложение"),
+  propose_new_topics: msg("Готовлю предложение"),
+  propose_mark_homework: msg("Готовлю предложение"),
+  propose_diary_changes: msg("Готовлю запись в дневник"),
+  propose_school_timetable: msg("Готовлю школьное расписание"),
 };
 
 export function stageLabel(tool: string): string {
-  return STAGE_LABELS[tool] ?? "Работаю";
+  return t(STAGE_LABELS[tool] ?? msg("Работаю"));
 }
 
 /** Завершить запрос, упавший до финального SSE-события. */
@@ -141,8 +143,8 @@ export function failAssistantRequest(
     ...state,
     status: "error",
     error: aborted
-      ? "Запрос отменён. Можно попробовать ещё раз."
-      : "Связаться с помощником не получилось. Попробуй ещё раз.",
+      ? t("Запрос отменён. Можно попробовать ещё раз.")
+      : t("Связаться с помощником не получилось. Попробуй ещё раз."),
     errorCode: null,
   };
 }
@@ -212,8 +214,8 @@ export function applyAssistantEvent(
         status: "error",
         error:
           typeof event.data.error === "string"
-            ? event.data.error
-            : "Помощник не смог ответить.",
+            ? t(event.data.error)
+            : t("Помощник не смог ответить."),
         errorCode:
           typeof event.data.code === "string" ? event.data.code : state.errorCode,
       };

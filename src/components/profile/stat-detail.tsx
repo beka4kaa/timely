@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
-import { ru } from "@/lib/contest-view";
+import { dateLocale, plural, t } from "@/lib/i18n";
 import type { Submission } from "@/lib/contest-api";
 import type { PomodoroSummary } from "@/lib/pomodoro";
 import {
@@ -17,8 +17,6 @@ import {
   type Streaks,
 } from "@/lib/profile-view";
 import { grouped } from "@/lib/rating-view";
-
-const days = (n: number) => ru(n, "день", "дня", "дней");
 
 export function DaysDetail({
   activity,
@@ -43,11 +41,11 @@ export function DaysDetail({
       <div className="pf-d-head">
         <h3>
           {streaks.current > 0
-            ? `Серия ${streaks.current} ${days(streaks.current)} подряд`
-            : `${grouped(streaks.total)} ${days(streaks.total)} занятий`}
+            ? plural(streaks.current, "Серия {n} день подряд", "Серия {n} дня подряд", "Серия {n} дней подряд")
+            : `${grouped(streaks.total)} ${plural(streaks.total, "день занятий", "дня занятий", "дней занятий")}`}
         </h3>
         <span>
-          лучшая {streaks.best}, всего {grouped(streaks.total)}
+          {t("лучшая {best}, всего {total}", { best: streaks.best, total: grouped(streaks.total) })}
         </span>
       </div>
       <div
@@ -55,7 +53,7 @@ export function DaysDetail({
         className="heat-wrap"
         tabIndex={0}
         role="img"
-        aria-label={`Занятия за год по дням: всего ${streaks.total}`}
+        aria-label={t("Занятия за год по дням: всего {total}", { total: streaks.total })}
       >
         <div className="heat">
           {cells.map((cell) => (
@@ -80,8 +78,8 @@ export function HoursDetail({ summary, now }: { summary: PomodoroSummary; now: D
   return (
     <>
       <div className="pf-d-head">
-        <h3>{hoursAndMinutes(summary.total_seconds)} в фокусе</h3>
-        <span>последние 12 недель</span>
+        <h3>{t("{time} в фокусе", { time: hoursAndMinutes(summary.total_seconds) })}</h3>
+        <span>{t("последние 12 недель")}</span>
       </div>
       <div className="pf-two">
         <div>
@@ -103,18 +101,18 @@ export function HoursDetail({ summary, now }: { summary: PomodoroSummary; now: D
         </div>
         <ul className="pf-list pf-list-wide">
           <li>
-            <span className="m">Эта неделя</span>
+            <span className="m">{t("Эта неделя")}</span>
             <span />
             <b>{hoursAndMinutes(thisWeek)}</b>
           </li>
           <li>
-            <span className="m">За 12 недель</span>
+            <span className="m">{t("За 12 недель")}</span>
             <span />
             <b>{hoursAndMinutes(inBars)}</b>
           </li>
           {best ? (
             <li>
-              <span className="m">Лучший день</span>
+              <span className="m">{t("Лучший день")}</span>
               <span className="m">{shortDay(`${best.date}T12:00:00`)}</span>
               <b>{hoursAndMinutes(best.seconds)}</b>
             </li>
@@ -126,7 +124,7 @@ export function HoursDetail({ summary, now }: { summary: PomodoroSummary; now: D
 }
 
 function shortDay(iso: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" })
+  return new Intl.DateTimeFormat(dateLocale(), { day: "numeric", month: "short" })
     .format(new Date(iso))
     .replace(".", "");
 }
@@ -136,15 +134,15 @@ export function TasksDetail({ solved, pending }: { solved: readonly Submission[]
     <>
       <div className="pf-d-head">
         <h3>
-          {grouped(solved.length)} {ru(solved.length, "задача решена", "задачи решено", "задач решено")}
+          {`${grouped(solved.length)} ${plural(solved.length, "задача решена", "задачи решено", "задач решено")}`}
         </h3>
-        {pending ? <span>ещё {pending} на проверке</span> : null}
+        {pending ? <span>{t("ещё {n} на проверке", { n: pending })}</span> : null}
       </div>
       <ul className="pf-list">
         {solved.slice(0, 5).map((row) => (
           <li key={row.id}>
             <span className="m">{shortDay(row.reviewed_at ?? row.created_at)}</span>
-            <span>{row.task_title || "Задача"}</span>
+            <span>{row.task_title || t("Задача")}</span>
             <b className="up">+{grouped(row.task_points)}</b>
           </li>
         ))}
@@ -171,9 +169,9 @@ export function PlaceDetail({
   return (
     <>
       <div className="pf-d-head">
-        <h3>Место {grouped(lines[0]?.place ?? 0)} среди всех</h3>
+        <h3>{t("Место {place} среди всех", { place: grouped(lines[0]?.place ?? 0) })}</h3>
         <span>
-          {grouped(points)} {ru(points, "балл", "балла", "баллов")}
+          {`${grouped(points)} ${plural(points, "балл", "балла", "баллов")}`}
         </span>
       </div>
       <ul className="pf-list pf-list-wide">
@@ -185,10 +183,10 @@ export function PlaceDetail({
           </li>
         ))}
       </ul>
-      {hidden ? <p className="small-note pf-more">Это место видишь только ты. Показать себя другим можно в рейтинге.</p> : null}
+      {hidden ? <p className="small-note pf-more">{t("Это место видишь только ты. Показать себя другим можно в рейтинге.")}</p> : null}
       <p className="pf-more">
         <Link className="link" href="/dashboard/leaderboard">
-          Открыть рейтинг
+          {t("Открыть рейтинг")}
         </Link>
       </p>
     </>

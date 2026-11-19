@@ -1,5 +1,7 @@
 // Mind Learning System Types
 
+import { t } from '../lib/i18n'
+
 export type TopicStatus = 'NOT_STARTED' | 'MEDIUM' | 'SUCCESS' | 'MASTERED'
 export type StudyState = 'STUDIED' | 'NOT_STUDIED'
 export type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'
@@ -129,27 +131,27 @@ export function getTopicStatusColor(status: TopicStatus): string {
 export function getTopicStatusLabel(status: TopicStatus): string {
     switch (status) {
         case 'NOT_STARTED':
-            return 'Не начато'
+            return t('Не начато')
         case 'MEDIUM':
-            return 'Знаю немного'
+            return t('Знаю немного')
         case 'SUCCESS':
-            return 'Знаю хорошо'
+            return t('Знаю хорошо')
         case 'MASTERED':
-            return 'Мастерство'
+            return t('Мастерство')
     }
 }
 
 // Time helpers
 export function formatInterval(days: number | null): string {
     if (days === null) return '—'
-    if (days === 1) return '1 день'
-    if (days < 7) return `${days} дней`
+    if (days === 1) return t('1 день')
+    if (days < 7) return t('{days} дней', { days })
     if (days < 30) {
         const weeks = Math.floor(days / 7)
-        return weeks === 1 ? '1 неделя' : `${weeks} недель`
+        return weeks === 1 ? t('1 неделя') : t('{weeks} недель', { weeks })
     }
     const months = Math.floor(days / 30)
-    return months === 1 ? '1 месяц' : `${months} месяцев`
+    return months === 1 ? t('1 месяц') : t('{months} месяцев', { months })
 }
 
 export function formatDaysPast(lastRevisedAt: string | null): string {
@@ -160,9 +162,9 @@ export function formatDaysPast(lastRevisedAt: string | null): string {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
     // Handle future dates (timezone issues) or same day
-    if (diffDays <= 0) return 'сегодня'
-    if (diffDays === 1) return 'вчера'
-    return `${diffDays} дн. назад`
+    if (diffDays <= 0) return t('сегодня')
+    if (diffDays === 1) return t('вчера')
+    return t('{days} дн. назад', { days: diffDays })
 }
 
 export function isDueToday(nextReviewAt: string | null): boolean {

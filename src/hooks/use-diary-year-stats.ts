@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { t } from '@/lib/i18n'
 import { calcYearStats, type SubjectYearStat } from '@/lib/diary-grades'
 import type { DiaryWeek } from '@/types/diary'
 
@@ -46,7 +47,7 @@ export function useDiaryYearStats(year = new Date().getFullYear()): UseYearStats
           setStats(calcYearStats(data, year))
         }
       } catch (e: any) {
-        if (!cancelled) setError(e.message || 'Ошибка загрузки')
+        if (!cancelled) setError(e.message || t('Ошибка загрузки'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -56,5 +57,5 @@ export function useDiaryYearStats(year = new Date().getFullYear()): UseYearStats
     return () => { cancelled = true }
   }, [year, tick])
 
-  return { stats, weeks, loading, error, refetch: () => setTick(t => t + 1) }
+  return { stats, weeks, loading, error, refetch: () => setTick(n => n + 1) }
 }

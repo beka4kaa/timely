@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useSmoothInput } from "@/components/shell/smooth-input";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface PlanOption {
@@ -92,8 +93,8 @@ export function SessionName({ value, onChange, options, onDone }: SessionNamePro
             ref={inputRef}
             type="text"
             value={value}
-            placeholder="Над чем работаешь?"
-            aria-label="Над чем работаешь"
+            placeholder={t("Над чем работаешь?")}
+            aria-label={t("Над чем работаешь")}
             role="combobox"
             aria-expanded={expanded}
             aria-controls={LIST_ID}
@@ -107,13 +108,13 @@ export function SessionName({ value, onChange, options, onDone }: SessionNamePro
             onKeyDown={onKeyDown}
           />
         </span>
-        {matched ? <span className="fp-link">из плана</span> : null}
+        {matched ? <span className="fp-link">{t("из плана")}</span> : null}
       </label>
       <div
         className={cn("menu fp-list", !expanded && "is-off")}
         id={LIST_ID}
         role="listbox"
-        aria-label="Занятия из плана"
+        aria-label={t("Занятия из плана")}
         // Нажатие на вариант не должно снимать фокус с поля раньше времени.
         onMouseDown={(event) => event.preventDefault()}
       >

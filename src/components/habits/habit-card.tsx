@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 
 import { CardMenu } from "./card-menu";
 import { habitColors, habitIcon, plural, streakWord, weekCells } from "./habit-days";
@@ -163,7 +164,7 @@ export function HabitCard({
       id={`h${habit.id}`}
       className={`hb${habit.doneToday ? " is-done" : ""}${resting ? " is-rest" : ""}${fresh ? " fresh" : ""}`}
       style={{ "--h1": h1, "--h2": h2 } as CSSProperties}
-      data-attach={`Привычка: ${habit.name}`}
+      data-attach={t("Привычка: {name}", { name: habit.name })}
       onClick={press}
     >
       <span className="hb-bg" aria-hidden="true">
@@ -173,7 +174,7 @@ export function HabitCard({
         className="hb-tap"
         type="button"
         aria-pressed={habit.doneToday}
-        aria-label={`${habit.name}, сегодня${when ? `. ${when}` : ""}`}
+        aria-label={when ? t("{name}, сегодня. {when}", { name: habit.name, when }) : t("{name}, сегодня", { name: habit.name })}
       >
         <span className="hb-ic">
           <HabitGlyph name={habit.name} emoji={habit.emoji} />
@@ -194,9 +195,9 @@ export function HabitCard({
             {habit.goalTitle}
           </Link>
         ) : (
-          <span className="hb-goal none">Без цели</span>
+          <span className="hb-goal none">{t("Без цели")}</span>
         )}
-        <CardMenu label={`Меню привычки: ${habit.name}`}>
+        <CardMenu label={t("Меню привычки: {name}", { name: habit.name })}>
           {(close) => (
             <HabitMenu
               habit={habit}
@@ -213,7 +214,7 @@ export function HabitCard({
       <div
         className="hb-days"
         role="img"
-        aria-label={`Последние ${weeks} ${plural(weeks, "неделя", "недели", "недель")}, серия ${habit.streak}`}
+        aria-label={t("Последние {weeks} {word}, серия {streak}", { weeks, word: plural(weeks, "неделя", "недели", "недель"), streak: habit.streak })}
       >
         {cells.map((cell) =>
           cell.real ? (
@@ -280,15 +281,15 @@ function HabitMenu({
             value={name}
             maxLength={255}
             onChange={(event) => setName(event.target.value)}
-            aria-label="Новое название привычки"
+            aria-label={t("Новое название привычки")}
             autoComplete="off"
           />
           <div className="gm-acts">
             <button className="btn btn-main" type="submit">
-              Сохранить
+              {t("Сохранить")}
             </button>
             <button className="btn btn-text" type="button" onClick={close}>
-              Отмена
+              {t("Отмена")}
             </button>
           </div>
         </form>
@@ -310,10 +311,10 @@ function HabitMenu({
           <SchedulePicker value={schedule} onChange={setSchedule} />
           <div className="gm-acts">
             <button className="btn btn-main" type="submit">
-              Сохранить
+              {t("Сохранить")}
             </button>
             <button className="btn btn-text" type="button" onClick={close}>
-              Отмена
+              {t("Отмена")}
             </button>
           </div>
         </form>
@@ -330,7 +331,7 @@ function HabitMenu({
       <div ref={box}>
         {goals.length === 0 ? (
           <p className="gm-note">
-            Целей пока нет. <Link className="link" href="/dashboard/goals">Создать</Link>
+            {t("Целей пока нет.")} <Link className="link" href="/dashboard/goals">{t("Создать")}</Link>
           </p>
         ) : null}
         {goals.map((goal) => (
@@ -340,7 +341,7 @@ function HabitMenu({
           </button>
         ))}
         <button className="gm-item" type="button" onClick={() => pick(null)}>
-          <span className="gm-text">Без цели</span>
+          <span className="gm-text">{t("Без цели")}</span>
           {habit.goalId === null ? <Icon name="check" /> : null}
         </button>
       </div>
@@ -351,15 +352,15 @@ function HabitMenu({
     <>
       <button className="gm-item" type="button" onClick={() => setPage("rename")}>
         <Icon name="pencil" />
-        <span className="gm-text">Переименовать</span>
+        <span className="gm-text">{t("Переименовать")}</span>
       </button>
       <button className="gm-item" type="button" onClick={() => setPage("schedule")}>
         <Icon name="plan" />
-        <span className="gm-text">Как часто</span>
+        <span className="gm-text">{t("Как часто")}</span>
       </button>
       <button className="gm-item" type="button" onClick={() => setPage("goal")}>
         <Icon name="mountain" />
-        <span className="gm-text">{habit.goalId ? "Другая цель" : "Связать с целью"}</span>
+        <span className="gm-text">{habit.goalId ? t("Другая цель") : t("Связать с целью")}</span>
       </button>
       <button
         className="gm-item"
@@ -370,7 +371,7 @@ function HabitMenu({
         }}
       >
         <Icon name="x" />
-        <span className="gm-text">Удалить</span>
+        <span className="gm-text">{t("Удалить")}</span>
       </button>
     </>
   );

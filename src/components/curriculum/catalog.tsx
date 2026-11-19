@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/shell/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { BOOKS_ENABLED } from "@/config/features";
+import { msg, t } from "@/lib/i18n";
 import { limitMessage } from "@/lib/ai-limit";
 import { SECTION_LABEL } from "@/lib/curriculum-books";
 import {
@@ -81,7 +82,7 @@ const SHELF_INSET_PX = 42;
 /** В самую узкую карточку стеллажа помещаются две книги. */
 const MIN_BOOKS_PER_SHELF = 2;
 
-const WAIT_MESSAGE = "Не получилось загрузить книги. Проверь интернет и попробуй ещё раз.";
+const WAIT_MESSAGE = msg("Не получилось загрузить книги. Проверь интернет и попробуй ещё раз.");
 
 function effectiveStatus(document: CurriculumDocument, ingestion: IngestionMap): string {
   return ingestion[document.id]?.ingestion_status ?? document.ingestion_status;
@@ -155,10 +156,10 @@ export function CurriculumCatalog({
 
   const head = (
     <header className="head">
-      <h1 className="title">{SECTION_LABEL}</h1>
+      <h1 className="title">{t(SECTION_LABEL)}</h1>
       <div className="head-tools">
         <button type="button" className="btn btn-text" onClick={onAddSubject}>
-          Добавить предмет
+          {t("Добавить предмет")}
         </button>
         {BOOKS_ENABLED ? (
           <AddBookButton
@@ -178,7 +179,7 @@ export function CurriculumCatalog({
         {failed ? (
           <LoadFailed onRetry={load} />
         ) : (
-          <div className="case" aria-busy="true" aria-label="Загружаю книги">
+          <div className="case" aria-busy="true" aria-label={t("Загружаю книги")}>
             {[0, 1, 2].map((index) => (
               <div key={index} className="cab card cab-skel" aria-hidden="true">
                 <span className="cur-skel skel-t" />
@@ -196,7 +197,7 @@ export function CurriculumCatalog({
     <div className="content view cur-page">
       {head}
 
-      {failed ? <p className="cur-alert">{WAIT_MESSAGE}</p> : null}
+      {failed ? <p className="cur-alert">{t(WAIT_MESSAGE)}</p> : null}
 
       {subjects.length === 0 ? (
         <EmptyLibrary onStart={onAddSubject} />
@@ -225,10 +226,10 @@ function LoadFailed({ onRetry }: { onRetry: () => Promise<void> }) {
   return (
     <div className="card lib-empty">
       <div>
-        <h2>Книги не загрузились</h2>
-        <p>{WAIT_MESSAGE}</p>
+        <h2>{t("Книги не загрузились")}</h2>
+        <p>{t(WAIT_MESSAGE)}</p>
         <button type="button" className="btn btn-main" onClick={() => void onRetry()}>
-          Повторить
+          {t("Повторить")}
         </button>
       </div>
     </div>
@@ -246,14 +247,14 @@ function EmptyLibrary({ onStart }: { onStart: () => void }) {
         <span className="plank" />
       </div>
       <div>
-        <h2>Полка пока пустая</h2>
+        <h2>{t("Полка пока пустая")}</h2>
         <p>
           {BOOKS_ENABLED
-            ? "Загрузи первый учебник. Timely прочитает его, разобьёт на главы и составит программу со ссылками на страницы."
-            : "Добавь первый предмет, а занятия по нему поможет поставить слайм."}
+            ? t("Загрузи первый учебник. Timely прочитает его, разобьёт на главы и составит программу со ссылками на страницы.")
+            : t("Добавь первый предмет, а занятия по нему поможет поставить слайм.")}
         </p>
         <button type="button" className="btn btn-main" onClick={onStart}>
-          {BOOKS_ENABLED ? "Загрузить первую книгу" : "Добавить предмет"}
+          {BOOKS_ENABLED ? t("Загрузить первую книгу") : t("Добавить предмет")}
         </button>
       </div>
     </div>
@@ -285,7 +286,7 @@ function AddBookButton({
         className="btn btn-line"
         onClick={() => (named[0]?.goalId ? onAddBook(named[0].goalId) : onAddSubject())}
       >
-        Добавить книгу
+        {t("Добавить книгу")}
       </button>
     );
   }
@@ -294,12 +295,12 @@ function AddBookButton({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button type="button" className="btn btn-line">
-          Добавить книгу
+          {t("Добавить книгу")}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={`${paperPopover} min-w-[200px] max-w-[300px]`}>
         <div className="cur-menu">
-          <p className="cur-menu-note">К какому предмету?</p>
+          <p className="cur-menu-note">{t("К какому предмету?")}</p>
           {named.map((subject) => (
             <button
               key={subject.goalId}
@@ -311,7 +312,7 @@ function AddBookButton({
           ))}
           <hr />
           <button type="button" onClick={onAddSubject}>
-            Новый предмет
+            {t("Новый предмет")}
           </button>
         </div>
       </PopoverContent>
@@ -355,9 +356,10 @@ function SubjectCard({
   const perShelf = Math.max(MIN_BOOKS_PER_SHELF, Math.floor((cardWidth - SHELF_INSET_PX) / BOOK_SLOT_PX));
   const shelves = chunk(subject.sources, perShelf);
 
+  const subjectName = subject.goalId ? subject.title : t(subject.title);
   const title = (
     <h2>
-      {subject.title}
+      {subjectName}
       {subject.direction ? <small> {subject.direction}</small> : null}
     </h2>
   );
@@ -413,13 +415,13 @@ function SubjectCard({
 
       {needsSetup && subject.goal ? (
         <p className="cab-setup">
-          Цель ещё не уточнена.{" "}
+          {t("Цель ещё не уточнена.")}{" "}
           <button
             type="button"
             className="link"
             onClick={() => onContinueSetup(subject.goal as LearningGoal)}
           >
-            Уточнить
+            {t("Уточнить")}
           </button>
         </p>
       ) : null}
@@ -482,19 +484,19 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
 function emptyCourseLine(subject: CatalogSubject, ingestion: IngestionMap): string {
   const books = booksOf(subject);
   if (books.some((book) => isSourceBusy(effectiveStatus(book.document, ingestion)))) {
-    return "Программа появится, когда дочитаю книгу";
+    return t("Программа появится, когда дочитаю книгу");
   }
   if (subject.sources.length === 0) {
-    return BOOKS_ENABLED ? "Пока нет ни одной книги" : "Программы пока нет";
+    return BOOKS_ENABLED ? t("Пока нет ни одной книги") : t("Программы пока нет");
   }
   if (
     books.length === subject.sources.length &&
     books.every((book) => effectiveStatus(book.document, ingestion) === "failed")
   ) {
-    return "Книгу пока не получилось прочитать";
+    return t("Книгу пока не получилось прочитать");
   }
-  if (!subject.goalId) return "Эти книги не привязаны к предмету";
-  return "Программы пока нет";
+  if (!subject.goalId) return t("Эти книги не привязаны к предмету");
+  return t("Программы пока нет");
 }
 
 /** Прогресс курса и его срок. */
@@ -533,7 +535,7 @@ function CourseLine({
         <span
           className="tube"
           role="progressbar"
-          aria-label="Пройдено"
+          aria-label={t("Пройдено")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -543,15 +545,15 @@ function CourseLine({
         {progressLoaded || percent > 0 ? <span className="num">{percent}%</span> : null}
       </span>
       {finish ? <span className={finish.tight ? "fin tight" : "fin"}>{finish.text}</span> : null}
-      {!source ? <span className="fin">Источник удалён</span> : null}
+      {!source ? <span className="fin">{t("Источник удалён")}</span> : null}
     </>
   );
 }
 
 function planStatusLine(plan: CoursePlanSummary): string {
-  if (plan.status === "rejected") return "Программу забраковала проверка, её надо построить заново";
-  if (plan.status === "awaiting_approval") return "Программа готова, осталось её подтвердить";
-  return "Программа ещё проверяется";
+  if (plan.status === "rejected") return t("Программу забраковала проверка, её надо построить заново");
+  if (plan.status === "awaiting_approval") return t("Программа готова, осталось её подтвердить");
+  return t("Программа ещё проверяется");
 }
 
 // ─────────────────────────────── Меню предмета ───────────────────────────────
@@ -588,7 +590,7 @@ function SubjectMenu({
       }}
     >
       <PopoverTrigger asChild>
-        <button type="button" className="icon-btn" aria-label={`Действия: ${subject.title}`} title="Действия">
+        <button type="button" className="icon-btn" aria-label={t("Действия: {title}", { title: subject.goalId ? subject.title : t(subject.title) })} title={t("Действия")}>
           <Icon name="more" />
         </button>
       </PopoverTrigger>
@@ -606,18 +608,18 @@ function SubjectMenu({
           <div className="cur-menu">
             {BOOKS_ENABLED ? (
               <button type="button" onClick={() => onAddBook(goalId)}>
-                Загрузить книгу
+                {t("Загрузить книгу")}
               </button>
             ) : null}
             <button type="button" onClick={() => setAdding(true)}>
-              Добавить ссылку или задачник
+              {t("Добавить ссылку или задачник")}
             </button>
             <hr />
             {orphans.map(({ plan }) => (
               <ConfirmingAction
                 key={plan.id}
-                label={`Удалить программу «${cleanDocumentTitle(plan.title)}»`}
-                confirm="Точно удалить?"
+                label={t("Удалить программу «{title}»", { title: cleanDocumentTitle(plan.title) })}
+                confirm={t("Точно удалить?")}
                 onRun={async () => {
                   await deletePlan(plan.id);
                   await onChanged();
@@ -626,8 +628,8 @@ function SubjectMenu({
               />
             ))}
             <ConfirmingAction
-              label="Удалить предмет"
-              confirm="Удалить со всем содержимым?"
+              label={t("Удалить предмет")}
+              confirm={t("Удалить со всем содержимым?")}
               onRun={async () => {
                 await deleteGoal(goalId);
                 await onChanged();
@@ -659,8 +661,8 @@ function EmptyShelf({
           <button
             type="button"
             className="book-slot"
-            aria-label={`Загрузить книгу: ${subject.title}`}
-            title="Загрузить книгу"
+            aria-label={t("Загрузить книгу: {title}", { title: subject.title })}
+            title={t("Загрузить книгу")}
             onClick={() => onAddBook(goalId)}
           >
             <Icon name="plus" />
@@ -669,7 +671,7 @@ function EmptyShelf({
       </ul>
       <span className="plank" aria-hidden="true" />
       <ul className="caps">
-        <li className="is-wide">Загрузить книгу</li>
+        <li className="is-wide">{t("Загрузить книгу")}</li>
       </ul>
     </div>
   );
@@ -680,10 +682,10 @@ function sourceTitle(source: CatalogSource): string {
 }
 
 const DOCUMENT_TYPES: Record<string, string> = {
-  textbook: "Учебник",
-  problem_set: "Задачник",
-  notes: "Конспект",
-  handout: "Методичка",
+  textbook: msg("Учебник"),
+  problem_set: msg("Задачник"),
+  notes: msg("Конспект"),
+  handout: msg("Методичка"),
 };
 
 function ShelfBook({
@@ -710,10 +712,11 @@ function ShelfBook({
   const reading = isSourceBusy(status);
   const failed = status === "failed";
 
-  const kind = book ? DOCUMENT_TYPES[book.document_type] : kindLabel((material as StudyMaterial).kind);
+  const documentType = book ? DOCUMENT_TYPES[book.document_type] : undefined;
+  const kind = book ? (documentType ? t(documentType) : "") : kindLabel((material as StudyMaterial).kind);
   const author = book ? coverAuthor(book.authors) : "";
   const long = title.length > 20;
-  const attach = `${book ? "Книга" : kind} «${title}»`;
+  const attach = t("{kind} «{title}»", { kind: book ? t("Книга") : kind, title });
   const className = [
     "book",
     cover,
@@ -776,12 +779,12 @@ function ShelfBook({
   return (
     <li className="shelf-book">
       {bookNode}
-      <OverflowMenu label={`Действия: ${title}`} triggerClassName="book-more">
+      <OverflowMenu label={t("Действия: {title}", { title })} triggerClassName="book-more">
         {(close) => (
           <>
             {material?.url && plan ? (
               <a href={material.url} target="_blank" rel="noreferrer noopener" onClick={close}>
-                Открыть ссылку
+                {t("Открыть ссылку")}
               </a>
             ) : null}
             {source.plans.map((item) => (
@@ -789,10 +792,10 @@ function ShelfBook({
                 key={item.id}
                 label={
                   source.plans.length > 1
-                    ? `Удалить программу «${cleanDocumentTitle(item.title)}»`
-                    : "Удалить программу"
+                    ? t("Удалить программу «{title}»", { title: cleanDocumentTitle(item.title) })
+                    : t("Удалить программу")
                 }
-                confirm="Точно удалить?"
+                confirm={t("Точно удалить?")}
                 onRun={async () => {
                   await deletePlan(item.id);
                   await onChanged();
@@ -801,8 +804,8 @@ function ShelfBook({
               />
             ))}
             <ConfirmingAction
-              label={book ? "Убрать книгу" : "Убрать источник"}
-              confirm="Точно убрать?"
+              label={book ? t("Убрать книгу") : t("Убрать источник")}
+              confirm={t("Точно убрать?")}
               onRun={async () => {
                 if (book) await deleteDocument(book.id);
                 else await deleteMaterial((material as StudyMaterial).id);
@@ -821,22 +824,28 @@ function ShelfBook({
 function Caption({ source, ingestion }: { source: CatalogSource; ingestion: IngestionMap }) {
   if (source.kind === "material") {
     const { completed_units: done, total_units: total, units_word: word } = source.material;
-    return <li title={`${done} из ${total} ${word}`}>{total > 0 ? `${done} из ${total}` : ""}</li>;
+    return (
+      <li title={t("{done} из {total} {word}", { done, total, word: word ? t(word) : "" })}>
+        {total > 0 ? t("{done} из {total}", { done, total }) : ""}
+      </li>
+    );
   }
 
   const status = effectiveStatus(source.document, ingestion);
   if (status === "failed") {
-    return <li className="is-bad">{ingestion[source.document.id]?.stalled ? "прервалась" : "не прочиталась"}</li>;
+    return <li className="is-bad">{ingestion[source.document.id]?.stalled ? t("прервалась") : t("не прочиталась")}</li>;
   }
   if (isSourceBusy(status)) {
     const state = ingestion[source.document.id];
     return (
-      <li className="on" title={state?.step_label}>
-        {state?.step_index ? `шаг ${state.step_index} из ${state.step_total}` : "читаю…"}
+      <li className="on" title={state?.step_label ? t(state.step_label) : undefined}>
+        {state?.step_index
+          ? t("шаг {index} из {total}", { index: state.step_index, total: state.step_total })
+          : t("читаю…")}
       </li>
     );
   }
-  return <li>{source.document.page_count > 0 ? `${source.document.page_count} стр.` : ""}</li>;
+  return <li>{source.document.page_count > 0 ? t("{n} стр.", { n: source.document.page_count }) : ""}</li>;
 }
 
 /**
@@ -883,20 +892,20 @@ function SourceNotes({
           : ingestionErrorMessage(code, state?.job?.error_message ?? ""));
       return [
         <li key={document.id} className="is-bad">
-          <span>{single ? reason : `«${title}»: ${reason}`}</span>
+          <span>{single ? reason : t("«{title}»: {text}", { title, text: reason })}</span>
           {BOOKS_ENABLED ? (
             <button
               type="button"
               className="btn btn-line"
               onClick={() => onShowProgress(subject.goalId, document)}
             >
-              Разобраться
+              {t("Разобраться")}
             </button>
           ) : null}
         </li>,
       ];
     }
-    const named = (line: string) => (single ? line : `«${title}»: ${line}`);
+    const named = (line: string) => (single ? line : t("«{title}»: {text}", { title, text: line }));
     const rawScan =
       status === "ready"
         ? // Без книг повторной обработки нет, поэтому и строки «тогда нажми» тоже.
@@ -929,14 +938,14 @@ function SourceNotes({
       return [
         ...(redo ? [redo] : []),
         <li key={document.id}>
-          <span>{single ? "Книга прочитана." : `Книга «${title}» прочитана.`}</span>
+          <span>{single ? t("Книга прочитана.") : t("Книга «{title}» прочитана.", { title })}</span>
           {BOOKS_ENABLED ? (
             <button
               type="button"
               className="btn btn-line"
               onClick={() => onShowProgress(subject.goalId, document)}
             >
-              Построить программу
+              {t("Построить программу")}
             </button>
           ) : null}
         </li>,
@@ -973,7 +982,7 @@ function RetryScansNote({
         const payload = (error.payload ?? {}) as { reset_at?: unknown };
         setFailure(limitMessage(payload.reset_at));
       } else {
-        setFailure(error instanceof Error ? error.message : "Не удалось запустить обработку.");
+        setFailure(error instanceof Error ? error.message : t("Не удалось запустить обработку."));
       }
     } finally {
       setBusy(false);
@@ -985,7 +994,7 @@ function RetryScansNote({
       <span>{line}</span>
       {canRetry ? (
         <button type="button" className="btn btn-line" disabled={busy} onClick={() => void retry()}>
-          {busy ? "Запускаю…" : "Обработать заново"}
+          {busy ? t("Запускаю…") : t("Обработать заново")}
         </button>
       ) : null}
       {failure ? <span className="cab-note-error">{failure}</span> : null}
@@ -1010,7 +1019,7 @@ function MaterialNote({
       await generateMaterialPlan(material.id);
       await onChanged();
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Не удалось рассчитать.");
+      setFailure(error instanceof Error ? error.message : t("Не удалось рассчитать."));
     } finally {
       setBusy(false);
     }
@@ -1018,9 +1027,9 @@ function MaterialNote({
 
   return (
     <li className={failure ? "is-bad" : undefined}>
-      <span>{failure || `«${material.title}»: занятия ещё не рассчитаны.`}</span>
+      <span>{failure || t("«{title}»: занятия ещё не рассчитаны.", { title: material.title })}</span>
       <button type="button" className="btn btn-line" disabled={busy} onClick={() => void build()}>
-        {busy ? "Считаю…" : "Рассчитать занятия"}
+        {busy ? t("Считаю…") : t("Рассчитать занятия")}
       </button>
     </li>
   );

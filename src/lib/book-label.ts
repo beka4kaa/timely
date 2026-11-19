@@ -11,6 +11,8 @@
 // отдельный разговор: то же имя показано в каталоге и в заголовке страницы, и
 // менять его надо там, где оно создаётся при загрузке.
 
+import { t } from "./i18n";
+
 /** Метки файлообменников в начале имени. */
 const SOURCE_PREFIX = /^[_\-\s]*(oceanofpdf\.com|libgen|z-lib(rary)?\.\w+|annas-archive)[_\-\s]*/i;
 /** Технический хвост: расширение и идентификатор загрузки. */
@@ -51,8 +53,8 @@ export function citationSpot(citation: {
     // У EPUB страниц нет вовсе, и «стр. 0» вела бы в никуда.
     parts.push(
       citation.page_start === citation.page_end
-        ? `стр. ${citation.page_start}`
-        : `стр. ${citation.page_start}–${citation.page_end}`,
+        ? t("стр. {n}", { n: citation.page_start })
+        : t("стр. {from}–{to}", { from: citation.page_start, to: citation.page_end }),
     );
   }
   return parts.join(", ");

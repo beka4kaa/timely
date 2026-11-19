@@ -1,3 +1,4 @@
+import { dateLocale, msg, t } from "../../lib/i18n";
 import type { CoursePlanSummary } from "@/lib/curriculum-api";
 import type { StudySchedule } from "@/lib/studyplan-api";
 
@@ -21,16 +22,16 @@ export interface ResolvedScheduleTarget<T> {
 }
 
 const STATUS_LABELS: Record<StudySchedule["status"], string> = {
-  draft: "Черновик",
-  proposed: "Предложение",
-  confirmed: "Подтверждено",
-  active: "Активное",
-  completed: "Завершено",
-  archived: "В архиве",
+  draft: msg("Черновик"),
+  proposed: msg("Предложение"),
+  confirmed: msg("Подтверждено"),
+  active: msg("Активное"),
+  completed: msg("Завершено"),
+  archived: msg("В архиве"),
 };
 
 export function scheduleStatusLabel(status: StudySchedule["status"]): string {
-  return STATUS_LABELS[status];
+  return t(STATUS_LABELS[status]);
 }
 
 /**
@@ -56,7 +57,7 @@ export function buildScheduleTargetOptions(
       return {
         id: schedule.id,
         coursePlanId: schedule.course_plan,
-        title: planTitles.get(schedule.course_plan) ?? "Учебная программа",
+        title: planTitles.get(schedule.course_plan) ?? t("Учебная программа"),
         status: schedule.status,
         statusLabel,
         version: schedule.version,
@@ -66,7 +67,7 @@ export function buildScheduleTargetOptions(
       };
     })
     .sort((left, right) => {
-      const title = left.title.localeCompare(right.title, "ru");
+      const title = left.title.localeCompare(right.title, dateLocale());
       if (title !== 0) return title;
       const leftCreated = Date.parse(left.createdAt);
       const rightCreated = Date.parse(right.createdAt);
@@ -123,13 +124,13 @@ function scheduleTargetDetail(
   const date = new Date(schedule.created_at);
   const created = Number.isNaN(date.getTime())
     ? ""
-    : new Intl.DateTimeFormat("ru-RU", {
+    : new Intl.DateTimeFormat(dateLocale(), {
         day: "numeric",
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
         timeZone: schedule.timezone || "UTC",
       }).format(date);
-  const version = schedule.version > 1 ? ` · версия ${schedule.version}` : "";
+  const version = schedule.version > 1 ? ` · ${t("версия {n}", { n: schedule.version })}` : "";
   return `${statusLabel}${created ? ` · ${created}` : ""}${version}`;
 }

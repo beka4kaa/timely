@@ -86,7 +86,7 @@ interface PomodoroState extends TimerCore, PomodoroPrefs {
   setCustom: (rhythm: Rhythm) => void;
   /** «Фокус на N мин» с главной: выбрать ритм, перейти на фокус и сразу начать. */
   startFocus: (index: number) => void;
-  /** «Тихо»: звонок и мигание прекращаются, следующая фаза ждёт клика. */
+  /** Заглушить: звонок и мигание прекращаются, следующая фаза ждёт клика. Зовёт любое нажатие на странице. */
   dismissAlarm: () => void;
   markNotified: (at: number) => void;
   setPrefs: (prefs: Partial<Omit<PomodoroPrefs, "custom">>) => void;
@@ -141,7 +141,7 @@ export function selectHasStarted(state: PomodoroState): boolean {
   return state.running || selectElapsed(state) > 0;
 }
 
-/** Фаза кончилась и ждёт клика: звонок, «Тихо» и мигающий заголовок. */
+/** Фаза кончилась и ждёт клика: звонок и мигающий заголовок, пока ученик не нажмёт куда-нибудь. */
 export function selectWaiting(state: PomodoroState): boolean {
   return state.alarm !== null && !state.alarm.auto;
 }

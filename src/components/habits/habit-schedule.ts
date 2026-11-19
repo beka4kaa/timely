@@ -3,6 +3,7 @@
 // Что сегодня стоит по расписанию и какая серия, считает сервер. Здесь черновик для выбора
 // и подписи на карточке. Без React и без сети, чтобы всё это проверялось тестами.
 
+import { msg, t } from "../../lib/i18n";
 import { plural, weekdayOf } from "./habit-days";
 
 export type HabitFrequency = "daily" | "weekdays" | "interval";
@@ -25,11 +26,11 @@ export const MIN_INTERVAL_DAYS = 2;
 export const MAX_INTERVAL_DAYS = 30;
 export const WEEK_DAYS: readonly number[] = [0, 1, 2, 3, 4];
 export const WEEKEND: readonly number[] = [5, 6];
-export const DAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] as const;
-export const DAY_FULL_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"] as const;
+export const DAY_NAMES = [msg("Пн"), msg("Вт"), msg("Ср"), msg("Чт"), msg("Пт"), msg("Сб"), msg("Вс")] as const;
+export const DAY_FULL_NAMES = [msg("Понедельник"), msg("Вторник"), msg("Среда"), msg("Четверг"), msg("Пятница"), msg("Суббота"), msg("Воскресенье")] as const;
 
-const BY_DAY = ["понедельникам", "вторникам", "средам", "четвергам", "пятницам", "субботам", "воскресеньям"];
-const ON_DAY = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"];
+const BY_DAY = [msg("понедельникам"), msg("вторникам"), msg("средам"), msg("четвергам"), msg("пятницам"), msg("субботам"), msg("воскресеньям")];
+const ON_DAY = [msg("в понедельник"), msg("во вторник"), msg("в среду"), msg("в четверг"), msg("в пятницу"), msg("в субботу"), msg("в воскресенье")];
 /** С чего начать, когда ученик только открыл дни недели: одним нажатием уже годится. */
 const FIRST_DAYS: readonly number[] = [0, 2, 4];
 
@@ -89,17 +90,17 @@ export function toggleDay(schedule: HabitSchedule, day: number): HabitSchedule {
 export function scheduleLabel(schedule: HabitSchedule): string {
   const { frequency, weekdays, interval_days: days } = schedulePatch(schedule);
   if (frequency === "interval") {
-    if (days === 2) return "Через день";
-    if (days === 7) return "Раз в неделю";
-    return `Раз в ${days} ${plural(days, "день", "дня", "дней")}`;
+    if (days === 2) return t("Через день");
+    if (days === 7) return t("Раз в неделю");
+    return t("Раз в {days} {word}", { days, word: plural(days, "день", "дня", "дней") });
   }
   if (frequency === "weekdays") {
-    if (sameDays(weekdays, WEEK_DAYS)) return "По будням";
-    if (sameDays(weekdays, WEEKEND)) return "По выходным";
-    if (weekdays.length === 1) return `По ${BY_DAY[weekdays[0]]}`;
-    return weekdays.map((day, index) => (index ? DAY_NAMES[day].toLowerCase() : DAY_NAMES[day])).join(", ");
+    if (sameDays(weekdays, WEEK_DAYS)) return t("По будням");
+    if (sameDays(weekdays, WEEKEND)) return t("По выходным");
+    if (weekdays.length === 1) return t("По {day}", { day: t(BY_DAY[weekdays[0]]) });
+    return weekdays.map((day, index) => (index ? t(DAY_NAMES[day]).toLowerCase() : t(DAY_NAMES[day]))).join(", ");
   }
-  return "Каждый день";
+  return t("Каждый день");
 }
 
 function daysBetween(from: string, to: string): number {
@@ -115,10 +116,10 @@ export function nextDayWord(next: string | null, today: string): string {
   if (!next) return "";
   const days = daysBetween(today, next);
   if (days <= 0) return "";
-  if (days === 1) return "завтра";
-  if (days === 2) return "послезавтра";
-  if (days < 7) return ON_DAY[weekdayOf(next)];
-  return `через ${days} ${plural(days, "день", "дня", "дней")}`;
+  if (days === 1) return t("завтра");
+  if (days === 2) return t("послезавтра");
+  if (days < 7) return t(ON_DAY[weekdayOf(next)]);
+  return t("через {days} {word}", { days, word: plural(days, "день", "дня", "дней") });
 }
 
 export interface HabitWhen extends HabitSchedule {
@@ -136,5 +137,5 @@ export function habitWhen(habit: HabitWhen): string {
   const pending = habit.dueToday && !habit.doneToday;
   if (pending || (habit.frequency === "weekdays" && habit.weekdays.length === 1)) return label;
   const word = nextDayWord(habit.nextDue, habit.today);
-  return word ? `${label}, снова ${word}` : label;
+  return word ? t("{label}, снова {word}", { label, word }) : label;
 }

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { useAskRail } from "@/contexts/ask-rail";
+import { t } from "@/lib/i18n";
 import { type Contest } from "@/lib/contest-api";
 import { downloadContestPdf } from "@/lib/contest-pdf";
 import { contestDate, reviewPrompt, taskPath, taskRows, type TaskRow } from "@/lib/contest-view";
@@ -26,7 +27,7 @@ function DownloadIcon() {
 }
 
 export function taskName(task: TaskRow): string {
-  return task.title || `Задача ${task.number}`;
+  return task.title || t("Задача {number}", { number: task.number });
 }
 
 export function pdfName(task: TaskRow, kind: "statement" | "solution"): string {
@@ -41,7 +42,7 @@ export function ContestTasks({ contest, reload }: { contest: Contest; reload: ()
   if (contest.state === "upcoming") {
     return (
       <section className="ct-note card">
-        <h2>Задачи откроются в начале контеста</h2>
+        <h2>{t("Задачи откроются в начале контеста")}</h2>
         <p>{contestDate(contest.start_time)}</p>
       </section>
     );
@@ -55,7 +56,7 @@ export function ContestTasks({ contest, reload }: { contest: Contest; reload: ()
     try {
       await downloadContestPdf(contest.id, task.id, kind, pdfName(task, kind));
     } catch {
-      setFileNote(kind === "statement" ? "Условие не скачалось. Попробуй ещё раз." : "Решение не скачалось. Попробуй ещё раз.");
+      setFileNote(kind === "statement" ? t("Условие не скачалось. Попробуй ещё раз.") : t("Решение не скачалось. Попробуй ещё раз."));
     }
   }
 
@@ -71,8 +72,8 @@ export function ContestTasks({ contest, reload }: { contest: Contest; reload: ()
                 <button
                   className="dli"
                   type="button"
-                  title="Скачать условие, PDF"
-                  aria-label={`Скачать условие задачи ${task.number}`}
+                  title={t("Скачать условие, PDF")}
+                  aria-label={t("Скачать условие задачи {number}", { number: task.number })}
                   onClick={() => download(task, "statement")}
                 >
                   <DownloadIcon />
@@ -80,7 +81,7 @@ export function ContestTasks({ contest, reload }: { contest: Contest; reload: ()
               ) : (
                 <span className="dli" aria-hidden="true" />
               )}
-              <Link className="nm nm-link" href={taskPath(contest.id, task.number)} title="Открыть задачу">
+              <Link className="nm nm-link" href={taskPath(contest.id, task.number)} title={t("Открыть задачу")}>
                 {taskName(task)}
               </Link>
               <span className="pts">{solved ? `+${task.points}` : task.points}</span>
@@ -102,7 +103,7 @@ export function ContestTasks({ contest, reload }: { contest: Contest; reload: ()
           type="button"
           onClick={() => prompt({ target: "book", text: reviewPrompt(contest), send: true })}
         >
-          Разобрать с тьютором
+          {t("Разобрать с тьютором")}
         </button>
       ) : null}
     </>

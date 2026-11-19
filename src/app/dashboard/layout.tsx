@@ -16,6 +16,8 @@ import { DashboardShellProvider } from "@/contexts/dashboard-shell"
 import { DashboardMain } from "@/components/tutor-rail/dashboard-main"
 import { DemoMount } from "@/components/demo/demo-mount"
 import { SubjectAskRail } from "@/components/tutor-rail/subject-ask-rail"
+import { LocaleProvider } from "@/lib/i18n/react"
+import { serverLocale } from "@/lib/i18n/server"
 import "@/styles/timely/index.css"
 
 export const metadata: Metadata = {
@@ -25,7 +27,7 @@ export const metadata: Metadata = {
     default: "Timely",
     template: "%s | Timely",
   },
-  description: "Личный кабинет TimelyPlan: дневник, цели, расписание, привычки и учебные инструменты.",
+  description: "Личный кабинет TimelyPlan: дневник, цели, расписание, привычки и учебные инструменты.", // i18n-skip
   robots: {
     index: false,
     follow: false,
@@ -35,13 +37,15 @@ export const metadata: Metadata = {
 // Свёрнутая панель применяется до первой отрисовки, иначе она моргала бы на каждой загрузке.
 const NAV_BOOT = `try{if(localStorage.getItem("timely-nav")==="collapsed")document.documentElement.classList.add("nav-collapsed")}catch(e){}`
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Язык из куки: сервер рисует только экран загрузки, но и он должен совпасть с браузером.
+  const locale = await serverLocale()
   return (
-    <>
+    <LocaleProvider locale={locale}>
     <script dangerouslySetInnerHTML={{ __html: NAV_BOOT }} />
     <AuthGuard requireAuth={true}>
         <ActiveSubjectProvider>
@@ -77,6 +81,6 @@ export default function DashboardLayout({
         </ActiveScheduleProvider>
         </ActiveSubjectProvider>
     </AuthGuard>
-    </>
+    </LocaleProvider>
   )
 }

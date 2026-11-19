@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TTL, blocksKey, fetchBlocks } from "@/components/now/now-resources";
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { openSettings } from "@/stores/settings-dialog";
 import { isOpenBlock, splitBlockTitle } from "@/lib/now-feed";
 import {
@@ -36,7 +37,6 @@ import {
   selectPlanned,
   selectRemaining,
   selectRhythm,
-  selectWaiting,
   usePomodoroStore,
 } from "@/stores/pomodoro-store";
 
@@ -76,11 +76,9 @@ export function PomodoroPage() {
   const hasStarted = usePomodoroStore(selectHasStarted);
   const rhythm = usePomodoroStore(selectRhythm);
   const done = usePomodoroStore((state) => state.done);
-  const waiting = usePomodoroStore(selectWaiting);
   const toggle = usePomodoroStore((state) => state.toggle);
   const skip = usePomodoroStore((state) => state.skip);
   const reset = usePomodoroStore((state) => state.reset);
-  const dismissAlarm = usePomodoroStore((state) => state.dismissAlarm);
 
   const cycle = useMemo(() => cycleDots(phase, done, rhythm.every), [phase, done, rhythm.every]);
 
@@ -146,7 +144,7 @@ export function PomodoroPage() {
         setError(null);
       } catch (cause) {
         if (signal?.aborted) return;
-        setError(cause instanceof Error ? cause.message : "Не удалось загрузить статистику");
+        setError(cause instanceof Error ? cause.message : t("Не удалось загрузить статистику"));
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
@@ -227,8 +225,8 @@ export function PomodoroPage() {
       {
         key: "live",
         time: clockTime(new Date(phaseStartedAt)),
-        name: sessionName.trim() || "Фокус",
-        duration: minutes > 0 ? `${minutes} мин` : "только что",
+        name: sessionName.trim() || t("Фокус"),
+        duration: minutes > 0 ? t("{n} мин", { n: minutes }) : t("только что"),
         isFocus: true,
         stoppedEarly: false,
       },
@@ -243,7 +241,7 @@ export function PomodoroPage() {
       await clearDay(todayKey);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось очистить день");
+      setError(cause instanceof Error ? cause.message : t("Не удалось очистить день"));
     } finally {
       setClearing(false);
     }
@@ -254,16 +252,16 @@ export function PomodoroPage() {
       <header className="head fp-head">
         {/* Заголовок «Помодоро» уже есть в левой панели: здесь он только для читалок,
             а на его месте совет по отдыху или мотивация. */}
-        <h1 className="sr-only">Помодоро</h1>
+        <h1 className="sr-only">{t("Помодоро")}</h1>
         <PomodoroTip mode={phase !== "focus" ? "rest" : hasStarted ? "focus" : "any"} />
         <div className="head-tools">
-          {summary.streak > 1 ? <span className="head-note">{streakLabel(summary.streak)} подряд</span> : null}
+          {summary.streak > 1 ? <span className="head-note">{t("{days} подряд", { days: streakLabel(summary.streak) })}</span> : null}
           {/* Ритм, звонок и уведомления: меняются редко, поэтому в настройках, а не под таймером */}
           <button
             className="icon-btn fp-gear"
             type="button"
-            title="Настройки таймера"
-            aria-label="Настройки таймера"
+            title={t("Настройки таймера")}
+            aria-label={t("Настройки таймера")}
             onClick={() => openSettings("pomodoro")}
           >
             <Icon name="gear" />
@@ -273,9 +271,12 @@ export function PomodoroPage() {
 
       {error ? (
         <div className="card fp-error" role="alert">
-          <p>{error}. Таймер работает, а сессии сохранятся, когда связь вернётся.</p>
+          <p>
+            {error}
+            {t(". Таймер работает, а сессии сохранятся, когда связь вернётся.")}
+          </p>
           <button className="btn btn-line" type="button" onClick={() => void load()}>
-            Повторить
+            {t("Повторить")}
           </button>
         </div>
       ) : null}
@@ -302,37 +303,32 @@ export function PomodoroPage() {
           />
           <div className="fp-ctrl">
             <button className="btn btn-main fp-start" type="button" onClick={startOrPause}>
-              {running ? "Пауза" : hasStarted ? "Продолжить" : START_LABEL[phase]}
+              {running ? t("Пауза") : hasStarted ? t("Продолжить") : t(START_LABEL[phase])}
             </button>
-            {waiting ? (
-              <button className="btn btn-line" type="button" onClick={dismissAlarm}>
-                Тихо
-              </button>
-            ) : null}
             {/* До старта можно только пропустить фазу, после — только сбросить её.
                 Обе кнопки в одной ячейке и сменяют друг друга, ничего не прыгает. */}
             <span className="fp-swap">
               <button
                 className="btn btn-text"
                 type="button"
-                title="Перейти к следующей фазе"
+                title={t("Перейти к следующей фазе")}
                 data-on={!hasStarted || undefined}
                 aria-hidden={hasStarted || undefined}
                 disabled={hasStarted}
                 onClick={skip}
               >
-                Пропустить
+                {t("Пропустить")}
               </button>
               <button
                 className="btn btn-text"
                 type="button"
-                title="Остановить и начать эту фазу заново"
+                title={t("Остановить и начать эту фазу заново")}
                 data-on={hasStarted || undefined}
                 aria-hidden={!hasStarted || undefined}
                 disabled={!hasStarted}
                 onClick={reset}
               >
-                Сбросить
+                {t("Сбросить")}
               </button>
             </span>
           </div>

@@ -7,6 +7,7 @@
 
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch } from "@/lib/auth-fetch";
+import { t } from "@/lib/i18n";
 import { readSse } from "@/lib/sse";
 import {
   applyAssistantEvent,
@@ -57,11 +58,11 @@ export async function askAssistant(
   if (!response.ok) {
     // Отказ до открытия потока приходит обычным телом с кодом — например,
     // когда помощник не настроен вовсе.
-    let message = `Помощник недоступен (${response.status})`;
+    let message = t("Помощник недоступен ({status})", { status: response.status });
     let code: string | null = null;
     try {
       const body = await response.json();
-      if (typeof body?.error === "string") message = body.error;
+      if (typeof body?.error === "string") message = t(body.error);
       // Код нужен панели, чтобы отличить «модель не задана в окружении» от
       // настоящей поломки: первое — не ошибка ученика и рисуется спокойно.
       if (typeof body?.code === "string") code = body.code;
@@ -84,7 +85,7 @@ export async function askAssistant(
     state = {
       ...state,
       status: state.answer || state.revision ? "done" : "error",
-      error: state.answer || state.revision ? null : "Соединение прервалось.",
+      error: state.answer || state.revision ? null : t("Соединение прервалось."),
     };
     onUpdate(state);
   }

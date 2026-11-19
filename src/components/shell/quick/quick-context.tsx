@@ -17,6 +17,7 @@ import {
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { recognitionCtor, type RecognitionLike } from "@/lib/dictation";
+import { getLocale, t } from "@/lib/i18n";
 
 /** Что можно указать на странице. Страницы помечают своё атрибутом `data-attach`. */
 const PICK = ".blk, .row, .now, .td, .tps li, .tp, .book:not(.mini), [data-attach]";
@@ -112,7 +113,7 @@ export function QuickProvider({ children }: { children: React.ReactNode }) {
     const tag = document.createElement("span");
     tag.className = "pick-tag is-off";
     tag.setAttribute("aria-hidden", "true");
-    tag.textContent = "Прикрепить";
+    tag.textContent = t("Прикрепить");
     document.body.appendChild(tag);
     root.classList.add("picking");
     const list = candidates();
@@ -159,7 +160,7 @@ export function QuickProvider({ children }: { children: React.ReactNode }) {
     const Ctor = recognitionCtor();
     if (!Ctor || recognition.current) return;
     const rec = new Ctor();
-    rec.lang = "ru-RU";
+    rec.lang = getLocale() === "en" ? "en-US" : "ru-RU";
     rec.interimResults = true;
     rec.continuous = false;
     rec.onresult = (event) => {
@@ -224,7 +225,7 @@ export function QuickProvider({ children }: { children: React.ReactNode }) {
 
 export function useQuick(): QuickValue {
   const value = useContext(QuickContext);
-  if (!value) throw new Error("useQuick вне QuickProvider");
+  if (!value) throw new Error("useQuick вне QuickProvider"); // i18n-skip
   return value;
 }
 

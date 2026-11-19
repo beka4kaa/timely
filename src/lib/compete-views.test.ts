@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
+import { setLocaleForTests } from "./i18n";
+
 import type { Contest, LeaderboardUser, Submission } from "./contest-api";
 import {
   contestParts,
@@ -404,5 +406,16 @@ describe("профиль", () => {
       assert.equal(glyph("Химия"), "H₂O");
       assert.equal(glyph("Алгебра"), "x²");
     });
+  });
+});
+
+describe("английский интерфейс", () => {
+  it("дробные часы с точкой, а не с запятой", () => {
+    setLocaleForTests("en");
+    try {
+      assert.equal(hoursStat(9000)?.value, "2.5");
+    } finally {
+      setLocaleForTests("ru");
+    }
   });
 });

@@ -19,6 +19,7 @@ import {
   resolveLandingLocale,
 } from "@/lib/landing-locale"
 import { SESSION_COOKIE_NAME } from "@/lib/auth-cookies"
+import { resolveAppLocale } from "@/lib/app-locale"
 import { IS_DEMO, SIGN_IN_PATH } from "@/lib/demo-mode"
 import { DEMO_HOST, isDemoHost } from "@/lib/demo-mock/host"
 
@@ -49,6 +50,23 @@ export default withAuth(
     const { pathname, search } = req.nextUrl
     const token = req.nextauth.token
     const hostname = getRequestHostname(req.headers)
+
+    // Кабинет и демо: ?lang= со ссылок английского лендинга. Выбор ложится в куку, а
+    // из адреса убирается, в том числе из callbackUrl страницы входа.
+    if (req.method === "GET" && !isMarketingHostname(hostname, HOST_ROUTING_CONFIG)) {
+      const localeAction = resolveAppLocale(pathname, search)
+      if (localeAction) {
+        const response = NextResponse.redirect(new URL(localeAction.destination, req.url), 302)
+        response.cookies.set(LANDING_LOCALE_COOKIE, localeAction.locale, {
+          path: "/",
+          maxAge: LANDING_LOCALE_MAX_AGE,
+          sameSite: "lax",
+        })
+        response.headers.set("Cache-Control", "private, no-store")
+        return response
+      }
+    }
+
     const hostAction = resolveHostRouting(
       { hostname, pathname, search },
       HOST_ROUTING_CONFIG,

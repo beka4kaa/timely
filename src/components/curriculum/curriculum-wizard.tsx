@@ -18,6 +18,7 @@ import { IngestionProgress } from "@/components/curriculum/ingestion-progress";
 import { PlanGenerationStep } from "@/components/curriculum/plan-review";
 import { UploadStep } from "@/components/curriculum/upload-step";
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { SECTION_LABEL, wizardRail } from "@/lib/curriculum-books";
 import { useCurriculumStore } from "@/stores/curriculum-store";
 
@@ -53,7 +54,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
     return (
       <div className="content view cur-page">
         <p className="lede wz-wait" role="status">
-          Открываю программу…
+          {t("Открываю программу…")}
         </p>
       </div>
     );
@@ -81,13 +82,13 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
             // стеллаж, где то же самое видно с сервера.
             onClick={close}
           >
-            {SECTION_LABEL}
+            {t(SECTION_LABEL)}
           </button>
         ) : (
           <span />
         )}
 
-        <ol className="wz-rail" aria-label="Шаги">
+        <ol className="wz-rail" aria-label={t("Шаги")}>
           {RAIL.map((item, index) => (
             <li
               key={item.key}
@@ -95,7 +96,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
               aria-current={index === activeRail ? "step" : undefined}
             >
               {index < activeRail ? <Icon name="check" /> : null}
-              {item.label}
+              {t(item.label)}
             </li>
           ))}
         </ol>
@@ -104,7 +105,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
       {showBanner ? (
         <div className="cur-alert is-bad" role="alert">
           <span>{error.message}</span>
-          <button type="button" className="icon-btn" onClick={clearError} aria-label="Скрыть ошибку">
+          <button type="button" className="icon-btn" onClick={clearError} aria-label={t("Скрыть ошибку")}>
             <Icon name="x" />
           </button>
         </div>
@@ -119,7 +120,7 @@ export function CurriculumWizard({ onClose }: { onClose?: () => void } = {}) {
       {step !== "goal" ? (
         <p className="wz-again">
           <button type="button" className="btn btn-text" onClick={reset}>
-            Начать заново
+            {t("Начать заново")}
           </button>
         </p>
       ) : null}

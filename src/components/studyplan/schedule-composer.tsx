@@ -18,6 +18,7 @@ import { QuickChips, QuickTools } from "@/components/shell/quick/quick-composer"
 import { useQuick, withAttached } from "@/components/shell/quick/quick-context";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 
+import { msg, t } from "@/lib/i18n";
 import {
   DEFAULT_SCHEDULE_MODE,
   matchingScheduleCommands,
@@ -31,14 +32,14 @@ import {
 const MAX_HEIGHT = 160;
 
 const SUGGESTIONS = [
-  "Сегодня освобожусь в семь",
-  "Перенеси физику на завтра",
-  "Сделай занятия короче",
-  "Добавь подготовку к контрольной",
+  msg("Сегодня освобожусь в семь"),
+  msg("Перенеси физику на завтра"),
+  msg("Сделай занятия короче"),
+  msg("Добавь подготовку к контрольной"),
 ];
 
 /** Когда указано занятие, подсказки про него. */
-const ATTACHED_SUGGESTIONS = ["Перенеси на завтра", "Сделай короче"];
+const ATTACHED_SUGGESTIONS = [msg("Перенеси на завтра"), msg("Сделай короче")];
 
 export function ScheduleComposer({
   hasSchedule,
@@ -168,10 +169,10 @@ export function ScheduleComposer({
   const suggestions = attached.length ? ATTACHED_SUGGESTIONS : SUGGESTIONS;
   const showSuggest = showSuggestions && hasSchedule && !draft.trim() && !busy && !disabled && !listening;
 
-  let placeholder = "Что поменять?";
-  if (!hasSchedule) placeholder = "Что поставить в план?";
-  if (adviceArmed) placeholder = "О чём совет?";
-  if (listening) placeholder = "Слушаю…";
+  let placeholder = t("Что поменять?");
+  if (!hasSchedule) placeholder = t("Что поставить в план?");
+  if (adviceArmed) placeholder = t("О чём совет?");
+  if (listening) placeholder = t("Слушаю…");
 
   return (
     <>
@@ -183,9 +184,9 @@ export function ScheduleComposer({
                 className="q-sug"
                 type="button"
                 style={{ animationDelay: `${index * 36}ms` }}
-                onClick={() => execute(text)}
+                onClick={() => execute(t(text))}
               >
-                {text}
+                {t(text)}
               </button>
             )),
             suggestSlot,
@@ -193,7 +194,7 @@ export function ScheduleComposer({
         : null}
 
       {menuOpen ? (
-        <div id={menuId} className="ps-cmds" role="listbox" aria-label="Команды помощника">
+        <div id={menuId} className="ps-cmds" role="listbox" aria-label={t("Команды помощника")}>
           {matches.length ? (
             matches.map((item, index) => (
               <button
@@ -211,7 +212,7 @@ export function ScheduleComposer({
               </button>
             ))
           ) : (
-            <p className="q-cite">Такой команды нет. Есть /start, /plan и /advice.</p>
+            <p className="q-cite">{t("Такой команды нет. Есть /start, /plan и /advice.")}</p>
           )}
         </div>
       ) : null}
@@ -220,10 +221,10 @@ export function ScheduleComposer({
       {adviceArmed ? (
         <div className="q-chips">
           <span className="q-chip">
-            <span>Только совет, без изменений</span>
+            <span>{t("Только совет, без изменений")}</span>
             <button
               type="button"
-              aria-label="Обычный режим: подготовить изменение"
+              aria-label={t("Обычный режим: подготовить изменение")}
               onClick={() => {
                 setAdviceArmed(false);
                 focusField();
@@ -251,7 +252,7 @@ export function ScheduleComposer({
             value={draft}
             disabled={disabled}
             placeholder={placeholder}
-            aria-label="Что поменять в плане"
+            aria-label={t("Что поменять в плане")}
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? menuId : undefined}
             aria-activedescendant={menuOpen && selected ? `${menuId}-${selected.id}` : undefined}
@@ -310,20 +311,20 @@ export function ScheduleComposer({
         {!hasSchedule ? (
           <button className="q-tool" type="button" disabled={disabled} onClick={onStart}>
             <Icon name="plan" />
-            <span>Настроить расписание</span>
+            <span>{t("Настроить расписание")}</span>
           </button>
         ) : null}
         <QuickTools />
-        <span className="q-hint">Esc, чтобы закрыть</span>
+        <span className="q-hint">{t("Esc, чтобы закрыть")}</span>
         {busy && onStop ? (
-          <button className="send q-send" type="button" aria-label="Остановить" title="Остановить" onClick={onStop}>
+          <button className="send q-send" type="button" aria-label={t("Остановить")} title={t("Остановить")} onClick={onStop}>
             <span className="q-stop" />
           </button>
         ) : (
           <button
             className="send q-send"
             type="button"
-            aria-label="Отправить"
+            aria-label={t("Отправить")}
             disabled={busy || disabled || !draft.trim()}
             onClick={() => execute(draft)}
           >

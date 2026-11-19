@@ -9,6 +9,7 @@ import { signOut } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { openSettings } from "@/stores/settings-dialog";
 
 export function AccountMenu({
@@ -57,7 +58,7 @@ export function AccountMenu({
       <button
         className="me"
         type="button"
-        title="Профиль и настройки"
+        title={t("Профиль и настройки")}
         aria-haspopup="menu"
         aria-expanded={open}
         data-current={current || undefined}
@@ -69,10 +70,10 @@ export function AccountMenu({
         <span className="me-name">{name}</span>
       </button>
       {open ? (
-        <div className="menu me-menu" role="menu" aria-label="Аккаунт" onKeyDown={onItemsKey}>
+        <div className="menu me-menu" role="menu" aria-label={t("Аккаунт")} onKeyDown={onItemsKey}>
           <Link className="menu-item" href="/dashboard/profile" role="menuitem" onClick={close}>
             <Icon name="user" />
-            Профиль
+            {t("Профиль")}
           </Link>
           <button
             className="menu-item"
@@ -84,12 +85,12 @@ export function AccountMenu({
             }}
           >
             <Icon name="gear" />
-            Настройки
+            {t("Настройки")}
           </button>
           <button className="menu-item" type="button" role="menuitem" disabled aria-disabled="true">
             <Icon name="users" />
-            Друзья
-            <small className="menu-note">скоро</small>
+            {t("Друзья")}
+            <small className="menu-note">{t("скоро")}</small>
           </button>
           <hr className="menu-sep" />
           <button
@@ -102,7 +103,7 @@ export function AccountMenu({
             }}
           >
             <Icon name="logout" />
-            Выйти
+            {t("Выйти")}
           </button>
         </div>
       ) : null}

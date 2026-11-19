@@ -10,6 +10,8 @@
 //
 // Без React и без запросов: чистые функции, проверяются тестом.
 
+import { t } from "./i18n";
+
 export interface ProgressBlock {
   module: string | null;
   topic: string | null;
@@ -234,14 +236,14 @@ export function courseFinishLine(
   dayMonth: (iso: string) => string,
 ): { text: string; tight: boolean } | null {
   if (!finish) {
-    return deadline ? { text: `срок ${dayMonth(deadline)}`, tight: false } : null;
+    return deadline ? { text: t("срок {date}", { date: dayMonth(deadline) }), tight: false } : null;
   }
-  if (!deadline) return { text: `до ${dayMonth(finish)}`, tight: false };
+  if (!deadline) return { text: t("до {date}", { date: dayMonth(finish) }), tight: false };
 
   const slack = (new Date(deadline).getTime() - new Date(finish).getTime()) / DAY_MS;
   if (slack < 0) {
-    return { text: `срок ${dayMonth(deadline)}, не успеваешь`, tight: true };
+    return { text: t("срок {date}, не успеваешь", { date: dayMonth(deadline) }), tight: true };
   }
-  if (slack <= TIGHT_DAYS) return { text: `до ${dayMonth(finish)}, впритык`, tight: true };
-  return { text: `до ${dayMonth(finish)}`, tight: false };
+  if (slack <= TIGHT_DAYS) return { text: t("до {date}, впритык", { date: dayMonth(finish) }), tight: true };
+  return { text: t("до {date}", { date: dayMonth(finish) }), tight: false };
 }

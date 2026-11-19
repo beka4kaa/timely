@@ -75,7 +75,7 @@ export function PomodoroSync() {
     [],
   );
 
-  // Другая вкладка что-то поменяла: нажали «Тихо», начали перерыв, закончилась фаза.
+  // Другая вкладка что-то поменяла: заглушили звонок, начали перерыв, закончилась фаза.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== POMODORO_STORAGE_KEY) return;

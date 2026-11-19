@@ -5,6 +5,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { t } from "@/lib/i18n";
 import { layoutContests } from "@/lib/contest-layout";
 import type { ContestResult, Plaque } from "@/lib/contest-view";
 
@@ -64,7 +65,7 @@ export function ContestGrid({ items, now, aheadEmpty }: {
 
       {layout.past.length ? (
         <>
-          <h2 className="sec past-sec">Прошедшие</h2>
+          <h2 className="sec past-sec">{t("Прошедшие")}</h2>
           <ul className="plq-past">
             {layout.past.slice(0, pastShown).map((item) => (
               <li key={item.plaque.id}>
@@ -80,7 +81,7 @@ export function ContestGrid({ items, now, aheadEmpty }: {
           </ul>
           {layout.past.length > pastShown ? (
             <button className="btn btn-text ct-more" type="button" onClick={() => setPastShown((value) => value + PAST_PAGE)}>
-              Показать ещё
+              {t("Показать ещё")}
             </button>
           ) : null}
         </>

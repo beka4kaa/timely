@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { msg, t } from "@/lib/i18n";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 import { plural } from "@/lib/mind-srs";
@@ -30,8 +31,8 @@ import {
   topicsChanged,
 } from "@/lib/weak-topics-api";
 
-const PLACEHOLDER = "Что сегодня изучил? Напиши своими словами, темы заполню сам";
-const PLACEHOLDER_SHORT = "Что сегодня изучил?";
+const PLACEHOLDER = msg("Что сегодня изучил? Напиши своими словами, темы заполню сам");
+const PLACEHOLDER_SHORT = msg("Что сегодня изучил?");
 /** Сколько висит «Записал» с возможностью вернуть. */
 const SAVED_MS = 20_000;
 /** Выбор в списке предметов, после которого появляется поле для своего названия. */
@@ -67,8 +68,8 @@ function SubjectPick({
         className="weak-subject-input"
         type="text"
         value={draft.newSubject}
-        placeholder="Какой предмет?"
-        aria-label={`Предмет для темы «${draft.title}»`}
+        placeholder={t("Какой предмет?")}
+        aria-label={t("Предмет для темы «{title}»", { title: draft.title })}
         maxLength={120}
         autoFocus={subjects.length > 0}
         onChange={(event) => onChange({ subjectId: "", newSubject: event.target.value })}
@@ -81,7 +82,7 @@ function SubjectPick({
     <select
       className="weak-subject"
       value={value}
-      aria-label={`Предмет для темы «${draft.title}»`}
+      aria-label={t("Предмет для темы «{title}»", { title: draft.title })}
       onChange={(event) => {
         const next = event.target.value;
         if (next === OTHER) {
@@ -94,14 +95,14 @@ function SubjectPick({
         }
       }}
     >
-      {value ? null : <option value="">Выбери предмет</option>}
+      {value ? null : <option value="">{t("Выбери предмет")}</option>}
       {subjects.map((subject) => (
         <option key={subject.id} value={subject.id}>
           {subject.name}
         </option>
       ))}
-      {newName ? <option value={`new:${newName}`}>{newName}, новый предмет</option> : null}
-      <option value={OTHER}>Другой предмет…</option>
+      {newName ? <option value={`new:${newName}`}>{t("{name}, новый предмет", { name: newName })}</option> : null}
+      <option value={OTHER}>{t("Другой предмет…")}</option>
     </select>
   );
 }
@@ -154,12 +155,12 @@ export function WeakLearned({
         setPhase({ kind: "idle" });
         setValue(text);
       });
-      mascot.thought("Разбираю, что ты изучил");
+      mascot.thought(t("Разбираю, что ты изучил"));
       const understood = await understand(text, "topics");
       if (token !== run.current) return;
       const drafts = understood.kind === "topics" ? buildDrafts(understood.topics, subjects, topics) : [];
       if (drafts.length) {
-        mascot.thinkEnd("Нашёл темы");
+        mascot.thinkEnd(t("Нашёл темы"));
         setPhase({ kind: "preview", drafts, text, saving: false, failed: null });
         return;
       }
@@ -249,7 +250,7 @@ export function WeakLearned({
           drafts,
           text,
           saving: false,
-          failed: "Не получилось записать. Попробуй ещё раз.",
+          failed: t("Не получилось записать. Попробуй ещё раз."),
         });
         return;
       }
@@ -294,8 +295,8 @@ export function WeakLearned({
           text,
           saving: false,
           failed: created.length
-            ? `Записал ${created.length} из ${writing.length}. Остальное не прошло, попробуй ещё раз.`
-            : "Не получилось записать. Попробуй ещё раз.",
+            ? t("Записал {done} из {total}. Остальное не прошло, попробуй ещё раз.", { done: created.length, total: writing.length })
+            : t("Не получилось записать. Попробуй ещё раз."),
         });
         return;
       }
@@ -352,19 +353,19 @@ export function WeakLearned({
             type="text"
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            placeholder={placeholder}
-            aria-label="Что сегодня изучил"
+            placeholder={t(placeholder)}
+            aria-label={t("Что сегодня изучил")}
             autoComplete="off"
           />
         </span>
-        <button className="send" type="submit" aria-label="Отправить" disabled={phase.kind === "thinking"}>
+        <button className="send" type="submit" aria-label={t("Отправить")} disabled={phase.kind === "thinking"}>
           <Icon name="arrow-up" />
         </button>
       </form>
 
       {phase.kind === "thinking" ? (
         <div className="ai-out card" role="status">
-          <p className="q-status shine">Думаю…</p>
+          <p className="q-status shine">{t("Думаю…")}</p>
         </div>
       ) : null}
 
@@ -388,19 +389,19 @@ export function WeakLearned({
         <div className="ai-out card">
           <p className="q-say">
             {phase.understood.kind === "habit"
-              ? `Похоже на привычку: «${phase.understood.name}».`
+              ? t("Похоже на привычку: «{name}».", { name: phase.understood.name })
               : phase.understood.kind === "goal"
-                ? `Похоже на цель: «${phase.understood.title}».`
-                : "Похоже на вопрос, а не на тему."}
+                ? t("Похоже на цель: «{title}».", { title: phase.understood.title })
+                : t("Похоже на вопрос, а не на тему.")}
           </p>
           <div className="q-acts">
             {phase.understood.kind === "habit" ? (
               <Link className="btn btn-main" href="/dashboard/habits">
-                К привычкам
+                {t("К привычкам")}
               </Link>
             ) : phase.understood.kind === "goal" ? (
               <Link className="btn btn-main" href="/dashboard/goals">
-                К целям
+                {t("К целям")}
               </Link>
             ) : (
               <button
@@ -411,14 +412,14 @@ export function WeakLearned({
                   close();
                 }}
               >
-                Спросить тьютора
+                {t("Спросить тьютора")}
               </button>
             )}
             <button className="btn btn-text" type="button" onClick={() => asTopic(phase.text)}>
-              Записать как тему
+              {t("Записать как тему")}
             </button>
             <button className="btn btn-text" type="button" onClick={close}>
-              Не надо
+              {t("Не надо")}
             </button>
           </div>
         </div>
@@ -428,20 +429,25 @@ export function WeakLearned({
         <div className="ai-out card" role="status">
           <p className="q-say">
             {phase.topics.length
-              ? `Записал ${phase.topics.length} ${plural(phase.topics.length, "тему", "темы", "тем")}. Первое повторение завтра.`
-              : "Эти темы уже есть в списке, записывать нечего."}
+              ? plural(
+                  phase.topics.length,
+                  "Записал {n} тему. Первое повторение завтра.",
+                  "Записал {n} темы. Первое повторение завтра.",
+                  "Записал {n} тем. Первое повторение завтра.",
+                )
+              : t("Эти темы уже есть в списке, записывать нечего.")}
             {phase.topics.length && phase.skipped
-              ? ` Ещё ${phase.skipped} уже ${plural(phase.skipped, "была", "были", "были")} в списке.`
+              ? ` ${plural(phase.skipped, "Ещё {n} уже была в списке.", "Ещё {n} уже были в списке.", "Ещё {n} уже были в списке.")}`
               : ""}
           </p>
           <div className="q-acts">
             {phase.topics.length ? (
               <button className="btn btn-text" type="button" disabled={phase.undoing} onClick={() => void undo(phase)}>
-                Вернуть как было
+                {t("Вернуть как было")}
               </button>
             ) : null}
             <button className="btn btn-text" type="button" onClick={close}>
-              Закрыть
+              {t("Закрыть")}
             </button>
           </div>
         </div>
@@ -472,14 +478,14 @@ function PreviewCard({
   return (
     <div className="ai-out card">
       <p className="q-say">
-        {writing.length ? "Запишу в повторение, первое завтра:" : "Эти темы уже есть в списке:"}
+        {writing.length ? t("Запишу в повторение, первое завтра:") : t("Эти темы уже есть в списке:")}
       </p>
       <ul className="q-diff weak-diff">
         {phase.drafts.map((draft) => (
           <li key={draft.key}>
             <span className="nm">{draft.title}</span>
             {draft.duplicate ? (
-              <span className="chg">уже в списке</span>
+              <span className="chg">{t("уже в списке")}</span>
             ) : (
               <span className="chg">
                 <SubjectPick
@@ -489,14 +495,14 @@ function PreviewCard({
                   onChosen={(patch) => onChoose(draft.key, patch)}
                 />
                 {" → "}
-                <b>завтра</b>
+                <b>{t("завтра")}</b>
               </span>
             )}
             <button
               className="icon-btn"
               type="button"
-              aria-label={`Убрать «${draft.title}»`}
-              title="Убрать"
+              aria-label={t("Убрать «{title}»", { title: draft.title })}
+              title={t("Убрать")}
               disabled={phase.saving}
               onClick={() => onDrop(draft.key)}
             >
@@ -506,15 +512,15 @@ function PreviewCard({
         ))}
       </ul>
       {phase.failed ? <p className="small-note weak-out-note danger" role="alert">{phase.failed}</p> : null}
-      {missing ? <p className="small-note weak-out-note">Выбери предмет, чтобы записать.</p> : null}
+      {missing ? <p className="small-note weak-out-note">{t("Выбери предмет, чтобы записать.")}</p> : null}
       <div className="q-acts">
         {writing.length ? (
           <button className="btn btn-main" type="button" disabled={phase.saving || missing} onClick={onSave}>
-            {phase.saving ? "Записываю…" : "Добавить"}
+            {phase.saving ? t("Записываю…") : t("Добавить")}
           </button>
         ) : null}
         <button className="btn btn-text" type="button" disabled={phase.saving} onClick={onCancel}>
-          {writing.length ? "Не надо" : "Закрыть"}
+          {writing.length ? t("Не надо") : t("Закрыть")}
         </button>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 
 import { Icon } from "@/components/shell/icons";
 import { dashboardViewOf } from "@/config/dashboard-navigation";
+import { t } from "@/lib/i18n";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 import { createMascot, type MascotEngine, type MascotExpression } from "./engine";
@@ -69,7 +70,7 @@ export function Mascot() {
       <div className="mascot-bubble is-off" role="status">
         <p className="mascot-say" />
         <button className="mascot-ask" type="button" data-quick-open>
-          Спросить
+          {t("Спросить")}
         </button>
       </div>
       <div className="m-thoughts" data-state="off">
@@ -77,7 +78,7 @@ export function Mascot() {
         <span className="m-dot" aria-hidden="true" />
         <span className="m-dot" aria-hidden="true" />
         <div className="m-card glass">
-          <button className="m-card-x" type="button" title="Скрыть" aria-label="Скрыть">
+          <button className="m-card-x" type="button" title={t("Скрыть")} aria-label={t("Скрыть")}>
             <Icon name="x" />
           </button>
           <div className="m-card-text">
@@ -87,10 +88,10 @@ export function Mascot() {
             </p>
             <p className="m-card-step" aria-live="polite" />
           </div>
-          <button className="m-card-stop" type="button" title="Остановить" aria-label="Остановить">
+          <button className="m-card-stop" type="button" title={t("Остановить")} aria-label={t("Остановить")}>
             <span />
           </button>
-          <button className="m-card-go" type="button" title="Открыть" aria-label="Открыть">
+          <button className="m-card-go" type="button" title={t("Открыть")} aria-label={t("Открыть")}>
             <Icon name="return" />
           </button>
         </div>
@@ -98,7 +99,7 @@ export function Mascot() {
       <button
         className="mascot-hit"
         type="button"
-        aria-label="Маскот Timely, нажми, чтобы попросить о помощи"
+        aria-label={t("Маскот Timely, нажми, чтобы попросить о помощи")}
       />
       <MascotArt />
     </div>

@@ -10,6 +10,7 @@ import { HabitGlyph } from "@/components/habits/habit-card";
 import { Icon } from "@/components/shell/icons";
 import type { Habit } from "@/components/habits/lib";
 import { coverClass } from "@/lib/curriculum-cover";
+import { msg, t } from "@/lib/i18n";
 
 import { GoalCard } from "./goal-plaque";
 import { TONES, dueOptions, type Goal, type GoalScope, type Tone } from "./goal-logic";
@@ -35,11 +36,11 @@ export interface GoalDraft {
 }
 
 const TONE_NAMES: Record<Tone, string> = {
-  indigo: "индиго",
-  rose: "розовый",
-  teal: "бирюзовый",
-  blue: "синий",
-  amber: "янтарный",
+  indigo: msg("индиго"),
+  rose: msg("розовый"),
+  teal: msg("бирюзовый"),
+  blue: msg("синий"),
+  amber: msg("янтарный"),
 };
 
 function toggled<T>(list: readonly T[], value: T): T[] {
@@ -90,7 +91,7 @@ export function GoalLinks({
         <span key={lesson.id} className={`book mini ${coverClass(lesson.subject)}`} title={lesson.subject} />
       ))}
       {habits.map((habit) => {
-        const title = `${habit.name}, серия ${habit.streak}`;
+        const title = t("{name}, серия {streak}", { name: habit.name, streak: habit.streak });
         const body = (
           <>
             <HabitGlyph name={habit.name} emoji={habit.emoji} />
@@ -154,7 +155,7 @@ export function GoalSheet({
       await onSave({ ...draft, title });
       dialog.current?.close();
     } catch {
-      setError("Не получилось сохранить цель. Проверь связь и попробуй ещё раз.");
+      setError(t("Не получилось сохранить цель. Проверь связь и попробуй ещё раз."));
       setSaving(false);
     }
   };
@@ -164,7 +165,7 @@ export function GoalSheet({
 
   const preview: Goal = {
     id: draft.id ?? "preview",
-    title: draft.title.trim() || "Твоя цель",
+    title: draft.title.trim() || t("Твоя цель"),
     type: "goal",
     status: "active",
     scope: draft.scope,
@@ -183,7 +184,7 @@ export function GoalSheet({
     <dialog
       ref={dialog}
       className="gsheet"
-      aria-label={draft.id ? "Изменить цель" : "Новая цель"}
+      aria-label={draft.id ? t("Изменить цель") : t("Новая цель")}
       onClose={onClose}
       onClick={(event) => {
         // Нажатие мимо окна попадает в сам <dialog>: его подложка часть элемента.
@@ -198,16 +199,16 @@ export function GoalSheet({
         }}
       >
         <div className="gs-form">
-          <h2 className="sec">{draft.id ? "Изменить цель" : "Новая цель"}</h2>
+          <h2 className="sec">{draft.id ? t("Изменить цель") : t("Новая цель")}</h2>
           <label className="gs-title">
-            <span className="sr">Что хочешь</span>
+            <span className="sr">{t("Что хочешь")}</span>
             <input
               ref={titleField}
               type="text"
               value={draft.title}
               maxLength={512}
               onChange={(event) => set({ title: event.target.value })}
-              placeholder="Что хочешь?"
+              placeholder={t("Что хочешь?")}
               autoComplete="off"
             />
           </label>
@@ -216,20 +217,20 @@ export function GoalSheet({
           </p>
 
           <div className="gs-row">
-            <span className="gs-l">Какая</span>
-            <div className="tabs gr-kind" role="group" aria-label="Какая цель">
+            <span className="gs-l">{t("Какая")}</span>
+            <div className="tabs gr-kind" role="group" aria-label={t("Какая цель")}>
               <button type="button" aria-pressed={draft.scope === "study"} onClick={() => set({ scope: "study" })}>
-                Учёба
+                {t("Учёба")}
               </button>
               <button type="button" aria-pressed={draft.scope === "general"} onClick={() => set({ scope: "general" })}>
-                Общая
+                {t("Общая")}
               </button>
             </div>
           </div>
 
           <div className="gs-row">
-            <span className="gs-l">Срок</span>
-            <div className="gs-chips" role="group" aria-label="Срок">
+            <span className="gs-l">{t("Срок")}</span>
+            <div className="gs-chips" role="group" aria-label={t("Срок")}>
               {options.map((option) => (
                 <Chip
                   key={option.label}
@@ -247,19 +248,19 @@ export function GoalSheet({
                 onChange={(event) => {
                   if (event.target.value) set({ due: event.target.value });
                 }}
-                aria-label="Своя дата"
+                aria-label={t("Своя дата")}
               />
-              <Chip label="Без срока" pressed={draft.due === null} onClick={() => set({ due: null })} />
+              <Chip label={t("Без срока")} pressed={draft.due === null} onClick={() => set({ due: null })} />
             </div>
           </div>
 
           <div className="gs-row">
-            <span className="gs-l">Уроки</span>
-            <div className="gs-chips" role="group" aria-label="Какие уроки входят">
-              {lessons === null ? <span className="small-note gs-empty">Загружаю предметы…</span> : null}
+            <span className="gs-l">{t("Уроки")}</span>
+            <div className="gs-chips" role="group" aria-label={t("Какие уроки входят")}>
+              {lessons === null ? <span className="small-note gs-empty">{t("Загружаю предметы…")}</span> : null}
               {lessons?.length === 0 ? (
                 <span className="small-note gs-empty">
-                  Предметов пока нет. <Link className="link" href="/dashboard/curriculum">Добавить</Link>
+                  {t("Предметов пока нет.")} <Link className="link" href="/dashboard/curriculum">{t("Добавить")}</Link>
                 </span>
               ) : null}
               {lessons?.map((lesson) => (
@@ -276,8 +277,8 @@ export function GoalSheet({
           </div>
 
           <div className="gs-row">
-            <span className="gs-l">Привычки</span>
-            <div className="gs-chips" role="group" aria-label="Какие привычки помогут">
+            <span className="gs-l">{t("Привычки")}</span>
+            <div className="gs-chips" role="group" aria-label={t("Какие привычки помогут")}>
               {habits.map((habit) => (
                 <Chip
                   key={habit.id}
@@ -300,21 +301,21 @@ export function GoalSheet({
                 </Chip>
               ))}
               {habits.length === 0 && draft.ideas.length === 0 ? (
-                <span className="small-note gs-empty">Привычек пока нет.</span>
+                <span className="small-note gs-empty">{t("Привычек пока нет.")}</span>
               ) : null}
             </div>
           </div>
 
           <div className="gs-row">
-            <span className="gs-l">Цвет</span>
-            <div className="gs-tones" role="group" aria-label="Цвет карточки">
+            <span className="gs-l">{t("Цвет")}</span>
+            <div className="gs-tones" role="group" aria-label={t("Цвет карточки")}>
               {TONES.map((tone) => (
                 <button
                   key={tone}
                   className={`gs-tone p-${tone}`}
                   type="button"
                   aria-pressed={draft.tone === tone}
-                  aria-label={`Цвет: ${TONE_NAMES[tone]}`}
+                  aria-label={t("Цвет: {tone}", { tone: t(TONE_NAMES[tone]) })}
                   onClick={() => set({ tone })}
                 />
               ))}
@@ -332,10 +333,10 @@ export function GoalSheet({
           </div>
           <div className="gs-acts">
             <button className="btn btn-main" type="submit" disabled={saving}>
-              {saving ? "Сохраняю…" : draft.id ? "Сохранить" : "Сохранить цель"}
+              {saving ? t("Сохраняю…") : draft.id ? t("Сохранить") : t("Сохранить цель")}
             </button>
             <button className="btn btn-text" type="button" disabled={saving} onClick={() => dialog.current?.close()}>
-              Отмена
+              {t("Отмена")}
             </button>
           </div>
         </div>

@@ -13,6 +13,7 @@ import {
     Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 
 interface Analysis {
     summary: string
@@ -108,9 +109,9 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Brain className="h-5 w-5 text-purple-500" />
-                        <CardTitle>AI Анализ</CardTitle>
+                        <CardTitle>{t('AI Анализ')}</CardTitle>
                         {fromCache && (
-                            <span className="text-xs text-muted-foreground">из кэша</span>
+                            <span className="text-xs text-muted-foreground">{t('из кэша')}</span>
                         )}
                     </div>
                     <Button
@@ -125,13 +126,13 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                         ) : (
                             <>
                                 <Zap className="h-3 w-3" />
-                                <span className="text-xs">Обновить</span>
+                                <span className="text-xs">{t('Обновить')}</span>
                             </>
                         )}
                     </Button>
                 </div>
                 <CardDescription>
-                    Анализ вашего прогресса и рекомендации
+                    {t('Анализ вашего прогресса и рекомендации')}
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -142,12 +143,12 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                 )}
 
                 {error && (
-                    <div className="text-red-400 text-sm">{error}</div>
+                    <div className="text-red-400 text-sm">{t(error)}</div>
                 )}
 
                 {!loading && !stats && !error && (
                     <div className="text-center py-4 text-muted-foreground text-sm">
-                        Нажмите «Обновить» для анализа прогресса
+                        {t('Нажмите «Обновить» для анализа прогресса')}
                     </div>
                 )}
 
@@ -157,19 +158,19 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                         <div className="grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-lg bg-muted/50">
                                 <div className="text-2xl font-bold">{stats.totalTopics}</div>
-                                <div className="text-xs text-muted-foreground">Всего тем</div>
+                                <div className="text-xs text-muted-foreground">{t('Всего тем')}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-emerald-500/10">
                                 <div className="text-2xl font-bold text-emerald-400">{stats.masteredTopics}</div>
-                                <div className="text-xs text-muted-foreground">Освоено</div>
+                                <div className="text-xs text-muted-foreground">{t('Освоено')}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-amber-500/10">
                                 <div className="text-2xl font-bold text-amber-400">{stats.overdueTopics}</div>
-                                <div className="text-xs text-muted-foreground">Просрочено</div>
+                                <div className="text-xs text-muted-foreground">{t('Просрочено')}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-blue-500/10">
-                                <div className="text-2xl font-bold text-blue-400">{Math.round(stats.totalStudyMinutes / 60)}ч</div>
-                                <div className="text-xs text-muted-foreground">За неделю</div>
+                                <div className="text-2xl font-bold text-blue-400">{Math.round(stats.totalStudyMinutes / 60)}{t('ч')}</div>
+                                <div className="text-xs text-muted-foreground">{t('За неделю')}</div>
                             </div>
                         </div>
 
@@ -185,7 +186,7 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                                     <div className="space-y-2">
                                         <h4 className="text-sm font-medium flex items-center gap-2">
                                             <Lightbulb className="h-4 w-4" />
-                                            Рекомендации
+                                            {t('Рекомендации')}
                                         </h4>
                                         {analysis.recommendations.map((rec, i) => (
                                             <div
@@ -206,7 +207,7 @@ export function AIAnalysis({ className }: AIAnalysisProps) {
                                     <div className="space-y-2">
                                         <h4 className="text-sm font-medium flex items-center gap-2">
                                             <Target className="h-4 w-4" />
-                                            Фокус
+                                            {t('Фокус')}
                                         </h4>
                                         <div className="flex flex-wrap gap-2">
                                             {analysis.focusAreas.map((area, i) => (

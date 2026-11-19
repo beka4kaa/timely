@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { gradeField, taskText } from "@/lib/diary-tasks";
+import { t } from "@/lib/i18n";
 import { dayMonthLabel, lessonGrade, lessonTitle, weekdayLabel } from "@/lib/now-feed";
 import { useResource } from "@/lib/resource-cache";
 import {
@@ -25,7 +26,7 @@ interface SubjectOption {
 
 async function fetchSubjects(): Promise<SubjectOption[]> {
   const response = await fetch("/api/subjects");
-  if (!response.ok) throw new Error("Предметы не загрузились");
+  if (!response.ok) throw new Error(t("Предметы не загрузились"));
   const body = await response.json();
   const list: Array<{ id: string | number; name: string }> = Array.isArray(body)
     ? body
@@ -89,7 +90,7 @@ export function LessonDialog({
 
         {gradeField(lesson) ? (
           <div className="dy-field">
-            <span>Оценка</span>
+            <span>{t("Оценка")}</span>
             <GradeChoice
               value={lessonGrade(lesson)}
               label={name}
@@ -99,7 +100,7 @@ export function LessonDialog({
         ) : null}
 
         <label className="field">
-          Что задано
+          {t("Что задано")}
           <textarea
             rows={2}
             value={homework}
@@ -109,7 +110,7 @@ export function LessonDialog({
         </label>
 
         <label className="field">
-          Заметка
+          {t("Заметка")}
           <textarea
             rows={2}
             value={notes}
@@ -120,7 +121,7 @@ export function LessonDialog({
 
         {needsSubjects && subjects.length ? (
           <div className="dy-field">
-            <span>К каким предметам относится</span>
+            <span>{t("К каким предметам относится")}</span>
             <div className="dy-chips">
               {subjects.map((subject) => {
                 const selected = linked.includes(subject.id);

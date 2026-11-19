@@ -5,6 +5,7 @@
 
 import { Icon } from "@/components/shell/icons";
 import { useDashboardShell } from "@/contexts/dashboard-shell";
+import { t } from "@/lib/i18n";
 
 import { useDrawerSwipe } from "./drawer-swipe";
 
@@ -17,8 +18,8 @@ export function MenuButton() {
       <button
         className="menu-fab glass"
         type="button"
-        aria-label="Меню"
-        title="Меню"
+        aria-label={t("Меню")}
+        title={t("Меню")}
         aria-controls="app-nav"
         aria-expanded={drawerOpen}
         onClick={() => setDrawerOpen(true)}

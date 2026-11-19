@@ -1,6 +1,7 @@
 // Что считается на плашке цели: цвет, тропа к вершине, сроки, к какой цели тянется
 // привычка. Без React и без сети, чтобы всё это проверялось тестами.
 
+import { msg, t } from "../../lib/i18n";
 import { localDay, plural } from "../habits/habit-days";
 import { understandLocally } from "../../lib/understand";
 
@@ -198,18 +199,18 @@ export function walkRidge(shape: RidgeShape, progress: number): { at: Point; wal
 
 const DAY_MS = 86_400_000;
 const MONTHS = [
-  "января",
-  "февраля",
-  "марта",
-  "апреля",
-  "мая",
-  "июня",
-  "июля",
-  "августа",
-  "сентября",
-  "октября",
-  "ноября",
-  "декабря",
+  msg("января"),
+  msg("февраля"),
+  msg("марта"),
+  msg("апреля"),
+  msg("мая"),
+  msg("июня"),
+  msg("июля"),
+  msg("августа"),
+  msg("сентября"),
+  msg("октября"),
+  msg("ноября"),
+  msg("декабря"),
 ];
 
 function utc(iso: string): number {
@@ -239,7 +240,7 @@ function addMonth(iso: string): string {
 export function formatDay(iso: string, today: string): string {
   const [year, month, day] = iso.split("-").map(Number);
   const far = Math.abs(daysUntil(iso, today)) > 300;
-  return `${day} ${MONTHS[month - 1]}${far ? ` ${year}` : ""}`;
+  return `${day} ${t(MONTHS[month - 1])}${far ? ` ${year}` : ""}`;
 }
 
 function daysWord(n: number): string {
@@ -248,12 +249,12 @@ function daysWord(n: number): string {
 
 /** Строка на карточке: «до 25 мая, осталось 203 дня». */
 export function dueLine(due: string | null, today: string): string {
-  if (!due) return "Без срока";
+  if (!due) return t("Без срока");
   const left = daysUntil(due, today);
   const date = formatDay(due, today);
-  if (left < 0) return `Срок был ${date}`;
-  if (left === 0) return "Срок сегодня";
-  return `до ${date}, осталось ${left} ${daysWord(left)}`;
+  if (left < 0) return t("Срок был {date}", { date });
+  if (left === 0) return t("Срок сегодня");
+  return t("до {date}, осталось {left} {days}", { date, left, days: daysWord(left) });
 }
 
 export interface DueStub {
@@ -264,12 +265,12 @@ export interface DueStub {
 }
 
 export function dueStub(due: string | null, today: string): DueStub {
-  if (!due) return { count: null, word: "", line: "Без срока" };
+  if (!due) return { count: null, word: "", line: t("Без срока") };
   const left = daysUntil(due, today);
   const date = formatDay(due, today);
-  if (left < 0) return { count: null, word: "", line: `Срок был ${date}` };
-  if (left === 0) return { count: null, word: "", line: "Срок сегодня" };
-  return { count: left, word: daysWord(left), line: `до ${date}` };
+  if (left < 0) return { count: null, word: "", line: t("Срок был {date}", { date }) };
+  if (left === 0) return { count: null, word: "", line: t("Срок сегодня") };
+  return { count: left, word: daysWord(left), line: t("до {date}", { date }) };
 }
 
 /** Школьные четверти кончаются примерно в эти дни. */
@@ -294,10 +295,10 @@ function nextDate(today: string, dates: ReadonlyArray<readonly [number, number]>
 
 export function dueOptions(today: string): Array<{ label: string; date: string }> {
   return [
-    { label: "Через неделю", date: addDays(today, 7) },
-    { label: "Через месяц", date: addMonth(today) },
-    { label: "К концу четверти", date: nextDate(today, QUARTER_ENDS) },
-    { label: "К лету", date: nextDate(today, [[6, 1]]) },
+    { label: t("Через неделю"), date: addDays(today, 7) },
+    { label: t("Через месяц"), date: addMonth(today) },
+    { label: t("К концу четверти"), date: nextDate(today, QUARTER_ENDS) },
+    { label: t("К лету"), date: nextDate(today, [[6, 1]]) },
   ];
 }
 
@@ -311,9 +312,9 @@ export function nextStepText(title: string, startAt: string, now: Date = new Dat
   const moment = new Date(startAt);
   const day = localDay(moment);
   const today = localDay(now);
-  const when = day === today ? "сегодня" : day === addDays(today, 1) ? "завтра" : formatDay(day, today);
+  const when = day === today ? t("сегодня") : day === addDays(today, 1) ? t("завтра") : formatDay(day, today);
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${title}, ${when} в ${pad(moment.getHours())}:${pad(moment.getMinutes())}`;
+  return t("{title}, {when} в {time}", { title, when, time: `${pad(moment.getHours())}:${pad(moment.getMinutes())}` });
 }
 
 // ─────────────────────────── Связь привычек и целей ──────────────────────────
@@ -352,14 +353,14 @@ export function matchLessons<T extends { subject: string }>(title: string, lesso
 
 /** Какие привычки предложить, если модель сама не предложила. */
 export function habitIdeasFor(title: string, scope: GoalScope): string[] {
-  if (scope === "general") return ["Каждый день по шагу"];
-  if (/физик|алгебр|математ|геометр/.test(title.toLowerCase())) return ["Решать 3 задачи", "Повторять формулы"];
-  return ["Повторять темы"];
+  if (scope === "general") return [t("Каждый день по шагу")];
+  if (/физик|алгебр|математ|геометр/.test(title.toLowerCase())) return [t("Решать 3 задачи"), t("Повторять формулы")];
+  return [t("Повторять темы")];
 }
 
 /** Что сказать перед удалением предмета. Сервер уносит с ним всё, что к нему привязано. */
 export function deleteSubjectWarning(name: string): string {
   const title = name.trim();
-  const head = title ? `Удалить предмет «${title}»?` : "Удалить предмет?";
-  return `${head} Вместе с ним удалятся книги, конспекты, программы, расписание занятий и чаты по предмету. Вернуть не получится.`;
+  const head = title ? t("Удалить предмет «{title}»?", { title }) : t("Удалить предмет?");
+  return `${head} ${t("Вместе с ним удалятся книги, конспекты, программы, расписание занятий и чаты по предмету. Вернуть не получится.")}`;
 }

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import Link from "next/link";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 
 import { dueLine, dueStub, ridgeShape, walkRidge, type Goal } from "./goal-logic";
 
@@ -28,11 +29,11 @@ function useTween(value: number, duration = 560): number {
     const from = current.current;
     const started = performance.now();
     let frame = requestAnimationFrame(function step(now) {
-      const t = Math.min(1, (now - started) / duration);
-      const next = from + (value - from) * (1 - (1 - t) ** 3);
+      const k = Math.min(1, (now - started) / duration);
+      const next = from + (value - from) * (1 - (1 - k) ** 3);
       current.current = next;
       setShown(next);
-      if (t < 1) frame = requestAnimationFrame(step);
+      if (k < 1) frame = requestAnimationFrame(step);
     });
     return () => cancelAnimationFrame(frame);
   }, [value, duration]);
@@ -86,14 +87,14 @@ export function GoalHero({
     <section
       className={`plq plq-hero gl p-${goal.tone}${fresh ? " fresh" : ""}`}
       style={transitionName(goal.id)}
-      aria-label="Главная цель"
-      data-attach={`Цель: ${goal.title}`}
+      aria-label={t("Главная цель")}
+      data-attach={t("Цель: {title}", { title: goal.title })}
     >
       <RidgeArt id={goal.id} progress={goal.progress} wide />
       <div className="plq-main">
-        <p className="plq-date">Главная цель, {goal.progress}% пути</p>
+        <p className="plq-date">{t("Главная цель, {progress}% пути", { progress: goal.progress })}</p>
         <h2 className="plq-name">{goal.title}</h2>
-        {next ? <p className="plq-rules">Дальше: {next}</p> : null}
+        {next ? <p className="plq-rules">{t("Дальше: {next}", { next })}</p> : null}
         <div className="gl-links">{links}</div>
       </div>
       <div className="plq-stub">
@@ -105,7 +106,7 @@ export function GoalHero({
         ) : null}
         <p className="gl-due">{stub.line}</p>
         <Link className="btn btn-plq" href="/dashboard">
-          Следующий шаг
+          {t("Следующий шаг")}
         </Link>
       </div>
     </section>
@@ -132,12 +133,12 @@ export function GoalCard({
     <article
       className={`plq plq-card gl p-${goal.tone}${fresh ? " fresh" : ""}`}
       style={onMain ? transitionName(goal.id) : undefined}
-      data-attach={onMain ? `Цель: ${goal.title}` : undefined}
+      data-attach={onMain ? t("Цель: {title}", { title: goal.title }) : undefined}
     >
       <RidgeArt id={goal.id} progress={goal.progress} />
       <div className="gl-top">
         <span className="plq-date">
-          {goal.scope === "study" ? "Учёба" : "Общая"}, {goal.progress}%
+          {goal.scope === "study" ? t("Учёба") : t("Общая")}, {goal.progress}%
         </span>
         <span className="gl-tools">
           {onMain ? (
@@ -145,8 +146,8 @@ export function GoalCard({
               className="gl-pin"
               type="button"
               onClick={onMain}
-              title="Сделать главной"
-              aria-label={`Сделать главной: ${goal.title}`}
+              title={t("Сделать главной")}
+              aria-label={t("Сделать главной: {title}", { title: goal.title })}
             >
               <Icon name="star" />
             </button>
@@ -164,11 +165,11 @@ export function GoalCard({
 /** Достигнутая цель: маленькая плашка, слайм уже у флага. */
 export function GoalDone({ goal, menu }: { goal: Goal; menu: ReactNode }) {
   return (
-    <article className={`plq plq-mini gl gl-done p-${goal.tone}`} data-attach={`Цель: ${goal.title}`}>
+    <article className={`plq plq-mini gl gl-done p-${goal.tone}`} data-attach={t("Цель: {title}", { title: goal.title })}>
       <RidgeArt id={goal.id} progress={100} />
       <div className="gl-top">
         <span className="plq-date">
-          {goal.scope === "study" ? "Учёба" : "Общая"}
+          {goal.scope === "study" ? t("Учёба") : t("Общая")}
         </span>
         <span className="gl-tools">{menu}</span>
       </div>

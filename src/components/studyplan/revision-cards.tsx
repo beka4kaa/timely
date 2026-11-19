@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 
+import { t } from "@/lib/i18n";
 import { revisionRows } from "@/lib/now-feed";
 import type { ScheduleRevision } from "@/lib/studyplan-api";
 import { zonedDateKey } from "@/lib/studyplan-calendar";
@@ -59,11 +60,11 @@ export function RevisionCard({
   if (rows.length === 0) {
     return (
       <>
-        <p className="q-status">Помощник ничего не переносит.</p>
+        <p className="q-status">{t("Помощник ничего не переносит.")}</p>
         {hideActions ? null : (
           <div className="q-acts">
             <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
-              Закрыть
+              {t("Закрыть")}
             </button>
           </div>
         )}
@@ -73,29 +74,29 @@ export function RevisionCard({
 
   return (
     <>
-      <ul className="q-diff" aria-label="Что изменится">
+      <ul className="q-diff" aria-label={t("Что изменится")}>
         {rows.slice(0, MAX_ROWS).map((row) => (
           <li key={row.id}>
             <span className="nm">{row.title}</span>
             <span className="chg">
-              {row.from ? `${row.from} → ` : "новое → "}
-              <b>{row.to || "убрать"}</b>
+              {row.from ? `${row.from} → ` : t("новое → ")}
+              <b>{row.to || t("убрать")}</b>
             </span>
           </li>
         ))}
         {rows.length > MAX_ROWS ? (
           <li>
-            <span className="nm">И ещё {rows.length - MAX_ROWS}</span>
+            <span className="nm">{t("И ещё {n}", { n: rows.length - MAX_ROWS })}</span>
           </li>
         ) : null}
       </ul>
       {hideActions ? null : (
         <div className="q-acts">
           <button className="btn btn-main" type="button" disabled={busy} onClick={() => onDecide(revision, true)}>
-            Применить
+            {t("Применить")}
           </button>
           <button className="btn btn-text" type="button" disabled={busy} onClick={() => onDecide(revision, false)}>
-            Не надо
+            {t("Не надо")}
           </button>
         </div>
       )}
@@ -119,7 +120,7 @@ export function CommitmentsCard({
 }) {
   return (
     <>
-      <p className="q-status">Запишу как занятое время, занятия встанут вокруг него:</p>
+      <p className="q-status">{t("Запишу как занятое время, занятия встанут вокруг него:")}</p>
       <ul className="q-diff">
         {items.map((item, index) => (
           <li key={`${item.title}-${index}`}>
@@ -127,8 +128,8 @@ export function CommitmentsCard({
             <span className="chg">
               <b>
                 {item.weekday_name
-                  ? `${item.weekday_name}, ${item.start_time}, ${durationLabel(item.duration_minutes ?? 0)}`
-                  : "разово"}
+                  ? `${t(item.weekday_name)}, ${item.start_time}, ${durationLabel(item.duration_minutes ?? 0)}`
+                  : t("разово")}
               </b>
             </span>
           </li>
@@ -137,10 +138,10 @@ export function CommitmentsCard({
       {hideActions ? null : (
         <div className="q-acts">
           <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(items)}>
-            Записать
+            {t("Записать")}
           </button>
           <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
-            Не надо
+            {t("Не надо")}
           </button>
         </div>
       )}
@@ -173,7 +174,7 @@ export function StudyWindowsCard({
   return (
     <>
       <p className="q-status">
-        {proposal.replace ? "Заменю время занятий:" : "Добавлю время занятий:"}
+        {proposal.replace ? t("Заменю время занятий:") : t("Добавлю время занятий:")}
       </p>
       <ul className="q-diff">
         {groupWindows(proposal.windows).map((line) => (
@@ -183,16 +184,16 @@ export function StudyWindowsCard({
         ))}
       </ul>
       {proposal.replace && proposal.current.length > 0 ? (
-        <p className="q-cite">Прежнее время уберу: {groupWindows(proposal.current).join("; ")}.</p>
+        <p className="q-cite">{t("Прежнее время уберу: {windows}.", { windows: groupWindows(proposal.current).join("; ") })}</p>
       ) : null}
-      <p className="q-cite">Занятия смогут вставать только в это время, а уже расставленные придётся переразложить.</p>
+      <p className="q-cite">{t("Занятия смогут вставать только в это время, а уже расставленные придётся переразложить.")}</p>
       {hideActions ? null : (
         <div className="q-acts">
           <button className="btn btn-main" type="button" disabled={busy} onClick={() => onAccept(proposal)}>
-            {proposal.replace ? "Заменить" : "Добавить"}
+            {proposal.replace ? t("Заменить") : t("Добавить")}
           </button>
           <button className="btn btn-text" type="button" disabled={busy} onClick={onDismiss}>
-            Не надо
+            {t("Не надо")}
           </button>
         </div>
       )}

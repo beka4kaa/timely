@@ -11,6 +11,8 @@
  * заменяет.
  */
 
+import { msg, t } from "./i18n";
+
 export const IMAGE_MODEL_STORAGE_KEY = "timely.board.imageModel";
 export const IMAGE_QUALITY_STORAGE_KEY = "timely.board.imageQuality";
 
@@ -45,7 +47,7 @@ export const FALLBACK_IMAGE_MODELS: ImageModelInfo[] = [
     id: "bytedance-seed/seedream-4.5",
     label: "Seedream 4.5",
     provider: "ByteDance",
-    description: "Быстрая и недорогая генерация",
+    description: msg("Быстрая и недорогая генерация"),
     default: true,
     supports_image_input: true,
     supports_quality: false,
@@ -54,7 +56,7 @@ export const FALLBACK_IMAGE_MODELS: ImageModelInfo[] = [
     id: "openai/gpt-5.4-image-2",
     label: "GPT Image 2",
     provider: "OpenAI",
-    description: "Более точная генерация сложных схем",
+    description: msg("Более точная генерация сложных схем"),
     default: false,
     supports_image_input: true,
     supports_quality: true,
@@ -62,9 +64,9 @@ export const FALLBACK_IMAGE_MODELS: ImageModelInfo[] = [
 ];
 
 export const QUALITY_OPTIONS: { id: ImageQuality; label: string; description: string }[] = [
-  { id: "low", label: "Low", description: "быстрее и дешевле" },
-  { id: "medium", label: "Medium", description: "рекомендуется" },
-  { id: "high", label: "High", description: "лучше для финального результата" },
+  { id: "low", label: "Low", description: msg("быстрее и дешевле") },
+  { id: "medium", label: "Medium", description: msg("рекомендуется") },
+  { id: "high", label: "High", description: msg("лучше для финального результата") },
 ];
 
 export function findImageModel(
@@ -148,7 +150,10 @@ export function imageModelErrorMessage(
   const failed = imageModelLabel(modelId, models);
   const alternative = models.find((model) => model.id !== modelId);
   if (!alternative) {
-    return `${failed} сейчас недоступна. Повторите запрос позже.`;
+    return t("{model} сейчас недоступна. Повторите запрос позже.", { model: failed });
   }
-  return `${failed} сейчас недоступна. Попробуйте ${alternative.label} или повторите запрос позже.`;
+  return t("{model} сейчас недоступна. Попробуйте {other} или повторите запрос позже.", {
+    model: failed,
+    other: alternative.label,
+  });
 }

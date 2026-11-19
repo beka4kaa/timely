@@ -8,17 +8,20 @@ import { createPortal } from "react-dom"
 import { startDemo } from "@/lib/demo-api"
 import { inDemoBrowser } from "@/lib/demo-mock/host"
 import type { DemoLang } from "@/lib/demo-mode"
+import { switchLocale } from "@/lib/i18n"
 
 import { DEMO_UI } from "./demo-copy"
-import { DEMO_FRESH_KEY, DEMO_LANG_KEY, readStore, savedDemoLang, todayKey, writeStore } from "./demo-store"
+import { DEMO_FRESH_KEY, DEMO_TOUR_RESUME_KEY, readStore, savedDemoLang, todayKey, writeStore } from "./demo-store"
 
 /** Тур на поддомене демо уже показывали в этом браузере. */
 const DEMO_TOURED_KEY = "timely.demo.toured"
 import { DemoTour } from "./demo-tour"
 
 export function DemoLayer() {
-  const [lang, setLang] = useState<DemoLang>("en")
+  // Язык тура — язык кабинета: смена в туре перезагружает страницу на другом языке.
+  const lang = savedDemoLang()
   const [open, setOpen] = useState(false)
+  const [startAt, setStartAt] = useState(0)
   // Плашка живёт в левой панели над профилем: там она не закрывает ни одну страницу.
   const [sidebar, setSidebar] = useState<HTMLElement | null>(null)
   // Кнопка, которой открыли тур: после закрытия фокус возвращается на неё.
@@ -29,7 +32,14 @@ export function DemoLayer() {
   }, [])
 
   useEffect(() => {
-    setLang(savedDemoLang())
+    // Тур, прерванный сменой языка, продолжается с того же шага.
+    const resume = readStore("session", DEMO_TOUR_RESUME_KEY)
+    if (resume) {
+      writeStore("session", DEMO_TOUR_RESUME_KEY, "")
+      setStartAt(Number(resume) || 0)
+      setOpen(true)
+      return
+    }
     // Флаг тура ставит страница входа. Убираем его сразу, чтобы перезагрузка не
     // начинала тур заново.
     const params = new URLSearchParams(window.location.search)
@@ -69,9 +79,9 @@ export function DemoLayer() {
     }
   }, [])
 
-  const changeLang = useCallback((next: DemoLang) => {
-    setLang(next)
-    writeStore("local", DEMO_LANG_KEY, next)
+  const changeLang = useCallback((next: DemoLang, index: number) => {
+    writeStore("session", DEMO_TOUR_RESUME_KEY, String(index))
+    switchLocale(next)
   }, [])
 
   const close = useCallback(() => {
@@ -109,7 +119,7 @@ export function DemoLayer() {
       {sidebar ? createPortal(badge("sidebar"), sidebar) : null}
       {/* На телефоне панели нет: там только кнопка «Тур» внизу. Во время тура она не нужна. */}
       {open ? null : badge("float")}
-      {open ? <DemoTour lang={lang} onLang={changeLang} onClose={close} /> : null}
+      {open ? <DemoTour lang={lang} startAt={startAt} onLang={changeLang} onClose={close} /> : null}
     </>
   )
 }

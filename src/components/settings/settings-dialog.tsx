@@ -5,6 +5,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { t } from "@/lib/i18n";
 import { useSettingsDialog } from "@/stores/settings-dialog";
 
 import { SettingsPanel } from "./settings-panel";
@@ -29,7 +30,7 @@ export function SettingsDialog() {
     <dialog
       ref={ref}
       className="st-modal"
-      aria-label="Настройки"
+      aria-label={t("Настройки")}
       onClose={() => {
         hide();
         returnTo.current?.focus?.();

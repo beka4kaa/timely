@@ -25,6 +25,7 @@ import { invalidatePlan } from "@/components/now/now-resources";
 import { deleteGoal as deleteSubjectGoal } from "@/lib/curriculum-api";
 import { coverClass } from "@/lib/curriculum-cover";
 import { dataChanged, useDataChanged } from "@/lib/data-changed";
+import { msg, t } from "@/lib/i18n";
 import { subjectsChanged, topicsChanged } from "@/lib/weak-topics-api";
 import { parseGoal, type Understood } from "@/lib/understand";
 
@@ -48,7 +49,7 @@ import {
 import { createGoal, listGoals, moveGoalProgress, updateGoal } from "./goals-api";
 import { loadLessons, type Lesson } from "./lessons-data";
 
-const STEPS = ["Разбираю, что это", "Ищу сроки и уроки", "Подбираю привычки"];
+const STEPS = [msg("Разбираю, что это"), msg("Ищу сроки и уроки"), msg("Подбираю привычки")];
 const UNDO_MS = 6000;
 /** Сотня это завершённая цель. Ползунок до неё не доходит: завершают отдельной кнопкой. */
 const SLIDER_MAX = 95;
@@ -56,9 +57,9 @@ const SLIDER_MAX = 95;
 type Filter = "" | "study" | "general";
 
 const FILTERS: Array<{ value: Filter; label: string }> = [
-  { value: "", label: "Все" },
-  { value: "study", label: "Учёба" },
-  { value: "general", label: "Общие" },
+  { value: "", label: msg("Все") },
+  { value: "study", label: msg("Учёба") },
+  { value: "general", label: msg("Общие") },
 ];
 
 type Offer =
@@ -184,7 +185,7 @@ export function GoalsPage() {
       lessons: [],
       habitIds: [],
       newHabits: [],
-      ideas: ["Решать 3 задачи", "Повторять темы"].filter((name) => !named(name)),
+      ideas: [t("Решать 3 задачи"), t("Повторять темы")].filter((name) => !named(name)),
       note: "",
       progress: 0,
       ...draft,
@@ -209,8 +210,9 @@ export function GoalsPage() {
         newHabits: existing.length ? [] : fresh.slice(0, 1),
         ideas: fresh,
         note:
-          (result.scope === "study" ? "Похоже на цель по учёбе. " : "Похоже на общую цель. ") +
-          (result.deadline ? "Срок нашёл в тексте." : "Срока в тексте нет, поставил месяц."),
+          (result.scope === "study" ? t("Похоже на цель по учёбе.") : t("Похоже на общую цель.")) +
+          " " +
+          (result.deadline ? t("Срок нашёл в тексте.") : t("Срока в тексте нет, поставил месяц.")),
       });
     },
     [openSheet],
@@ -261,9 +263,9 @@ export function GoalsPage() {
     setFreshId(saved.id);
     mascot.hop(0.9);
     if (results.some((result) => result.status === "rejected")) {
-      toast.error("Цель сохранена, но привычки привязались не все. Попробуй ещё раз в меню цели");
+      toast.error(t("Цель сохранена, но привычки привязались не все. Попробуй ещё раз в меню цели"));
     } else {
-      toast(draft.id ? "Цель обновлена" : "Цель сохранена");
+      toast(draft.id ? t("Цель обновлена") : t("Цель сохранена"));
     }
     void refresh();
     void refreshHabits();
@@ -277,7 +279,7 @@ export function GoalsPage() {
     });
     mascot.hop(0.5);
     updateGoal(goal.id, { isMain: true }).catch(() => {
-      toast.error("Не получилось выбрать главную цель");
+      toast.error(t("Не получилось выбрать главную цель"));
       void refresh();
     });
   };
@@ -300,10 +302,10 @@ export function GoalsPage() {
       toast(message, {
         duration: UNDO_MS,
         action: {
-          label: "Вернуть",
+          label: t("Вернуть"),
           onClick: () => {
             updateGoal(goal.id, restore)
-              .catch(() => toast.error("Не получилось вернуть цель"))
+              .catch(() => toast.error(t("Не получилось вернуть цель")))
               .finally(() => void refresh());
           },
         },
@@ -317,11 +319,11 @@ export function GoalsPage() {
   const finishGoal = (goal: Goal) => {
     mascot.hop(1);
     mascot.react("happy", 1.5);
-    void changeWithUndo(goal, { status: "done" }, "Цель достигнута", "Не получилось завершить цель");
+    void changeWithUndo(goal, { status: "done" }, t("Цель достигнута"), t("Не получилось завершить цель"));
   };
 
   const removeGoal = (goal: Goal) => {
-    void changeWithUndo(goal, { status: "archived" }, "Цель удалена", "Не получилось удалить цель");
+    void changeWithUndo(goal, { status: "archived" }, t("Цель удалена"), t("Не получилось удалить цель"));
   };
 
   /** Предмет уходит со всем, что к нему привязано. Кэши, где он лежал, перечитываются как после удаления помощником. */
@@ -332,12 +334,12 @@ export function GoalsPage() {
     topicsChanged();
     dataChanged("subjects");
     invalidatePlan();
-    toast("Предмет удалён");
+    toast(t("Предмет удалён"));
   };
 
   const reopenGoal = (goal: Goal) => {
     updateGoal(goal.id, { status: "active", ...(goal.savedProgress >= 100 ? { progress: SLIDER_MAX } : {}) })
-      .catch(() => toast.error("Не получилось вернуть цель"))
+      .catch(() => toast.error(t("Не получилось вернуть цель")))
       .finally(() => void refresh());
   };
 
@@ -349,7 +351,7 @@ export function GoalsPage() {
     if (value > goal.progress) mascot.hop(0.42, "quiet");
     moveGoalProgress(goal.id, value)
       .then((fresh) => setGoals((rows) => rows?.map((row) => (row.id === fresh.id ? fresh : row)) ?? rows))
-      .catch(() => toast.error("Не получилось сохранить прогресс"))
+      .catch(() => toast.error(t("Не получилось сохранить прогресс")))
       .finally(() => setMoving((now) => (now?.id === goal.id && now.value === value ? null : now)));
   };
 
@@ -390,14 +392,14 @@ export function GoalsPage() {
       mascot.hop(0.7);
       router.push(`/dashboard/habits#h${created.id}`);
     } catch {
-      toast.error("Не получилось добавить привычку. Попробуй ещё раз");
+      toast.error(t("Не получилось добавить привычку. Попробуй ещё раз"));
     } finally {
       setAdding(false);
     }
   };
 
   const goalMenu = (goal: Goal) => (
-    <CardMenu label={`Меню цели: ${goal.title}`}>
+    <CardMenu label={t("Меню цели: {title}", { title: goal.title })}>
       {(close) =>
         goal.status === "done" ? (
           <>
@@ -410,7 +412,7 @@ export function GoalsPage() {
               }}
             >
               <Icon name="undo" />
-              <span className="gm-text">Вернуть в работу</span>
+              <span className="gm-text">{t("Вернуть в работу")}</span>
             </button>
             <button
               className="gm-item"
@@ -421,7 +423,7 @@ export function GoalsPage() {
               }}
             >
               <Icon name="x" />
-              <span className="gm-text">Удалить</span>
+              <span className="gm-text">{t("Удалить")}</span>
             </button>
           </>
         ) : (
@@ -433,7 +435,7 @@ export function GoalsPage() {
                 onCommit={(value) => commitProgress(goal, value)}
               />
             ) : (
-              <p className="gm-note">Прогресс этой цели считается сам: по тому, что внутри неё.</p>
+              <p className="gm-note">{t("Прогресс этой цели считается сам: по тому, что внутри неё.")}</p>
             )}
             <button
               className="gm-item"
@@ -444,7 +446,7 @@ export function GoalsPage() {
               }}
             >
               <Icon name="pencil" />
-              <span className="gm-text">Изменить</span>
+              <span className="gm-text">{t("Изменить")}</span>
             </button>
             <button
               className="gm-item"
@@ -455,7 +457,7 @@ export function GoalsPage() {
               }}
             >
               <Icon name="check" />
-              <span className="gm-text">Цель достигнута</span>
+              <span className="gm-text">{t("Цель достигнута")}</span>
             </button>
             <button
               className="gm-item"
@@ -466,7 +468,7 @@ export function GoalsPage() {
               }}
             >
               <Icon name="x" />
-              <span className="gm-text">Удалить</span>
+              <span className="gm-text">{t("Удалить")}</span>
             </button>
           </>
         )
@@ -481,26 +483,26 @@ export function GoalsPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Цели</h1>
+        <h1 className="title">{t("Цели")}</h1>
         <div className="head-tools">
-          <div className="tabs" role="group" aria-label="Какие цели показать">
+          <div className="tabs" role="group" aria-label={t("Какие цели показать")}>
             {FILTERS.map((item) => (
               <button key={item.label} type="button" aria-pressed={filter === item.value} onClick={() => setFilter(item.value)}>
-                {item.label}
+                {t(item.label)}
               </button>
             ))}
           </div>
           <button className="btn btn-line" type="button" onClick={() => openSheet({})}>
             <Icon name="plus" />
-            Новая цель
+            {t("Новая цель")}
           </button>
         </div>
       </header>
 
       <AiLine
-        placeholder="К чему хочешь прийти? Например: сдать физику на 9 к декабрю"
-        short="К чему хочешь прийти?"
-        label="Новая цель своими словами"
+        placeholder={t("К чему хочешь прийти? Например: сдать физику на 9 к декабрю")}
+        short={t("К чему хочешь прийти?")}
+        label={t("Новая цель своими словами")}
         onAsk={onAsk}
       />
 
@@ -515,9 +517,9 @@ export function GoalsPage() {
           onGoal={(goalId) => setOffer({ ...offer, goalId })}
           onSchedule={(schedule) => setOffer({ ...offer, schedule })}
           actions={[
-            { label: adding ? "Добавляю…" : "Добавить привычку", main: true, disabled: adding, run: () => void addHabit(offer.name, offer.goalId, offer.schedule) },
+            { label: adding ? t("Добавляю…") : t("Добавить привычку"), main: true, disabled: adding, run: () => void addHabit(offer.name, offer.goalId, offer.schedule) },
             {
-              label: "Всё равно цель",
+              label: t("Всё равно цель"),
               run: () => {
                 setOffer(null);
                 openFromText(parseGoal(offer.text));
@@ -528,11 +530,11 @@ export function GoalsPage() {
       ) : null}
       {offer?.kind === "topics" ? (
         <AiOffer
-          say="Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах."
+          say={t("Это больше похоже на то, что ты уже изучил. Такое живёт в слабых темах.")}
           actions={[
-            { label: "Открыть слабые темы", main: true, run: () => router.push("/dashboard/weaknesses") },
+            { label: t("Открыть слабые темы"), main: true, run: () => router.push("/dashboard/weaknesses") },
             {
-              label: "Всё равно цель",
+              label: t("Всё равно цель"),
               run: () => {
                 setOffer(null);
                 openFromText(parseGoal(offer.text));
@@ -544,10 +546,10 @@ export function GoalsPage() {
 
       {goals === null && failed ? (
         <section className="gr-note card" role="alert">
-          <h2>Цели не загрузились</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Цели не загрузились")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={() => void refresh()}>
-            Попробовать ещё раз
+            {t("Попробовать ещё раз")}
           </button>
         </section>
       ) : goals === null ? (
@@ -574,11 +576,11 @@ export function GoalsPage() {
           ) : null}
           {open.length === 0 ? (
             <section className="gr-note card">
-              <h2>Все цели достигнуты</h2>
-              <p>Напиши сверху, к чему хочешь прийти дальше.</p>
+              <h2>{t("Все цели достигнуты")}</h2>
+              <p>{t("Напиши сверху, к чему хочешь прийти дальше.")}</p>
             </section>
           ) : null}
-          {nothingFits ? <p className="small-note gr-none">Таких целей пока нет.</p> : null}
+          {nothingFits ? <p className="small-note gr-none">{t("Таких целей пока нет.")}</p> : null}
           {rest.length > 0 ? (
             <div className="gl-grid">
               {rest.map((goal) => (
@@ -596,7 +598,7 @@ export function GoalsPage() {
           ) : null}
           {reached.some(fits) ? (
             <section className="gl-sec">
-              <h2 className="sec">Достигнуто</h2>
+              <h2 className="sec">{t("Достигнуто")}</h2>
               <ul className="plq-past">
                 {reached.filter(fits).map((goal) => (
                   <li key={goal.id}>
@@ -611,41 +613,41 @@ export function GoalsPage() {
 
       <section className="gl-sec">
         <div className="gl-sec-head">
-          <h2 className="sec">Что изучаю</h2>
+          <h2 className="sec">{t("Что изучаю")}</h2>
           <Link className="link" href="/dashboard/curriculum">
-            Добавить предмет
+            {t("Добавить предмет")}
           </Link>
         </div>
         {lessonsFailed ? (
           <p className="small-note" role="alert">
-            Предметы не загрузились.{" "}
+            {t("Предметы не загрузились.")}{" "}
             <button className="link" type="button" onClick={() => void refreshLessons()}>
-              Попробовать ещё раз
+              {t("Попробовать ещё раз")}
             </button>
           </p>
         ) : lessons === null ? (
           <p className="small-note" role="status">
-            Загружаю предметы…
+            {t("Загружаю предметы…")}
           </p>
         ) : lessons.length === 0 ? (
-          <p className="small-note">Пока ничего. Добавь предмет, и здесь будет видно, сколько пройдено.</p>
+          <p className="small-note">{t("Пока ничего. Добавь предмет, и здесь будет видно, сколько пройдено.")}</p>
         ) : (
           <ul className="pf-now">
             {lessons.map((lesson) => (
               <li key={lesson.id} className="pf-item">
-                <Link className="pf-course card" href={lesson.href} data-attach={`Курс: ${lesson.subject}`}>
+                <Link className="pf-course card" href={lesson.href} data-attach={t("Курс: {subject}", { subject: lesson.subject })}>
                   <span className={`book mini ${coverClass(lesson.subject)}`} aria-hidden="true" />
                   <span className="nm">
                     <b>{lesson.subject}</b>
                     <small>{lesson.line}</small>
-                    {lesson.due ? <small>до {formatDay(lesson.due, today)}</small> : null}
+                    {lesson.due ? <small>{t("до {date}", { date: formatDay(lesson.due, today) })}</small> : null}
                   </span>
                   {lesson.percent !== null ? (
                     <span
                       className="ring"
                       style={{ "--p": lesson.percent } as CSSProperties}
                       role="img"
-                      aria-label={`Пройдено ${lesson.percent} ${plural(lesson.percent, "процент", "процента", "процентов")}`}
+                      aria-label={plural(lesson.percent, "Пройдено {n} процент", "Пройдено {n} процента", "Пройдено {n} процентов")}
                     >
                       <span className="ring-arc" />
                       <span className="ring-head" />
@@ -656,13 +658,13 @@ export function GoalsPage() {
                   )}
                 </Link>
                 <div className="pf-more">
-                  <OverflowMenu label={`Меню предмета: ${lesson.subject}`} triggerClassName="icon-btn">
+                  <OverflowMenu label={t("Меню предмета: {subject}", { subject: lesson.subject })} triggerClassName="icon-btn">
                     {() => (
                       <>
                         <p className="cur-menu-note">{deleteSubjectWarning(lesson.subject)}</p>
                         <ConfirmingAction
-                          label="Удалить предмет"
-                          confirm="Да, удалить"
+                          label={t("Удалить предмет")}
+                          confirm={t("Да, удалить")}
                           onRun={() => removeSubject(lesson)}
                         />
                       </>
@@ -717,7 +719,7 @@ function ProgressSlider({
   return (
     <label className="gm-range">
       <span className="gm-range-head">
-        <span>Сколько пройдено</span>
+        <span>{t("Сколько пройдено")}</span>
         <b>{value}%</b>
       </span>
       <input
@@ -745,10 +747,10 @@ function GoalsInvite({ onCreate }: { onCreate: () => void }) {
   return (
     <section className="plq plq-card gl gl-invite p-indigo">
       <RidgeArt id="invite" progress={0} />
-      <h2 className="plq-name">Здесь будут твои цели</h2>
-      <p className="plq-rules">Напиши сверху, к чему хочешь прийти, или заполни сам. Слайм пойдёт к вершине вместе с тобой.</p>
+      <h2 className="plq-name">{t("Здесь будут твои цели")}</h2>
+      <p className="plq-rules">{t("Напиши сверху, к чему хочешь прийти, или заполни сам. Слайм пойдёт к вершине вместе с тобой.")}</p>
       <button className="btn btn-plq" type="button" onClick={onCreate}>
-        Новая цель
+        {t("Новая цель")}
       </button>
     </section>
   );

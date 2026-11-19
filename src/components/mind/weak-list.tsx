@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { msg, t } from "@/lib/i18n";
 import { DueMark } from "@/components/mind/due-mark";
 import { cn } from "@/lib/utils";
 import {
@@ -29,10 +30,10 @@ import type { TopicStatus } from "@/types/mind";
 import type { WeakNotify } from "./weak-note";
 
 const STATUSES: Array<{ value: TopicStatus; label: string }> = [
-  { value: "NOT_STARTED", label: "ещё не начал" },
-  { value: "MEDIUM", label: "знаю немного" },
-  { value: "SUCCESS", label: "знаю хорошо" },
-  { value: "MASTERED", label: "усвоено" },
+  { value: "NOT_STARTED", label: msg("ещё не начал") },
+  { value: "MEDIUM", label: msg("знаю немного") },
+  { value: "SUCCESS", label: msg("знаю хорошо") },
+  { value: "MASTERED", label: msg("усвоено") },
 ];
 
 function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotify }) {
@@ -54,7 +55,7 @@ function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotif
         ),
       );
     } catch {
-      notify({ text: "Не получилось добавить подтему", failed: true });
+      notify({ text: t("Не получилось добавить подтему"), failed: true });
     } finally {
       setBusy(false);
     }
@@ -71,7 +72,7 @@ function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotif
         ),
       );
     } catch {
-      notify({ text: "Не получилось удалить подтему", failed: true });
+      notify({ text: t("Не получилось удалить подтему"), failed: true });
     }
   };
 
@@ -85,8 +86,8 @@ function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotif
               <button
                 className="icon-btn"
                 type="button"
-                aria-label={`Удалить подтему «${sub.title}»`}
-                title="Удалить"
+                aria-label={t("Удалить подтему «{title}»", { title: sub.title })}
+                title={t("Удалить")}
                 onClick={() => void remove(sub.id)}
               >
                 <Icon name="x" />
@@ -100,12 +101,12 @@ function SubtopicEditor({ topic, notify }: { topic: WeakTopic; notify: WeakNotif
           type="text"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder="Новая подтема"
-          aria-label={`Новая подтема темы «${topic.name}»`}
+          placeholder={t("Новая подтема")}
+          aria-label={t("Новая подтема темы «{name}»", { name: topic.name })}
           maxLength={255}
         />
         <button className="btn btn-text" type="submit" disabled={busy || !title.trim()}>
-          Добавить
+          {t("Добавить")}
         </button>
       </form>
     </div>
@@ -171,7 +172,7 @@ function TopicRow({
     try {
       replaceTopic(await patchTopic(topic.id, { name: clean }));
     } catch {
-      notify({ text: "Не получилось переименовать тему", failed: true });
+      notify({ text: t("Не получилось переименовать тему"), failed: true });
     } finally {
       setBusy(false);
       endRename();
@@ -194,15 +195,15 @@ function TopicRow({
     try {
       await deleteTopic(topic.id);
       topicsChanged((list) => list.filter((row) => row.id !== topic.id));
-      notify({ text: "Тема удалена" });
+      notify({ text: t("Тема удалена") });
     } catch {
-      notify({ text: "Не получилось удалить тему", failed: true });
+      notify({ text: t("Не получилось удалить тему"), failed: true });
       setBusy(false);
     }
   };
 
-  const label = `Тема: ${topic.name}`;
-  const when = topic.archived ? "в архиве" : whenLabel(topic.nextReviewAt, now);
+  const label = t("Тема: {name}", { name: topic.name });
+  const when = topic.archived ? t("в архиве") : whenLabel(topic.nextReviewAt, now);
   const subject = topic.subjectName ?? "";
 
   return (
@@ -223,7 +224,7 @@ function TopicRow({
             value={name}
             disabled={busy}
             maxLength={255}
-            aria-label="Название темы"
+            aria-label={t("Название темы")}
             onChange={(event) => setName(event.target.value)}
             onBlur={() => void saveName()}
             onKeyDown={(event) => {
@@ -254,9 +255,9 @@ function TopicRow({
         ref={moreRef}
         className="icon-btn tpw-more"
         type="button"
-        aria-label={`Действия с темой «${topic.name}»`}
+        aria-label={t("Действия с темой «{name}»", { name: topic.name })}
         aria-expanded={open}
-        title="Действия"
+        title={t("Действия")}
         onClick={onToggle}
       >
         <Icon name="more" />
@@ -266,12 +267,12 @@ function TopicRow({
         <div className="tp-acts">
           {mode === "delete" ? (
             <div className="tp-bar" role="alert">
-              <span className="small-note">Удалить тему вместе с подтемами? Вернуть её не получится.</span>
+              <span className="small-note">{t("Удалить тему вместе с подтемами? Вернуть её не получится.")}</span>
               <button className="btn btn-text danger" type="button" disabled={busy} onClick={() => void remove()}>
-                Удалить
+                {t("Удалить")}
               </button>
               <button className="btn btn-text" type="button" disabled={busy} onClick={() => setMode("view")}>
-                Не надо
+                {t("Не надо")}
               </button>
             </div>
           ) : (
@@ -281,9 +282,9 @@ function TopicRow({
                   className="btn btn-text"
                   type="button"
                   disabled={busy}
-                  onClick={() => void update({ archived: false }, "Не получилось вернуть тему")}
+                  onClick={() => void update({ archived: false }, t("Не получилось вернуть тему"))}
                 >
-                  Вернуть из архива
+                  {t("Вернуть из архива")}
                 </button>
               ) : (
                 <>
@@ -295,26 +296,26 @@ function TopicRow({
                       onToggle();
                     }}
                   >
-                    Повторить сейчас
+                    {t("Повторить сейчас")}
                   </button>
                   <button className="btn btn-text" type="button" onClick={() => setMode("rename")}>
-                    Переименовать
+                    {t("Переименовать")}
                   </button>
                   <label className="tp-know">
-                    <span>Как знаю:</span>
+                    <span>{t("Как знаю:")}</span>
                     <select
                       value={topic.status}
                       disabled={busy}
                       onChange={(event) =>
                         void update(
                           { status: event.target.value as TopicStatus },
-                          "Не получилось поменять статус",
+                          t("Не получилось поменять статус"),
                         )
                       }
                     >
                       {STATUSES.map((row) => (
                         <option key={row.value} value={row.value}>
-                          {row.label}
+                          {t(row.label)}
                         </option>
                       ))}
                     </select>
@@ -323,14 +324,14 @@ function TopicRow({
                     className="btn btn-text"
                     type="button"
                     disabled={busy}
-                    onClick={() => void update({ archived: true }, "Не получилось убрать в архив")}
+                    onClick={() => void update({ archived: true }, t("Не получилось убрать в архив"))}
                   >
-                    В архив
+                    {t("В архив")}
                   </button>
                 </>
               )}
               <button className="btn btn-text danger" type="button" onClick={() => setMode("delete")}>
-                Удалить
+                {t("Удалить")}
               </button>
             </div>
           )}
@@ -397,9 +398,9 @@ export function WeakList({
   return (
     <>
       {tabs.length > 1 ? (
-        <div className="tabs weak-tabs" role="group" aria-label="Предмет">
+        <div className="tabs weak-tabs" role="group" aria-label={t("Предмет")}>
           <button type="button" aria-pressed={!filter} onClick={() => setWanted("")}>
-            Все
+            {t("Все")}
           </button>
           {tabs.map((tab) => (
             <button key={tab.id} type="button" aria-pressed={filter === tab.id} onClick={() => setWanted(tab.id)}>
@@ -414,7 +415,7 @@ export function WeakList({
         if (!rows.length) return null;
         return (
           <section className="weak-sec" key={group.key}>
-            <h2 className={cn("sec", group.key === "late" && "late")}>{group.title}</h2>
+            <h2 className={cn("sec", group.key === "late" && "late")}>{t(group.title)}</h2>
             <ul className="card">{rows.map(row)}</ul>
           </section>
         );
@@ -422,7 +423,7 @@ export function WeakList({
 
       {archived.length ? (
         <details className="weak-sec weak-archive">
-          <summary>В архиве: {archived.length}</summary>
+          <summary>{t("В архиве: {n}", { n: archived.length })}</summary>
           <ul className="card">{archived.map(row)}</ul>
         </details>
       ) : null}

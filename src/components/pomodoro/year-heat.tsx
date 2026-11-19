@@ -4,17 +4,13 @@
 
 import { useEffect, useRef } from "react";
 
+import { plural, t } from "@/lib/i18n";
 import { hm } from "@/lib/pomodoro";
 import { summarizeHeat, type HeatWeek } from "@/lib/pomodoro.logic";
 import { cn } from "@/lib/utils";
 
 function daysWord(count: number): string {
-  const hundred = count % 100;
-  const ten = hundred % 10;
-  if (hundred > 10 && hundred < 20) return "дней";
-  if (ten === 1) return "день";
-  if (ten >= 2 && ten <= 4) return "дня";
-  return "дней";
+  return plural(count, "день", "дня", "дней");
 }
 
 export function YearHeat({ weeks, loading }: { weeks: HeatWeek[]; loading: boolean }) {
@@ -29,8 +25,8 @@ export function YearHeat({ weeks, loading }: { weeks: HeatWeek[]; loading: boole
 
   return (
     <section className="fp-year">
-      <h2 className="sec">Год</h2>
-      <div ref={wrapRef} className="heat-wrap" tabIndex={0} aria-label="Активность за год по дням">
+      <h2 className="sec">{t("Год")}</h2>
+      <div ref={wrapRef} className="heat-wrap" tabIndex={0} aria-label={t("Активность за год по дням")}>
         <div className="heat">
           {weeks.flatMap((week) =>
             week.days.map((cell) => (
@@ -46,8 +42,14 @@ export function YearHeat({ weeks, loading }: { weeks: HeatWeek[]; loading: boole
       {loading ? null : (
         <p className="small-note fp-year-note">
           {heat.best
-            ? `${heat.activeDays} ${daysWord(heat.activeDays)} с занятиями, всего ${hm(heat.totalSeconds)}. Лучший день: ${heat.best.label}, ${hm(heat.best.seconds)}.`
-            : "Каждый день с занятиями закрасится здесь."}
+            ? t("{days} {word} с занятиями, всего {total}. Лучший день: {day}, {best}.", {
+                days: heat.activeDays,
+                word: daysWord(heat.activeDays),
+                total: hm(heat.totalSeconds),
+                day: heat.best.label,
+                best: hm(heat.best.seconds),
+              })
+            : t("Каждый день с занятиями закрасится здесь.")}
         </p>
       )}
     </section>

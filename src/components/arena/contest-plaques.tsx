@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 
+import { dateLocale, t } from "@/lib/i18n";
 import { tierMeta } from "@/lib/contest-tiers";
 import {
   contestDate,
@@ -25,7 +26,7 @@ import { TierEmblem } from "./tier-emblem";
 const MAX_BEADS = 8;
 
 function time(iso: string): string {
-  return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  return new Intl.DateTimeFormat(dateLocale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
 
 function Countdown({ to, now }: { to: string; now: Date }) {
@@ -53,14 +54,14 @@ export function ContestHero({ plaque, now, href, badge, draft }: {
   const rules = plaqueRules(plaque);
   const when =
     state === "running"
-      ? `Идёт до ${time(plaque.end_time)}`
+      ? t("Идёт до {time}", { time: time(plaque.end_time) })
       : state === "ended"
-        ? `Прошёл ${shortDate(plaque.start_time)}`
+        ? t("Прошёл {date}", { date: shortDate(plaque.start_time) })
         : contestDate(plaque.start_time);
   const ticket = (
     <section
       className={`plq plq-hero ${tier.className}${draft ? " is-draft" : ""}`}
-      aria-label={state === "running" ? "Контест идёт" : "Ближайший контест"}
+      aria-label={state === "running" ? t("Контест идёт") : t("Ближайший контест")}
       data-attach={plaque.title}
     >
       <ContestArt art={plaque.art} size="hero" />
@@ -76,7 +77,7 @@ export function ContestHero({ plaque, now, href, badge, draft }: {
           {tier.name}
         </span>
         {state === "ended" ? (
-          <p className="ct-left">Завершён</p>
+          <p className="ct-left">{t("Завершён")}</p>
         ) : (
           <Countdown to={state === "running" ? plaque.end_time : plaque.start_time} now={now} />
         )}
@@ -84,7 +85,7 @@ export function ContestHero({ plaque, now, href, badge, draft }: {
     </section>
   );
   return href ? (
-    <Link className="plq-hero-wrap plq-link" href={href} aria-label={`${plaque.title}: открыть контест`}>
+    <Link className="plq-hero-wrap plq-link" href={href} aria-label={t("{title}: открыть контест", { title: plaque.title })}>
       {ticket}
     </Link>
   ) : (
@@ -103,7 +104,7 @@ export function ContestCard({ plaque, now, href, wide, badge, draft }: {
 }) {
   const tier = tierMeta(plaque.tier);
   const running = contestStateAt(plaque, now) === "running";
-  const when = running ? `Идёт до ${time(plaque.end_time)}` : shortDate(plaque.start_time);
+  const when = running ? t("Идёт до {time}", { time: time(plaque.end_time) }) : shortDate(plaque.start_time);
   const rules = plaqueRules(plaque, { duration: false });
   const className = `plq plq-card ${tier.className}${wide ? " plq-wide" : ""}${draft ? " is-draft" : ""}`;
   const inner = (
@@ -138,8 +139,8 @@ export function ContestMini({ plaque, href, result, badge, draft }: {
   const { number, kind } = contestParts(plaque.title);
   const label = result
     ? result.pending
-      ? `Решено ${result.solved} из ${result.total}, на проверке ${result.pending}`
-      : `Решено ${result.solved} из ${result.total}`
+      ? t("Решено {solved} из {total}, на проверке {pending}", { solved: result.solved, total: result.total, pending: result.pending })
+      : t("Решено {solved} из {total}", { solved: result.solved, total: result.total })
     : "";
   return (
     <Link
@@ -170,13 +171,13 @@ export function ContestMini({ plaque, href, result, badge, draft }: {
               </span>
             ) : (
               <span title={label}>
-                {result.solved} из {result.total}
+                {t("{solved} из {total}", { solved: result.solved, total: result.total })}
               </span>
             )}
             {result.points > 0 ? <span className="plq-delta">+{result.points}</span> : null}
           </>
         ) : result !== undefined ? (
-          <span className="ct-none">Без участия</span>
+          <span className="ct-none">{t("Без участия")}</span>
         ) : null}
         <span className="tier-pill tier-pill-mini" title={tier.name}>
           <TierEmblem tier={plaque.tier} />

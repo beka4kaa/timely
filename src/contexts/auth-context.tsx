@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
-    throw new Error('useAuth должен использоваться внутри AuthProvider')
+    throw new Error('useAuth должен использоваться внутри AuthProvider') // i18n-skip
   }
   return context
 }

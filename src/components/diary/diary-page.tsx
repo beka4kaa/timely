@@ -28,7 +28,8 @@ import {
   taskCount,
   weekRangeLabel,
 } from "@/lib/diary-tasks";
-import { dayMonthLabel, plural, weekdayLabel } from "@/lib/now-feed";
+import { plural, t } from "@/lib/i18n";
+import { dayMonthLabel, weekdayLabel } from "@/lib/now-feed";
 import { shiftDateKey } from "@/lib/studyplan-calendar";
 import type { DiaryDay, DiaryLesson } from "@/types/diary";
 
@@ -38,7 +39,7 @@ function capitalize(text: string): string {
 
 function WeekSkeleton() {
   return (
-    <div className="todo" role="status" aria-label="Загружаю неделю">
+    <div className="todo" role="status" aria-label={t("Загружаю неделю")}>
       <div>
         {[3, 2].map((rows, group) => (
           <section className="td-day" key={group}>
@@ -182,16 +183,16 @@ export function DiaryPage() {
   return (
     <div className="content view">
       <header className="head dy-head">
-        <h1 className="title">Дневник</h1>
+        <h1 className="title">{t("Дневник")}</h1>
         <div className="head-tools">
           <div className="dy-links">
             <Link className="btn btn-text" href="/dashboard/diary/grades">
-              <span className="dy-w">Итоговые оценки</span>
-              <span className="dy-n">Оценки</span>
+              <span className="dy-w">{t("Итоговые оценки")}</span>
+              <span className="dy-n">{t("Оценки")}</span>
             </Link>
             <Link className="btn btn-text" href="/dashboard/diary/schedule">
-              <span className="dy-w">Шаблон расписания</span>
-              <span className="dy-n">Шаблон</span>
+              <span className="dy-w">{t("Шаблон расписания")}</span>
+              <span className="dy-n">{t("Шаблон")}</span>
             </Link>
             {hasTemplate ? (
               <button
@@ -200,8 +201,8 @@ export function DiaryPage() {
                 disabled={api.applying || status !== "ready"}
                 onClick={() => setConfirmOpen(true)}
               >
-                <span className="dy-w">{api.applying ? "Применяю…" : "Применить шаблон"}</span>
-                <span className="dy-n">{api.applying ? "Применяю…" : "Применить"}</span>
+                <span className="dy-w">{api.applying ? t("Применяю…") : t("Применить шаблон")}</span>
+                <span className="dy-n">{api.applying ? t("Применяю…") : t("Применить")}</span>
               </button>
             ) : null}
             {api.hasUndo ? (
@@ -212,12 +213,12 @@ export function DiaryPage() {
                 onClick={undo}
               >
                 <Icon name="undo" />
-                Отменить
+                {t("Отменить")}
               </button>
             ) : null}
             {!isCurrentWeek && thisMonday ? (
               <button type="button" className="btn btn-text" onClick={() => setWeekStart(thisMonday)}>
-                Эта неделя
+                {t("Эта неделя")}
               </button>
             ) : null}
           </div>
@@ -225,7 +226,7 @@ export function DiaryPage() {
             <button
               type="button"
               className="icon-btn"
-              aria-label="Прошлая неделя"
+              aria-label={t("Прошлая неделя")}
               disabled={!weekStart}
               onClick={() => weekStart && setWeekStart(shiftDateKey(weekStart, -7))}
             >
@@ -235,7 +236,7 @@ export function DiaryPage() {
             <button
               type="button"
               className="icon-btn"
-              aria-label="Следующая неделя"
+              aria-label={t("Следующая неделя")}
               disabled={!weekStart}
               onClick={() => weekStart && setWeekStart(shiftDateKey(weekStart, 7))}
             >
@@ -247,29 +248,29 @@ export function DiaryPage() {
 
       {status === "error" ? (
         <div className="card dy-empty" role="alert">
-          <h2>Дневник не загрузился</h2>
-          <p>Записи на месте, это ошибка связи. Попробуй ещё раз.</p>
+          <h2>{t("Дневник не загрузился")}</h2>
+          <p>{t("Записи на месте, это ошибка связи. Попробуй ещё раз.")}</p>
           <button type="button" className="btn btn-line" onClick={api.reload}>
-            Повторить
+            {t("Повторить")}
           </button>
         </div>
       ) : !week || !today || !tasks || (!hasLessons && !totalTasks && hasTemplate === null) ? (
         <WeekSkeleton />
       ) : !hasLessons && !totalTasks ? (
         <div className="card dy-empty">
-          <h2>{hasTemplate ? "На этой неделе нет уроков" : "Пока нет расписания"}</h2>
+          <h2>{hasTemplate ? t("На этой неделе нет уроков") : t("Пока нет расписания")}</h2>
           <p>
             {hasTemplate
-              ? "В шаблоне нет уроков, или неделя собралась раньше него. Заполни шаблон или примени его к этой неделе."
-              : "Дневник собирается из шаблона: какие уроки в какой день. Заполни его один раз, и здесь появятся задания и оценки на каждую неделю."}
+              ? t("В шаблоне нет уроков, или неделя собралась раньше него. Заполни шаблон или примени его к этой неделе.")
+              : t("Дневник собирается из шаблона: какие уроки в какой день. Заполни его один раз, и здесь появятся задания и оценки на каждую неделю.")}
           </p>
           <div className="dy-empty-acts">
             <Link className="btn btn-main" href="/dashboard/diary/schedule">
-              Настроить расписание
+              {t("Настроить расписание")}
             </Link>
             {hasTemplate ? (
               <button type="button" className="btn btn-line" onClick={() => setConfirmOpen(true)}>
-                Применить шаблон
+                {t("Применить шаблон")}
               </button>
             ) : null}
           </div>
@@ -280,8 +281,8 @@ export function DiaryPage() {
             {totalTasks === 0 ? (
               <p className="dy-note">
                 {upcoming.length
-                  ? "На этой неделе пока ничего не записано. Нажми «Добавить задание» у нужного дня."
-                  : "На этой неделе ничего не было записано."}
+                  ? t("На этой неделе пока ничего не записано. Нажми «Добавить задание» у нужного дня.")
+                  : t("На этой неделе ничего не было записано.")}
               </p>
             ) : null}
 
@@ -299,15 +300,15 @@ export function DiaryPage() {
 
             {isCurrentWeek && upcoming.length === 0 ? (
               <div className="card dy-empty">
-                <h2>На этой неделе больше ничего не задано</h2>
-                <p>Задания на понедельник записываются в следующую неделю.</p>
+                <h2>{t("На этой неделе больше ничего не задано")}</h2>
+                <p>{t("Задания на понедельник записываются в следующую неделю.")}</p>
                 {thisMonday ? (
                   <button
                     type="button"
                     className="btn btn-line"
                     onClick={() => setWeekStart(shiftDateKey(thisMonday, 7))}
                   >
-                    Следующая неделя
+                    {t("Следующая неделя")}
                   </button>
                 ) : null}
               </div>
@@ -336,12 +337,12 @@ export function DiaryPage() {
                   onClick={() => setShowPast((value) => !value)}
                 >
                   {showPast
-                    ? "Скрыть прошедшие дни"
-                    : `Прошедшие дни${
-                        pastTaskCount
-                          ? `, ${pastTaskCount} ${plural(pastTaskCount, ["задание", "задания", "заданий"])}`
-                          : ""
-                      }`}
+                    ? t("Скрыть прошедшие дни")
+                    : pastTaskCount
+                      ? t("Прошедшие дни, {count}", {
+                          count: plural(pastTaskCount, "{n} задание", "{n} задания", "{n} заданий"),
+                        })
+                      : t("Прошедшие дни")}
                 </button>
               </div>
             ) : null}
@@ -364,10 +365,10 @@ export function DiaryPage() {
           <aside className={showWeek ? "todo-side is-all" : "todo-side"}>
             {isCurrentWeek ? (
               <>
-                <SchoolCard title="Сегодня в школе" day={todayDay} today={today} api={api} onOpenLesson={openDialog} />
+                <SchoolCard title={t("Сегодня в школе")} day={todayDay} today={today} api={api} onOpenLesson={openDialog} />
                 {yesterdayDay && classesOfDay(yesterdayDay).length ? (
                   <SchoolCard
-                    title="Вчера"
+                    title={t("Вчера")}
                     day={yesterdayDay}
                     today={today}
                     quiet
@@ -396,7 +397,7 @@ export function DiaryPage() {
                     aria-expanded={showWeek}
                     onClick={() => setShowWeek((value) => !value)}
                   >
-                    {showWeek ? "Свернуть" : "Вся неделя"}
+                    {showWeek ? t("Свернуть") : t("Вся неделя")}
                   </button>
                 ) : null}
               </>
@@ -427,7 +428,7 @@ export function DiaryPage() {
               aria-expanded={showVideos}
               onClick={() => setShowVideos((value) => !value)}
             >
-              {showVideos ? "Скрыть видео" : "Видео и трансляции"}
+              {showVideos ? t("Скрыть видео") : t("Видео и трансляции")}
               {!showVideos && linkCount ? `, ${linkCount}` : ""}
             </button>
           </div>
@@ -438,17 +439,19 @@ export function DiaryPage() {
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="dy-dialog">
-          <DialogTitle className="dy-dialog-title">Применить шаблон?</DialogTitle>
+          <DialogTitle className="dy-dialog-title">{t("Применить шаблон?")}</DialogTitle>
           <DialogDescription className="dy-dialog-sub">
-            Все оценки и задания недели {weekStart ? weekRangeLabel(weekStart) : ""} сбросятся, а
-            уроки заполнятся из шаблона расписания. Вернуть всё можно кнопкой «Отменить».
+            {t(
+              "Все оценки и задания недели {week} сбросятся, а уроки заполнятся из шаблона расписания. Вернуть всё можно кнопкой «Отменить».",
+              { week: weekStart ? weekRangeLabel(weekStart) : "" },
+            )}
           </DialogDescription>
           <div className="pop-acts">
             <button type="button" className="btn btn-main" disabled={api.applying} onClick={applyTemplate}>
-              Применить
+              {t("Применить")}
             </button>
             <button type="button" className="btn btn-text" onClick={() => setConfirmOpen(false)}>
-              Отмена
+              {t("Отмена")}
             </button>
           </div>
         </DialogContent>

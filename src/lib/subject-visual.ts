@@ -38,7 +38,7 @@ const RULES: Array<[RegExp, SubjectVisual]> = [
   [/хими|chemi/i, { tint: "mint", glyph: { kind: "icon", icon: "flask" } }],
   [/биолог|biolog|естеств/i, { tint: "mint", glyph: { kind: "icon", icon: "leaf" } }],
   [/литерат|literat/i, { tint: "lilac", glyph: { kind: "icon", icon: "book" } }],
-  [/русск/i, { tint: "pink", glyph: { kind: "letters", text: "Аа" } }],
+  [/русск/i, { tint: "pink", glyph: { kind: "letters", text: "Аа" } }], // i18n-skip
   [/казах|қазақ/i, { tint: "mint", glyph: { kind: "letters", text: "Қ" } }],
   [/англ|english|немец|german|франц|french|иностр/i, { tint: "sky", glyph: { kind: "icon", icon: "languages" } }],
   [/истор|history|обществ/i, { tint: "sky", glyph: { kind: "icon", icon: "landmark" } }],

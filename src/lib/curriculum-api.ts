@@ -20,6 +20,7 @@
 
 
 import { limitMessage } from "@/lib/ai-limit";
+import { t } from "@/lib/i18n";
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch, backendAuthHeaders } from "@/lib/auth-fetch";
 import type { IngestionStatusCode, OcrSummary } from "@/lib/curriculum-progress";
@@ -346,9 +347,9 @@ async function unwrap<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const record = (body ?? {}) as Record<string, unknown>;
     const message =
-      (typeof record.error === "string" && record.error) ||
-      (typeof record.detail === "string" && record.detail) ||
-      `Запрос не удался (${response.status})`;
+      (typeof record.error === "string" && record.error && t(record.error)) ||
+      (typeof record.detail === "string" && record.detail && t(record.detail)) ||
+      t("Запрос не удался ({status})", { status: response.status });
     const code = typeof record.code === "string" ? record.code : "";
     throw new CurriculumApiError(message, response.status, code, body);
   }
@@ -514,7 +515,8 @@ export function uploadDocument(
         }
         reject(
           new CurriculumApiError(
-            (body.error as string) || `Загрузка не удалась (${xhr.status})`,
+            (body.error ? t(body.error as string) : "") ||
+              t("Загрузка не удалась ({status})", { status: xhr.status }),
             xhr.status,
             (body.code as string) || "",
             body,
@@ -523,9 +525,9 @@ export function uploadDocument(
       };
 
       xhr.onerror = () =>
-        reject(new CurriculumApiError("Не удалось связаться с сервером.", 0));
+        reject(new CurriculumApiError(t("Не удалось связаться с сервером."), 0));
       xhr.onabort = () =>
-        reject(new CurriculumApiError("Загрузка отменена.", 0, "aborted"));
+        reject(new CurriculumApiError(t("Загрузка отменена."), 0, "aborted"));
 
       options.signal?.addEventListener("abort", () => xhr.abort());
       xhr.send(form);
@@ -723,11 +725,12 @@ async function remove(path: string): Promise<void> {
   const response = await authFetch(path, { method: "DELETE" });
   if (response.ok || response.status === 404) return;
   let code = "";
-  let message = `Не удалось удалить (${response.status}).`;
+  let message = t("Не удалось удалить ({status}).", { status: response.status });
   try {
     const body = await response.json();
     code = body?.code || "";
-    message = body?.error || body?.detail || message;
+    const backend = body?.error || body?.detail;
+    if (backend) message = t(String(backend));
   } catch {
     // Тела нет — оставляем сообщение по статусу.
   }
@@ -835,13 +838,14 @@ export async function askSubjectStream(
   if (!response.ok) {
     // До первого события ошибка ещё приходит кодом и телом — показываем её,
     // а не молчаливый пустой поток.
-    let message = `Не удалось спросить (${response.status}).`;
+    let message = t("Не удалось спросить ({status}).", { status: response.status });
     try {
       const failure = await response.json();
       message =
         failure?.code === "ai_usage_limit_exceeded"
           ? limitMessage(failure.reset_at)
-          : failure?.error || message;
+          : // Текст сервера без перевода: askErrorText узнаёт ошибку по-русски и сам переводит её при показе.
+            failure?.error ? String(failure.error) : message;
     } catch {
       // Тела нет — оставляем сообщение по статусу.
     }
@@ -957,7 +961,7 @@ export interface SharedChatPage {
 export async function fetchSharedChat(token: string): Promise<SharedChatPage | null> {
   const response = await fetch(`${BACKEND_URL}/api/public/chats/${encodeURIComponent(token)}/`, { cache: "no-store" });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Не удалось открыть чат (${response.status})`);
+  if (!response.ok) throw new Error(t("Не удалось открыть чат ({status})", { status: response.status }));
   return (await response.json()) as SharedChatPage;
 }
 

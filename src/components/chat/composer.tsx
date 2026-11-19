@@ -26,6 +26,7 @@ import { BOOKS_ENABLED } from "@/config/features";
 import { chatContextHint } from "@/lib/curriculum-books";
 import { ASK_LEVELS, gaugeAngle, type AskLevel } from "@/lib/ask-level";
 import { withHeard } from "@/lib/dictation";
+import { t } from "@/lib/i18n";
 
 import { CHAT_MODES, type ChatMode, type ChatModeKey } from "./chat-modes";
 import { contextPercent, contextUsed, countLabel, shortCount, type AskUsage } from "./chat-usage";
@@ -124,8 +125,8 @@ export const Composer = forwardRef<
           ref={fieldRef}
           rows={1}
           value={draft}
-          placeholder={dictation.listening ? "Слушаю…" : placeholder}
-          aria-label="Сообщение"
+          placeholder={dictation.listening ? t("Слушаю…") : placeholder}
+          aria-label={t("Сообщение")}
           autoComplete="off"
           style={{ maxHeight: MAX_HEIGHT }}
           onChange={(event) => setDraft(event.target.value)}
@@ -151,9 +152,9 @@ export const Composer = forwardRef<
           <button
             className="mic-btn"
             type="button"
-            aria-label={dictation.listening ? "Хватит слушать" : "Сказать голосом"}
+            aria-label={dictation.listening ? t("Хватит слушать") : t("Сказать голосом")}
             aria-pressed={dictation.listening}
-            title={dictation.listening ? "Хватит слушать" : "Сказать голосом"}
+            title={dictation.listening ? t("Хватит слушать") : t("Сказать голосом")}
             disabled={disabled}
             onClick={() => {
               if (dictation.listening) {
@@ -174,8 +175,8 @@ export const Composer = forwardRef<
             key="stop"
             className="send"
             type="button"
-            aria-label="Остановить"
-            title="Остановить"
+            aria-label={t("Остановить")}
+            title={t("Остановить")}
             onClick={onStop}
           >
             <span className="q-stop" />
@@ -185,7 +186,7 @@ export const Composer = forwardRef<
             key="send"
             className="send"
             type="submit"
-            aria-label="Отправить"
+            aria-label={t("Отправить")}
             disabled={disabled || !draft.trim()}
           >
             <Icon name="arrow-up" />
@@ -260,19 +261,19 @@ export function ModePicker({
         type="button"
         aria-haspopup="menu"
         aria-expanded={menu.open}
-        aria-label={`Режим: ${mode.name}`}
-        title="Режим, Shift+Tab переключает"
+        aria-label={t("Режим: {name}", { name: t(mode.name) })}
+        title={t("Режим, Shift+Tab переключает")}
         onClick={menu.toggle}
       >
         <Icon name={mode.icon} />
-        <span>{mode.name}</span>
+        <span>{t(mode.name)}</span>
         <Icon name="chev-d" className="chev" />
       </button>
       {menu.open ? (
         <div
           className="menu mode-menu"
           role="menu"
-          aria-label="Режим тьютора"
+          aria-label={t("Режим тьютора")}
           onKeyDown={menu.onItemsKey}
           onPointerLeave={() => setHovered(null)}
         >
@@ -282,7 +283,7 @@ export function ModePicker({
               type="button"
               role="menuitemradio"
               aria-checked={item.key === mode.key}
-              aria-label={`${item.name}. ${item.note}`}
+              aria-label={`${t(item.name)}. ${t(item.note)}`}
               onPointerEnter={() => setHovered(item.key)}
               onFocus={() => setHovered(item.key)}
               onClick={() => {
@@ -291,11 +292,11 @@ export function ModePicker({
               }}
             >
               <Icon name={item.icon} />
-              <b>{item.name}</b>
+              <b>{t(item.name)}</b>
               <Icon name="check" className="ok" />
             </button>
           ))}
-          <p className="mode-note" aria-hidden="true">{noted.note}</p>
+          <p className="mode-note" aria-hidden="true">{t(noted.note)}</p>
         </div>
       ) : null}
     </div>
@@ -316,7 +317,7 @@ export function LevelToggle({ level, onPick }: { level: AskLevel; onPick: (level
     <div
       className="lvl"
       role="radiogroup"
-      aria-label="Насколько глубоко думать"
+      aria-label={t("Насколько глубоко думать")}
       style={{ "--i": index } as CSSProperties}
       onKeyDown={(event) => {
         if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -333,7 +334,7 @@ export function LevelToggle({ level, onPick }: { level: AskLevel; onPick: (level
           role="radio"
           aria-checked={row.key === level}
           tabIndex={row.key === level ? 0 : -1}
-          title={row.note}
+          title={t(row.note)}
           onClick={() => onPick(row.key)}
         >
           {row.name}
@@ -368,7 +369,7 @@ export function LevelPicker({ level, onPick }: { level: AskLevel; onPick: (level
         type="button"
         aria-haspopup="true"
         aria-expanded={menu.open}
-        aria-label={`Насколько глубоко думать: ${current.name}`}
+        aria-label={t("Насколько глубоко думать: {name}", { name: current.name })}
         title={current.name}
         onClick={menu.toggle}
       >
@@ -391,14 +392,18 @@ export function ContextMeter({ usage }: { usage: AskUsage }) {
   return (
     <span
       className="ctx"
-      title={`Контекст: ${countLabel(used)} из ${countLabel(usage.context_window)} токенов. В него идут ${chatContextHint(BOOKS_ENABLED)}.`}
+      title={t("Контекст: {used} из {total} токенов. В него идут {hint}.", {
+        used: countLabel(used),
+        total: countLabel(usage.context_window),
+        hint: chatContextHint(BOOKS_ENABLED),
+      })}
     >
       {/* Заметная точка даже на доле процента: ноль выглядел бы как поломка. */}
       <span className="ring xs" style={{ "--p": Math.max(percent, 4) } as CSSProperties} aria-hidden="true">
         <span className="ring-arc" />
       </span>
       <span className="ctx-text">
-        {shortCount(used)} из {shortCount(usage.context_window)}
+        {t("{used} из {total}", { used: shortCount(used), total: shortCount(usage.context_window) })}
       </span>
     </span>
   );
@@ -438,18 +443,18 @@ export function BookPicker({
         type="button"
         aria-haspopup="true"
         aria-expanded={menu.open}
-        title="По какой книге отвечать. Смена книги начинает новый разговор"
+        title={t("По какой книге отвечать. Смена книги начинает новый разговор")}
         onClick={menu.toggle}
       >
         {/* Книга есть, а списка нет, если он не загрузился: «без книги» было бы неправдой. */}
-        <span>{current?.title ?? (selected ? "Книга" : "Без книги")}</span>
+        <span>{current?.title ?? (selected ? t("Книга") : t("Без книги"))}</span>
         <Icon name="chev-d" />
       </button>
       {menu.open ? (
         <div className="menu book-menu" onKeyDown={menu.onItemsKey}>
           <button type="button" aria-pressed={selected === null} onClick={() => pick(null)}>
-            Без книги
-            <small>Обычный разговор</small>
+            {t("Без книги")}
+            <small>{t("Обычный разговор")}</small>
           </button>
           {options.map((item) => (
             <button
@@ -462,10 +467,10 @@ export function BookPicker({
               <small>{item.note}</small>
             </button>
           ))}
-          {failed ? <p className="book-note">Книги не загрузились</p> : null}
+          {failed ? <p className="book-note">{t("Книги не загрузились")}</p> : null}
           {BOOKS_ENABLED ? (
             <Link className="book-add" href="/dashboard/curriculum">
-              Добавить книгу
+              {t("Добавить книгу")}
             </Link>
           ) : null}
         </div>

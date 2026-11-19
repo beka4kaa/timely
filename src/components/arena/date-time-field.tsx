@@ -4,10 +4,11 @@
 // Окно парит над формой, поэтому оно из стекла. Время местное: на сервер уходит UTC.
 
 import * as Popover from "@radix-ui/react-popover";
-import { ru } from "date-fns/locale";
+import { enGB, ru } from "date-fns/locale";
 import { useState } from "react";
 import { DayPicker } from "react-day-picker";
 
+import { getLocale, t } from "@/lib/i18n";
 import { contestDate } from "@/lib/contest-view";
 
 const QUICK_TIMES = ["09:00", "10:00", "11:00", "12:00", "15:00", "18:00"];
@@ -71,7 +72,7 @@ export function DateTimeField({ label, value, onChange, disabled }: {
             <DayPicker
               mode="single"
               required
-              locale={ru}
+              locale={getLocale() === "en" ? enGB : ru}
               weekStartsOn={1}
               showOutsideDays
               month={month}
@@ -100,7 +101,7 @@ export function DateTimeField({ label, value, onChange, disabled }: {
                 disabled: "is-disabled",
               }}
             />
-            <div className="dt-times" role="group" aria-label="Время">
+            <div className="dt-times" role="group" aria-label={t("Время")}>
               {QUICK_TIMES.map((quick) => (
                 <button
                   key={quick}
@@ -115,7 +116,7 @@ export function DateTimeField({ label, value, onChange, disabled }: {
                 className="dt-own"
                 type="time"
                 value={time}
-                aria-label="Своё время"
+                aria-label={t("Своё время")}
                 onChange={(event) => event.target.value && onChange(withTime(value, event.target.value))}
               />
             </div>

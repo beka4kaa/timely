@@ -9,6 +9,7 @@
 // только на подписи — на то, чтобы в интерфейсе не стояло «12 из 40».
 
 import type { StudyMaterialDraft, StudyMaterialKind } from "@/lib/curriculum-api";
+import { msg, t } from "../../lib/i18n";
 
 export interface SourceFormValues {
   kind: StudyMaterialKind;
@@ -32,27 +33,27 @@ export const SOURCE_KINDS: {
 }[] = [
   {
     kind: "link",
-    label: "Ссылка",
-    unitsHint: "занятий",
+    label: msg("Ссылка"),
+    unitsHint: msg("занятий"),
     example: "Khan Academy · SAT Math",
   },
   {
     kind: "practice_set",
-    label: "Тесты",
-    unitsHint: "вариантов",
+    label: msg("Тесты"),
+    unitsHint: msg("вариантов"),
     example: "SAT Practice Tests",
   },
   {
     kind: "problem_set",
-    label: "Задачник",
-    unitsHint: "задач",
-    example: "Сборник Сканави",
+    label: msg("Задачник"),
+    unitsHint: msg("задач"),
+    example: msg("Сборник Сканави"),
   },
   {
     kind: "custom",
-    label: "Своё",
-    unitsHint: "занятий",
-    example: "Повторять слова из Anki",
+    label: msg("Своё"),
+    unitsHint: msg("занятий"),
+    example: msg("Повторять слова из Anki"),
   },
 ];
 
@@ -72,11 +73,11 @@ export const EMPTY_SOURCE_FORM: SourceFormValues = {
 };
 
 export function unitsHint(kind: StudyMaterialKind): string {
-  return SOURCE_KINDS.find((item) => item.kind === kind)?.unitsHint ?? "занятий";
+  return SOURCE_KINDS.find((item) => item.kind === kind)?.unitsHint ?? msg("занятий");
 }
 
 export function kindLabel(kind: StudyMaterialKind): string {
-  return SOURCE_KINDS.find((item) => item.kind === kind)?.label ?? "Источник";
+  return t(SOURCE_KINDS.find((item) => item.kind === kind)?.label ?? msg("Источник"));
 }
 
 /**
@@ -113,13 +114,13 @@ export function prepareSource(
   const errors: SourceFormErrors = {};
 
   const title = values.title.trim();
-  if (!title) errors.title = "Без названия источник не найти в списке.";
-  else if (title.length > 400) errors.title = "Слишком длинное название.";
+  if (!title) errors.title = t("Без названия источник не найти в списке.");
+  else if (title.length > 400) errors.title = t("Слишком длинное название.");
 
   let url = "";
   if (values.kind === "link") {
     const normalized = normalizeUrl(values.url);
-    if (!normalized) errors.url = "Нужен адрес страницы.";
+    if (!normalized) errors.url = t("Нужен адрес страницы.");
     else url = normalized;
   } else if (values.url.trim()) {
     // Адрес у не-ссылки не обязателен, но и выбрасывать его незачем.
@@ -127,14 +128,14 @@ export function prepareSource(
   }
 
   const totalUnits = parseCount(values.totalUnits);
-  if (totalUnits === null) errors.totalUnits = "Укажи целое число, больше нуля.";
-  else if (totalUnits > MAX_UNITS) errors.totalUnits = `Не больше ${MAX_UNITS}.`;
+  if (totalUnits === null) errors.totalUnits = t("Укажи целое число, больше нуля.");
+  else if (totalUnits > MAX_UNITS) errors.totalUnits = t("Не больше {max}.", { max: MAX_UNITS });
 
   const minutesPerUnit = parseCount(values.minutesPerUnit);
   if (minutesPerUnit === null) {
-    errors.minutesPerUnit = "Укажи целое число минут, больше нуля.";
+    errors.minutesPerUnit = t("Укажи целое число минут, больше нуля.");
   } else if (minutesPerUnit > MAX_MINUTES_PER_UNIT) {
-    errors.minutesPerUnit = `Не больше ${MAX_MINUTES_PER_UNIT} минут.`;
+    errors.minutesPerUnit = t("Не больше {max} минут.", { max: MAX_MINUTES_PER_UNIT });
   }
 
   if (
@@ -142,7 +143,7 @@ export function prepareSource(
     minutesPerUnit !== null &&
     totalUnits * minutesPerUnit > MAX_TOTAL_MINUTES
   ) {
-    errors.totalUnits = "Вместе это больше двух тысяч часов — проверь числа.";
+    errors.totalUnits = t("Вместе это больше двух тысяч часов — проверь числа.");
   }
 
   if (Object.keys(errors).length > 0) return { errors };
@@ -169,6 +170,6 @@ export function sourceSummary(values: SourceFormValues): string {
 
   const minutes = totalUnits * minutesPerUnit;
   const hours = Math.round(minutes / 6) / 10;
-  const time = minutes < 60 ? `${minutes} мин` : `${hours} ч`;
-  return `${totalUnits} ${unitsHint(values.kind)}, ${time}`;
+  const time = minutes < 60 ? t("{n} мин", { n: minutes }) : t("{n} ч", { n: hours });
+  return t("{count} {unit}, {time}", { count: totalUnits, unit: t(unitsHint(values.kind)), time });
 }

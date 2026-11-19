@@ -4,22 +4,24 @@
 // Здесь разметка снимается, пункты списка и заголовки становятся отдельными фразами,
 // а простые формулы — словами. Блоки кода не зачитываются построчно.
 
+import { t } from "./i18n";
+
 function spokenMath(tex: string): string {
   let text = tex.trim();
   // Вложенные дроби разворачиваются изнутри наружу.
-  for (let pass = 0; pass < 3; pass += 1) text = text.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "$1 делить на $2");
+  for (let pass = 0; pass < 3; pass += 1) text = text.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, t("$1 делить на $2"));
   text = text
-    .replace(/\\sqrt\{([^{}]*)\}/g, "корень из $1")
-    .replace(/\^\{([^{}]*)\}/g, " в степени $1")
-    .replace(/\^(\w)/g, " в степени $1")
+    .replace(/\\sqrt\{([^{}]*)\}/g, t("корень из $1"))
+    .replace(/\^\{([^{}]*)\}/g, ` ${t("в степени")} $1`)
+    .replace(/\^(\w)/g, ` ${t("в степени")} $1`)
     .replace(/_\{([^{}]*)\}/g, " $1")
     .replace(/_(\w)/g, " $1")
-    .replace(/\\(cdot|times)\b/g, " умножить на ")
-    .replace(/\\(leq?)\b/g, " меньше или равно ")
-    .replace(/\\(geq?)\b/g, " больше или равно ")
-    .replace(/\\neq?\b/g, " не равно ")
-    .replace(/\\pi\b/g, " пи ")
-    .replace(/\\infty\b/g, " бесконечность ")
+    .replace(/\\(cdot|times)\b/g, ` ${t("умножить на")} `)
+    .replace(/\\(leq?)\b/g, ` ${t("меньше или равно")} `)
+    .replace(/\\(geq?)\b/g, ` ${t("больше или равно")} `)
+    .replace(/\\neq?\b/g, ` ${t("не равно")} `)
+    .replace(/\\pi\b/g, ` ${t("пи")} `)
+    .replace(/\\infty\b/g, ` ${t("бесконечность")} `)
     .replace(/\\[a-zA-Z]+/g, " ")
     .replace(/[{}]/g, "");
   return text.replace(/\s{2,}/g, " ").trim();
@@ -27,7 +29,7 @@ function spokenMath(tex: string): string {
 
 export function speakableText(markdown: string): string {
   let text = markdown.replace(/\r\n/g, "\n");
-  text = text.replace(/```[\s\S]*?```/g, "Пример кода пропускаю.");
+  text = text.replace(/```[\s\S]*?```/g, t("Пример кода пропускаю."));
   text = text
     .replace(/\$\$([\s\S]+?)\$\$/g, (_, tex: string) => spokenMath(tex))
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, tex: string) => spokenMath(tex))

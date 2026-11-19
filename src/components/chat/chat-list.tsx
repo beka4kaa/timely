@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { buildChatFolders, type FolderSubject } from "@/lib/chat-folders";
 import type { SubjectChatSummary } from "@/lib/curriculum-api";
 
@@ -48,19 +49,19 @@ export function ChatList({
     <>
       {failed ? (
         <p className="chat-hint">
-          Чаты не загрузились.{" "}
+          {t("Чаты не загрузились.")}{" "}
           <button className="link" type="button" onClick={onRetry}>
-            Ещё раз
+            {t("Ещё раз")}
           </button>
         </p>
       ) : !folders.length && !loading ? (
-        <p className="chat-hint">Здесь появятся твои разговоры.</p>
+        <p className="chat-hint">{t("Здесь появятся твои разговоры.")}</p>
       ) : null}
 
       {!failed && !loading
         ? folders.map((folder) => (
             <div className="nav-group" key={folder.goalId ?? "none"}>
-              <div className="nav-label">{folder.title}</div>
+              <div className="nav-label">{t(folder.title)}</div>
               {folder.chats.map((chat) => (
                 <ChatRow
                   key={chat.id}
@@ -142,12 +143,12 @@ function ChatRow({
           if (event.key === "Escape") onAskEnd(false);
         }}
       >
-        <span className="chat-ask">Удалить чат?</span>
+        <span className="chat-ask">{t("Удалить чат?")}</span>
         <button className="chat-answer" type="button" onClick={() => onAskEnd(true)}>
-          Да
+          {t("Да")}
         </button>
         <button className="chat-answer" type="button" ref={noRef} onClick={() => onAskEnd(false)}>
-          Нет
+          {t("Нет")}
         </button>
       </div>
     );
@@ -174,8 +175,8 @@ function ChatRow({
         <button
           className="chat-tool chat-tool-edit"
           type="button"
-          aria-label={`Переименовать чат «${title}»`}
-          title="Переименовать"
+          aria-label={t("Переименовать чат «{title}»", { title })}
+          title={t("Переименовать")}
           onClick={onEdit}
         >
           <Icon name="pencil" />
@@ -183,8 +184,8 @@ function ChatRow({
         <button
           className="chat-tool chat-tool-edit"
           type="button"
-          aria-label={`Удалить чат «${title}»`}
-          title="Удалить"
+          aria-label={t("Удалить чат «{title}»", { title })}
+          title={t("Удалить")}
           onClick={onAsk}
         >
           <Icon name="x" />
@@ -192,7 +193,7 @@ function ChatRow({
         <button
           className="chat-tool chat-tool-more"
           type="button"
-          aria-label={`Действия с чатом «${title}»`}
+          aria-label={t("Действия с чатом «{title}»", { title })}
           aria-expanded={revealed}
           onClick={onReveal}
         >
@@ -233,7 +234,7 @@ function RenameField({
         className="chat-rename"
         value={draft}
         maxLength={200}
-        aria-label="Название чата"
+        aria-label={t("Название чата")}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => finish(draft)}
         onKeyDown={(event) => {

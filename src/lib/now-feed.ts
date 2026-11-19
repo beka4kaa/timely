@@ -18,6 +18,7 @@ import {
   zonedMinutes,
 } from "./studyplan-calendar.ts";
 import { durationLabel } from "./studyplan-visuals.ts";
+import { getLocale, plural as pluralWord, t } from "./i18n";
 import {
   isFeynmanBlock,
   isLessonBlock,
@@ -29,52 +30,24 @@ import {
 
 /** «1 занятие», «3 занятия», «5 занятий». */
 export function plural(count: number, forms: [string, string, string]): string {
-  const mod100 = Math.abs(count) % 100;
-  const mod10 = mod100 % 10;
-  if (mod100 >= 11 && mod100 <= 14) return forms[2];
-  if (mod10 === 1) return forms[0];
-  if (mod10 >= 2 && mod10 <= 4) return forms[1];
-  return forms[2];
+  return pluralWord(count, forms[0], forms[1], forms[2]);
 }
 
-const WEEKDAYS = [
-  "понедельник",
-  "вторник",
-  "среда",
-  "четверг",
-  "пятница",
-  "суббота",
-  "воскресенье",
-];
-const WEEKDAYS_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
-const MONTHS = [
-  "января",
-  "февраля",
-  "марта",
-  "апреля",
-  "мая",
-  "июня",
-  "июля",
-  "августа",
-  "сентября",
-  "октября",
-  "ноября",
-  "декабря",
-];
-const MONTHS_SHORT = [
-  "янв.",
-  "февр.",
-  "марта",
-  "апр.",
-  "мая",
-  "июня",
-  "июля",
-  "авг.",
-  "сент.",
-  "окт.",
-  "нояб.",
-  "дек.",
-];
+// Русские названия — данные для русского интерфейса, английские лежат рядом.
+const WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]; // i18n-skip
+const WEEKDAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const WEEKDAYS_SHORT_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]; // i18n-skip
+const WEEKDAYS_SHORT_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]; // i18n-skip
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS_SHORT_RU = ["янв.", "февр.", "марта", "апр.", "мая", "июня", "июля", "авг.", "сент.", "окт.", "нояб.", "дек."]; // i18n-skip
+const MONTHS_SHORT_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const english = () => getLocale() === "en";
+const weekdays = () => (english() ? WEEKDAYS_EN : WEEKDAYS_RU);
+const weekdaysShort = () => (english() ? WEEKDAYS_SHORT_EN : WEEKDAYS_SHORT_RU);
+const months = () => (english() ? MONTHS_EN : MONTHS_RU);
+const monthsShort = () => (english() ? MONTHS_SHORT_EN : MONTHS_SHORT_RU);
 
 function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -95,60 +68,46 @@ function monthIndex(dateKey: string): number {
 
 /** «Вторник, 3 ноября». */
 export function longDateLabel(dateKey: string): string {
-  return `${capitalize(WEEKDAYS[weekdayOf(dateKey)])}, ${dayNumber(dateKey)} ${
-    MONTHS[monthIndex(dateKey)]
+  return `${capitalize(weekdays()[weekdayOf(dateKey)])}, ${dayNumber(dateKey)} ${
+    months()[monthIndex(dateKey)]
   }`;
 }
 
 /** «Вт, 3 ноября» — для узкой шапки. */
 export function shortDateLabel(dateKey: string): string {
-  return `${capitalize(WEEKDAYS_SHORT[weekdayOf(dateKey)])}, ${dayNumber(dateKey)} ${
-    MONTHS[monthIndex(dateKey)]
+  return `${capitalize(weekdaysShort()[weekdayOf(dateKey)])}, ${dayNumber(dateKey)} ${
+    months()[monthIndex(dateKey)]
   }`;
 }
 
 export function weekdayShortLabel(dateKey: string): string {
-  return WEEKDAYS_SHORT[weekdayOf(dateKey)];
+  return weekdaysShort()[weekdayOf(dateKey)];
 }
 
 export function weekdayLabel(dateKey: string): string {
-  return WEEKDAYS[weekdayOf(dateKey)];
+  return weekdays()[weekdayOf(dateKey)];
 }
 
 /** «3 ноября». */
 export function dayMonthLabel(dateKey: string): string {
-  return `${dayNumber(dateKey)} ${MONTHS[monthIndex(dateKey)]}`;
+  return `${dayNumber(dateKey)} ${months()[monthIndex(dateKey)]}`;
 }
 
 /** «4 нояб.» — на полях ленты места на полную дату нет. */
 export function dayShortLabel(dateKey: string): string {
-  return `${dayNumber(dateKey)}\u00a0${MONTHS_SHORT[monthIndex(dateKey)]}`;
+  return `${dayNumber(dateKey)}\u00a0${monthsShort()[monthIndex(dateKey)]}`;
 }
 
-const WEEKDAYS_ON = [
-  "в понедельник",
-  "во вторник",
-  "в среду",
-  "в четверг",
-  "в пятницу",
-  "в субботу",
-  "в воскресенье",
-];
+const WEEKDAYS_ON_RU = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"]; // i18n-skip
+const WEEKDAYS_ON_EN = ["on Monday", "on Tuesday", "on Wednesday", "on Thursday", "on Friday", "on Saturday", "on Sunday"];
 
-const WEEKDAYS_TO = [
-  "К понедельнику",
-  "Ко вторнику",
-  "К среде",
-  "К четвергу",
-  "К пятнице",
-  "К субботе",
-  "К воскресенью",
-];
+const WEEKDAYS_TO_RU = ["К понедельнику", "Ко вторнику", "К среде", "К четвергу", "К пятнице", "К субботе", "К воскресенью"]; // i18n-skip
+const WEEKDAYS_TO_EN = ["For Monday", "For Tuesday", "For Wednesday", "For Thursday", "For Friday", "For Saturday", "For Sunday"];
 
 /** «К завтра», «К понедельнику», «Ко вторнику»: к какому дню задано. */
 export function homeworkTitle(dateKey: string, todayKey: string): string {
-  if (daysBetween(todayKey, dateKey) === 1) return "К завтра";
-  return WEEKDAYS_TO[weekdayOf(dateKey)];
+  if (daysBetween(todayKey, dateKey) === 1) return t("К завтра");
+  return (english() ? WEEKDAYS_TO_EN : WEEKDAYS_TO_RU)[weekdayOf(dateKey)];
 }
 
 /**
@@ -159,9 +118,9 @@ export function homeworkTitle(dateKey: string, todayKey: string): string {
  */
 export function dayPhrase(dateKey: string, todayKey: string): string {
   const distance = daysBetween(todayKey, dateKey);
-  if (distance === 0) return "сегодня";
-  if (distance === 1) return "завтра";
-  if (distance > 1 && distance < 7) return WEEKDAYS_ON[weekdayOf(dateKey)];
+  if (distance === 0) return t("сегодня");
+  if (distance === 1) return t("завтра");
+  if (distance > 1 && distance < 7) return (english() ? WEEKDAYS_ON_EN : WEEKDAYS_ON_RU)[weekdayOf(dateKey)];
   return dayMonthLabel(dateKey);
 }
 
@@ -175,12 +134,12 @@ export function dayHeading(dateKey: string, todayKey: string): string {
  * Дальше недели — дата: «12 нояб.».
  */
 export function relativeDayLabel(dateKey: string, todayKey: string): string {
-  if (dateKey === todayKey) return "сегодня";
-  if (dateKey === shiftDateKey(todayKey, 1)) return "завтра";
-  if (dateKey === shiftDateKey(todayKey, -1)) return "вчера";
+  if (dateKey === todayKey) return t("сегодня");
+  if (dateKey === shiftDateKey(todayKey, 1)) return t("завтра");
+  if (dateKey === shiftDateKey(todayKey, -1)) return t("вчера");
   const distance = daysBetween(todayKey, dateKey);
-  if (Math.abs(distance) < 7) return WEEKDAYS_SHORT[weekdayOf(dateKey)];
-  return `${dayNumber(dateKey)} ${MONTHS_SHORT[monthIndex(dateKey)]}`;
+  if (Math.abs(distance) < 7) return weekdaysShort()[weekdayOf(dateKey)];
+  return `${dayNumber(dateKey)} ${monthsShort()[monthIndex(dateKey)]}`;
 }
 
 /** Сколько суток от `from` до `to` (может быть отрицательным). */
@@ -206,16 +165,16 @@ export function relativeStamp(iso: string, now: Date, timeZone: string): string 
 
 /** «через 33 мин», «через 1 ч 5 мин». */
 export function untilLabel(minutes: number): string {
-  if (minutes <= 0) return "сейчас";
-  return `через ${durationLabel(minutes)}`;
+  if (minutes <= 0) return t("сейчас");
+  return t("через {time}", { time: durationLabel(minutes) });
 }
 
 /** Приветствие по часу: «Доброе утро», «Добрый день». */
 export function greetingFor(hour: number): string {
-  if (hour < 5) return "Доброй ночи";
-  if (hour < 12) return "Доброе утро";
-  if (hour < 17) return "Добрый день";
-  return "Добрый вечер";
+  if (hour < 5) return t("Доброй ночи");
+  if (hour < 12) return t("Доброе утро");
+  if (hour < 17) return t("Добрый день");
+  return t("Добрый вечер");
 }
 
 /** Имя для приветствия: первое слово полного имени. */
@@ -265,7 +224,7 @@ export function splitBlockTitle(title: string): { topic: string; detail: string 
 /** Часть разбитого занятия из хвоста «практика 1/2» — «часть 1 из 2». */
 export function partLabel(detail: string): string {
   const match = detail.match(/(\d+)\/(\d+)$/);
-  return match ? `часть ${match[1]} из ${match[2]}` : "";
+  return match ? t("часть {a} из {b}", { a: match[1], b: match[2] }) : "";
 }
 
 /** Подпись шага для мини-окна: «Равноускоренное движение, вт 16:05». */
@@ -291,18 +250,18 @@ export function workspaceOf(
   boardEnabled: boolean,
 ): Workspace {
   const program = `/dashboard/curriculum/plan/${block.course_plan}`;
-  const chat = `/dashboard/chat?q=${encodeURIComponent(`Давай разберём «${topic}».`)}`;
+  const chat = `/dashboard/chat?q=${encodeURIComponent(t("Давай разберём «{topic}».", { topic }))}`;
   switch (block.workspace_type) {
     case "smart_board":
       return boardEnabled
-        ? { label: "Открыть доску", href: "/dashboard/whiteboard" }
-        : { label: "Открыть чат", href: chat };
+        ? { label: t("Открыть доску"), href: "/dashboard/whiteboard" }
+        : { label: t("Открыть чат"), href: chat };
     case "tutor_chat":
-      return { label: "Начать с тьютором", href: chat };
+      return { label: t("Начать с тьютором"), href: chat };
     case "book_reader":
-      return { label: "Открыть книгу", href: program };
+      return { label: t("Открыть книгу"), href: program };
     default:
-      return { label: "Открыть программу", href: program };
+      return { label: t("Открыть программу"), href: program };
   }
 }
 
@@ -360,12 +319,12 @@ export function lessonGrade(lesson: Pick<DiaryLesson, "grades" | "blockType">): 
 /** Подпись строки дневника: предмет у урока, своё имя у теста и прочих блоков. */
 export function lessonTitle(lesson: Pick<DiaryLesson, "blockType" | "blockLabel" | "subjectName">): string {
   const subject = (lesson.subjectName ?? "").trim();
-  const usable = subject && subject !== "Предмет" ? subject : "";
-  if (isLessonBlock(lesson.blockType)) return usable || "Урок";
+  const usable = subject && subject !== "Предмет" ? subject : ""; // i18n-skip
+  if (isLessonBlock(lesson.blockType)) return usable || t("Урок");
   const label = (lesson.blockLabel ?? "").trim();
   if (label) return label;
-  if (isTestBlock(lesson.blockType)) return usable ? `Тест: ${usable}` : "Тест";
-  return usable || "Занятие";
+  if (isTestBlock(lesson.blockType)) return usable ? t("Тест: {subject}", { subject: usable }) : t("Тест");
+  return usable || t("Занятие");
 }
 
 export interface SchoolDay extends Span {
@@ -579,30 +538,37 @@ export function buildDay(input: DayInput): DayModel {
  */
 export function daySummary(day: DayModel): { lead: string; total: string; tail: string } {
   const count = day.blocks.length;
+  // По-английски после «Today» нужно двоеточие, русская фраза без него читается целой.
+  const today = english() ? "Today:" : t("Сегодня");
   if (!count) {
-    return { lead: "Сегодня", total: "занятий по плану нет", tail: "." };
+    return { lead: today, total: t("занятий по плану нет"), tail: "." };
   }
   const total = nbsp(
-    `${count} ${plural(count, ["занятие", "занятия", "занятий"])} на ${durationLabel(
-      day.plannedMinutes,
-    )}`,
+    t("{sessions} на {duration}", {
+      sessions: plural(count, ["{n} занятие", "{n} занятия", "{n} занятий"]),
+      duration: durationLabel(day.plannedMinutes),
+    }),
   );
   if (day.state === "done") {
-    return { lead: "Сегодня было", total, tail: " — на сегодня всё." };
+    return { lead: english() ? "Today:" : t("Сегодня было"), total, tail: t(" — на сегодня всё.") };
   }
 
   const parts: string[] = [];
   if (day.pastBlocks > 0) {
-    parts.push(`${day.pastBlocks === 1 ? "Одно" : day.pastBlocks} уже позади`);
+    parts.push(
+      day.pastBlocks === 1
+        ? t("Одно уже позади")
+        : t("{n} уже позади", { n: day.pastBlocks }),
+    );
   }
   if (day.hero?.mode === "now") {
     const course = day.hero.block.course_plan_title?.trim();
-    parts.push(course ? `сейчас — ${course}` : "одно идёт сейчас");
+    parts.push(course ? t("сейчас — {course}", { course }) : t("одно идёт сейчас"));
   } else if (day.hero) {
-    parts.push(`следующее в ${formatMinutes(day.hero.start)}`);
+    parts.push(t("следующее в {time}", { time: formatMinutes(day.hero.start) }));
   }
   const tail = parts.length ? `. ${capitalize(parts.join(", "))}.` : ".";
-  return { lead: "Сегодня", total, tail };
+  return { lead: today, total, tail };
 }
 
 // ──────────────────────────── Хвосты и Д/З ───────────────────────────────────
@@ -697,7 +663,7 @@ export function upcomingTests(
       tests.push({
         dateKey: day.date,
         title: lessonTitle(lesson),
-        subject: subject && subject !== "Предмет" ? subject : "",
+        subject: subject && subject !== "Предмет" ? subject : "", // i18n-skip
         inDays,
       });
     }
@@ -831,7 +797,7 @@ export function weekStrip(
     const weekday = weekdayOf(dateKey);
     return {
       dateKey,
-      weekday: WEEKDAYS_SHORT[weekday],
+      weekday: weekdaysShort()[weekday],
       day: dayNumber(dateKey),
       minutes: total,
       ratio: peak ? total / peak : 0,

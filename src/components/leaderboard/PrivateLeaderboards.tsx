@@ -24,15 +24,15 @@ import {
   type LeaderboardUser,
   type PrivateBoard,
 } from "@/lib/contest-api"
-import { ru } from "@/lib/contest-view"
+import { plural, t } from "@/lib/i18n"
 import { countryName, grouped } from "@/lib/rating-view"
 
 function members(count: number) {
-  return `${count} ${ru(count, "участник", "участника", "участников")}`
+  return plural(count, "{n} участник", "{n} участника", "{n} участников")
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "попробуй ещё раз"
+  return error instanceof Error ? t(error.message) : t("попробуй ещё раз")
 }
 
 /* ─────────────── Новая группа и вступление: одно поле и кнопка ─────────────── */
@@ -77,7 +77,7 @@ function OneFieldDialog({
       onDone(await onSubmit(value.trim()))
       onOpenChange(false)
     } catch (error) {
-      toast.error(`Не получилось: ${errorText(error)}`)
+      toast.error(t("Не получилось: {error}", { error: errorText(error) }))
     } finally {
       setSaving(false)
     }
@@ -102,10 +102,10 @@ function OneFieldDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Отмена
+              {t("Отмена")}
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? "Секунду…" : submitLabel}
+              {saving ? t("Секунду…") : submitLabel}
             </Button>
           </DialogFooter>
         </form>
@@ -119,25 +119,25 @@ function InviteCode({ board, onChanged }: { board: PrivateBoard; onChanged: (boa
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(board.invite_code ?? "")
-      toast.success("Код скопирован")
+      toast.success(t("Код скопирован"))
     } catch {
-      toast.error("Не скопировалось. Выдели код и скопируй сам.")
+      toast.error(t("Не скопировалось. Выдели код и скопируй сам."))
     }
   }
 
   return (
-    <section className="rb-code card" aria-label="Код группы">
+    <section className="rb-code card" aria-label={t("Код группы")}>
       <div>
         <p className="rb-code-v">{board.invite_code}</p>
-        <p className="small-note">Отправь код тем, кого зовёшь. Вступают только сами.</p>
+        <p className="small-note">{t("Отправь код тем, кого зовёшь. Вступают только сами.")}</p>
       </div>
       <div className="rb-code-tools rb-do">
         <button className="btn btn-line" type="button" onClick={copy}>
-          Скопировать
+          {t("Скопировать")}
         </button>
         <ConfirmingAction
-          label="Новый код"
-          confirm="Старый перестанет работать"
+          label={t("Новый код")}
+          confirm={t("Старый перестанет работать")}
           onRun={async () => onChanged(await resetBoardCode(board.id))}
         />
       </div>
@@ -168,7 +168,7 @@ function BoardDetail({
   return (
     <div className="lb-main">
       <button className="back" type="button" onClick={onBack}>
-        Все группы
+        {t("Все группы")}
       </button>
       <div className="lb-head rb-group-head">
         <h2>{board.name}</h2>
@@ -185,10 +185,10 @@ function BoardDetail({
                 {initialsOf(user.username)}
               </span>
               <span className="who">
-                <b>{mine ? "Ты" : user.username}</b>
+                <b>{mine ? t("Ты") : user.username}</b>
                 {countryName(user.country_code) ? <small>{countryName(user.country_code)}</small> : null}
               </span>
-              <span className="m tr">{user.id === board.owner ? "создатель" : ""}</span>
+              <span className="m tr">{user.id === board.owner ? t("создатель") : ""}</span>
               <span className="p">{grouped(user.overall_elo)}</span>
             </>
           )
@@ -204,8 +204,8 @@ function BoardDetail({
               )}
               {isOwner && !mine ? (
                 <ConfirmingAction
-                  label="Убрать"
-                  confirm="Точно?"
+                  label={t("Убрать")}
+                  confirm={t("Точно?")}
                   onRun={async () => onChanged(await removeBoardMember(board.id, user.id))}
                 />
               ) : null}
@@ -216,8 +216,8 @@ function BoardDetail({
       <div className="rb-group-foot rb-do">
         {isOwner ? (
           <ConfirmingAction
-            label="Удалить группу"
-            confirm="Точно удалить для всех?"
+            label={t("Удалить группу")}
+            confirm={t("Точно удалить для всех?")}
             onRun={async () => {
               await deletePrivateBoard(board.id)
               onGone(board.id)
@@ -225,8 +225,8 @@ function BoardDetail({
           />
         ) : (
           <ConfirmingAction
-            label="Выйти из группы"
-            confirm="Точно выйти?"
+            label={t("Выйти из группы")}
+            confirm={t("Точно выйти?")}
             onRun={async () => {
               await leavePrivateBoard(board.id)
               onGone(board.id)
@@ -287,36 +287,36 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
   }
 
   return (
-    <section aria-label="Мои группы">
+    <section aria-label={t("Мои группы")}>
       <div className="rb-groups-head">
-        <h2 className="sec">Мои группы</h2>
+        <h2 className="sec">{t("Мои группы")}</h2>
         <div className="rb-groups-tools">
           <button className="btn btn-text" type="button" onClick={() => setJoinOpen(true)}>
-            Вступить по коду
+            {t("Вступить по коду")}
           </button>
           <button className="btn btn-line" type="button" onClick={() => setCreateOpen(true)}>
             <Icon name="plus" />
-            Новая группа
+            {t("Новая группа")}
           </button>
         </div>
       </div>
 
       {loading ? (
         <p className="small-note" role="status">
-          Загружаю группы…
+          {t("Загружаю группы…")}
         </p>
       ) : failed ? (
         <section className="ct-note card" role="alert">
-          <h2>Группы не загрузились</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Группы не загрузились")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={load}>
-            Повторить
+            {t("Повторить")}
           </button>
         </section>
       ) : boards.length === 0 ? (
         <section className="ct-note card">
-          <h2>Групп пока нет</h2>
-          <p>Создай группу с друзьями или классом и соревнуйтесь только между собой. Если друг уже создал, попроси у него код.</p>
+          <h2>{t("Групп пока нет")}</h2>
+          <p>{t("Создай группу с друзьями или классом и соревнуйтесь только между собой. Если друг уже создал, попроси у него код.")}</p>
         </section>
       ) : (
         <ul className="rb-groups">
@@ -341,24 +341,24 @@ export function PrivateLeaderboards({ meId }: { meId: number | null }) {
       <OneFieldDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="Новая группа"
-        label="Название группы"
-        placeholder="Например, 9 «Б»"
-        note="Участников позовёшь кодом: он появится в группе."
-        submitLabel="Создать"
-        emptyError="Назови группу"
+        title={t("Новая группа")}
+        label={t("Название группы")}
+        placeholder={t("Например, 9 «Б»")}
+        note={t("Участников позовёшь кодом: он появится в группе.")}
+        submitLabel={t("Создать")}
+        emptyError={t("Назови группу")}
         onSubmit={createPrivateBoard}
         onDone={open}
       />
       <OneFieldDialog
         open={joinOpen}
         onOpenChange={setJoinOpen}
-        title="Вступить в группу"
-        label="Код группы"
-        placeholder="Код от создателя группы"
-        note="Участники увидят твоё имя пользователя, страну и баллы. Выйти можно в любой момент."
-        submitLabel="Вступить"
-        emptyError="Введи код"
+        title={t("Вступить в группу")}
+        label={t("Код группы")}
+        placeholder={t("Код от создателя группы")}
+        note={t("Участники увидят твоё имя пользователя, страну и баллы. Выйти можно в любой момент.")}
+        submitLabel={t("Вступить")}
+        emptyError={t("Введи код")}
         onSubmit={joinPrivateBoard}
         onDone={open}
       />

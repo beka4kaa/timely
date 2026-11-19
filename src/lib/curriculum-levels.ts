@@ -10,6 +10,7 @@
 // бэкенд её не запрещает. Выдумывать правило, которого там нет, нельзя.
 
 import type { Level } from "@/lib/curriculum-api";
+import { msg, plural, t } from "./i18n";
 
 export const LEVEL_ORDER: readonly Level[] = [
   "none",
@@ -21,22 +22,22 @@ export const LEVEL_ORDER: readonly Level[] = [
 ];
 
 export const LEVEL_LABELS: Record<Level, string> = {
-  none: "С нуля",
-  beginner: "Начальный",
-  school_basic: "Школьный базовый",
-  school_confident: "Школьный уверенный",
-  advanced: "Продвинутый",
-  university: "Университетский",
+  none: msg("С нуля"),
+  beginner: msg("Начальный"),
+  school_basic: msg("Школьный базовый"),
+  school_confident: msg("Школьный уверенный"),
+  advanced: msg("Продвинутый"),
+  university: msg("Университетский"),
 };
 
 /** Короткие подписи под шкалой: полные названия там не помещаются. */
 export const LEVEL_SHORT_LABELS: Record<Level, string> = {
-  none: "С нуля",
-  beginner: "Начальный",
-  school_basic: "База",
-  school_confident: "Уверенно",
-  advanced: "Продвинутый",
-  university: "Универ",
+  none: msg("С нуля"),
+  beginner: msg("Начальный"),
+  school_basic: msg("База"),
+  school_confident: msg("Уверенно"),
+  advanced: msg("Продвинутый"),
+  university: msg("Универ"),
 };
 
 export interface LevelPair {
@@ -58,7 +59,7 @@ export function levelAt(index: number): Level {
 }
 
 export function levelLabel(level: Level): string {
-  return LEVEL_LABELS[level] ?? level;
+  return LEVEL_LABELS[level] ? t(LEVEL_LABELS[level]) : level;
 }
 
 /**
@@ -95,15 +96,6 @@ export function fractionForLevel(level: Level): number {
   return levelIndex(level) / (LEVEL_ORDER.length - 1);
 }
 
-function stepsWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (tens >= 11 && tens <= 14) return "ступеней";
-  if (ones === 1) return "ступень";
-  if (ones >= 2 && ones <= 4) return "ступени";
-  return "ступеней";
-}
-
 /**
  * Что объявляет screen reader при любом изменении.
  *
@@ -113,18 +105,22 @@ function stepsWord(count: number): string {
 export function spanAnnouncement(pair: LevelPair): string {
   const span = levelSpan(pair);
   if (span === 0) {
-    return `Курс на закрепление уровня «${levelLabel(pair.current)}»`;
+    return t("Курс на закрепление уровня «{level}»", { level: levelLabel(pair.current) });
   }
-  return `Курс: от «${levelLabel(pair.current)}» до «${levelLabel(
-    pair.target,
-  )}», ${span} ${stepsWord(span)}`;
+  return t("Курс: от «{from}» до «{to}», {steps}", {
+    from: levelLabel(pair.current),
+    to: levelLabel(pair.target),
+    steps: plural(span, "{n} ступень", "{n} ступени", "{n} ступеней"),
+  });
 }
 
 /** Подпись под шкалой — тот же смысл, но для глаз. */
 export function spanCaption(pair: LevelPair): string {
   const span = levelSpan(pair);
   if (span === 0) {
-    return "Программа на закрепление: уровень остаётся тем же, растёт уверенность.";
+    return t("Программа на закрепление: уровень остаётся тем же, растёт уверенность.");
   }
-  return `Программа проведёт тебя через ${span} ${stepsWord(span)}.`;
+  return t("Программа проведёт тебя через {steps}.", {
+    steps: plural(span, "{n} ступень", "{n} ступени", "{n} ступеней"),
+  });
 }

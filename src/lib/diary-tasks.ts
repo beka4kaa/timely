@@ -14,6 +14,7 @@ import {
   parseClock,
   weekdayLabel,
 } from "./now-feed.ts";
+import { msg, t } from "./i18n";
 import { shiftDateKey, weekdayOf } from "./studyplan-calendar.ts";
 import {
   isFeynmanBlock,
@@ -108,21 +109,21 @@ export function taskTitle(
 const TEST_WORD = new RegExp(
   "(^|[^\\p{L}\\p{N}])(" +
     [
-      "СОР",
-      "СОЧ",
-      "БЖБ",
-      "ТЖБ",
-      "ЕНТ",
-      "ОГЭ",
-      "ЕГЭ",
-      "[Кк]/[Рр]",
-      "[Сс]/[Рр]",
-      "[Кк]онтрольн\\p{L}*",
-      "[Сс]амостоятельн(?:ая|ую|ой)",
-      "[Тт]ест(?:а|у|ом|е|ы|ов|ам|ами|ах)?",
-      "[Зз]ач[её]т\\p{L}*",
-      "[Дд]иктант\\p{L}*",
-      "[Ээ]кзамен\\p{L}*",
+      "СОР", // i18n-skip
+      "СОЧ", // i18n-skip
+      "БЖБ", // i18n-skip
+      "ТЖБ", // i18n-skip
+      "ЕНТ", // i18n-skip
+      "ОГЭ", // i18n-skip
+      "ЕГЭ", // i18n-skip
+      "[Кк]/[Рр]", // i18n-skip
+      "[Сс]/[Рр]", // i18n-skip
+      "[Кк]онтрольн\\p{L}*", // i18n-skip
+      "[Сс]амостоятельн(?:ая|ую|ой)", // i18n-skip
+      "[Тт]ест(?:а|у|ом|е|ы|ов|ам|ами|ах)?", // i18n-skip
+      "[Зз]ач[её]т\\p{L}*", // i18n-skip
+      "[Дд]иктант\\p{L}*", // i18n-skip
+      "[Ээ]кзамен\\p{L}*", // i18n-skip
     ].join("|") +
     ")(?![\\p{L}\\p{N}])",
   "gu",
@@ -154,13 +155,13 @@ export function splitTestWords(text: string): TextPart[] {
 // ────────────────────────────── Группы ───────────────────────────────────────
 
 const WEEKDAYS_ACCUSATIVE = [
-  "понедельник",
-  "вторник",
-  "среду",
-  "четверг",
-  "пятницу",
-  "субботу",
-  "воскресенье",
+  msg("понедельник"),
+  msg("вторник"),
+  msg("среду"),
+  msg("четверг"),
+  msg("пятницу"),
+  msg("субботу"),
+  msg("воскресенье"),
 ];
 
 export interface DayGroup {
@@ -178,16 +179,16 @@ function capitalize(text: string): string {
 function upcomingGroup(day: DiaryDay, tasks: DiaryLesson[], today: string): DayGroup {
   const distance = daysBetween(today, day.date);
   if (distance === 0) {
-    return { day, tasks, title: "На сегодня", when: `${weekdayLabel(day.date)}, ${dayMonthLabel(day.date)}` };
+    return { day, tasks, title: t("На сегодня"), when: `${weekdayLabel(day.date)}, ${dayMonthLabel(day.date)}` };
   }
   if (distance === 1) {
-    return { day, tasks, title: "На завтра", when: `${weekdayLabel(day.date)}, ${dayMonthLabel(day.date)}` };
+    return { day, tasks, title: t("На завтра"), when: `${weekdayLabel(day.date)}, ${dayMonthLabel(day.date)}` };
   }
-  return { day, tasks, title: `На ${WEEKDAYS_ACCUSATIVE[weekdayOf(day.date)]}`, when: dayMonthLabel(day.date) };
+  return { day, tasks, title: t("На {day}", { day: t(WEEKDAYS_ACCUSATIVE[weekdayOf(day.date)]) }), when: dayMonthLabel(day.date) };
 }
 
 function pastGroup(day: DiaryDay, tasks: DiaryLesson[], today: string): DayGroup {
-  const title = day.date === today ? "Сегодня" : capitalize(weekdayLabel(day.date));
+  const title = day.date === today ? t("Сегодня") : capitalize(weekdayLabel(day.date));
   return { day, tasks, title, when: dayMonthLabel(day.date) };
 }
 

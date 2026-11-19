@@ -8,6 +8,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { t } from "@/lib/i18n";
 
 import { Icon } from "@/components/shell/icons";
 import {
@@ -33,7 +34,7 @@ export function UploadStep() {
     if (!candidate) return;
     const check = checkFileBeforeUpload(candidate);
     if (!check.ok) {
-      setLocalError(check.error ?? "Этот файл не подходит.");
+      setLocalError(check.error ?? t("Этот файл не подходит."));
       setFile(null);
       return;
     }
@@ -45,8 +46,8 @@ export function UploadStep() {
 
   return (
     <>
-      <WizardHead title="Загрузи учебник">
-        PDF или EPUB до 60 МБ. В программе будут ссылки на его страницы и разделы.
+      <WizardHead title={t("Загрузи учебник")}>
+        {t("PDF или EPUB до 60 МБ. В программе будут ссылки на его страницы и разделы.")}
       </WizardHead>
 
       <section className="card wz-sheet">
@@ -75,8 +76,8 @@ export function UploadStep() {
             </>
           ) : (
             <>
-              <b>Перетащи файл сюда</b>
-              <span>или нажми, чтобы выбрать</span>
+              <b>{t("Перетащи файл сюда")}</b>
+              <span>{t("или нажми, чтобы выбрать")}</span>
             </>
           )}
         </button>
@@ -86,7 +87,7 @@ export function UploadStep() {
           accept={ACCEPTED_EXTENSIONS.join(",")}
           className="sr-only"
           tabIndex={-1}
-          aria-label="Файл учебника"
+          aria-label={t("Файл учебника")}
           onChange={(event) => pick(event.target.files?.[0])}
         />
 
@@ -102,7 +103,7 @@ export function UploadStep() {
               {percent > 0 ? <i style={{ width: `${percent}%` }} /> : null}
             </span>
             <span className="muted">
-              {progress >= 1 ? "Файл загружен, начинаю читать…" : `Загружено ${percent}%`}
+              {progress >= 1 ? t("Файл загружен, начинаю читать…") : t("Загружено {percent}%", { percent })}
             </span>
           </div>
         ) : null}
@@ -114,7 +115,7 @@ export function UploadStep() {
             onClick={() => file && void upload(file, file.name.replace(/\.(?:pdf|epub)$/i, ""))}
             disabled={!file || busy}
           >
-            {busy ? "Загружаю…" : "Загрузить и прочитать"}
+            {busy ? t("Загружаю…", undefined, "файл") : t("Загрузить и прочитать")}
           </button>
         </div>
       </section>

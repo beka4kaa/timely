@@ -14,6 +14,7 @@ import {
 } from "@/lib/curriculum-api";
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { percentOf, pickProgressSchedule, programMinutesOf, summarizeProgress } from "@/lib/curriculum-course-progress";
+import { t } from "@/lib/i18n";
 import { type LearningBlock, listBlocks, listSchedules } from "@/lib/studyplan-api";
 
 export interface Lesson {
@@ -103,7 +104,7 @@ export async function loadLessons(): Promise<Lesson[]> {
       return {
         id: goal.id,
         subject: subjectTitle(goal),
-        line: next?.title || direction || plan?.title || "Программы пока нет",
+        line: next?.title || direction || plan?.title || t("Программы пока нет"),
         due: goal.desired_finish_date || plan?.forecast_finish_date || null,
         percent,
         href: plan ? `/dashboard/curriculum/plan/${plan.id}` : "/dashboard/curriculum",

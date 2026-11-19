@@ -79,11 +79,15 @@ async function routeFor(index: number): Promise<string> {
 
 export function DemoTour({
   lang,
+  startAt = 0,
   onLang,
   onClose,
 }: {
   lang: DemoLang
-  onLang: (lang: DemoLang) => void
+  /** Шаг, с которого начать: после смены языка тур продолжается, а не начинается заново. */
+  startAt?: number
+  /** Сменить язык всего кабинета; `index` — текущий шаг, чтобы вернуться к нему. */
+  onLang: (lang: DemoLang, index: number) => void
   onClose: () => void
 }) {
   const router = useRouter()
@@ -93,7 +97,7 @@ export function DemoTour({
   const pathRef = useRef(path)
   pathRef.current = path
 
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState(() => Math.min(Math.max(startAt, 0), TOUR_STOPS.length - 1))
   const [hole, setHole] = useState<Rect | null>(null)
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 })
   const [card, setCard] = useState<Size>({ width: 0, height: 0 })
@@ -322,7 +326,7 @@ export function DemoTour({
           <button
             type="button"
             className="btn btn-text tour-lang"
-            onClick={() => onLang(lang === "en" ? "ru" : "en")}
+            onClick={() => onLang(lang === "en" ? "ru" : "en", index)}
           >
             {DEMO_UI.lang[lang]}
           </button>

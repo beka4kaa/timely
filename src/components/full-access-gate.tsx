@@ -20,6 +20,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { getMe, useMe } from "@/lib/contest-api"
+import { t } from "@/lib/i18n"
 import { useResource } from "@/lib/resource-cache"
 import { paperButton, paperCard, paperCaption } from "@/components/curriculum/paper"
 
@@ -61,13 +62,12 @@ export function FullAccessGate({ children, denied: fallback }: { children: React
   return (
     <div className="mx-auto max-w-[440px] px-5 py-16">
       <div className={`${paperCard} p-6 text-center`}>
-        <div className={paperCaption}>Раздел закрыт</div>
+        <div className={paperCaption}>{t("Раздел закрыт")}</div>
         <p className="mt-2 text-[13.5px] leading-relaxed text-tm-ink-2">
-          Доступ к этому разделу выключен для вашего аккаунта. Его включает
-          администратор.
+          {t("Доступ к этому разделу выключен для вашего аккаунта. Его включает администратор.")}
         </p>
         <Link href="/dashboard" className={`${paperButton} mt-5`}>
-          На главную
+          {t("На главную")}
         </Link>
       </div>
     </div>

@@ -1,5 +1,7 @@
 // Общие типы, пресеты и форматирование для помодоро-трекера.
 
+import { msg, plural, t } from "./i18n";
+
 /** Что хранит бэкенд: длинный перерыв уходит туда обычным перерывом. */
 export type PomodoroPhase = "focus" | "break";
 
@@ -21,11 +23,11 @@ export interface PomodoroPreset extends Rhythm {
 
 // Порядок не менять: выбранный ритм хранится в браузере индексом.
 export const PRESETS: PomodoroPreset[] = [
-  { focus: 25, brk: 5, long: 15, every: 4, note: "классика", desc: "Короткие подходы, частые паузы" },
-  { focus: 50, brk: 10, long: 30, every: 3, note: "глубоко", desc: "Стандарт для длинных тем" },
-  { focus: 60, brk: 10, long: 30, every: 3, note: "долго", desc: "Час без отвлечений" },
-  { focus: 90, brk: 20, long: 30, every: 2, note: "марафон", desc: "Полный цикл концентрации" },
-  { focus: 45, brk: 15, long: 30, every: 3, note: "мягко", desc: "Умеренно, с большой паузой" },
+  { focus: 25, brk: 5, long: 15, every: 4, note: msg("классика"), desc: msg("Короткие подходы, частые паузы") },
+  { focus: 50, brk: 10, long: 30, every: 3, note: msg("глубоко"), desc: msg("Стандарт для длинных тем") },
+  { focus: 60, brk: 10, long: 30, every: 3, note: msg("долго"), desc: msg("Час без отвлечений") },
+  { focus: 90, brk: 20, long: 30, every: 2, note: msg("марафон"), desc: msg("Полный цикл концентрации") },
+  { focus: 45, brk: 15, long: 30, every: 3, note: msg("мягко"), desc: msg("Умеренно, с большой паузой") },
 ];
 
 export const DEFAULT_PRESET_INDEX = 1;
@@ -41,7 +43,7 @@ export const MIN_LOGGED_SECONDS = 60;
 
 export const HEAT_WEEKS = 52;
 
-export const RU_DAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+export const RU_DAYS = [msg("вс"), msg("пн"), msg("вт"), msg("ср"), msg("чт"), msg("пт"), msg("сб")];
 
 /** Строка от бэкенда: одна завершённая фаза. */
 export interface FocusSessionRow {
@@ -97,8 +99,8 @@ export function hm(totalSeconds: number): string {
   const minutes = Math.round(Math.max(0, totalSeconds) / 60);
   const hours = Math.floor(minutes / 60);
   return hours > 0
-    ? `${hours} ч ${String(minutes % 60).padStart(2, "0")} м`
-    : `${minutes} м`;
+    ? t("{h} ч {m} м", { h: hours, m: String(minutes % 60).padStart(2, "0") })
+    : t("{m} м", { m: minutes });
 }
 
 /** «MM:SS» для циферблата. */
@@ -113,12 +115,7 @@ export function clockOf(seconds: number): string {
 
 /** «1 день» / «3 дня» / «7 дней». */
 export function streakLabel(days: number): string {
-  const mod100 = days % 100;
-  const mod10 = days % 10;
-  if (mod100 >= 11 && mod100 <= 14) return `${days} дней`;
-  if (mod10 === 1) return `${days} день`;
-  if (mod10 >= 2 && mod10 <= 4) return `${days} дня`;
-  return `${days} дней`;
+  return plural(days, "{n} день", "{n} дня", "{n} дней");
 }
 
 /** Смещение часового пояса для бэкенда (как `Date.getTimezoneOffset()`). */

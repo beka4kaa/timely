@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { msg, t } from "@/lib/i18n";
 
 import { DAY_GOAL_MIN, dayKey, hm } from "@/lib/pomodoro";
 import type { DayBar, HistoryRow, TodayStats } from "@/lib/pomodoro.logic";
@@ -16,15 +17,15 @@ export function TodayCard({ stats }: { stats: TodayStats }) {
   const goalHours = DAY_GOAL_MIN / 60;
   return (
     <section className="scard card">
-      <h2>Сегодня</h2>
+      <h2>{t("Сегодня")}</h2>
       <p className="fp-today">
         {hm(stats.focusSeconds)}
-        <small>из {goalHours} ч</small>
+        <small>{t("из {n} ч", { n: goalHours })}</small>
       </p>
       <span
         className="tube"
         role="progressbar"
-        aria-label="Цель на день"
+        aria-label={t("Цель на день")}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={stats.goalPercent}
@@ -48,8 +49,8 @@ export function sessionRowFrom(row: HistoryRow, name: string): SessionRow {
   return {
     key: String(row.id),
     time: row.time,
-    name: row.isFocus ? name || "Фокус" : row.isLong ? "Длинный перерыв" : "Перерыв",
-    duration: `${row.minutes} мин`,
+    name: row.isFocus ? name || t("Фокус") : row.isLong ? t("Длинный перерыв") : t("Перерыв"),
+    duration: t("{n} мин", { n: row.minutes }),
     isFocus: row.isFocus,
     stoppedEarly: row.isFocus && row.stoppedEarly,
   };
@@ -91,13 +92,13 @@ export function SessionsCard({
 
   return (
     <section className="scard card fp-sess">
-      <h2>Сессии</h2>
+      <h2>{t("Сессии")}</h2>
       <div className="sess-scroll" ref={scrollRef} data-more={more || undefined}>
       {rows.length ? (
         <Link
           className="sess-link"
           href={`/dashboard/pomodoro/history/${dayKey(new Date())}`}
-          title="Подробнее о сегодняшнем дне"
+          title={t("Подробнее о сегодняшнем дне")}
         >
           <ul className="sess">
             {rows.map((row) => (
@@ -105,7 +106,7 @@ export function SessionsCard({
                 <span className="m">{row.time}</span>
                 <span className={cn(!row.isFocus && "muted")}>
                   {row.name}
-                  {row.stoppedEarly ? <small>остановлена раньше</small> : null}
+                  {row.stoppedEarly ? <small>{t("остановлена раньше")}</small> : null}
                 </span>
                 <span className="m">{row.duration}</span>
               </li>
@@ -115,19 +116,19 @@ export function SessionsCard({
       ) : (
         <p className="small-note">
           {loading
-            ? "Загружаю…"
-            : "Сегодня пока пусто. Запусти таймер: сессии от минуты появятся здесь."}
+            ? t("Загружаю…")
+            : t("Сегодня пока пусто. Запусти таймер: сессии от минуты появятся здесь.")}
         </p>
       )}
       </div>
       <Link className="fh-all" href="/dashboard/pomodoro/history">
-        История занятий
+        {t("История занятий")}
         <Icon name="chev-r" />
       </Link>
       {canClear ? (
         confirming ? (
           <div className="fp-clear" role="alert">
-            <span className="small-note">Стереть сессии за сегодня? Вернуть их не получится.</span>
+            <span className="small-note">{t("Стереть сессии за сегодня? Вернуть их не получится.")}</span>
             <button
               className="btn btn-text danger"
               type="button"
@@ -137,16 +138,16 @@ export function SessionsCard({
                 setConfirming(false);
               }}
             >
-              Стереть
+              {t("Стереть")}
             </button>
             <button className="btn btn-text" type="button" onClick={() => setConfirming(false)}>
-              Не надо
+              {t("Не надо")}
             </button>
           </div>
         ) : (
           <div className="fp-clear">
             <button className="btn btn-text" type="button" disabled={clearing} onClick={() => setConfirming(true)}>
-              {clearing ? "Стираю…" : "Очистить день"}
+              {clearing ? t("Стираю…") : t("Очистить день")}
             </button>
           </div>
         )
@@ -155,7 +156,15 @@ export function SessionsCard({
   );
 }
 
-const WEEKDAY_NAMES = ["воскресенье", "понедельник", "вторник", "среду", "четверг", "пятницу", "субботу"];
+const WEEKDAY_NAMES = [
+  msg("воскресенье"),
+  msg("понедельник"),
+  msg("вторник"),
+  msg("среду"),
+  msg("четверг"),
+  msg("пятницу"),
+  msg("субботу"),
+];
 
 export function WeekCard({ bars, loading }: { bars: DayBar[]; loading: boolean }) {
   const total = sumSeconds(bars);
@@ -164,13 +173,13 @@ export function WeekCard({ bars, loading }: { bars: DayBar[]; loading: boolean }
     null,
   );
   const summary = best
-    ? `За неделю ${hm(total)}, больше всего в ${WEEKDAY_NAMES[best.date.getDay()]}`
-    : "На этой неделе занятий пока не было";
+    ? t("За неделю {time}, больше всего в {day}", { time: hm(total), day: t(WEEKDAY_NAMES[best.date.getDay()]) })
+    : t("На этой неделе занятий пока не было");
 
   return (
     <section className="scard card">
       <h2>
-        Неделя
+        {t("Неделя")}
         {total > 0 ? <small className="fp-week-total">{hm(total)}</small> : null}
       </h2>
       <div className="days7" role="img" aria-label={summary}>
@@ -186,7 +195,7 @@ export function WeekCard({ bars, loading }: { bars: DayBar[]; loading: boolean }
           </div>
         ))}
       </div>
-      {!loading && !best ? <p className="small-note fp-week-note">Столбики вырастут после первой сессии.</p> : null}
+      {!loading && !best ? <p className="small-note fp-week-note">{t("Столбики вырастут после первой сессии.")}</p> : null}
     </section>
   );
 }

@@ -26,6 +26,7 @@ import type {
   LearningGoal,
   StudyMaterial,
 } from "@/lib/curriculum-api";
+import { msg, t } from "./i18n";
 
 /** Книга вместе с планами, построенными по ней. */
 export interface CatalogBook {
@@ -55,7 +56,7 @@ export interface CatalogSubject {
   orphanPlans: CoursePlanSummary[];
 }
 
-export const UNSORTED_TITLE = "Без предмета";
+export const UNSORTED_TITLE = msg("Без предмета");
 
 /** Только книги — там, где важен именно учебник (счётчики, обработка). */
 export function booksOf(subject: CatalogSubject): CatalogBook[] {
@@ -75,7 +76,7 @@ export function subjectTitle(goal: LearningGoal): string {
   return (
     goal.normalized_subject?.trim() ||
     goal.original_text?.trim() ||
-    "Новый предмет"
+    t("Новый предмет")
   );
 }
 

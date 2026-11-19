@@ -15,16 +15,17 @@ import {
 } from "@/lib/pomodoro-cycle";
 import { askNoticePermission, noticePermission, type NoticePermission } from "@/lib/pomodoro-notify";
 import { Icon } from "@/components/shell/icons";
+import { msg, plural, t } from "@/lib/i18n";
 import { CUSTOM_PRESET, PRESETS } from "@/lib/pomodoro";
 import { cn } from "@/lib/utils";
 import { selectRhythm, usePomodoroStore } from "@/stores/pomodoro-store";
 
 const FIELDS: Array<{ key: keyof Rhythm; label: string; unit: (value: string) => string }> = [
-  { key: "focus", label: "Фокус", unit: () => "мин" },
-  { key: "brk", label: "Перерыв", unit: () => "мин" },
-  { key: "long", label: "Длинный перерыв", unit: () => "мин" },
+  { key: "focus", label: msg("Фокус"), unit: () => t("мин") },
+  { key: "brk", label: msg("Перерыв"), unit: () => t("мин") },
+  { key: "long", label: msg("Длинный перерыв"), unit: () => t("мин") },
   // Строкой с длинным перерывом: «Длинный перерыв 30 мин, каждые 4 сессии».
-  { key: "every", label: "Каждые", unit: (value) => sessionsWord(Number(value) || 0) },
+  { key: "every", label: msg("Каждые"), unit: (value) => sessionsWord(Number(value) || 0) },
 ];
 
 function toDraft(rhythm: Rhythm): RhythmDraft {
@@ -42,16 +43,18 @@ function sameRhythm(a: Rhythm, b: Rhythm): boolean {
 
 /** «каждые 3 блока», «после каждого блока»: как часто приходит длинный отдых. */
 function everyWords(every: number): string {
-  if (every <= 1) return "после каждого блока";
-  const hundred = every % 100;
-  const ten = every % 10;
-  const word = hundred >= 11 && hundred <= 14 ? "блоков" : ten >= 2 && ten <= 4 ? "блока" : ten === 1 ? "блок" : "блоков";
-  return `каждые ${every} ${word}`;
+  if (every <= 1) return t("после каждого блока");
+  return plural(every, "каждые {n} блок", "каждые {n} блока", "каждые {n} блоков");
 }
 
 /** «25 мин фокус, 5 мин отдых. Длинный отдых 15 мин каждые 4 блока». */
 export function rhythmWords(rhythm: Rhythm): string {
-  return `${rhythm.focus} мин фокус, ${rhythm.brk} мин отдых. Длинный отдых ${rhythm.long} мин ${everyWords(rhythm.every)}`;
+  return t("{focus} мин фокус, {brk} мин отдых. Длинный отдых {long} мин {every}", {
+    focus: rhythm.focus,
+    brk: rhythm.brk,
+    long: rhythm.long,
+    every: everyWords(rhythm.every),
+  });
 }
 
 /** Раздел «Помодоро» в окне настроек: сначала ритм, потом поведение таймера. */
@@ -66,7 +69,7 @@ export function PomodoroSettings() {
   return (
     <>
       <section className="set">
-        <h2>Ритм</h2>
+        <h2>{t("Ритм")}</h2>
         <div className="set-body">
           <RhythmSelect
             presetIdx={presetIdx}
@@ -75,17 +78,17 @@ export function PomodoroSettings() {
             onCustom={chooseCustom}
           />
           {isCustom ? <RhythmFields rhythm={rhythm} onCommit={setCustom} /> : null}
-          <p className="small-note">Если таймер уже идёт, новый ритм начнётся со следующего блока.</p>
+          <p className="small-note">{t("Если таймер уже идёт, новый ритм начнётся со следующего блока.")}</p>
         </div>
       </section>
       <section className="set">
-        <h2>Запуск</h2>
+        <h2>{t("Запуск")}</h2>
         <div className="set-body">
           <AutoStartLines />
         </div>
       </section>
       <section className="set">
-        <h2>Звонок</h2>
+        <h2>{t("Звонок")}</h2>
         <div className="set-body">
           <SoundLines />
           <NoticeLine />
@@ -165,13 +168,13 @@ function RhythmSelect({
         onClick={() => setOpen((value) => !value)}
       >
         <span>
-          <b>{isCustom ? "Свой" : `${rhythm.focus} / ${rhythm.brk}`}</b>
+          <b>{isCustom ? t("Свой") : `${rhythm.focus} / ${rhythm.brk}`}</b>
           <small>{rhythmWords(rhythm)}</small>
         </span>
         <Icon name="chev-d" className="st-select-chev" />
       </button>
       {open ? (
-        <div className="menu st-menu" role="listbox" aria-label="Ритм таймера" onKeyDown={onItemsKey}>
+        <div className="menu st-menu" role="listbox" aria-label={t("Ритм таймера")} onKeyDown={onItemsKey}>
           {PRESETS.map((preset, index) => (
             <button
               key={preset.note}
@@ -197,8 +200,8 @@ function RhythmSelect({
             aria-selected={isCustom}
             onClick={() => pick(onCustom)}
           >
-            <b>Свой</b>
-            <small>Задать свои минуты</small>
+            <b>{t("Свой")}</b>
+            <small>{t("Задать свои минуты")}</small>
             <Icon name="check" className="menu-ok" />
           </button>
         </div>
@@ -231,13 +234,13 @@ function RhythmFields({ rhythm, onCommit }: { rhythm: Rhythm; onCommit: (rhythm:
 
   return (
     <fieldset className="fp-rhythm">
-      <legend className="sr-only">Свой ритм</legend>
+      <legend className="sr-only">{t("Свой ритм")}</legend>
       <div className="fp-rhythm-grid">
         {FIELDS.map(({ key, label, unit }) => {
           const errorId = `fp-err-${key}`;
           return (
             <label key={key} className={cn("fp-num", errors[key] && "is-bad")}>
-              <span>{label}</span>
+              <span>{t(label)}</span>
               <span className="fp-num-in">
                 <input
                   type="text"
@@ -245,7 +248,7 @@ function RhythmFields({ rhythm, onCommit }: { rhythm: Rhythm; onCommit: (rhythm:
                   autoComplete="off"
                   maxLength={3}
                   value={draft[key]}
-                  aria-label={`${label}, ${unit(draft[key])}`}
+                  aria-label={`${t(label)}, ${unit(draft[key])}`}
                   aria-invalid={errors[key] ? true : undefined}
                   aria-describedby={errors[key] ? errorId : undefined}
                   onChange={(event) => setDraft({ ...draft, [key]: event.target.value.replace(/\D/g, "") })}
@@ -304,15 +307,17 @@ function AutoStartLines() {
     <>
       <div className="set-line">
         <div>
-          Сам начинать перерыв<small>Без клика, сразу после фокуса</small>
+          {t("Сам начинать перерыв")}
+          <small>{t("Без клика, сразу после фокуса")}</small>
         </div>
-        <Toggle on={autoBreak} label="Сам начинать перерыв" onChange={(value) => setPrefs({ autoBreak: value })} />
+        <Toggle on={autoBreak} label={t("Сам начинать перерыв")} onChange={(value) => setPrefs({ autoBreak: value })} />
       </div>
       <div className="set-line">
         <div>
-          Сам начинать фокус<small>Без клика, сразу после перерыва</small>
+          {t("Сам начинать фокус")}
+          <small>{t("Без клика, сразу после перерыва")}</small>
         </div>
-        <Toggle on={autoFocus} label="Сам начинать фокус" onChange={(value) => setPrefs({ autoFocus: value })} />
+        <Toggle on={autoFocus} label={t("Сам начинать фокус")} onChange={(value) => setPrefs({ autoFocus: value })} />
       </div>
     </>
   );
@@ -329,18 +334,18 @@ function SoundSelect({ value, disabled, onPick }: { value: BellSound; disabled: 
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Звук звонка: ${current.name}`}
+        aria-label={t("Звук звонка: {name}", { name: t(current.name) })}
         disabled={disabled}
         onClick={() => setOpen((shown) => !shown)}
       >
         <span>
-          <b>{current.name}</b>
-          <small>{current.note}</small>
+          <b>{t(current.name)}</b>
+          <small>{t(current.note)}</small>
         </span>
         <Icon name="chev-d" className="st-select-chev" />
       </button>
       {open ? (
-        <div className="menu st-menu" role="listbox" aria-label="Звук звонка" onKeyDown={onItemsKey}>
+        <div className="menu st-menu" role="listbox" aria-label={t("Звук звонка")} onKeyDown={onItemsKey}>
           {BELL_SOUNDS.map((item) => (
             <button
               key={item.key}
@@ -351,8 +356,8 @@ function SoundSelect({ value, disabled, onPick }: { value: BellSound; disabled: 
               aria-selected={item.key === value}
               onClick={() => pick(() => onPick(item.key))}
             >
-              <b>{item.name}</b>
-              <small>{item.note}</small>
+              <b>{t(item.name)}</b>
+              <small>{t(item.note)}</small>
               <Icon name="check" className="menu-ok" />
             </button>
           ))}
@@ -382,11 +387,12 @@ function SoundLines() {
     <>
       <div className="set-line">
         <div>
-          Звук<small>Звонит, пока не нажмёшь «Тихо», но не дольше двух минут</small>
+          {t("Звук")}
+          <small>{t("Звонит, пока не нажмёшь куда угодно, но не дольше двух минут")}</small>
         </div>
         <Toggle
           on={sound}
-          label="Звонок в конце фазы"
+          label={t("Звонок в конце фазы")}
           onChange={(value) => {
             if (value) unlockBell();
             setPrefs({ sound: value });
@@ -394,7 +400,7 @@ function SoundLines() {
         />
       </div>
       <div className="set-line">
-        <div>Какой звук</div>
+        <div>{t("Какой звук")}</div>
         <SoundSelect
           value={bellSound}
           disabled={!sound}
@@ -411,12 +417,12 @@ function SoundLines() {
           max={100}
           step={5}
           value={Math.round(volume * 100)}
-          aria-label="Громкость звонка"
+          aria-label={t("Громкость звонка")}
           disabled={!sound}
           onChange={(event) => setPrefs({ volume: Number(event.target.value) / 100 })}
         />
         <button className="btn btn-line" type="button" disabled={!sound} onClick={test}>
-          Проверить звук
+          {t("Проверить звук")}
         </button>
       </div>
     </>
@@ -460,18 +466,19 @@ function NoticeLine() {
     setPermission(await askNoticePermission());
   };
 
-  let hint = "Придут, пока вкладка с Timely открыта";
-  if (permission === "unsupported") hint = "Этот браузер не умеет показывать уведомления";
-  if (permission === "denied") hint = "Запрещены в настройках браузера. Разреши их там";
+  let hint = t("Придут, пока вкладка с Timely открыта");
+  if (permission === "unsupported") hint = t("Этот браузер не умеет показывать уведомления");
+  if (permission === "denied") hint = t("Запрещены в настройках браузера. Разреши их там");
 
   return (
     <div className="set-line">
       <div>
-        Уведомления<small>{hint}</small>
+        {t("Уведомления")}
+        <small>{hint}</small>
       </div>
       <Toggle
         on={on}
-        label="Уведомление в конце фазы"
+        label={t("Уведомление в конце фазы")}
         disabled={permission === null || permission === "unsupported" || permission === "denied"}
         onChange={(next) => void change(next)}
       />

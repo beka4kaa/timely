@@ -11,6 +11,7 @@ import {
   zonedDateKey,
   zonedMinutes,
 } from "../../lib/studyplan-calendar.ts";
+import { dateLocale, msg, t } from "../../lib/i18n";
 import type { ScheduleDiff } from "../../lib/studyplan-api.ts";
 import { weekdayOnLabel } from "../../lib/studyplan-visuals.ts";
 
@@ -25,12 +26,17 @@ const DAY_MINUTES = 24 * 60;
 const MIN_BLOCK_MINUTES = 15;
 const MAX_BLOCK_MINUTES = 480;
 
-const WEEKDAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
-const WEEKDAY_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
-const MONTH_NAMES = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-const MONTHS_GENITIVE = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+const WEEKDAY_NAMES = [msg("Понедельник"), msg("Вторник"), msg("Среда"), msg("Четверг"), msg("Пятница"), msg("Суббота"), msg("Воскресенье")];
+const WEEKDAY_SHORT = [msg("пн"), msg("вт"), msg("ср"), msg("чт"), msg("пт"), msg("сб"), msg("вс")];
+const MONTH_NAMES = [msg("Январь"), msg("Февраль"), msg("Март"), msg("Апрель"), msg("Май"), msg("Июнь"), msg("Июль"), msg("Август"), msg("Сентябрь"), msg("Октябрь"), msg("Ноябрь"), msg("Декабрь")];
+const MONTHS_GENITIVE = [msg("января"), msg("февраля"), msg("марта"), msg("апреля"), msg("мая"), msg("июня"), msg("июля"), msg("августа"), msg("сентября"), msg("октября"), msg("ноября"), msg("декабря")];
 
 // ─────────────────────────────── Подписи ─────────────────────────────────────
+
+function pick(names: readonly string[], index: number): string {
+  const name = names[index];
+  return name ? t(name) : "";
+}
 
 /** «8:00», «16:05». Без ведущего нуля, как в сетке прототипа. */
 export function clock(minutes: number): string {
@@ -47,31 +53,31 @@ export function clockRange(start: number, duration: number): string {
 
 /** Нагрузка дня в шапке: «45 мин», «1 ч 15», «2 ч». */
 export function loadLabel(minutes: number): string {
-  if (minutes <= 0) return "свободно";
+  if (minutes <= 0) return t("свободно");
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  if (!hours) return `${rest} мин`;
-  return rest ? `${hours} ч ${rest}` : `${hours} ч`;
+  if (!hours) return t("{n} мин", { n: rest });
+  return rest ? t("{h} ч {m}", { h: hours, m: rest }) : t("{n} ч", { n: hours });
 }
 
 export function dayShort(dateKey: string): string {
-  return WEEKDAY_SHORT[weekdayOf(dateKey)] ?? "";
+  return pick(WEEKDAY_SHORT, weekdayOf(dateKey));
 }
 
 function dayMonth(dateKey: string): string {
   const [, month, day] = dateKey.split("-").map(Number);
-  return `${day} ${MONTHS_GENITIVE[(month ?? 1) - 1] ?? ""}`.trim();
+  return `${day} ${pick(MONTHS_GENITIVE, (month ?? 1) - 1)}`.trim();
 }
 
 /** «Вторник, 3 ноября». */
 export function fullDayLabel(dateKey: string): string {
-  return `${WEEKDAY_NAMES[weekdayOf(dateKey)] ?? ""}, ${dayMonth(dateKey)}`;
+  return `${pick(WEEKDAY_NAMES, weekdayOf(dateKey))}, ${dayMonth(dateKey)}`;
 }
 
 /** «Ноябрь 2026». */
 export function monthTitle(dateKey: string): string {
   const [year, month] = dateKey.split("-").map(Number);
-  return `${MONTH_NAMES[(month ?? 1) - 1] ?? ""} ${year}`;
+  return `${pick(MONTH_NAMES, (month ?? 1) - 1)} ${year}`;
 }
 
 export interface MonthCell {
@@ -385,7 +391,7 @@ export function buildDeadlines(input: {
   }
   return list.sort(
     (left, right) =>
-      left.dateKey.localeCompare(right.dateKey) || (left.minutes ?? -1) - (right.minutes ?? -1) || left.title.localeCompare(right.title, "ru"),
+      left.dateKey.localeCompare(right.dateKey) || (left.minutes ?? -1) - (right.minutes ?? -1) || left.title.localeCompare(right.title, dateLocale()),
   );
 }
 
@@ -398,9 +404,9 @@ export function upcomingDeadlines(all: readonly Due[], todayKey: string, nowMinu
 
 /** «завтра», «в пятницу, 6 ноября», «в субботу, в 11:00», «25 мая». */
 export function soonWhen(due: Pick<Due, "dateKey" | "minutes">, todayKey: string): string {
-  const at = due.minutes == null ? "" : `в ${clock(due.minutes)}`;
-  if (due.dateKey === todayKey) return at ? `сегодня, ${at}` : "сегодня";
-  if (due.dateKey === shiftDateKey(todayKey, 1)) return at ? `завтра, ${at}` : "завтра";
+  const at = due.minutes == null ? "" : t("в {time}", { time: clock(due.minutes) });
+  if (due.dateKey === todayKey) return at ? t("сегодня, {at}", { at }) : t("сегодня");
+  if (due.dateKey === shiftDateKey(todayKey, 1)) return at ? t("завтра, {at}", { at }) : t("завтра");
   if (due.dateKey < shiftDateKey(todayKey, 7)) {
     return `${weekdayOnLabel(weekdayOf(due.dateKey))}, ${at || dayMonth(due.dateKey)}`;
   }

@@ -30,6 +30,7 @@ import {
   type TimeSpan,
 } from "@/lib/diary-plan";
 import { taskTitle } from "@/lib/diary-tasks";
+import { t } from "@/lib/i18n";
 import { dayMonthLabel, parseClock } from "@/lib/now-feed";
 import { invalidateResources, useResource } from "@/lib/resource-cache";
 import {
@@ -153,9 +154,9 @@ export function useDiaryPlan() {
       invalidateResources<FixedCommitment[]>(COMMITMENTS_KEY, (list) =>
         list.filter((item) => item.id !== commitmentId),
       );
-      toast("Убрал из плана");
+      toast(t("Убрал из плана"));
     } catch {
-      toast.error("Не получилось убрать. Попробуй ещё раз.");
+      toast.error(t("Не получилось убрать. Попробуй ещё раз."));
     }
   }, []);
 
@@ -167,7 +168,7 @@ export function useDiaryPlan() {
       setStep({ ...step, saving: true });
 
       const title = planTitle(taskTitle(lesson));
-      const sourceText = `Из дневника, сдать ${dayMonthLabel(day.date)}`;
+      const sourceText = t("Из дневника, сдать {date}", { date: dayMonthLabel(day.date) });
       const startAt = slot.start.toISOString();
       const endAt = slot.end.toISOString();
       try {
@@ -194,8 +195,8 @@ export function useDiaryPlan() {
         invalidateResources<FixedCommitment[]>(COMMITMENTS_KEY, (list) => [...list, entry]);
         if (id === ticket.current) setStep(null);
         mascot.hop(0.42, "quiet");
-        toast(`Поставил ${planWhenLabel(slot.start, zonedDateKey(new Date(), zone), zone)}`, {
-          action: { label: "Отменить", onClick: () => void remove(created.id) },
+        toast(t("Поставил {when}", { when: planWhenLabel(slot.start, zonedDateKey(new Date(), zone), zone) }), {
+          action: { label: t("Отменить"), onClick: () => void remove(created.id) },
         });
       } catch {
         if (id === ticket.current) setStep({ kind: "error", lessonId: lesson.id });
@@ -209,7 +210,7 @@ export function useDiaryPlan() {
     (lesson: DiaryLesson) => {
       close();
       router.push("/dashboard/plan");
-      prompt({ target: "schedule", text: `Поставь в план: ${taskTitle(lesson)}`, send: true });
+      prompt({ target: "schedule", text: t("Поставь в план: {task}", { task: taskTitle(lesson) }), send: true });
     },
     [close, prompt, router],
   );

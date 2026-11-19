@@ -8,6 +8,7 @@
 
 import { listContests } from "@/lib/contest-api";
 import { getPlan, listDocuments, listPlans } from "@/lib/curriculum-api";
+import { t } from "@/lib/i18n";
 import { mergeListRequests } from "@/lib/now-feed";
 import { invalidateResources } from "@/lib/resource-cache";
 import {
@@ -103,7 +104,7 @@ export const diaryKey = (monday: string) => `now:diary:${monday}`;
  */
 export async function fetchDiaryWeek(monday: string): Promise<DiaryWeek> {
   const response = await fetch(`/api/diary/week?weekStart=${encodeURIComponent(monday)}`);
-  if (!response.ok) throw new Error(`Дневник не загрузился (${response.status})`);
+  if (!response.ok) throw new Error(t("Дневник не загрузился ({status})", { status: response.status }));
   return response.json();
 }
 
@@ -113,7 +114,7 @@ export const WEAK_TOPICS_KEY = "now:topics:weak";
 
 export async function fetchWeakTopics(): Promise<Topic[]> {
   const response = await fetch("/api/topics?filter=weak");
-  if (!response.ok) throw new Error(`Темы не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("Темы не загрузились ({status})", { status: response.status }));
   const body = (await response.json()) as Topic[] | { results?: Topic[] };
   return Array.isArray(body) ? body : body.results ?? [];
 }
@@ -128,7 +129,7 @@ export async function reviewTopic(topicId: string, rating: ReviewRating): Promis
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rating }),
   });
-  if (!response.ok) throw new Error("Не удалось записать повторение");
+  if (!response.ok) throw new Error(t("Не удалось записать повторение"));
   try {
     return (await response.json()) as Partial<Topic>;
   } catch {

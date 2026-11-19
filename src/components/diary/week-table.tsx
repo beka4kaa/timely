@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/core";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,7 +94,7 @@ export function WeekTable(props: WeekTableProps) {
     cells.push(
       <button key="h-more" type="button" className="ds-dh-more" onClick={() => props.onShowDay?.(props.hiddenDay!)}>
         <Icon name="plus" />
-        {DAY_SHORT_LABELS[props.hiddenDay]}
+        {t(DAY_SHORT_LABELS[props.hiddenDay])}
       </button>,
     );
   }
@@ -114,7 +115,7 @@ export function WeekTable(props: WeekTableProps) {
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-      <section className="card ds-week" aria-label="Уроки недели">
+      <section className="card ds-week" aria-label={t("Уроки недели")}>
         <div className="ds-scroll">
           <div
             className="ds-grid"
@@ -138,30 +139,30 @@ function DayHead({ day, week, days, onCopyDay, onClearDay }: { day: DayOfWeek } 
   return (
     <div className="ds-dh" data-day={day}>
       <div>
-        <b>{DAY_SHORT_LABELS[day]}</b>
-        <span>{dayRange(lessons) || "нет уроков"}</span>
+        <b>{t(DAY_SHORT_LABELS[day])}</b>
+        <span>{dayRange(lessons) || t("нет уроков")}</span>
       </div>
       {lessons.length ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className="icon-btn ds-dh-menu" aria-label={`Что сделать с днём: ${DAY_OF_WEEK_LABELS[day]}`}>
+            <button type="button" className="icon-btn ds-dh-menu" aria-label={t("Что сделать с днём: {day}", { day: t(DAY_OF_WEEK_LABELS[day]) })}>
               <Icon name="more" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="ds-menu">
-            <DropdownMenuLabel>Скопировать уроки на</DropdownMenuLabel>
+            <DropdownMenuLabel>{t("Скопировать уроки на")}</DropdownMenuLabel>
             {WEEKDAYS.includes(day) && weekdays.length > 1 ? (
-              <DropdownMenuItem onSelect={() => onCopyDay(day, weekdays)}>Все остальные будни</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onCopyDay(day, weekdays)}>{t("Все остальные будни")}</DropdownMenuItem>
             ) : null}
             {others.map((other) => (
               <DropdownMenuItem key={other} onSelect={() => onCopyDay(day, [other])}>
-                {DAY_OF_WEEK_LABELS[other]}
-                {week[other].length ? <span className="ds-menu-note">заменит</span> : null}
+                {t(DAY_OF_WEEK_LABELS[other])}
+                {week[other].length ? <span className="ds-menu-note">{t("заменит")}</span> : null}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem className="ds-menu-danger" onSelect={() => onClearDay(day)}>
-              Очистить день
+              {t("Очистить день")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -234,7 +235,7 @@ function CellBody({
   overlay,
 }: { slot: SlotDraft; overlay?: boolean } & Pick<WeekTableProps, "subjects" | "blockLabel">) {
   const subject = slot.blockType === "lesson" ? subjects.get(slot.subjectId) : undefined;
-  const name = slot.blockType === "lesson" ? subject?.name ?? "Выбери предмет" : blockLabel(slot);
+  const name = slot.blockType === "lesson" ? subject?.name ?? t("Выбери предмет") : blockLabel(slot);
   return (
     <span className={`ds-cell-in${overlay ? " is-overlay" : ""}${slot.blockType === "lesson" ? "" : " is-block"}`}>
       <span className="ds-cell-name">
@@ -268,7 +269,7 @@ function AddCell({
       onClick={() => onAdd(day)}
     >
       <Icon name="plus" />
-      {moving ? "Перенести сюда" : "урок"}
+      {moving ? t("Перенести сюда") : t("урок")}
     </button>
   );
 }

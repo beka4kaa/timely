@@ -22,6 +22,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Plus } from 'lucide-react'
 import { Subject, Topic } from '@/types/mind'
+import { t } from '@/lib/i18n'
 
 interface AddTopicDialogProps {
     open: boolean
@@ -86,18 +87,18 @@ export function AddTopicDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Новая тема</DialogTitle>
+                    <DialogTitle>{t('Новая тема')}</DialogTitle>
                     <DialogDescription>
-                        Добавьте тему для изучения
+                        {t('Добавьте тему для изучения')}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="subject">Предмет</Label>
+                        <Label htmlFor="subject">{t('Предмет')}</Label>
                         <Select value={subjectId} onValueChange={setSubjectId}>
                             <SelectTrigger>
-                                <SelectValue placeholder="Выберите предмет" />
+                                <SelectValue placeholder={t('Выберите предмет')} />
                             </SelectTrigger>
                             <SelectContent>
                                 {subjects.map((subject) => (
@@ -113,7 +114,7 @@ export function AddTopicDialog({
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="name">Название темы</Label>
+                        <Label htmlFor="name">{t('Название темы')}</Label>
                         <Input
                             id="name"
                             placeholder="Waves, Differentiation..."
@@ -129,25 +130,25 @@ export function AddTopicDialog({
                             onCheckedChange={(checked) => setPicked(checked === true)}
                         />
                         <Label htmlFor="picked" className="cursor-pointer">
-                            Добавить в избранное
+                            {t('Добавить в избранное')}
                         </Label>
                     </div>
                 </div>
 
                 <DialogFooter className="mt-4">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
-                        Отмена
+                        {t('Отмена')}
                     </Button>
                     <Button onClick={handleSubmit} disabled={!name.trim() || !subjectId || loading}>
                         {loading ? (
                             <>
                                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Создание...
+                                {t('Создание...')}
                             </>
                         ) : (
                             <>
                                 <Plus className="h-4 w-4 mr-2" />
-                                Создать
+                                {t('Создать')}
                             </>
                         )}
                     </Button>

@@ -1,38 +1,21 @@
-'use client'
+import { localeFromParams } from "@/lib/app-locale"
+import { LocaleProvider, RememberLocale } from "@/lib/i18n/react"
+import { serverLocale } from "@/lib/i18n/server"
 
-import { useState } from 'react'
-import { signIn } from 'next-auth/react'
-import Link from 'next/link'
-import { toast } from 'sonner'
-import { AuthShell, GoogleButton } from '@/components/auth/auth-shell'
+import { RegisterView } from "./register-view"
 
-// Пока аккаунт создаётся только через Google: первый вход и есть регистрация.
-export default function RegisterPage() {
-  const [isLoading, setIsLoading] = useState(false)
-
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true)
-    try {
-      await signIn('google', { callbackUrl: '/dashboard', redirect: true })
-    } catch (error) {
-      toast.error('Ошибка входа через Google')
-      setIsLoading(false)
-    }
-  }
-
+// Язык со ссылки английского лендинга (`?lang=en`, в том числе внутри callbackUrl) страница
+// берёт сама: NextAuth не пускает на неё middleware, где язык запоминают остальные страницы.
+export default async function RegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const fromUrl = localeFromParams(await searchParams)
   return (
-    <AuthShell
-      title="Создай аккаунт"
-      subtitle="Один шаг через Google — и можно задавать первый вопрос тьютору."
-      footer={
-        <>
-          Уже есть аккаунт? <Link href="/auth/signin">Войти</Link>
-        </>
-      }
-    >
-      <GoogleButton onClick={handleGoogleSignIn} disabled={isLoading}>
-        {isLoading ? 'Открываем Google…' : 'Продолжить с Google'}
-      </GoogleButton>
-    </AuthShell>
+    <LocaleProvider locale={fromUrl ?? (await serverLocale())}>
+      <RememberLocale locale={fromUrl} />
+      <RegisterView />
+    </LocaleProvider>
   )
 }

@@ -4,6 +4,7 @@
 // на выбранной странице написано. Перехода «в книгу» здесь нет и обещать его нельзя:
 // читалки у нас пока нет. Кнопка ведёт к ответу, где страница цитировалась.
 
+import { plural, t } from "@/lib/i18n";
 import type { BookSpine, SpineMark } from "@/lib/citation-spread";
 import type { CurriculumDocument } from "@/lib/curriculum-api";
 import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
@@ -13,17 +14,8 @@ import { useSourceQuote } from "./source-quote";
 import type { Turn } from "./use-subject-chat";
 // Цвета обложек описаны у библиотеки: книга здесь того же цвета, что и на полке.
 
-function pagesWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (tens >= 11 && tens <= 14) return "страниц";
-  if (ones === 1) return "страница";
-  if (ones >= 2 && ones <= 4) return "страницы";
-  return "страниц";
-}
-
 function bookCaption(document: CurriculumDocument | undefined, pageCount: number): string {
-  const pages = pageCount ? `${pageCount} ${pagesWord(pageCount)}` : "";
+  const pages = pageCount ? plural(pageCount, "{n} страница", "{n} страницы", "{n} страниц") : "";
   return [coverAuthor(document?.authors), pages].filter(Boolean).join(", ");
 }
 
@@ -43,7 +35,7 @@ function BookHead({
     <div className="src-book">
       <span className={`book mini ${coverClass(subject, shelfIndex)}`} aria-hidden="true" />
       <span className="src-name">
-        {coverTitle(title) || "Книга"}
+        {coverTitle(title) || t("Книга")}
         {caption ? <small>{caption}</small> : null}
       </span>
     </div>
@@ -104,7 +96,7 @@ function CitedBook({
         shelfIndex={shelfIndex}
       />
       {spine.marks.length ? (
-        <div className="tabs" role="group" aria-label="Страница">
+        <div className="tabs" role="group" aria-label={t("Страница")}>
           {spine.marks.map((mark) => (
             <button
               key={mark.page}
@@ -163,9 +155,9 @@ function PagePaper({
     <figure className="paper">
       {quote ? <blockquote>{quote}</blockquote> : null}
       <figcaption>
-        {place || `стр. ${markLabel(mark)}`}
+        {place || t("стр. {pages}", { pages: markLabel(mark) })}
         <button className="link src-go" type="button" onClick={() => onJump(turnIndex)}>
-          К ответу
+          {t("К ответу")}
         </button>
       </figcaption>
     </figure>
@@ -207,7 +199,7 @@ function SectionsPaper({
             </button>
           ))
         ) : (
-          <>Ссылок на эту книгу: {spine.citations}</>
+          <>{t("Ссылок на эту книгу: {n}", { n: spine.citations })}</>
         )}
       </figcaption>
     </figure>
@@ -245,7 +237,7 @@ export function SourcesPanel({
   const quiet = shelf.filter((document) => !cited.has(document.id));
 
   return (
-    <aside className="sources" aria-label="Источники">
+    <aside className="sources" aria-label={t("Источники")}>
       {spines.map((spine) => (
         <CitedBook
           key={spine.documentId}
@@ -270,7 +262,7 @@ export function SourcesPanel({
         </div>
       ))}
       {spines.length ? null : (
-        <p className="src-empty">Когда ответ опрётся на книгу, здесь появятся её страницы.</p>
+        <p className="src-empty">{t("Когда ответ опрётся на книгу, здесь появятся её страницы.")}</p>
       )}
     </aside>
   );

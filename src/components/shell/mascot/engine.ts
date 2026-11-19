@@ -14,6 +14,7 @@
 
 import { BOOKS_ENABLED } from "@/config/features";
 import type { DashboardView } from "@/config/dashboard-navigation";
+import { msg, t } from "@/lib/i18n";
 
 export type MascotExpression =
   | "calm"
@@ -124,25 +125,25 @@ const EX: Record<MascotExpression, number[]> = {
 
 /** Реплики по нажатию: сам он не лезет. Без чисел, которых здесь не знает. */
 const LINES: Partial<Record<DashboardView, string>> = {
-  now: "Застрял на текущем деле? Спроси, разберёмся.",
-  diary: "Нажми «В план», и я поставлю задание в свободное окно.",
-  plan: "Скажи, что поменялось, и я перестрою неделю. Можно указать урок курсором.",
-  weak: "Напиши, что сегодня изучил, а темы я заполню сам.",
-  goals: "Напиши цель своими словами, срок и привычки подберу сам.",
-  habits: "Сделал сегодня, нажми на карточку. Один день, один квадратик.",
-  chat: "Спрашивай о чём угодно, не только по книге.",
-  board: "Выдели что угодно на доске и спроси.",
+  now: msg("Застрял на текущем деле? Спроси, разберёмся."),
+  diary: msg("Нажми «В план», и я поставлю задание в свободное окно."),
+  plan: msg("Скажи, что поменялось, и я перестрою неделю. Можно указать урок курсором."),
+  weak: msg("Напиши, что сегодня изучил, а темы я заполню сам."),
+  goals: msg("Напиши цель своими словами, срок и привычки подберу сам."),
+  habits: msg("Сделал сегодня, нажми на карточку. Один день, один квадратик."),
+  chat: msg("Спрашивай о чём угодно, не только по книге."),
+  board: msg("Выдели что угодно на доске и спроси."),
   library: BOOKS_ENABLED
-    ? "Загрузи учебник, и я буду отвечать по его страницам."
-    : "Добавь предмет, и я помогу поставить по нему занятия.",
-  course: "Спроси по этой главе, отвечу со ссылкой на страницу.",
-  contests: "На контесте я молчу, такие правила. Зато потом разберём всё.",
-  rating: "Рейтинг растёт от задач без подсказок.",
-  focus: "Я рядом и не отвечаю, пока идёт сессия.",
-  profile: "Нажми на дни или баллы, покажу подробнее.",
-  prefs: "Всё, что я помню, можно удалить здесь же.",
+    ? msg("Загрузи учебник, и я буду отвечать по его страницам.")
+    : msg("Добавь предмет, и я помогу поставить по нему занятия."),
+  course: msg("Спроси по этой главе, отвечу со ссылкой на страницу."),
+  contests: msg("На контесте я молчу, такие правила. Зато потом разберём всё."),
+  rating: msg("Рейтинг растёт от задач без подсказок."),
+  focus: msg("Я рядом и не отвечаю, пока идёт сессия."),
+  profile: msg("Нажми на дни или баллы, покажу подробнее."),
+  prefs: msg("Всё, что я помню, можно удалить здесь же."),
 };
-const DEFAULT_LINE = "Нужна помощь? Спроси.";
+const DEFAULT_LINE = msg("Нужна помощь? Спроси.");
 
 const sgn = (x: number) => (x < 0 ? -1 : 1);
 const clamp = (x: number, a: number, b: number) => (x < a ? a : x > b ? b : x);
@@ -376,7 +377,7 @@ export function createMascot(host: HTMLElement, stageOptions?: MascotStageOption
     } else {
       node = document.createElementNS(SVGNS, "text");
       node.setAttribute("class", "m-z");
-      node.textContent = stage?.sleepGlyph ?? "з";
+      node.textContent = stage?.sleepGlyph ?? t("з");
     }
     el.fx.appendChild(node);
     fx.push({ kind, node, x, y, vx, vy, t: 0, life, size });
@@ -910,7 +911,7 @@ export function createMascot(host: HTMLElement, stageOptions?: MascotStageOption
   }
   function say(text?: string) {
     if (thinking) return;
-    sayEl.textContent = text || LINES[view] || DEFAULT_LINE;
+    sayEl.textContent = text || t(LINES[view] || DEFAULT_LINE);
     askEl.classList.toggle("is-off", view === "chat" || view === "board");
     bubble.classList.remove("is-off");
     if (bubbleTimer) clearTimeout(bubbleTimer);

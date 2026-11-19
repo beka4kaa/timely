@@ -6,7 +6,7 @@ import { Icon } from "@/components/shell/icons"
 import { useDiaryYearStats } from "@/hooks/use-diary-year-stats"
 import { calcMonthStats } from "@/lib/diary-grades"
 import { MONTH_SHORT } from "@/lib/diary-grades"
-import { plural } from "@/lib/now-feed"
+import { dateLocale, decimal, msg, plural, t } from "@/lib/i18n"
 
 // Учебный год: сентябрь–август
 const SCHOOL_MONTHS: number[] = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7]
@@ -16,7 +16,7 @@ function GradeMark({ value, digits }: { value: number | null; digits?: number })
   if (value === null) return null
   const text = digits === undefined && Number.isInteger(value)
     ? String(value)
-    : value.toFixed(digits ?? 1).replace(".", ",")
+    : decimal(value, digits ?? 1)
   const rounded = Math.min(5, Math.max(1, Math.round(value)))
   return <span className={`g g${rounded}`}>{text}</span>
 }
@@ -28,9 +28,9 @@ function daysInMonth(year: number, month: number): number {
 type View = "month" | "year" | "videos"
 
 const VIEWS: Array<{ value: View; title: string }> = [
-  { value: "month", title: "По месяцу" },
-  { value: "year", title: "За год" },
-  { value: "videos", title: "Видео" },
+  { value: "month", title: msg("По месяцу") },
+  { value: "year", title: msg("За год") },
+  { value: "videos", title: msg("Видео") },
 ]
 
 function getYoutubeId(url: string): string | null {
@@ -116,21 +116,21 @@ export default function GradesPage() {
     else setViewMonth((m: number) => m + 1)
   }
 
-  const monthLabel = `${MONTH_SHORT[viewMonth]} ${viewYear}`
+  const monthLabel = `${t(MONTH_SHORT[viewMonth])} ${viewYear}`
 
   function renderMonth() {
     if (monthStats.length === 0) {
       return (
         <div className="card dy-empty">
-          <h2>{monthLabel}: оценок нет</h2>
-          <p>Ставь оценки в дневнике, и они появятся здесь.</p>
-          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
+          <h2>{t("{month}: оценок нет", { month: monthLabel })}</h2>
+          <p>{t("Ставь оценки в дневнике, и они появятся здесь.")}</p>
+          <Link className="btn btn-line" href="/dashboard/plan">{t("Открыть неделю")}</Link>
         </div>
       )
     }
     return (
       <div className="card dy-tbl-card">
-        <div className="dy-tbl-wrap" tabIndex={0} aria-label={`Оценки за ${monthLabel}`}>
+        <div className="dy-tbl-wrap" tabIndex={0} aria-label={t("Оценки за {month}", { month: monthLabel })}>
           <table className="dy-tbl is-month">
             <colgroup>
               <col style={{ width: "138px" }} />
@@ -139,9 +139,9 @@ export default function GradesPage() {
             </colgroup>
             <thead>
               <tr>
-                <th scope="col" className="dy-pin dy-pin-l">Предмет</th>
+                <th scope="col" className="dy-pin dy-pin-l">{t("Предмет")}</th>
                 {dayNumbers.map(d => <th key={d} scope="col">{d}</th>)}
-                <th scope="col" className="dy-pin dy-pin-r">Итог</th>
+                <th scope="col" className="dy-pin dy-pin-r">{t("Итог")}</th>
               </tr>
             </thead>
             <tbody>
@@ -167,9 +167,9 @@ export default function GradesPage() {
     if (yearRows.length === 0) {
       return (
         <div className="card dy-empty">
-          <h2>Нет оценок за {schoolYearStart}–{schoolYearStart + 1}</h2>
-          <p>Ставь оценки в дневнике, и здесь появится итог по предметам.</p>
-          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
+          <h2>{t("Нет оценок за {years}", { years: `${schoolYearStart}–${schoolYearStart + 1}` })}</h2>
+          <p>{t("Ставь оценки в дневнике, и здесь появится итог по предметам.")}</p>
+          <Link className="btn btn-line" href="/dashboard/plan">{t("Открыть неделю")}</Link>
         </div>
       )
     }
@@ -179,13 +179,13 @@ export default function GradesPage() {
       : Math.round(yearAverages.reduce((a, b) => a + b, 0) / yearAverages.length * 10) / 10
     return (
       <div className="card dy-tbl-card">
-        <div className="dy-tbl-wrap" tabIndex={0} aria-label={`Оценки за ${schoolYearStart}–${schoolYearStart + 1}`}>
+        <div className="dy-tbl-wrap" tabIndex={0} aria-label={t("Оценки за {years}", { years: `${schoolYearStart}–${schoolYearStart + 1}` })}>
           <table className="dy-tbl is-year">
             <thead>
               <tr>
-                <th scope="col" className="dy-pin dy-pin-l">Предмет</th>
-                {SCHOOL_MONTHS.map(m => <th key={m} scope="col">{MONTH_SHORT[m]}</th>)}
-                <th scope="col" className="dy-pin dy-pin-r">Год</th>
+                <th scope="col" className="dy-pin dy-pin-l">{t("Предмет")}</th>
+                {SCHOOL_MONTHS.map(m => <th key={m} scope="col">{t(MONTH_SHORT[m])}</th>)}
+                <th scope="col" className="dy-pin dy-pin-r">{t("Год")}</th>
               </tr>
             </thead>
             <tbody>
@@ -201,7 +201,7 @@ export default function GradesPage() {
             </tbody>
             <tfoot>
               <tr>
-                <th scope="row" className="dy-pin dy-pin-l">Среднее</th>
+                <th scope="row" className="dy-pin dy-pin-l">{t("Среднее")}</th>
                 {SCHOOL_MONTHS.map((_, mi) => {
                   const vals = yearRows.map(r => r.monthlyGrades[mi]).filter((v): v is number => v !== null)
                   const avg = vals.length === 0 ? null : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10
@@ -223,7 +223,7 @@ export default function GradesPage() {
       for (const day of week.days) {
         if (!day.date.startsWith(isoPrefix)) continue
         const d = new Date(day.date)
-        const dayName = d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric" })
+        const dayName = d.toLocaleDateString(dateLocale(), { weekday: "short", day: "numeric" })
         for (const link of (day.youtubeLinks ?? [])) {
           videos.push({ url: link.url, label: link.label, durationMin: link.durationMin, date: day.date, dayName })
         }
@@ -232,9 +232,9 @@ export default function GradesPage() {
     if (videos.length === 0) {
       return (
         <div className="card dy-empty">
-          <h2>{monthLabel}: видео нет</h2>
-          <p>Добавляй ссылки на записи уроков в дневнике, и они появятся здесь.</p>
-          <Link className="btn btn-line" href="/dashboard/plan">Открыть неделю</Link>
+          <h2>{t("{month}: видео нет", { month: monthLabel })}</h2>
+          <p>{t("Добавляй ссылки на записи уроков в дневнике, и они появятся здесь.")}</p>
+          <Link className="btn btn-line" href="/dashboard/plan">{t("Открыть неделю")}</Link>
         </div>
       )
     }
@@ -242,11 +242,11 @@ export default function GradesPage() {
     return (
       <>
         <p className="dg-sum">
-          <span>{videos.length} видео</span>
+          <span>{plural(videos.length, "{n} видео", "{n} видео", "{n} видео")}</span>
           {totalMin > 0 && (
             <span>
-              {Math.floor(totalMin / 60) > 0 ? `${Math.floor(totalMin / 60)} ч ` : ""}
-              {totalMin % 60} {plural(totalMin % 60, ["минута", "минуты", "минут"])}
+              {Math.floor(totalMin / 60) > 0 ? `${t("{hours} ч", { hours: Math.floor(totalMin / 60) })} ` : ""}
+              {plural(totalMin % 60, "{n} минута", "{n} минуты", "{n} минут")}
             </span>
           )}
         </p>
@@ -284,13 +284,13 @@ export default function GradesPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Итоговые оценки</h1>
+        <h1 className="title">{t("Итоговые оценки")}</h1>
         <div className="head-tools">
           <Link className="btn btn-text" href="/dashboard/plan">
             <Icon name="chev-l" />
-            Неделя
+            {t("Неделя")}
           </Link>
-          <div className="tabs" role="group" aria-label="Что показать">
+          <div className="tabs" role="group" aria-label={t("Что показать")}>
             {VIEWS.map(item => (
               <button
                 key={item.value}
@@ -298,7 +298,7 @@ export default function GradesPage() {
                 aria-pressed={view === item.value}
                 onClick={() => setView(item.value)}
               >
-                {item.title}
+                {t(item.title)}
               </button>
             ))}
           </div>
@@ -308,11 +308,11 @@ export default function GradesPage() {
       {view === "year" ? (
         <div className="dg-bar">
           <div className="pager dg-year">
-            <button type="button" className="icon-btn" aria-label="Прошлый учебный год" onClick={() => setSchoolYearStart(y => y - 1)}>
+            <button type="button" className="icon-btn" aria-label={t("Прошлый учебный год")} onClick={() => setSchoolYearStart(y => y - 1)}>
               <Icon name="chev-l" />
             </button>
             <span aria-live="polite">{schoolYearStart}–{schoolYearStart + 1}</span>
-            <button type="button" className="icon-btn" aria-label="Следующий учебный год" onClick={() => setSchoolYearStart(y => y + 1)}>
+            <button type="button" className="icon-btn" aria-label={t("Следующий учебный год")} onClick={() => setSchoolYearStart(y => y + 1)}>
               <Icon name="chev-r" />
             </button>
           </div>
@@ -320,15 +320,15 @@ export default function GradesPage() {
       ) : (
         <div className="dg-bar">
           <div className="pager">
-            <button type="button" className="icon-btn" aria-label="Прошлый месяц" onClick={prevMonth}>
+            <button type="button" className="icon-btn" aria-label={t("Прошлый месяц")} onClick={prevMonth}>
               <Icon name="chev-l" />
             </button>
             <span aria-live="polite">{monthLabel}</span>
-            <button type="button" className="icon-btn" aria-label="Следующий месяц" onClick={nextMonth}>
+            <button type="button" className="icon-btn" aria-label={t("Следующий месяц")} onClick={nextMonth}>
               <Icon name="chev-r" />
             </button>
           </div>
-          <div className="tabs scroll dg-months" role="group" aria-label="Месяц учебного года">
+          <div className="tabs scroll dg-months" role="group" aria-label={t("Месяц учебного года")}>
             {SCHOOL_MONTHS.map(m => {
               const y = m >= 8 ? schoolYearStart : schoolYearStart + 1
               return (
@@ -338,7 +338,7 @@ export default function GradesPage() {
                   aria-pressed={m === viewMonth && y === viewYear}
                   onClick={() => { setViewMonth(m); setViewYear(y) }}
                 >
-                  {MONTH_SHORT[m]}
+                  {t(MONTH_SHORT[m])}
                 </button>
               )
             })}
@@ -348,12 +348,12 @@ export default function GradesPage() {
 
       {failed ? (
         <div className="card dy-empty" role="alert">
-          <h2>Оценки не загрузились</h2>
-          <p>В дневнике всё на месте, это ошибка связи.</p>
-          <button type="button" className="btn btn-line" onClick={() => { r1(); r2() }}>Повторить</button>
+          <h2>{t("Оценки не загрузились")}</h2>
+          <p>{t("В дневнике всё на месте, это ошибка связи.")}</p>
+          <button type="button" className="btn btn-line" onClick={() => { r1(); r2() }}>{t("Повторить")}</button>
         </div>
       ) : loading ? (
-        <p className="dy-note" role="status">Загружаю оценки…</p>
+        <p className="dy-note" role="status">{t("Загружаю оценки…")}</p>
       ) : view === "month" ? (
         renderMonth()
       ) : view === "videos" ? (

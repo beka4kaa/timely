@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { t } from "@/lib/i18n";
 import { classesOfDay, gradeField } from "@/lib/diary-tasks";
 import { lessonGrade, lessonTitle } from "@/lib/now-feed";
 import type { DiaryDay, DiaryLesson, Grade } from "@/types/diary";
@@ -24,14 +25,14 @@ export function GradeChoice({
   onPick: (grade: Grade) => void;
 }) {
   return (
-    <div className="dy-grades-row" role="group" aria-label={`Оценка: ${label}`}>
+    <div className="dy-grades-row" role="group" aria-label={t("Оценка: {label}", { label })}>
       {GRADES.map((grade) => (
         <button
           key={grade}
           type="button"
           className={`dy-g g${grade}`}
           aria-pressed={value === grade}
-          aria-label={`Оценка ${grade}`}
+          aria-label={t("Оценка {grade}", { grade })}
           onClick={() => onPick(grade)}
         >
           {grade}
@@ -41,7 +42,7 @@ export function GradeChoice({
         <button
           type="button"
           className="dy-g dy-g-clear"
-          aria-label="Убрать оценку"
+          aria-label={t("Убрать оценку")}
           onClick={() => onPick(null)}
         >
           <Icon name="x" />
@@ -68,7 +69,7 @@ function GradeControl({
         <button
           type="button"
           className={value !== null ? `dy-grade g g${value}` : "dy-grade g is-empty"}
-          aria-label={value !== null ? `${title}: оценка ${value}. Изменить` : `${title}: поставить оценку`}
+          aria-label={value !== null ? t("{title}: оценка {value}. Изменить", { title, value }) : t("{title}: поставить оценку", { title })}
         >
           {value ?? "–"}
         </button>
@@ -124,12 +125,12 @@ export function SchoolCard({
           {lessons.map((lesson, index) => {
             const name = lessonTitle(lesson);
             return (
-              <li key={lesson.id} data-attach={`${name}, урок ${index + 1}, ${title.toLowerCase()}`}>
+              <li key={lesson.id} data-attach={t("{name}, урок {n}, {day}", { name, n: index + 1, day: title.toLowerCase() })}>
                 <span className="n">{index + 1}</span>
                 <button
                   type="button"
                   className="dy-lesson"
-                  aria-label={`${name}: подробнее об уроке`}
+                  aria-label={t("{name}: подробнее об уроке", { name })}
                   onClick={() => onOpenLesson(day, lesson)}
                 >
                   {name}
@@ -145,7 +146,7 @@ export function SchoolCard({
           })}
         </ol>
       ) : (
-        <p className="small-note">Уроков нет.</p>
+        <p className="small-note">{t("Уроков нет.")}</p>
       )}
     </section>
   );

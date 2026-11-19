@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { dayMonthLabel, weekdayLabel } from "@/lib/now-feed";
 import type { DiaryWeek, YoutubeLink } from "@/types/diary";
 import type { DiaryWeekApi } from "./use-diary-week";
@@ -33,7 +34,7 @@ function isWebUrl(url: string): boolean {
 
 function linkName(link: YoutubeLink): string {
   if (link.label) return link.label;
-  return youtubeId(link.url) ? "YouTube" : "Ссылка";
+  return youtubeId(link.url) ? "YouTube" : t("Ссылка");
 }
 
 export function weekLinkCount(week: DiaryWeek): number {
@@ -79,7 +80,7 @@ export function WeekVideos({
 
   return (
     <section className="dy-videos">
-      <h2 className="sec">Видео и трансляции</h2>
+      <h2 className="sec">{t("Видео и трансляции")}</h2>
       <div className="card dy-videos-card">
         {days.length ? (
           <ul>
@@ -103,13 +104,13 @@ export function WeekVideos({
                       )}
                       <small>
                         {weekdayLabel(day.date)}, {dayMonthLabel(day.date)}
-                        {link.durationMin ? `, ${link.durationMin} мин` : ""}
+                        {link.durationMin ? `, ${t("{minutes} мин", { minutes: link.durationMin })}` : ""}
                       </small>
                     </span>
                     <button
                       type="button"
                       className="icon-btn"
-                      aria-label={`Убрать: ${linkName(link)}`}
+                      aria-label={t("Убрать: {name}", { name: linkName(link) })}
                       onClick={() =>
                         api.saveLinks(
                           day,
@@ -125,12 +126,12 @@ export function WeekVideos({
             )}
           </ul>
         ) : (
-          <p className="dy-videos-none">На этой неделе ссылок нет. Добавь запись урока или трансляцию.</p>
+          <p className="dy-videos-none">{t("На этой неделе ссылок нет. Добавь запись урока или трансляцию.")}</p>
         )}
         <form className="dy-video-form" onSubmit={submit}>
           <select
             className="dy-select"
-            aria-label="День"
+            aria-label={t("День")}
             value={selected?.id ?? ""}
             onChange={(event) => setDayId(event.target.value)}
           >
@@ -144,16 +145,16 @@ export function WeekVideos({
             <input
               type="url"
               value={url}
-              aria-label="Ссылка"
-              placeholder="Ссылка на видео"
+              aria-label={t("Ссылка")}
+              placeholder={t("Ссылка на видео")}
               onChange={(event) => setUrl(event.target.value)}
             />
           </span>
           <span className="dy-input">
             <input
               value={label}
-              aria-label="Название"
-              placeholder="Название, если нужно"
+              aria-label={t("Название")}
+              placeholder={t("Название, если нужно")}
               onChange={(event) => setLabel(event.target.value)}
             />
           </span>
@@ -163,13 +164,13 @@ export function WeekVideos({
               min={1}
               max={600}
               value={minutes}
-              aria-label="Сколько минут"
-              placeholder="Мин"
+              aria-label={t("Сколько минут")}
+              placeholder={t("Мин")}
               onChange={(event) => setMinutes(event.target.value)}
             />
           </span>
           <button type="submit" className="btn btn-line" disabled={!isWebUrl(url.trim())}>
-            Добавить
+            {t("Добавить")}
           </button>
         </form>
       </div>

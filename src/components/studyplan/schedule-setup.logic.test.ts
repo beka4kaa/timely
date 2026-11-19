@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { setLocaleForTests } from "../../lib/i18n";
+
 import {
   normalizeScheduleSetupAnswer,
   prepareScheduleSetupAnswer,
+  scheduleSetupOptionText,
   scheduleSetupSummaryRows,
 } from "./schedule-setup.logic.ts";
 
@@ -64,4 +67,23 @@ test("итог показывает читаемый ритм недели", () 
     label: "В неделю",
     value: "3 занятия · 135 мин",
   });
+});
+
+test("название программы — данные ученика: не переводится, а темп переводится", () => {
+  const option = { id: "p1", label: "Физика", description: "3 занятий в неделю, по 45 минут" };
+  assert.deepEqual(scheduleSetupOptionText("course_plan_id", option), {
+    label: "Физика",
+    description: "3 занятий в неделю, по 45 минут",
+  });
+  setLocaleForTests("en");
+  try {
+    assert.deepEqual(scheduleSetupOptionText("course_plan_id", option), {
+      label: "Физика",
+      description: "3 sessions a week, 45 minutes each",
+    });
+    // Остальные варианты сервер пишет сам, их перевод лежит в словаре.
+    assert.equal(scheduleSetupOptionText("weekdays", { id: "x", label: "Тест" }).label, "Test");
+  } finally {
+    setLocaleForTests("ru");
+  }
 });

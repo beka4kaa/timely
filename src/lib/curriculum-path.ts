@@ -14,6 +14,8 @@
 // срока. Поэтому перелёт («курс кончается позже, чем нужно») и запас
 // («кончается раньше») — это одна и та же геометрия с разным знаком.
 
+import { msg, t } from "./i18n";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 
@@ -24,18 +26,18 @@ const MAX_TICKS = 8;
 const MONTHS_FROM_WEEKS = 8;
 
 const MONTHS = [
-  "янв",
-  "фев",
-  "мар",
-  "апр",
-  "мая",
-  "июн",
-  "июл",
-  "авг",
-  "сен",
-  "окт",
-  "ноя",
-  "дек",
+  msg("янв"),
+  msg("фев"),
+  msg("мар"),
+  msg("апр"),
+  msg("мая"),
+  msg("июн"),
+  msg("июл"),
+  msg("авг"),
+  msg("сен"),
+  msg("окт"),
+  msg("ноя"),
+  msg("дек"),
 ];
 
 export interface PathModuleInput {
@@ -280,7 +282,7 @@ function buildTicks(start: number, end: number): PathTick[] {
   const raw: PathTick[] = [];
   if (span / WEEK_MS <= MONTHS_FROM_WEEKS) {
     for (let at = start, week = 1; at < end; at += WEEK_MS, week += 1) {
-      raw.push({ atPct: ((at - start) / span) * 100, label: `нед. ${week}` });
+      raw.push({ atPct: ((at - start) / span) * 100, label: t("нед. {n}", { n: week }) });
     }
   } else {
     // Первое число каждого месяца: границы месяцев ученик и так знает, и по
@@ -293,7 +295,7 @@ function buildTicks(start: number, end: number): PathTick[] {
       if (at >= start) {
         raw.push({
           atPct: ((at - start) / span) * 100,
-          label: MONTHS[cursor.getMonth()],
+          label: t(MONTHS[cursor.getMonth()]),
         });
       }
       cursor.setMonth(cursor.getMonth() + 1);

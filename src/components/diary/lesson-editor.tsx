@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import type { BlockType } from "@/types/diary";
 
 import {
@@ -31,7 +32,7 @@ export interface BlockOption {
 const DURATIONS = [35, 40, 45, 60, 90];
 const STEP = 5;
 
-const normalized = (text: string) => text.trim().toLocaleLowerCase("ru-RU").replace(/ё/g, "е");
+const normalized = (text: string) => text.trim().toLocaleLowerCase("ru-RU").replace(/ё/g, "е"); // i18n-skip
 
 interface LessonEditorProps {
   slot: SlotDraft;
@@ -119,11 +120,11 @@ export function LessonEditor({
           if (first) onContent({ subjectId: first.id, blockType: "lesson", label: "" });
           else if (wanted && !exact) void createSubject();
         }}
-        placeholder="Найти или создать предмет"
-        aria-label="Найти или создать предмет"
+        placeholder={t("Найти или создать предмет")}
+        aria-label={t("Найти или создать предмет")}
       />
 
-      <div ref={list} className="ds-ed-list" role="listbox" aria-label="Что стоит на этом месте">
+      <div ref={list} className="ds-ed-list" role="listbox" aria-label={t("Что стоит на этом месте")}>
         {shownSubjects.map((subject) => {
           const on = isLesson && slot.subjectId === subject.id;
           return (
@@ -144,12 +145,12 @@ export function LessonEditor({
         {wanted && !exact ? (
           <button type="button" className="ds-opt is-new" disabled={creating} onClick={() => void createSubject()}>
             <Icon name="plus" />
-            <span className="ds-opt-name">{creating ? "Создаю…" : `Новый предмет «${query.trim()}»`}</span>
+            <span className="ds-opt-name">{creating ? t("Создаю…") : t("Новый предмет «{name}»", { name: query.trim() })}</span>
           </button>
         ) : null}
-        {!subjects.length && !wanted ? <p className="ds-ed-note">Предметов пока нет. Напиши название выше.</p> : null}
+        {!subjects.length && !wanted ? <p className="ds-ed-note">{t("Предметов пока нет. Напиши название выше.")}</p> : null}
 
-        {shownBlocks.length || (wanted && !exact) ? <p className="ds-ed-h">Другое</p> : null}
+        {shownBlocks.length || (wanted && !exact) ? <p className="ds-ed-h">{t("Другое")}</p> : null}
         {shownBlocks.map((block) => {
           const on = slot.blockType === block.value;
           return (
@@ -177,34 +178,34 @@ export function LessonEditor({
             }}
           >
             <Icon name="plus" />
-            <span className="ds-opt-name">Новый блок «{query.trim()}»</span>
+            <span className="ds-opt-name">{t("Новый блок «{name}»", { name: query.trim() })}</span>
           </button>
         ) : null}
       </div>
 
       {!isLesson ? (
         <label className="ds-ed-label">
-          Подпись
+          {t("Подпись")}
           <input
             value={slot.label}
             onChange={(event) => onContent({ subjectId: "", blockType: slot.blockType, label: event.target.value })}
-            placeholder="Например, классный час"
+            placeholder={t("Например, классный час")}
           />
         </label>
       ) : null}
 
-      <p className="ds-ed-h">Время</p>
+      <p className="ds-ed-h">{t("Время")}</p>
       <div className="ds-ed-times">
-        <TimeField label="Начало" value={slot.startTime} onStep={(delta) => moveStart(start + delta)} onPick={moveStart} />
-        <span className="ds-ed-to">до</span>
+        <TimeField label={t("Начало")} value={slot.startTime} onStep={(delta) => moveStart(start + delta)} onPick={moveStart} />
+        <span className="ds-ed-to">{t("до")}</span>
         <TimeField
-          label="Конец"
+          label={t("Конец")}
           value={slot.endTime}
           onStep={(delta) => moveEnd(start + length + delta)}
           onPick={moveEnd}
         />
       </div>
-      <div className="ds-ed-chips" role="group" aria-label="Длительность">
+      <div className="ds-ed-chips" role="group" aria-label={t("Длительность")}>
         {DURATIONS.map((minutes) => (
           <button
             key={minutes}
@@ -213,7 +214,7 @@ export function LessonEditor({
             aria-pressed={minutes === length}
             onClick={() => moveEnd(start + minutes)}
           >
-            {minutes} мин
+            {t("{minutes} мин", { minutes })}
           </button>
         ))}
       </div>
@@ -223,18 +224,18 @@ export function LessonEditor({
           type="button"
           role="switch"
           aria-checked={shift}
-          aria-label="Сдвигать следующие уроки"
+          aria-label={t("Сдвигать следующие уроки")}
           onClick={() => onShiftChange(!shift)}
         />
-        Сдвигать следующие уроки
+        {t("Сдвигать следующие уроки")}
       </label>
 
       <div className="ds-ed-acts">
         <button type="button" className="btn btn-text" onClick={onSwap}>
-          Поменять местами
+          {t("Поменять местами")}
         </button>
         <button type="button" className="btn btn-text danger" onClick={onRemove}>
-          Убрать урок
+          {t("Убрать урок")}
         </button>
       </div>
     </div>
@@ -264,10 +265,10 @@ function TimeField({
           if (minutes !== null) onPick(minutes);
         }}
       />
-      <button type="button" aria-label={`${label} на ${STEP} минут раньше`} onClick={() => onStep(-STEP)}>
+      <button type="button" aria-label={t("{label} на {step} минут раньше", { label, step: STEP })} onClick={() => onStep(-STEP)}>
         −
       </button>
-      <button type="button" aria-label={`${label} на ${STEP} минут позже`} onClick={() => onStep(STEP)}>
+      <button type="button" aria-label={t("{label} на {step} минут позже", { label, step: STEP })} onClick={() => onStep(STEP)}>
         +
       </button>
     </span>

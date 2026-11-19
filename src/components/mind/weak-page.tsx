@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
+import { t } from "@/lib/i18n";
 import { useAskRail } from "@/contexts/ask-rail";
 import { intervalLabel, plural } from "@/lib/mind-srs";
 import { useResource } from "@/lib/resource-cache";
@@ -86,7 +87,7 @@ export function WeakPage() {
       replaceTopic(await patchTopic(id, before));
       setReviewed((list) => list.filter((row) => row !== id));
     } catch {
-      notify({ text: "Не получилось вернуть оценку", failed: true });
+      notify({ text: t("Не получилось вернуть оценку"), failed: true });
     }
   }, [notify]);
 
@@ -100,14 +101,14 @@ export function WeakPage() {
         .then((updated) => {
           replaceTopic(updated);
           notify({
-            text: `Повторим ${intervalLabel(updated.intervalDays ?? 1)}`,
-            action: { label: "Вернуть", run: () => void undoReview(topic.id, before) },
+            text: t("Повторим {when}", { when: intervalLabel(updated.intervalDays ?? 1) }),
+            action: { label: t("Вернуть"), run: () => void undoReview(topic.id, before) },
           });
         })
         .catch(() => {
           // Карточка возвращается в колоду: оценка не записалась, терять её нельзя.
           setReviewed((list) => list.filter((id) => id !== topic.id));
-          notify({ text: "Не получилось записать повторение. Попробуй ещё раз", failed: true });
+          notify({ text: t("Не получилось записать повторение. Попробуй ещё раз"), failed: true });
         });
     },
     [notify, undoReview],
@@ -122,7 +123,7 @@ export function WeakPage() {
 
   const askAboutTopic = useCallback(
     (topic: WeakTopic) => {
-      prompt({ target: "book", text: `Помоги разобраться с темой «${topic.name}»`, send: false });
+      prompt({ target: "book", text: t("Помоги разобраться с темой «{name}»", { name: topic.name }), send: false });
     },
     [prompt],
   );
@@ -146,28 +147,28 @@ export function WeakPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Слабые темы</h1>
+        <h1 className="title">{t("Слабые темы")}</h1>
         {mastered > 0 ? (
           <span className="head-note">
-            {plural(mastered, "Усвоена", "Усвоено", "Усвоено")} {mastered} {plural(mastered, "тема", "темы", "тем")}
+            {plural(mastered, "Усвоена {n} тема", "Усвоено {n} темы", "Усвоено {n} тем")}
           </span>
         ) : null}
       </header>
 
       {failed ? (
         <div className="card weak-error" role="alert">
-          <p>Не удалось загрузить темы. Проверь связь и попробуй ещё раз.</p>
+          <p>{t("Не удалось загрузить темы. Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={topicsResource.reload}>
-            Повторить
+            {t("Повторить")}
           </button>
         </div>
       ) : null}
 
       {!ready && !failed ? (
-        <section className="rv is-solo" aria-label="Повторение">
+        <section className="rv is-solo" aria-label={t("Повторение")}>
           <div className="rv-deck" data-left="1">
             <div className="rv-card glass" role="status">
-              <p className="q-status shine weak-loading">Собираю темы…</p>
+              <p className="q-status shine weak-loading">{t("Собираю темы…")}</p>
             </div>
           </div>
         </section>

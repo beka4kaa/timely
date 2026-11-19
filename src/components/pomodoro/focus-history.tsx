@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import {
   blocksWord,
   buildDayDetail,
@@ -47,9 +48,9 @@ function useSessions(days: number | null) {
 function LoadFailed({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="card fp-error" role="alert">
-      <p>История не загрузилась. Проверь интернет и попробуй ещё раз.</p>
+      <p>{t("История не загрузилась. Проверь интернет и попробуй ещё раз.")}</p>
       <button className="btn btn-line" type="button" onClick={onRetry}>
-        Повторить
+        {t("Повторить")}
       </button>
     </div>
   );
@@ -72,27 +73,28 @@ export function FocusHistoryPage() {
     <div className="content view fh">
       <Link className="fh-back" href="/dashboard/pomodoro">
         <Icon name="chev-l" />
-        Таймер
+        {t("Таймер")}
       </Link>
       <header className="head">
-        <h1 className="title">История занятий</h1>
+        <h1 className="title">{t("История занятий")}</h1>
       </header>
 
       {sessions.error && !sessions.data ? (
         <LoadFailed onRetry={sessions.reload} />
       ) : !sessions.data || !today ? (
-        <p className="small-note">Загружаю…</p>
+        <p className="small-note">{t("Загружаю…")}</p>
       ) : !days.length ? (
         <div className="fh-empty">
-          <p>Здесь будет каждый день с занятиями по таймеру.</p>
+          <p>{t("Здесь будет каждый день с занятиями по таймеру.")}</p>
           <Link className="btn btn-main" href="/dashboard/pomodoro">
-            Открыть таймер
+            {t("Открыть таймер")}
           </Link>
         </div>
       ) : (
         <>
           <NameTotals totals={totals} />
-          <h2 className="fh-h2">По дням</h2>
+          {/* «По дням» в привычках значит другое, а ключ в словаре один: здесь английский свой. */}
+          <h2 className="fh-h2">{t("По дням", undefined, "история")}</h2>
           <ul className="fh-days card">
             {days.slice(0, shown).map((day) => (
               <li key={day.key}>
@@ -101,7 +103,7 @@ export function FocusHistoryPage() {
                   <span className="fh-day-total">{durationWords(day.focusSeconds)}</span>
                   <span className="fh-day-sub">
                     {blocksWord(day.blocks)}
-                    {day.restSeconds ? `, отдых ${durationWords(day.restSeconds)}` : ""}
+                    {day.restSeconds ? t(", отдых {time}", { time: durationWords(day.restSeconds) }) : ""}
                   </span>
                   <Icon name="chev-r" className="fh-go" />
                 </Link>
@@ -110,7 +112,7 @@ export function FocusHistoryPage() {
           </ul>
           {days.length > shown ? (
             <button className="btn btn-line fh-more" type="button" onClick={() => setShown((count) => count + PAGE)}>
-              Показать ещё
+              {t("Показать ещё")}
             </button>
           ) : null}
         </>
@@ -129,14 +131,14 @@ function NameTotals({ totals }: { totals: NameTotal[] }) {
   const max = Math.max(1, ...totals.map((total) => total.seconds));
   const list = all ? totals : totals.slice(0, NAMES_SHOWN);
   return (
-    <section className="fh-names-wrap" aria-label="На что ушло время">
-      <h2 className="fh-h2">На что ушло время</h2>
+    <section className="fh-names-wrap" aria-label={t("На что ушло время")}>
+      <h2 className="fh-h2">{t("На что ушло время")}</h2>
       {named ? (
         <>
           <ul className="fh-names card">
             {list.map((total) => (
               <li key={total.key} className="fh-name" data-unnamed={total.key ? undefined : ""}>
-                <span className="fh-name-t">{total.name || "Без названия"}</span>
+                <span className="fh-name-t">{total.name || t("Без названия")}</span>
                 <span className="fh-name-v">{durationWords(total.seconds)}</span>
                 <span className="tube" aria-hidden="true">
                   <i style={{ width: `${(total.seconds / max) * 100}%` }} />
@@ -146,14 +148,15 @@ function NameTotals({ totals }: { totals: NameTotal[] }) {
           </ul>
           {totals.length > NAMES_SHOWN ? (
             <button className="btn btn-line fh-more" type="button" onClick={() => setAll((value) => !value)}>
-              {all ? "Свернуть" : `Все названия (${totals.length})`}
+              {all ? t("Свернуть") : t("Все названия ({count})", { count: totals.length })}
             </button>
           ) : null}
         </>
       ) : (
         <p className="fh-names-hint">
-          Назови занятие на таймере, например «Физика». Здесь появится, сколько времени ушло на
-          каждое, а одинаковые названия сложатся вместе.
+          {t(
+            "Назови занятие на таймере, например «Физика». Здесь появится, сколько времени ушло на каждое, а одинаковые названия сложатся вместе.",
+          )}
         </p>
       )}
     </section>
@@ -179,7 +182,7 @@ export function FocusDayPage({ dayKey }: { dayKey: string }) {
     <div className="content view fh">
       <Link className="fh-back" href={HISTORY_URL}>
         <Icon name="chev-l" />
-        История занятий
+        {t("История занятий")}
       </Link>
       <header className="head">
         <h1 className="title">{today ? dayTitle(dayKey, today) : " "}</h1>
@@ -188,12 +191,12 @@ export function FocusDayPage({ dayKey }: { dayKey: string }) {
       {sessions.error && !sessions.data ? (
         <LoadFailed onRetry={sessions.reload} />
       ) : !sessions.data || !today ? (
-        <p className="small-note">Загружаю…</p>
+        <p className="small-note">{t("Загружаю…")}</p>
       ) : !day ? (
         <div className="fh-empty">
-          <p>В этот день занятий с таймером не было.</p>
+          <p>{t("В этот день занятий с таймером не было.")}</p>
           <Link className="btn btn-line" href={HISTORY_URL}>
-            Все дни
+            {t("Все дни")}
           </Link>
         </div>
       ) : (
@@ -206,21 +209,26 @@ export function FocusDayPage({ dayKey }: { dayKey: string }) {
 function DayView({ day, names }: { day: DayDetail; names: Record<string, string> }) {
   const first = day.parts[0];
   const last = day.parts[day.parts.length - 1];
-  const summary = `Учёба ${durationWords(day.focusSeconds)}, отдых ${durationWords(day.restSeconds)}, с ${first.start} до ${last.end}`;
+  const summary = t("Учёба {focus}, отдых {rest}, с {from} до {to}", {
+    focus: durationWords(day.focusSeconds),
+    rest: durationWords(day.restSeconds),
+    from: first.start,
+    to: last.end,
+  });
 
   return (
     <>
-      <section className="fh-sum" aria-label="Итог дня">
+      <section className="fh-sum" aria-label={t("Итог дня")}>
         <div className="fh-fig">
-          <span className="fh-fig-label">Учёба</span>
+          <span className="fh-fig-label">{t("Учёба")}</span>
           <span className="fh-fig-value">{durationWords(day.focusSeconds)}</span>
         </div>
         <div className="fh-fig">
-          <span className="fh-fig-label">Отдых</span>
-          <span className="fh-fig-value">{day.restSeconds ? durationWords(day.restSeconds) : "без отдыха"}</span>
+          <span className="fh-fig-label">{t("Отдых")}</span>
+          <span className="fh-fig-value">{day.restSeconds ? durationWords(day.restSeconds) : t("без отдыха")}</span>
         </div>
         <div className="fh-fig">
-          <span className="fh-fig-label">Блоков учёбы</span>
+          <span className="fh-fig-label">{t("Блоков учёбы")}</span>
           <span className="fh-fig-value">{day.blocks}</span>
         </div>
       </section>
@@ -235,7 +243,7 @@ function DayView({ day, names }: { day: DayDetail; names: Record<string, string>
                 key={part.id}
                 data-kind={part.kind}
                 style={{ left: `${left}%`, width: `${width}%` }}
-                title={`${part.kind === "focus" ? `Блок ${part.number}` : "Отдых"}: ${part.start}–${part.end}`}
+                title={`${part.kind === "focus" ? t("Блок {number}", { number: part.number ?? "" }) : t("Отдых")}: ${part.start}–${part.end}`}
               />
             );
           })}
@@ -243,22 +251,22 @@ function DayView({ day, names }: { day: DayDetail; names: Record<string, string>
         <figcaption>
           <span>{first.start}</span>
           <span className="fh-legend">
-            <span><i data-kind="focus" />учёба</span>
-            <span><i data-kind="rest" />отдых</span>
+            <span><i data-kind="focus" />{t("учёба")}</span>
+            <span><i data-kind="rest" />{t("отдых")}</span>
           </span>
           <span>{last.end}</span>
         </figcaption>
       </figure>
 
-      <h2 className="fh-h2">Как прошёл день</h2>
+      <h2 className="fh-h2">{t("Как прошёл день")}</h2>
       <ol className="fh-parts card">
         {day.parts.map((part) =>
           part.kind === "focus" ? (
             <li key={part.id} className="fh-block">
-              <span className="fh-num">Блок {part.number}</span>
+              <span className="fh-num">{t("Блок {number}", { number: part.number ?? "" })}</span>
               <span className="fh-what">
-                {sessionNameOf(names, part.startedAt) || "Учёба"}
-                {part.stoppedEarly ? <small>Остановлен раньше времени</small> : null}
+                {sessionNameOf(names, part.startedAt) || t("Учёба")}
+                {part.stoppedEarly ? <small>{t("Остановлен раньше времени")}</small> : null}
               </span>
               <span className="fh-when">
                 {part.start}–{part.end}
@@ -267,7 +275,7 @@ function DayView({ day, names }: { day: DayDetail; names: Record<string, string>
             </li>
           ) : (
             <li key={part.id} className="fh-rest">
-              <span>{part.long ? "Длинный отдых" : "Отдых"}</span>
+              <span>{part.long ? t("Длинный отдых") : t("Отдых")}</span>
               <span className="fh-len">{durationWords(part.seconds)}</span>
             </li>
           ),

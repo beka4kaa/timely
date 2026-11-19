@@ -1,4 +1,5 @@
 import { formatMinutes } from "./studyplan-calendar.ts";
+import { msg, t } from "./i18n";
 
 // Как выглядит блок в календаре: подпись, тон, состояние.
 //
@@ -38,18 +39,18 @@ export type BlockVisualStatus =
   | "cancelled";
 
 const ACTIVITY_LABELS: Record<string, string> = {
-  theory: "Теория",
-  guided_example: "Разбор примера",
-  guided_practice: "Практика с разбором",
-  independent_practice: "Практика",
-  homework: "Домашняя работа",
-  review: "Повторение",
-  assessment: "Проверка",
-  project: "Проект",
-  reading: "Чтение",
-  coding: "Код",
-  handwritten_problem: "Задача на бумаге",
-  offline_activity: "Вне приложения",
+  theory: msg("Теория"),
+  guided_example: msg("Разбор примера"),
+  guided_practice: msg("Практика с разбором"),
+  independent_practice: msg("Практика"),
+  homework: msg("Домашняя работа"),
+  review: msg("Повторение"),
+  assessment: msg("Проверка"),
+  project: msg("Проект"),
+  reading: msg("Чтение"),
+  coding: msg("Код"),
+  handwritten_problem: msg("Задача на бумаге"),
+  offline_activity: msg("Вне приложения"),
 };
 
 /**
@@ -107,15 +108,15 @@ export interface BlockAppearance {
 
 const STATUS_LABELS: Record<BlockVisualStatus, string | null> = {
   scheduled: null,
-  ready: "Можно начинать",
-  in_progress: "Идёт",
-  paused: "Пауза",
-  completed: "Готово",
-  partially_completed: "Частично",
-  missed: "Пропущено",
-  skipped: "Пропущено намеренно",
-  rescheduled: "Перенесено",
-  cancelled: "Отменено",
+  ready: msg("Можно начинать"),
+  in_progress: msg("Идёт"),
+  paused: msg("Пауза"),
+  completed: msg("Готово"),
+  partially_completed: msg("Частично"),
+  missed: msg("Пропущено"),
+  skipped: msg("Пропущено намеренно"),
+  rescheduled: msg("Перенесено"),
+  cancelled: msg("Отменено"),
 };
 
 const FADED_STATUSES = new Set<BlockVisualStatus>([
@@ -126,7 +127,8 @@ const FADED_STATUSES = new Set<BlockVisualStatus>([
 ]);
 
 export function activityLabel(activityType: string): string {
-  return ACTIVITY_LABELS[activityType] ?? activityType;
+  const label = ACTIVITY_LABELS[activityType];
+  return label ? t(label) : activityType;
 }
 
 /**
@@ -208,7 +210,7 @@ export function blockAppearance(
     hatched: occupied,
     pinned: block.fixed === true && !occupied,
     ring,
-    statusLabel: STATUS_LABELS[status] ?? null,
+    statusLabel: STATUS_LABELS[status] ? t(STATUS_LABELS[status] as string) : null,
     struck: status === "cancelled",
   };
 }
@@ -220,26 +222,29 @@ export function blockAppearance(
  * «во», и склейка «в вторник» вылезла бы в первой же живой неделе.
  */
 const WEEKDAY_ON = [
-  "в понедельник",
-  "во вторник",
-  "в среду",
-  "в четверг",
-  "в пятницу",
-  "в субботу",
-  "в воскресенье",
+  msg("в понедельник"),
+  msg("во вторник"),
+  msg("в среду"),
+  msg("в четверг"),
+  msg("в пятницу"),
+  msg("в субботу"),
+  msg("в воскресенье"),
 ];
 
 export function weekdayOnLabel(weekday: number): string {
-  return WEEKDAY_ON[weekday] ?? "";
+  const label = WEEKDAY_ON[weekday];
+  return label ? t(label) : "";
 }
 
 /** Подпись длительности: «45 мин», «1 ч 30 мин». */
 export function durationLabel(minutes: number): string {
   const safe = Math.max(0, Math.round(minutes));
-  if (safe < 60) return `${safe} мин`;
+  if (safe < 60) return t("{n} мин", { n: safe });
   const hours = Math.floor(safe / 60);
   const rest = safe % 60;
-  return rest === 0 ? `${hours} ч` : `${hours} ч ${rest} мин`;
+  return rest === 0
+    ? t("{n} ч", { n: hours })
+    : t("{h} ч {m} мин", { h: hours, m: rest });
 }
 
 /**
@@ -263,30 +268,36 @@ export function timeRangeLabel(
   )}`;
 }
 
-const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const WEEKDAY_SHORT = [msg("Пн"), msg("Вт"), msg("Ср"), msg("Чт"), msg("Пт"), msg("Сб"), msg("Вс")];
 const MONTHS_GENITIVE = [
-  "января",
-  "февраля",
-  "марта",
-  "апреля",
-  "мая",
-  "июня",
-  "июля",
-  "августа",
-  "сентября",
-  "октября",
-  "ноября",
-  "декабря",
+  msg("января"),
+  msg("февраля"),
+  msg("марта"),
+  msg("апреля"),
+  msg("мая"),
+  msg("июня"),
+  msg("июля"),
+  msg("августа"),
+  msg("сентября"),
+  msg("октября"),
+  msg("ноября"),
+  msg("декабря"),
 ];
 
+function monthName(month: number | undefined): string {
+  const name = MONTHS_GENITIVE[(month ?? 1) - 1];
+  return name ? t(name) : "";
+}
+
 export function weekdayShort(weekday: number): string {
-  return WEEKDAY_SHORT[weekday] ?? "";
+  const label = WEEKDAY_SHORT[weekday];
+  return label ? t(label) : "";
 }
 
 /** «18 августа» — для заголовка дня. Без года: он виден из недели. */
 export function dayLabel(dateKey: string): string {
   const [, month, day] = dateKey.split("-").map(Number);
-  return `${day} ${MONTHS_GENITIVE[(month ?? 1) - 1] ?? ""}`.trim();
+  return `${day} ${monthName(month)}`.trim();
 }
 
 /** «17–23 августа» или «31 августа — 6 сентября» для заголовка недели. */
@@ -300,7 +311,7 @@ export function weekLabel(days: string[]): string {
   const lastDay = Number(last.split("-")[2]);
 
   if (firstMonth === lastMonth) {
-    return `${firstDay}–${lastDay} ${MONTHS_GENITIVE[(firstMonth ?? 1) - 1] ?? ""}`;
+    return `${firstDay}–${lastDay} ${monthName(firstMonth)}`;
   }
   return `${dayLabel(first)} — ${dayLabel(last)}`;
 }

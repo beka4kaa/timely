@@ -10,6 +10,7 @@
 "use client";
 
 import { useState } from "react";
+import { t } from "@/lib/i18n";
 
 import { type CoursePlan, type LearningGoal, updatePlanPace } from "@/lib/curriculum-api";
 
@@ -49,7 +50,7 @@ export function PlanPaceForm({
       onDeadlineChange(finish || null);
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не получилось сохранить темп.");
+      setError(cause instanceof Error ? cause.message : t("Не получилось сохранить темп."));
     } finally {
       setBusy(false);
     }
@@ -63,10 +64,10 @@ export function PlanPaceForm({
         void save();
       }}
     >
-      <h2>Темп и срок</h2>
+      <h2>{t("Темп и срок")}</h2>
       <div className="course-pace">
         <label className="field">
-          Занятий в неделю
+          {t("Занятий в неделю")}
           <input
             type="number"
             min={1}
@@ -77,7 +78,7 @@ export function PlanPaceForm({
           />
         </label>
         <label className="field">
-          Минут за занятие
+          {t("Минут за занятие")}
           <input
             type="number"
             min={10}
@@ -89,7 +90,7 @@ export function PlanPaceForm({
           />
         </label>
         <label className="field">
-          Хочу закончить к
+          {t("Хочу закончить к")}
           <input type="date" value={finish} onChange={(event) => setFinish(event.target.value)} />
         </label>
       </div>
@@ -102,10 +103,10 @@ export function PlanPaceForm({
 
       <div className="cur-acts">
         <button type="submit" className="btn btn-main" disabled={busy}>
-          {busy ? "Пересчитываю…" : "Пересчитать"}
+          {busy ? t("Пересчитываю…") : t("Пересчитать")}
         </button>
         <button type="button" className="btn btn-text" disabled={busy} onClick={onClose}>
-          Отмена
+          {t("Отмена")}
         </button>
       </div>
     </form>

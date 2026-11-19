@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 
 import { useIngestionPolling } from "@/components/curriculum/use-ingestion-polling";
 import { coverAuthor, coverClass, coverTitle } from "@/lib/curriculum-cover";
+import { t } from "@/lib/i18n";
 import {
   PHASES,
   formatElapsed,
@@ -52,7 +53,7 @@ export function IngestionProgress() {
   const currentPhase = phaseIndexFor(status);
   const stats = ingestion?.stats;
   const warnings = ingestion?.warnings ?? [];
-  const title = document ? coverTitle(document.title) : "Книга";
+  const title = document ? coverTitle(document.title) : t("Книга");
 
   if (failed) {
     const job = ingestion?.job;
@@ -68,7 +69,7 @@ export function IngestionProgress() {
             onClick={() => void restartIngestion()}
             disabled={busy}
           >
-            {busy ? "Запускаю…" : "Попробовать снова"}
+            {busy ? t("Запускаю…") : t("Попробовать снова")}
           </button>
         </div>
       </>
@@ -81,13 +82,13 @@ export function IngestionProgress() {
 
   return (
     <>
-      <WizardHead title="Читаю учебник">
-        «{title}», идёт {formatElapsed(elapsedMs)}
+      <WizardHead title={t("Читаю учебник")}>
+        {t("«{title}», идёт {elapsed}", { title, elapsed: formatElapsed(elapsedMs) })}
       </WizardHead>
 
       {disconnected ? (
         <p className="cur-alert is-bad" role="status">
-          Связь с сервером потеряна, продолжаю пробовать. Сама обработка при этом не прерывается.
+          {t("Связь с сервером потеряна, продолжаю пробовать. Сама обработка при этом не прерывается.")}
         </p>
       ) : null}
 
@@ -107,17 +108,17 @@ export function IngestionProgress() {
           <p className="wz-step">
             {stepIndex > 0 ? (
               <>
-                Шаг {stepIndex} из {stepTotal}
-                {ingestion?.step_label ? <span className="muted"> {ingestion.step_label}</span> : null}
+                {t("Шаг {index} из {total}", { index: stepIndex, total: stepTotal })}
+                {ingestion?.step_label ? <span className="muted"> {t(ingestion.step_label)}</span> : null}
               </>
             ) : (
-              "Готовлюсь к чтению"
+              t("Готовлюсь к чтению")
             )}
           </p>
           <span
             className="tube"
             role="progressbar"
-            aria-label="Сколько шагов пройдено"
+            aria-label={t("Сколько шагов пройдено")}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={percent}
@@ -134,7 +135,7 @@ export function IngestionProgress() {
                     className={`dot${state === "done" ? " done" : state === "active" ? " cur" : ""}`}
                     aria-hidden="true"
                   />
-                  {phase.label}
+                  {t(phase.label)}
                 </li>
               );
             })}
@@ -142,10 +143,10 @@ export function IngestionProgress() {
 
           {stats ? (
             <dl className="wz-stats">
-              <Stat label="Страниц" value={stats.pages} />
-              <Stat label="Разделов" value={stats.sections} />
-              <Stat label="Задач" value={stats.tasks} />
-              <Stat label="Фрагментов" value={stats.chunks} />
+              <Stat label={t("Страниц")} value={stats.pages} />
+              <Stat label={t("Разделов")} value={stats.sections} />
+              <Stat label={t("Задач")} value={stats.tasks} />
+              <Stat label={t("Фрагментов")} value={stats.chunks} />
             </dl>
           ) : null}
 
@@ -160,13 +161,13 @@ export function IngestionProgress() {
           {(ingestion?.attempts ?? []).length > 0 ? (
             <div className="wz-details">
               <button type="button" className="link" onClick={() => setShowDetails((value) => !value)}>
-                {showDetails ? "Скрыть подробности" : "Подробности"}
+                {showDetails ? t("Скрыть подробности") : t("Подробности")}
               </button>
               {showDetails ? (
                 <ul className="muted">
                   {(ingestion?.attempts ?? []).slice(-6).map((attempt, index) => (
                     <li key={`${attempt.to_status}-${index}`}>
-                      {attempt.to_status}, {attempt.duration_ms} мс
+                      {t("{status}, {ms} мс", { status: attempt.to_status, ms: attempt.duration_ms })}
                       {attempt.succeeded ? "" : `, ${attempt.error_code}`}
                     </li>
                   ))}

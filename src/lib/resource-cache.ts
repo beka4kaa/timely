@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
+import { t } from "./i18n";
+
 export interface ResourceState<T> {
   data: T | undefined;
   error: string | null;
@@ -67,7 +69,7 @@ function setState(key: string, patch: Partial<ResourceState<unknown>>) {
 
 function errorText(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
-  return "Не удалось загрузить";
+  return t("Не удалось загрузить");
 }
 
 /** Что сейчас известно о ресурсе. */

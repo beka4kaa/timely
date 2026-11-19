@@ -39,6 +39,7 @@ import { subjectTitle } from "@/lib/curriculum-catalog";
 import { coverAuthor, coverTitle } from "@/lib/curriculum-cover";
 import { isTerminal } from "@/lib/curriculum-progress";
 import { choiceOf, levelOf } from "@/lib/ask-level";
+import { msg, plural, t } from "@/lib/i18n";
 import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { invalidateResources, useResource, type ResourceState } from "@/lib/resource-cache";
 
@@ -104,10 +105,10 @@ interface StarterPrompt {
 }
 
 const PROMPTS: StarterPrompt[] = [
-  { label: "Объясни тему простыми словами", fill: "Объясни простыми словами: " },
-  { label: "Составь план на неделю", fill: "Составь план на неделю", mode: "plan" },
-  { label: "Помоги с задачей", fill: "Помоги с задачей: ", mode: "guide" },
-  { label: "Как перестать откладывать?", send: true },
+  { label: msg("Объясни тему простыми словами"), fill: msg("Объясни простыми словами: ") },
+  { label: msg("Составь план на неделю"), fill: msg("Составь план на неделю"), mode: "plan" },
+  { label: msg("Помоги с задачей"), fill: msg("Помоги с задачей: "), mode: "guide" },
+  { label: msg("Как перестать откладывать?"), send: true },
 ];
 
 function readStored(key: string): string | null {
@@ -126,26 +127,17 @@ function writeStored(key: string, value: string) {
   }
 }
 
-function booksWord(count: number): string {
-  const tens = count % 100;
-  const ones = count % 10;
-  if (tens >= 11 && tens <= 14) return "книг";
-  if (ones === 1) return "книга";
-  if (ones >= 2 && ones <= 4) return "книги";
-  return "книг";
-}
-
 function buildSubjects(goals: LearningGoal[], documents: CurriculumDocument[]): Subject[] {
   return goals.map((goal) => {
     const own = documents.filter((document) => document.goal === goal.id);
     const ready = own.filter((document) => document.ingestion_status === "ready");
-    let note = "нет книги";
+    let note = t("нет книги");
     if (ready.length === 1) {
       note = coverAuthor(ready[0].authors) || coverTitle(ready[0].title);
     } else if (ready.length > 1) {
-      note = `${ready.length} ${booksWord(ready.length)}`;
+      note = plural(ready.length, "{n} книга", "{n} книги", "{n} книг");
     } else if (own.some((document) => !isTerminal(document.ingestion_status))) {
-      note = "книга обрабатывается";
+      note = t("книга обрабатывается");
     }
     return { goalId: goal.id, title: subjectTitle(goal), books: ready.length, note };
   });
@@ -165,7 +157,7 @@ function focusOnDesktop(composer: ComposerHandle | null) {
 
 async function fetchPlanGoals(): Promise<PlanGoal[]> {
   const response = await authFetch(`${BACKEND_URL}/api/goals/`);
-  if (!response.ok) throw new Error(`Цели не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("Цели не загрузились ({status})", { status: response.status }));
   const body = (await response.json()) as PlanGoal[] | { results?: PlanGoal[] };
   return selectPlanGoals(Array.isArray(body) ? body : body.results ?? []);
 }
@@ -379,8 +371,8 @@ export function ChatPage() {
 
   const runPrompt = (item: StarterPrompt) => {
     if (item.mode) changeMode(item.mode, true);
-    if (item.send) send(item.label);
-    else composerRef.current?.fill(item.fill ?? item.label);
+    if (item.send) send(t(item.label));
+    else composerRef.current?.fill(t(item.fill ?? item.label));
   };
 
   const pickSubject = useCallback(
@@ -482,7 +474,9 @@ export function ChatPage() {
     const steps = stepsFromAnswer(lastTurn.content);
     prompt({
       target: "schedule",
-      text: planGoal ? `Добавь в план по цели «${planGoal}»: ${steps}` : `Добавь в план: ${steps}`,
+      text: planGoal
+        ? t("Добавь в план по цели «{goal}»: {steps}", { goal: planGoal, steps })
+        : t("Добавь в план: {steps}", { steps }),
       send: true,
     });
     // На плане это идёт через предпросмотр: расписание меняет только сам ученик.
@@ -494,7 +488,7 @@ export function ChatPage() {
     !busy && lastTurn?.role === "assistant" && Boolean(lastTurn.content) && !lastTurn.error;
   const openRow = chats.find((row) => row.id === chatId);
   const placeholder =
-    modeKey === "plain" ? chatPlaceholder(BOOKS_ENABLED, Boolean(current?.books), mode.hint) : mode.hint;
+    modeKey === "plain" ? chatPlaceholder(BOOKS_ENABLED, Boolean(current?.books), t(mode.hint)) : t(mode.hint);
 
   const list = (
     <>
@@ -515,7 +509,7 @@ export function ChatPage() {
       {/* Телефон: новый чат — кнопка цвета акцента внизу списка чатов, а не сверху в чате */}
       <button className="chats-new" type="button" onClick={startNew}>
         <Icon name="pen-plus" />
-        Новый чат
+        {t("Новый чат")}
       </button>
     </>
   );
@@ -548,8 +542,8 @@ export function ChatPage() {
             <button
               className="chat-round glass chat-new"
               type="button"
-              aria-label="Новый чат"
-              title="Новый чат"
+              aria-label={t("Новый чат")}
+              title={t("Новый чат")}
               onClick={startNew}
             >
               <Icon name="pen-plus" />
@@ -563,7 +557,7 @@ export function ChatPage() {
             className={empty ? "log log-new" : "log"}
             tabIndex={empty ? undefined : 0}
             role={empty ? undefined : "log"}
-            aria-label="Переписка"
+            aria-label={t("Переписка")}
             aria-busy={busy}
           >
             {empty ? (
@@ -577,7 +571,7 @@ export function ChatPage() {
               />
             ) : null}
 
-            {opening ? <p className="m-think shine">Открываю разговор</p> : null}
+            {opening ? <p className="m-think shine">{t("Открываю разговор")}</p> : null}
 
             {turns.map((turn, index) => (
               <Fragment key={index}>
@@ -603,7 +597,7 @@ export function ChatPage() {
                   .filter((mark) => mark.at === index + 1)
                   .map((mark) => (
                     <p className="m-mode" key={mark.at}>
-                      Режим: {modeByKey(mark.key).name}
+                      {t("Режим:")} {t(modeByKey(mark.key).name)}
                     </p>
                   ))}
               </Fragment>
@@ -611,7 +605,7 @@ export function ChatPage() {
 
             {!busy && !empty && !opening && planning && pickingGoal ? (
               <>
-                <p className="m-ai">К какой цели идём?</p>
+                <p className="m-ai">{t("К какой цели идём?")}</p>
                 <GoalChips goals={goals} onGoal={askGoal} />
               </>
             ) : null}
@@ -620,11 +614,11 @@ export function ChatPage() {
               <div className="m-acts">
                 {planGoal || hasSteps(lastTurn.content) ? (
                   <button className="btn btn-line" type="button" onClick={addToPlan}>
-                    Добавить в план
+                    {t("Добавить в план")}
                   </button>
                 ) : null}
                 <button className="btn btn-text" type="button" onClick={() => setPickingGoal(true)}>
-                  Другая цель
+                  {t("Другая цель")}
                 </button>
               </div>
             ) : null}
@@ -636,9 +630,9 @@ export function ChatPage() {
                     key={question}
                     className={index ? "btn btn-text" : "btn btn-line"}
                     type="button"
-                    onClick={() => send(question)}
+                    onClick={() => send(t(question))}
                   >
-                    {question}
+                    {t(question)}
                   </button>
                 ))}
               </div>
@@ -686,7 +680,7 @@ export function ChatPage() {
         ref={sourcesSheet}
         className="sheet sheet-sources"
         tabIndex={-1}
-        aria-label="Источники"
+        aria-label={t("Источники")}
         onClick={closeOnBackdrop}
         onClose={() => setSourcesSheetOpen(false)}
       >
@@ -711,13 +705,13 @@ function EmptyTalk({
   onPrompt: (item: StarterPrompt) => void;
   onGoal: (goal: PlanGoal) => void;
 }) {
-  const failedLine = openFailed ? <p>Этот чат открыть не получилось. Возможно, его уже удалили.</p> : null;
+  const failedLine = openFailed ? <p>{t("Этот чат открыть не получилось. Возможно, его уже удалили.")}</p> : null;
 
   if (mode.key === "plan") {
     return (
       <>
         {failedLine}
-        <h2>К какой цели идём?</h2>
+        <h2>{t("К какой цели идём?")}</h2>
         <GoalChips goals={goals} onGoal={onGoal} />
       </>
     );
@@ -728,12 +722,12 @@ function EmptyTalk({
   return (
     <>
       {failedLine}
-      <h2>О чём поговорим?</h2>
+      <h2>{t("О чём поговорим?")}</h2>
       <p>{line}</p>
       <div className="prompts">
         {PROMPTS.map((item) => (
           <button key={item.label} type="button" onClick={() => onPrompt(item)}>
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
@@ -752,21 +746,21 @@ function GoalChips({
   if (!goals.data) {
     return goals.error ? (
       <p className="m-note">
-        Цели не загрузились.{" "}
+        {t("Цели не загрузились.")}{" "}
         <button className="link" type="button" onClick={goals.reload}>
-          Ещё раз
+          {t("Ещё раз")}
         </button>
       </p>
     ) : (
-      <p className="m-think shine">Смотрю цели</p>
+      <p className="m-think shine">{t("Смотрю цели")}</p>
     );
   }
   if (!goals.data.length) {
     return (
       <p className="m-note">
-        Целей пока нет.{" "}
+        {t("Целей пока нет.")}{" "}
         <Link className="link" href="/dashboard/goals">
-          Поставить цель
+          {t("Поставить цель")}
         </Link>
       </p>
     );
@@ -778,7 +772,7 @@ function GoalChips({
         return (
           <button key={goal.id} className={`m-goal ${goalTone(goal)}`} type="button" onClick={() => onGoal(goal)}>
             <b>{goal.title}</b>
-            <small>{due ? `до ${due}` : "без срока"}</small>
+            <small>{due ? t("до {due}", { due }) : t("без срока")}</small>
           </button>
         );
       })}

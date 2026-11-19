@@ -28,6 +28,7 @@ import { dashboardViewOf, type DashboardView } from "@/config/dashboard-navigati
 import { isScheduleRailRoute } from "@/config/schedule-rail-routes";
 import { useActiveSubject } from "@/contexts/active-subject";
 import { useAskRail } from "@/contexts/ask-rail";
+import { msg, t } from "@/lib/i18n";
 import { bookLabel, citationSpot } from "@/lib/book-label";
 import { useChatPrefs } from "@/lib/chat-prefs";
 import {
@@ -56,14 +57,14 @@ const SUBJECT_KEY = "timely.ask.subject";
 const NO_BOOK = "none";
 
 const SUGGESTIONS: Partial<Record<DashboardView, string[]>> = {
-  now: ["Что у меня сегодня?", "С чего начать?", "Разбей это на шаги"],
-  diary: ["Что задали на завтра?", "Как распределить домашку на вечер?"],
-  focus: ["Сколько я занимался на неделе?", "Как не отвлекаться?"],
-  weak: ["Что пора повторить?"],
-  goals: ["Какая цель ближе всего по сроку?"],
-  habits: ["Что я сегодня не отметил?"],
-  library: ["С чего начать?"],
-  course: ["Объясни проще", "Приведи пример"],
+  now: [msg("Что у меня сегодня?"), msg("С чего начать?"), msg("Разбей это на шаги")],
+  diary: [msg("Что задали на завтра?"), msg("Как распределить домашку на вечер?")],
+  focus: [msg("Сколько я занимался на неделе?"), msg("Как не отвлекаться?")],
+  weak: [msg("Что пора повторить?")],
+  goals: [msg("Какая цель ближе всего по сроку?")],
+  habits: [msg("Что я сегодня не отметил?")],
+  library: [msg("С чего начать?")],
+  course: [msg("Объясни проще"), msg("Приведи пример")],
 };
 
 export function SubjectAskRail() {
@@ -192,7 +193,7 @@ function AskRail() {
   const openRef = useRef(open);
   openRef.current = open;
   const { busy, stop, turns } = chat;
-  const lastQuestion = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? "Вопрос";
+  const lastQuestion = [...turns].reverse().find((turn) => turn.role === "user")?.content ?? t("Вопрос");
   useEffect(() => {
     if (busy && !thinking.current) {
       thinking.current = true;
@@ -205,7 +206,7 @@ function AskRail() {
       const answer = turns[turns.length - 1];
       const proposals = (answer?.proposals ?? []).filter((item) => !item.state);
       if (openRef.current) {
-        mascot.thinkEnd(answer?.error ? undefined : proposals.length ? "Есть вариант" : "Готово");
+        mascot.thinkEnd(answer?.error ? undefined : proposals.length ? t("Есть вариант") : t("Готово"));
         return;
       }
       mascot.thinkEnd();
@@ -248,15 +249,15 @@ function AskRail() {
   const picker = (
     <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
       <PopoverTrigger asChild>
-        <button className="q-tool" type="button" title="По какой книге отвечать">
+        <button className="q-tool" type="button" title={t("По какой книге отвечать")}>
           <Icon name="book" />
-          <span>{current?.title ?? "Без книги"}</span>
+          <span>{current?.title ?? t("Без книги")}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 p-0">
         <div className="q-book-menu">
           <button type="button" aria-pressed={selected === null} onClick={() => pick(null)}>
-            Без книги
+            {t("Без книги")}
           </button>
           {subjects?.map((subject) => (
             <button
@@ -266,7 +267,7 @@ function AskRail() {
               onClick={() => pick(subject.goalId)}
             >
               <span>{subject.title}</span>
-              {subject.books ? null : <small>нет книги</small>}
+              {subject.books ? null : <small>{t("нет книги")}</small>}
             </button>
           ))}
         </div>
@@ -277,7 +278,7 @@ function AskRail() {
   return (
     <RailShell
       mode="book"
-      edgeLabel="Быстрый запрос"
+      edgeLabel={msg("Быстрый запрос")}
       footer={
         <QuickComposer
           key={draft?.nonce ?? "composer"}
@@ -286,7 +287,7 @@ function AskRail() {
           onStop={chat.stop}
           busy={chat.busy}
           placeholder={railPlaceholder(BOOKS_ENABLED, Boolean(current))}
-          suggestions={chat.turns.length ? undefined : SUGGESTIONS[view]}
+          suggestions={chat.turns.length ? undefined : SUGGESTIONS[view]?.map((item) => t(item))}
           left={showBookPicker(BOOKS_ENABLED) ? picker : undefined}
         />
       }
@@ -310,7 +311,7 @@ function readyText(answer: Turn | undefined): string {
   if (!answer || answer.error === STOPPED_ERROR) return "";
   if (answer.error) return askErrorText(answer.error);
   const waiting = (answer.proposals ?? []).filter((item) => !item.state);
-  if (waiting.length) return `Предлагаю: ${waiting.map(proposalSummary).join("; ")}. Открой, чтобы применить.`;
+  if (waiting.length) return t("Предлагаю: {list}. Открой, чтобы применить.", { list: waiting.map(proposalSummary).join("; ") });
   return answerPreview(answer.content);
 }
 
@@ -355,11 +356,11 @@ function LastAnswer({
         <div className="q-more">
           {chatId ? (
             <Link className="btn btn-line" href={`/dashboard/chat?chat=${chatId}`}>
-              Открыть в чате
+              {t("Открыть в чате")}
             </Link>
           ) : null}
           <button className="btn btn-text" type="button" onClick={onNew}>
-            Новый вопрос
+            {t("Новый вопрос")}
           </button>
         </div>
       ) : null}

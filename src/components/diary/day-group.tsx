@@ -15,6 +15,7 @@ import {
   taskTitle,
   type DayGroup,
 } from "@/lib/diary-tasks";
+import { plural, t } from "@/lib/i18n";
 import { TASK_MINUTES } from "@/lib/diary-plan";
 import { lessonTitle } from "@/lib/now-feed";
 import { isTestBlock, type DiaryDay, type DiaryLesson, type DiaryWeek } from "@/types/diary";
@@ -85,7 +86,7 @@ function TaskInput({
         ref={fieldRef}
         value={value}
         aria-label={label}
-        placeholder="Что задано"
+        placeholder={t("Что задано")}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
         onBlur={() => finish(false)}
@@ -112,7 +113,10 @@ function PlanPreview({
     return (
       <div className="dy-plan" role="status">
         <span>
-          Поставлю {plan.whenLabel(step.slot.start, step.timeZone)}, на {TASK_MINUTES} минут.
+          {t("Поставлю {when}, на {minutes}.", {
+            when: plan.whenLabel(step.slot.start, step.timeZone),
+            minutes: plural(TASK_MINUTES, "{n} минуту", "{n} минуты", "{n} минут"),
+          })}
         </span>
         <span className="dy-plan-acts">
           <button
@@ -121,13 +125,13 @@ function PlanPreview({
             disabled={step.saving}
             onClick={() => void plan.place(day, lesson)}
           >
-            {step.saving ? "Ставлю…" : "Поставить"}
+            {step.saving ? t("Ставлю…") : t("Поставить")}
           </button>
           <button type="button" className="btn btn-text" onClick={() => plan.askHelper(lesson)}>
-            Другое время
+            {t("Другое время")}
           </button>
           <button type="button" className="btn btn-text" onClick={plan.close}>
-            Отмена
+            {t("Отмена")}
           </button>
         </span>
       </div>
@@ -137,13 +141,13 @@ function PlanPreview({
   if (step.kind === "no-window") {
     return (
       <div className="dy-plan" role="status">
-        <span>До сдачи свободного окна нет. Помощник может что-нибудь подвинуть.</span>
+        <span>{t("До сдачи свободного окна нет. Помощник может что-нибудь подвинуть.")}</span>
         <span className="dy-plan-acts">
           <button type="button" className="btn btn-line" onClick={() => plan.askHelper(lesson)}>
-            Спросить помощника
+            {t("Спросить помощника")}
           </button>
           <button type="button" className="btn btn-text" onClick={plan.close}>
-            Отмена
+            {t("Отмена")}
           </button>
         </span>
       </div>
@@ -152,13 +156,13 @@ function PlanPreview({
 
   return (
     <div className="dy-plan" role="status">
-      <span>План сейчас не отвечает. Ничего не изменилось.</span>
+      <span>{t("План сейчас не отвечает. Ничего не изменилось.")}</span>
       <span className="dy-plan-acts">
         <button type="button" className="btn btn-line" onClick={() => void plan.find(week, day, lesson)}>
-          Ещё раз
+          {t("Ещё раз")}
         </button>
         <button type="button" className="btn btn-text" onClick={plan.close}>
-          Отмена
+          {t("Отмена")}
         </button>
       </span>
     </div>
@@ -214,7 +218,7 @@ function TaskRow({
         className="td-check"
         role="checkbox"
         aria-checked={done}
-        aria-label={`Сделано: ${subject}`}
+        aria-label={t("Сделано: {subject}", { subject })}
         onClick={toggle}
       >
         <Icon name="check" />
@@ -224,7 +228,7 @@ function TaskRow({
         {editing ? (
           <TaskInput
             initial={text}
-            label={`Что задано: ${subject}`}
+            label={t("Что задано: {subject}", { subject })}
             onCommit={(next, viaKeyboard) => {
               api.saveHomework(day, lesson, next);
               stopEditing(viaKeyboard);
@@ -236,12 +240,12 @@ function TaskRow({
             ref={textButton}
             type="button"
             className={text || linked.length ? "td-h dy-text" : "td-h dy-text is-empty"}
-            aria-label={`Изменить задание. ${taskTitle(lesson)}`}
+            aria-label={t("Изменить задание. {task}", { task: taskTitle(lesson) })}
             onClick={() => setEditing(true)}
           >
             {linked.length ? <span>{linked.join(", ")}</span> : null}
             {linked.length && text ? ", " : null}
-            {text ? <TaskText text={text} /> : linked.length ? null : canPlan ? "Что повторить?" : "Тема не записана"}
+            {text ? <TaskText text={text} /> : linked.length ? null : canPlan ? t("Что повторить?") : t("Тема не записана")}
           </button>
         )}
       </span>
@@ -252,16 +256,16 @@ function TaskRow({
       ) : canPlan && plan.available && !done ? (
         finding ? (
           <span className="td-plan" role="status">
-            Ищу окно…
+            {t("Ищу окно…")}
           </span>
         ) : (
           <button
             type="button"
             className="td-plan"
-            aria-label={`В план: ${taskTitle(lesson)}`}
+            aria-label={t("В план: {task}", { task: taskTitle(lesson) })}
             onClick={() => void plan.find(week, day, lesson)}
           >
-            В план
+            {t("В план")}
           </button>
         )
       ) : (
@@ -312,16 +316,16 @@ function AddTask({
   };
 
   if (!selected) {
-    return empty ? <li className="dy-add dy-none">Ничего не задано</li> : null;
+    return empty ? <li className="dy-add dy-none">{t("Ничего не задано")}</li> : null;
   }
 
   if (!showForm) {
     return (
       <li className="dy-add">
-        <span className="dy-none">{empty ? "Ничего не задано" : ""}</span>
+        <span className="dy-none">{empty ? t("Ничего не задано") : ""}</span>
         <button ref={openButton} type="button" className="btn btn-text" onClick={() => setOpen(true)}>
           <Icon name="plus" />
-          Добавить задание
+          {t("Добавить задание")}
         </button>
       </li>
     );
@@ -341,7 +345,7 @@ function AddTask({
       >
         <select
           className="dy-select"
-          aria-label="Урок"
+          aria-label={t("Урок")}
           value={selected?.id ?? ""}
           onChange={(event) => setLessonId(event.target.value)}
         >
@@ -355,16 +359,16 @@ function AddTask({
           <input
             ref={fieldRef}
             value={text}
-            aria-label="Что задано"
-            placeholder="Что задано"
+            aria-label={t("Что задано")}
+            placeholder={t("Что задано")}
             onChange={(event) => setText(event.target.value)}
           />
         </span>
         <button type="submit" className="btn btn-main" disabled={!text.trim()}>
-          Записать
+          {t("Записать")}
         </button>
         <button type="button" className="btn btn-text" onClick={close}>
-          Отмена
+          {t("Отмена")}
         </button>
       </form>
     </li>

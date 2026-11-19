@@ -15,7 +15,8 @@ import { useProfileData } from "@/components/profile/use-profile-data";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { updateMe, useMe } from "@/lib/contest-api";
-import { ownSubmissions, ru } from "@/lib/contest-view";
+import { ownSubmissions } from "@/lib/contest-view";
+import { plural, t } from "@/lib/i18n";
 import { SECTION_LABEL } from "@/lib/curriculum-books";
 import { coverClass } from "@/lib/curriculum-cover";
 import { EMPTY_SUMMARY } from "@/lib/pomodoro";
@@ -37,7 +38,7 @@ function Ring({ percent }: { percent: number }) {
       className="ring"
       style={{ "--p": percent } as React.CSSProperties}
       role="img"
-      aria-label={`Пройдено ${percent} ${ru(percent, "процент", "процента", "процентов")}`}
+      aria-label={plural(percent, "Пройдено {n} процент", "Пройдено {n} процента", "Пройдено {n} процентов")}
     >
       <span className="ring-arc" />
       <span className="ring-head" />
@@ -59,7 +60,7 @@ export function OwnProfile() {
 
   // Пока профиль не пришёл, имени нет: подпись «Ученик» мигала бы перед настоящим именем.
   const known = session?.user?.name || me?.name || null;
-  const name = known ?? (meLoading ? "\u00a0" : "Ученик");
+  const name = known ?? (meLoading ? "\u00a0" : t("Ученик"));
   const handle = me && !me.username.includes("@") ? me.username : null;
   const summary = data.summary.data ?? EMPTY_SUMMARY;
 
@@ -90,7 +91,7 @@ export function OwnProfile() {
     const push = (label: string, place: number | null) => {
       if (place) lines.push({ label, place });
     };
-    push("Все ученики", placeIn(null, null));
+    push(t("Все ученики"), placeIn(null, null));
     if (myUser.country_code) push(countryName(myUser.country_code), placeIn(null, myUser.country_code));
     for (const rating of myUser.ratings) push(rating.discipline_name, placeIn(rating.discipline_name, null));
     return lines;
@@ -98,7 +99,7 @@ export function OwnProfile() {
 
   const stats: Stat[] = [];
   if (streaks?.total) {
-    stats.push({ key: "days", value: grouped(streaks.total), label: `${ru(streaks.total, "день", "дня", "дней")} занятий` });
+    stats.push({ key: "days", value: grouped(streaks.total), label: plural(streaks.total, "день занятий", "дня занятий", "дней занятий") });
   }
   const hours = hoursStat(summary.total_seconds);
   if (hours) stats.push({ key: "hours", value: hours.value, label: hours.label });
@@ -106,10 +107,10 @@ export function OwnProfile() {
     stats.push({
       key: "tasks",
       value: grouped(solved.length),
-      label: ru(solved.length, "задача решена", "задачи решено", "задач решено"),
+      label: plural(solved.length, "задача решена", "задачи решено", "задач решено"),
     });
   }
-  if (places.length) stats.push({ key: "place", value: `#${grouped(places[0].place)}`, label: "место в рейтинге" });
+  if (places.length) stats.push({ key: "place", value: `#${grouped(places[0].place)}`, label: t("место в рейтинге") });
   const activeStat = stats.find((stat) => stat.key === openStat)?.key ?? stats[0]?.key ?? null;
 
   const badges = useMemo(
@@ -159,11 +160,11 @@ export function OwnProfile() {
       const updated = await updateMe({ bio: draft.trim() });
       setMe(updated);
       setEditing(false);
-      toast.success("Профиль сохранён");
+      toast.success(t("Профиль сохранён"));
       mascot.react("happy", 1);
     } catch {
       // Текст остаётся в поле: его можно сохранить ещё раз.
-      toast.error("Не сохранилось. Попробуй ещё раз.");
+      toast.error(t("Не сохранилось. Попробуй ещё раз."));
     } finally {
       setSaving(false);
     }
@@ -197,31 +198,31 @@ export function OwnProfile() {
           ) : me?.bio ? (
             <p className="pf-bio">{me.bio}</p>
           ) : me ? (
-            <p className="pf-bio pf-bio-empty">Напиши пару слов о себе: что учишь и зачем.</p>
+            <p className="pf-bio pf-bio-empty">{t("Напиши пару слов о себе: что учишь и зачем.")}</p>
           ) : null}
         </div>
         <div className="pf-tools">
           {editing ? (
             <>
               <button className="btn btn-main" type="button" onClick={saveBio} disabled={saving}>
-                {saving ? "Сохраняю…" : "Сохранить"}
+                {saving ? t("Сохраняю…") : t("Сохранить")}
               </button>
               <button className="btn btn-text" type="button" onClick={() => setEditing(false)} disabled={saving}>
-                Отмена
+                {t("Отмена")}
               </button>
             </>
           ) : (
             <>
               {me ? (
                 <button className="btn btn-line" type="button" onClick={startEdit}>
-                  Изменить
+                  {t("Изменить")}
                 </button>
               ) : null}
               <Link className="btn btn-text" href="/dashboard/settings">
-                Настройки
+                {t("Настройки")}
               </Link>
               <button className="btn btn-text" type="button" onClick={() => signOut({ callbackUrl: "/auth/signin" })}>
-                Выйти
+                {t("Выйти")}
               </button>
             </>
           )}
@@ -233,7 +234,7 @@ export function OwnProfile() {
           <div
             className="pf-stats pf-stats-auto"
             role="tablist"
-            aria-label="Что показать"
+            aria-label={t("Что показать")}
             style={{ "--n": stats.length } as React.CSSProperties}
           >
             {stats.map((stat, index) => (
@@ -273,29 +274,29 @@ export function OwnProfile() {
         </div>
       ) : (
         <section className="ct-note card ct-gap">
-          <h2>Счётчиков пока нет</h2>
-          <p>Дни и часы появятся после первых занятий. Запусти помодоро или отметь привычку.</p>
+          <h2>{t("Счётчиков пока нет")}</h2>
+          <p>{t("Дни и часы появятся после первых занятий. Запусти помодоро или отметь привычку.")}</p>
           <Link className="btn btn-line" href="/dashboard/pomodoro">
-            Помодоро
+            {t("Помодоро")}
           </Link>
         </section>
       )}
 
       {failed.length ? (
         <div className="pf-failed" role="alert">
-          <span className="small-note">Часть данных не загрузилась, поэтому здесь видно не всё.</span>
+          <span className="small-note">{t("Часть данных не загрузилась, поэтому здесь видно не всё.")}</span>
           <button className="btn btn-text" type="button" onClick={() => failed.forEach((resource) => resource.reload())}>
-            Повторить
+            {t("Повторить")}
           </button>
         </div>
       ) : null}
 
       <section className="pf-sec">
         <div className="pf-sec-head">
-          <h2 className="sec">Бейджи</h2>
+          <h2 className="sec">{t("Бейджи")}</h2>
           {badgesReady && !failed.length ? (
             <span className="head-note">
-              {earned} из {badges.length}
+              {t("{earned} из {total}", { earned, total: badges.length })}
             </span>
           ) : null}
         </div>
@@ -304,18 +305,18 @@ export function OwnProfile() {
 
       <section className="pf-sec">
         <div className="pf-sec-head">
-          <h2 className="sec">Сейчас учу</h2>
+          <h2 className="sec">{t("Сейчас учу")}</h2>
         </div>
         {data.lessons.data === undefined && data.lessons.error ? (
           <div className="pf-failed" role="alert">
-            <span className="small-note">Курсы не загрузились.</span>
+            <span className="small-note">{t("Курсы не загрузились.")}</span>
             <button className="btn btn-text" type="button" onClick={data.lessons.reload}>
-              Повторить
+              {t("Повторить")}
             </button>
           </div>
         ) : data.lessons.data === undefined ? (
           <p className="small-note" role="status">
-            Загружаю курсы…
+            {t("Загружаю курсы…")}
           </p>
         ) : data.lessons.data.length ? (
           <ul className="pf-now">
@@ -334,8 +335,8 @@ export function OwnProfile() {
           </ul>
         ) : (
           <section className="ct-note card">
-            <h2>Курсов пока нет</h2>
-            <p>Добавь предмет в библиотеке, и он появится здесь.</p>
+            <h2>{t("Курсов пока нет")}</h2>
+            <p>{t("Добавь предмет в библиотеке, и он появится здесь.")}</p>
             <Link className="btn btn-line" href="/dashboard/curriculum">
               {SECTION_LABEL}
             </Link>

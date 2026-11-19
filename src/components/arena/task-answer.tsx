@@ -6,6 +6,7 @@
 
 import { useState, type FormEvent } from "react";
 
+import { t } from "@/lib/i18n";
 import { ContestApiError, answerTask, type Contest } from "@/lib/contest-api";
 import { invalidateResources } from "@/lib/resource-cache";
 import { answerErrorText, type TaskRow } from "@/lib/contest-view";
@@ -96,21 +97,21 @@ export function TaskAnswer({
         {solved ? (
           <span className="verdict ok">
             <CheckIcon />
-            Верно
+            {t("Верно")}
           </span>
         ) : attempts > 0 ? (
-          <span className="verdict bad">Не решена</span>
+          <span className="verdict bad">{t("Не решена")}</span>
         ) : (
-          <span className="muted">Без ответа</span>
+          <span className="muted">{t("Без ответа")}</span>
         )}
         {task.answer ? (
           <span className="right-answer">
-            Ответ <b>{task.answer}</b>
+            {t("Ответ")} <b>{task.answer}</b>
           </span>
         ) : null}
         {task.has_solution && onSolution ? (
           <button className="btn btn-line" type="button" onClick={onSolution}>
-            Решение
+            {t("Решение")}
           </button>
         ) : null}
       </span>
@@ -124,18 +125,18 @@ export function TaskAnswer({
         value={value}
         readOnly={solved}
         maxLength={100}
-        placeholder="Ответ"
-        aria-label={`Ответ на задачу ${task.number}`}
+        placeholder={t("Ответ")}
+        aria-label={t("Ответ на задачу {number}", { number: task.number })}
         onChange={(event) => answers.setValue(task, event.target.value)}
       />
       {solved ? (
         <span className="verdict ok">
           <CheckIcon />
-          Верно
+          {t("Верно")}
         </span>
       ) : (
         <button className="btn btn-main" type="submit" disabled={answers.busy !== null || !value.trim()}>
-          {answers.busy === task.id ? "Проверяю…" : "Проверить"}
+          {answers.busy === task.id ? t("Проверяю…") : t("Проверить")}
         </button>
       )}
     </form>
@@ -155,7 +156,8 @@ export function TaskAnswerNote({ task, answers, ended }: { task: TaskRow; answer
   if (!ended && wrong) {
     return (
       <p className="srow-note">
-        <span className="verdict bad">Неверно</span>, попытка {attempts}
+        <span className="verdict bad">{t("Неверно")}</span>
+        {t(", попытка {n}", { n: attempts })}
       </p>
     );
   }

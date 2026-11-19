@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { getLocale, t } from "@/lib/i18n"
 import { dataChanged, useDataChanged } from "@/lib/data-changed"
 import { invalidateResources } from "@/lib/resource-cache"
 import { subjectColor } from "@/lib/subject-color"
@@ -47,7 +48,6 @@ import { createSubject } from "@/lib/weak-topics-api"
 import { BLOCK_TYPE_META, DAYS_ORDER, DAY_OF_WEEK_LABELS, PRESET_BLOCK_TYPES } from "@/types/diary"
 import type { DayOfWeek, WeeklyTemplate } from "@/types/diary"
 
-const DEFAULT_NAME = "Школьное расписание"
 const JSON_HEADERS = { "Content-Type": "application/json" }
 
 // ── Свои виды блоков: живут в браузере, как и раньше ─────────────────────────
@@ -82,6 +82,7 @@ function toSubject(row: { id: string | number; name: string; color?: string | nu
 
 export default function SchedulePage() {
   const isPhone = useIsMobile()
+  const DEFAULT_NAME = t("Школьное расписание")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -112,7 +113,7 @@ export default function SchedulePage() {
     () => [
       ...PRESET_BLOCK_TYPES.filter((type) => type !== "lesson").map((type) => ({
         value: type,
-        label: BLOCK_TYPE_META[type].label,
+        label: t(BLOCK_TYPE_META[type].label),
         custom: false,
       })),
       ...customs.map((preset) => ({ value: preset.value, label: preset.label, custom: true })),
@@ -136,7 +137,7 @@ export default function SchedulePage() {
     setSwapFrom(null)
     setMissing(new Set())
     setShowSunday(next.sunday.length > 0)
-  }, [])
+  }, [DEFAULT_NAME])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -151,7 +152,7 @@ export default function SchedulePage() {
       setTemplates(all)
       open(data.active ?? all[0] ?? null)
     } catch {
-      toast.error("Расписание не загрузилось. Обнови страницу.")
+      toast.error(t("Расписание не загрузилось. Обнови страницу."))
     } finally {
       setLoading(false)
     }
@@ -169,9 +170,9 @@ export default function SchedulePage() {
       void load()
       return
     }
-    toast("Расписание поменялось в другом месте", {
-      description: "Твои несохранённые правки пока здесь.",
-      action: { label: "Показать новое", onClick: () => void load() },
+    toast(t("Расписание поменялось в другом месте"), {
+      description: t("Твои несохранённые правки пока здесь."),
+      action: { label: t("Показать новое"), onClick: () => void load() },
     })
   })
 
@@ -206,7 +207,7 @@ export default function SchedulePage() {
   const add = (day: DayOfWeek) => {
     const { week: next, id } = addLesson(week, day, { subjectId: "", blockType: "lesson", label: "" }, () => crypto.randomUUID())
     if (!id) {
-      toast.error("После последнего урока до полуночи не осталось времени.")
+      toast.error(t("После последнего урока до полуночи не осталось времени."))
       return
     }
     change(next)
@@ -223,7 +224,12 @@ export default function SchedulePage() {
   const move = (from: SlotRef, day: DayOfWeek) => {
     const next = moveToDay(week, from, day)
     if (next === week) {
-      toast.error(`В ${DAY_OF_WEEK_LABELS[day].toLowerCase()} после последнего урока не осталось времени.`)
+      const dayName = t(DAY_OF_WEEK_LABELS[day])
+      toast.error(
+        t("В {day} после последнего урока не осталось времени.", {
+          day: getLocale() === "ru" ? dayName.toLowerCase() : dayName,
+        }),
+      )
       return
     }
     change(next)
@@ -255,7 +261,7 @@ export default function SchedulePage() {
       setSubjects((list) => [...list, created])
       editContent({ subjectId: created.id, blockType: "lesson", label: "" })
     } catch {
-      toast.error("Предмет не создался. Попробуй ещё раз.")
+      toast.error(t("Предмет не создался. Попробуй ещё раз."))
     }
   }
 
@@ -323,9 +329,9 @@ export default function SchedulePage() {
       // Недели без записей соберутся из нового шаблона при следующем чтении.
       invalidateResources("now:diary:")
       dataChanged("diary")
-      toast.success(stored.isActive ? "Сохранено. Новые недели дневника возьмут уроки отсюда." : "Сохранено.")
+      toast.success(stored.isActive ? t("Сохранено. Новые недели дневника возьмут уроки отсюда.") : t("Сохранено."))
     } catch {
-      toast.error("Не сохранилось. Попробуй ещё раз.")
+      toast.error(t("Не сохранилось. Попробуй ещё раз."))
     } finally {
       setSaving(false)
     }
@@ -342,7 +348,7 @@ export default function SchedulePage() {
   // ── Шаблоны ────────────────────────────────────────────────────────────────
   const unsavedFirst = () => {
     if (!dirty) return false
-    toast("Сначала сохрани или отмени изменения")
+    toast(t("Сначала сохрани или отмени изменения"))
     return true
   }
 
@@ -370,15 +376,15 @@ export default function SchedulePage() {
         const response = await fetch("/api/diary/template/create-empty", {
           method: "POST",
           headers: JSON_HEADERS,
-          body: JSON.stringify({ name: "Новый шаблон" }),
+          body: JSON.stringify({ name: t("Новый шаблон") }),
         })
         if (!response.ok) throw new Error(String(response.status))
         const created = (await response.json()) as WeeklyTemplate
         setTemplates((list) => [created, ...list])
         open(created)
-        toast.success("Новый шаблон создан")
+        toast.success(t("Новый шаблон создан"))
       },
-      "Шаблон не создался",
+      t("Шаблон не создался"),
     )
   }
 
@@ -396,9 +402,9 @@ export default function SchedulePage() {
         const created = (await response.json()) as WeeklyTemplate
         setTemplates((list) => [created, ...list])
         open(created)
-        toast.success(`Копия «${created.name}» создана`)
+        toast.success(t("Копия «{name}» создана", { name: created.name }))
       },
-      "Копия не создалась",
+      t("Копия не создалась"),
     )
   }
 
@@ -416,9 +422,9 @@ export default function SchedulePage() {
         setTemplates((list) => list.map((row) => ({ ...row, isActive: row.id === templateId })))
         invalidateResources("now:diary:")
         dataChanged("diary")
-        toast.success("Теперь дневник берёт уроки из этого шаблона")
+        toast.success(t("Теперь дневник берёт уроки из этого шаблона"))
       },
-      "Не получилось сделать шаблон активным",
+      t("Не получилось сделать шаблон активным"),
     )
   }
 
@@ -441,14 +447,14 @@ export default function SchedulePage() {
       const response = await fetch(`/api/diary/template?id=${encodeURIComponent(doomed.id)}`, { method: "DELETE" }).catch(() => null)
       if (!response?.ok) {
         restore()
-        toast.error("Шаблон не удалился, он снова на месте")
+        toast.error(t("Шаблон не удалился, он снова на месте"))
       }
     }, 6000)
     pendingDelete.current = { timer, restore }
-    toast(`Шаблон «${doomed.name}» удалён`, {
+    toast(t("Шаблон «{name}» удалён", { name: doomed.name }), {
       duration: 6000,
       action: {
-        label: "Отменить",
+        label: t("Отменить"),
         onClick: () => {
           if (!pendingDelete.current) return
           clearTimeout(pendingDelete.current.timer)
@@ -468,7 +474,7 @@ export default function SchedulePage() {
       async () => {
         const rows = parseTemplateCsv(await file.text())
         if (!rows.length) {
-          toast.error("Уроки в файле не нашлись. Проверь, что это CSV из экспорта.")
+          toast.error(t("Уроки в файле не нашлись. Проверь, что это CSV из экспорта."))
           return
         }
         const byName = new Map(subjects.map((subject) => [subject.name.toLowerCase().trim(), subject]))
@@ -487,7 +493,7 @@ export default function SchedulePage() {
             label: isLesson ? "" : row.rawName,
           }
         })
-        const title = file.name.replace(/\.csv$/i, "").replace(/_/g, " ") || "Импорт"
+        const title = file.name.replace(/\.csv$/i, "").replace(/_/g, " ") || t("Импорт")
         const created = await fetch("/api/diary/template/create-empty", {
           method: "POST",
           headers: JSON_HEADERS,
@@ -504,9 +510,9 @@ export default function SchedulePage() {
         const result = (await stored.json()) as WeeklyTemplate
         setTemplates((list) => [result, ...list])
         open(result)
-        toast.success(`Загружено уроков: ${rows.length}. Шаблон «${title}»`)
+        toast.success(t("Загружено уроков: {n}. Шаблон «{title}»", { n: rows.length, title }))
       },
-      "Файл не загрузился",
+      t("Файл не загрузился"),
     )
   }
 
@@ -514,10 +520,10 @@ export default function SchedulePage() {
     return (
       <div className="content view ds-page">
         <header className="head">
-          <h1 className="title">Шаблон расписания</h1>
+          <h1 className="title">{t("Шаблон расписания")}</h1>
         </header>
         <p className="dy-note" role="status">
-          Загружаю шаблон…
+          {t("Загружаю шаблон…")}
         </p>
       </div>
     )
@@ -528,42 +534,42 @@ export default function SchedulePage() {
   return (
     <div className="content view ds-page">
       <header className="head">
-        <h1 className="title">Шаблон расписания</h1>
+        <h1 className="title">{t("Шаблон расписания")}</h1>
         <div className="head-tools">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button type="button" className="btn btn-line ds-tpl" aria-label="Шаблон и действия с ним">
+              <button type="button" className="btn btn-line ds-tpl" aria-label={t("Шаблон и действия с ним")}>
                 <span className="ds-tpl-name">{name}</span>
-                {isActive ? <span className="ds-badge">Активный</span> : null}
+                {isActive ? <span className="ds-badge">{t("Активный")}</span> : null}
                 <Icon name="chev-d" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="ds-menu">
               {templates.length > 1 ? (
                 <>
-                  <DropdownMenuLabel>Шаблоны</DropdownMenuLabel>
+                  <DropdownMenuLabel>{t("Шаблоны")}</DropdownMenuLabel>
                   {templates.map((row) => (
                     <DropdownMenuItem key={row.id} disabled={dirty && row.id !== templateId} onSelect={() => switchTo(row.id)}>
                       <span className="ds-menu-main">{row.id === templateId ? name : row.name}</span>
-                      {row.isActive ? <span className="ds-menu-note">активный</span> : null}
+                      {row.isActive ? <span className="ds-menu-note">{t("активный")}</span> : null}
                       {row.id === templateId ? <Icon name="check" /> : null}
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
                 </>
               ) : null}
-              <DropdownMenuItem onSelect={() => setRenaming(name)}>Переименовать</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRenaming(name)}>{t("Переименовать")}</DropdownMenuItem>
               <DropdownMenuItem disabled={busy !== null} onSelect={createEmpty}>
-                Новый шаблон
+                {t("Новый шаблон")}
               </DropdownMenuItem>
               {templateId ? (
                 <DropdownMenuItem disabled={busy !== null} onSelect={duplicate}>
-                  Сделать копию
+                  {t("Сделать копию")}
                 </DropdownMenuItem>
               ) : null}
               {templateId && !isActive ? (
                 <DropdownMenuItem disabled={busy !== null} onSelect={activate}>
-                  Сделать активным
+                  {t("Сделать активным")}
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
@@ -573,17 +579,17 @@ export default function SchedulePage() {
                     exportTemplateCsv(name, week, (id) => subjectMap.get(id)?.name, blockLabel)
                   }
                 >
-                  Скачать CSV
+                  {t("Скачать CSV")}
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem disabled={busy !== null} onSelect={() => importRef.current?.click()}>
-                Загрузить из CSV
+                {t("Загрузить из CSV")}
               </DropdownMenuItem>
               {templateId && !isActive ? (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="ds-menu-danger" onSelect={remove}>
-                    Удалить шаблон
+                    {t("Удалить шаблон")}
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -592,28 +598,29 @@ export default function SchedulePage() {
           <input ref={importRef} type="file" accept=".csv" className="is-off" onChange={(event) => void importCsv(event)} />
           <Link className="btn btn-text" href="/dashboard/plan">
             <Icon name="chev-l" />
-            Неделя
+            {t("Неделя")}
           </Link>
         </div>
       </header>
-      <p className="dy-note">Новые недели дневника берут уроки отсюда. Неделя, где уже есть оценки или задания, не меняется.</p>
+      <p className="dy-note">{t("Новые недели дневника берут уроки отсюда. Неделя, где уже есть оценки или задания, не меняется.")}</p>
 
       {templateId && !isActive ? (
         <div className="card ds-warn">
           <span>
-            Этот шаблон не активный{activeName ? `: дневник берёт уроки из «${activeName}»` : ""}.
+            {t("Этот шаблон не активный")}
+            {activeName ? t(": дневник берёт уроки из «{name}»", { name: activeName }) : ""}.
           </span>
           <button type="button" className="btn btn-line" disabled={busy !== null} onClick={activate}>
-            Сделать активным
+            {t("Сделать активным")}
           </button>
         </div>
       ) : null}
 
       {swapFrom ? (
         <div className="glass ds-swapbar" role="status">
-          <span>Нажми на урок, с которым поменять местами.</span>
+          <span>{t("Нажми на урок, с которым поменять местами.")}</span>
           <button type="button" className="btn btn-text" onClick={() => setSwapFrom(null)}>
-            Отмена
+            {t("Отмена")}
           </button>
         </div>
       ) : null}
@@ -642,8 +649,8 @@ export default function SchedulePage() {
       />
       <p className="ds-hint">
         {isPhone
-          ? "Нажми на урок, чтобы поменять предмет или время. Удержи и перетащи на другой, чтобы поменять местами."
-          : "Перетащи урок на другой, и они поменяются местами, а время останется у своих мест. На «+ урок» другого дня, и урок переедет туда."}
+          ? t("Нажми на урок, чтобы поменять предмет или время. Удержи и перетащи на другой, чтобы поменять местами.")
+          : t("Перетащи урок на другой, и они поменяются местами, а время останется у своих мест. На «+ урок» другого дня, и урок переедет туда.")}
       </p>
 
       {isPhone ? (
@@ -651,8 +658,8 @@ export default function SchedulePage() {
           <DrawerContent className="ds-sheet">
             <DrawerTitle className="ds-sheet-title">
               {selectedSlot && selected
-                ? `${DAY_OF_WEEK_LABELS[selected.day]}, ${selectedSlot.lessonNumber}-й урок`
-                : "Урок"}
+                ? t("{day}, {n}-й урок", { day: t(DAY_OF_WEEK_LABELS[selected.day]), n: selectedSlot.lessonNumber })
+                : t("Урок")}
             </DrawerTitle>
             {editor}
           </DrawerContent>
@@ -664,24 +671,24 @@ export default function SchedulePage() {
           <span>
             {missing.size
               ? isPhone
-                ? "Выбери предмет"
-                : "Выбери предмет у подсвеченного урока"
+                ? t("Выбери предмет")
+                : t("Выбери предмет у подсвеченного урока")
               : isPhone
-                ? "Не сохранено"
-                : "Изменения не сохранены"}
+                ? t("Не сохранено")
+                : t("Изменения не сохранены")}
           </span>
           <button type="button" className="btn btn-text" onClick={discard} disabled={saving}>
-            Отменить
+            {t("Отменить")}
           </button>
           <button type="button" className="btn btn-main" onClick={() => void save()} disabled={saving}>
-            {saving ? "Сохраняю…" : "Сохранить"}
+            {saving ? t("Сохраняю…") : t("Сохранить")}
           </button>
         </div>
       ) : null}
 
       <Dialog open={renaming !== null} onOpenChange={(value) => (value ? null : setRenaming(null))}>
         <DialogContent className="ds-rename">
-          <DialogTitle>Название шаблона</DialogTitle>
+          <DialogTitle>{t("Название шаблона")}</DialogTitle>
           <form
             onSubmit={(event) => {
               event.preventDefault()
@@ -695,14 +702,14 @@ export default function SchedulePage() {
               value={renaming ?? ""}
               onChange={(event) => setRenaming(event.target.value)}
               placeholder={DEFAULT_NAME}
-              aria-label="Название шаблона"
+              aria-label={t("Название шаблона")}
             />
             <div className="ds-rename-acts">
               <button type="button" className="btn btn-text" onClick={() => setRenaming(null)}>
-                Отмена
+                {t("Отмена")}
               </button>
               <button type="submit" className="btn btn-main">
-                Готово
+                {t("Готово")}
               </button>
             </div>
           </form>

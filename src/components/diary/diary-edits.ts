@@ -5,6 +5,7 @@
 import type { LessonSlot } from "@/lib/diary-undo";
 import type { DiaryDay, DiaryLesson, DiaryWeek, LessonGrades, TemplateLessonSlot } from "@/types/diary";
 
+import { t } from "../../lib/i18n";
 import { DAYS_ORDER } from "../../types/diary.ts";
 
 export interface LessonValues {
@@ -96,9 +97,9 @@ export function applyLessonEdits(week: DiaryWeek, edits: LessonEdit[]): DiaryWee
   return edits.reduce((current, { place, expect, write }) => {
     const found = locateById(current, place.day_id, place.lesson_id) ?? locateBySlot(current, place.slot);
     if (!found || (found.lesson.subjectId ?? "") !== place.subject_id) {
-      throw new LessonChangedError("Этого урока на неделе больше нет");
+      throw new LessonChangedError(t("Этого урока на неделе больше нет"));
     }
-    if (!holds(found.lesson, expect)) throw new LessonChangedError("В этом уроке уже другая запись");
+    if (!holds(found.lesson, expect)) throw new LessonChangedError(t("В этом уроке уже другая запись"));
     return mapLesson(current, found.day.id, found.lesson.id, (lesson) => written(lesson, write));
   }, week);
 }

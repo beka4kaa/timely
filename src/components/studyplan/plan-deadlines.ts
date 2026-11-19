@@ -5,6 +5,7 @@
 // Каждый источник живёт сам по себе: упали цели, контрольные и контесты всё равно на
 // месте, а календарь работает и вовсе без них.
 
+import { t } from "@/lib/i18n";
 import { useMemo } from "react";
 
 import { TTL, diaryKey, fetchDiaryWeek } from "@/components/now/now-resources";
@@ -27,7 +28,7 @@ interface GoalRow {
 
 async function fetchGoalDates(): Promise<GoalRow[]> {
   const response = await fetch("/api/goals", { cache: "no-store" });
-  if (!response.ok) throw new Error(`Цели не загрузились (${response.status})`);
+  if (!response.ok) throw new Error(t("Цели не загрузились ({status})", { status: response.status }));
   const body = (await response.json()) as { goals?: GoalRow[] };
   return body.goals ?? [];
 }

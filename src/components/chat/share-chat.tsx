@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { t } from "@/lib/i18n";
 import { getChatShare, shareChat, unshareChat, type ChatShare } from "@/lib/curriculum-api";
 
 import { canShareChat, shareUrl, type ShareTurn } from "./chat-share";
@@ -140,8 +141,8 @@ export function ShareChat({
       <button
         className="chat-round glass chat-share"
         type="button"
-        aria-label="Поделиться чатом"
-        title="Поделиться чатом"
+        aria-label={t("Поделиться чатом")}
+        title={t("Поделиться чатом")}
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={disabled || !chatId || !canShareChat(turns)}
@@ -150,49 +151,49 @@ export function ShareChat({
         <Icon name="share" />
       </button>
       {open ? (
-        <div className="menu share-pop" role="dialog" aria-label="Поделиться чатом">
-          <p className="share-h">Поделиться чатом</p>
+        <div className="menu share-pop" role="dialog" aria-label={t("Поделиться чатом")}>
+          <p className="share-h">{t("Поделиться чатом")}</p>
           {share === null ? (
-            status === "failed" ? null : <p className="share-note">Проверяю, есть ли ссылка…</p>
+            status === "failed" ? null : <p className="share-note">{t("Проверяю, есть ли ссылка…")}</p>
           ) : share.token ? (
             <>
               <div className="share-link">
                 <input
                   readOnly
                   value={link}
-                  aria-label="Ссылка на чат"
+                  aria-label={t("Ссылка на чат")}
                   onFocus={(event) => event.currentTarget.select()}
                 />
                 <button className="btn btn-main" type="button" onClick={() => void copy(link)}>
-                  {copied ? "Скопировано" : "Скопировать"}
+                  {copied ? t("Скопировано") : t("Скопировать")}
                 </button>
               </div>
-              <p className="share-note">Новые сообщения попадут по ссылке после «Обновить».</p>
+              <p className="share-note">{t("Новые сообщения попадут по ссылке после «Обновить».")}</p>
               <div className="share-acts">
                 {canSend ? (
                   <button className="btn btn-line" type="button" onClick={() => void send()}>
-                    Отправить
+                    {t("Отправить")}
                   </button>
                 ) : null}
                 <button className="btn btn-line" type="button" disabled={busy} onClick={() => void publish()}>
-                  Обновить
+                  {t("Обновить")}
                 </button>
                 <button className="btn btn-text share-del" type="button" disabled={busy} onClick={() => void unpublish()}>
-                  Удалить ссылку
+                  {t("Удалить ссылку")}
                 </button>
               </div>
             </>
           ) : (
             <>
-              <p className="share-note">Ссылку откроет любой, у кого она есть. Источников из книг по ней не видно.</p>
+              <p className="share-note">{t("Ссылку откроет любой, у кого она есть. Источников из книг по ней не видно.")}</p>
               <button className="btn btn-main share-create" type="button" disabled={busy} onClick={() => void publish()}>
-                Создать ссылку
+                {t("Создать ссылку")}
               </button>
             </>
           )}
           {status === "failed" ? (
             <p className="share-error" role="alert">
-              Не получилось. Проверь интернет и попробуй ещё раз.
+              {t("Не получилось. Проверь интернет и попробуй ещё раз.")}
             </p>
           ) : null}
         </div>

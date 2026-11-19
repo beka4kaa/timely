@@ -2,6 +2,8 @@
 // DIARY — Types & Interfaces
 // ============================================================
 
+import { msg } from '../lib/i18n'
+
 // ----- Shared primitives ------------------------------------
 
 export type DayOfWeek =
@@ -14,13 +16,13 @@ export type DayOfWeek =
   | 'sunday'
 
 export const DAY_OF_WEEK_LABELS: Record<DayOfWeek, string> = {
-  monday: 'Понедельник',
-  tuesday: 'Вторник',
-  wednesday: 'Среда',
-  thursday: 'Четверг',
-  friday: 'Пятница',
-  saturday: 'Суббота',
-  sunday: 'Воскресенье',
+  monday: msg('Понедельник'),
+  tuesday: msg('Вторник'),
+  wednesday: msg('Среда'),
+  thursday: msg('Четверг'),
+  friday: msg('Пятница'),
+  saturday: msg('Суббота'),
+  sunday: msg('Воскресенье'),
 }
 
 export const DAYS_ORDER: DayOfWeek[] = [
@@ -28,13 +30,13 @@ export const DAYS_ORDER: DayOfWeek[] = [
 ]
 
 export const DAY_SHORT_LABELS: Record<DayOfWeek, string> = {
-  monday: 'Пн',
-  tuesday: 'Вт',
-  wednesday: 'Ср',
-  thursday: 'Чт',
-  friday: 'Пт',
-  saturday: 'Сб',
-  sunday: 'Вс',
+  monday: msg('Пн'),
+  tuesday: msg('Вт'),
+  wednesday: msg('Ср'),
+  thursday: msg('Чт'),
+  friday: msg('Пт'),
+  saturday: msg('Сб'),
+  sunday: msg('Вс'),
 }
 
 /** Grade 1–5, or null = not graded yet */
@@ -64,9 +66,9 @@ export interface LessonGrades {
 }
 
 export const GRADE_TYPE_LABELS: Record<keyof LessonGrades, string> = {
-  retelling: 'Пересказ',
-  exercises: 'Упражнения',
-  test: 'Тест',
+  retelling: msg('Пересказ'),
+  exercises: msg('Упражнения'),
+  test: msg('Тест'),
 }
 
 // ----- Template entities ------------------------------------
@@ -80,17 +82,17 @@ export type BlockType = string
 export type PresetBlockType = 'lesson' | 'break' | 'rest' | 'focus' | 'test' | 'weakness-test' | 'cumulative-test' | 'error-test' | 'feynman' | 'error-review' | 'other'
 
 export const BLOCK_TYPE_META: Record<PresetBlockType, { label: string; emoji: string; color: string }> = {
-  lesson:            { label: 'Урок',            emoji: '📚', color: 'text-blue-400' },
-  break:             { label: 'Перерыв',         emoji: '☕', color: 'text-slate-400' },
-  rest:              { label: 'Отдых',            emoji: '🌟', color: 'text-teal-400' },
-  focus:             { label: 'Фокус',           emoji: '🎯', color: 'text-violet-400' },
-  test:              { label: 'Тест',            emoji: '📝', color: 'text-orange-400' },
+  lesson:            { label: msg('Урок'),            emoji: '📚', color: 'text-blue-400' },
+  break:             { label: msg('Перерыв'),         emoji: '☕', color: 'text-slate-400' },
+  rest:              { label: msg('Отдых'),            emoji: '🌟', color: 'text-teal-400' },
+  focus:             { label: msg('Фокус'),           emoji: '🎯', color: 'text-violet-400' },
+  test:              { label: msg('Тест'),            emoji: '📝', color: 'text-orange-400' },
   'weakness-test':   { label: 'Weakness Test',   emoji: '🔴', color: 'text-red-400' },
   'cumulative-test': { label: 'Cumulative Test', emoji: '🔴', color: 'text-rose-400' },
   'error-test':      { label: 'Error Test',      emoji: '🔴', color: 'text-pink-400' },
   feynman:           { label: 'Feynman',         emoji: '🧠', color: 'text-purple-400' },
-  'error-review':    { label: 'Разбор Ошибок',  emoji: '🔍', color: 'text-amber-400' },
-  other:             { label: 'Другое',          emoji: '🔖', color: 'text-green-400' },
+  'error-review':    { label: msg('Разбор Ошибок'),  emoji: '🔍', color: 'text-amber-400' },
+  other:             { label: msg('Другое'),          emoji: '🔖', color: 'text-green-400' },
 }
 
 export const PRESET_BLOCK_TYPES: PresetBlockType[] = ['lesson', 'break', 'rest', 'focus', 'test', 'weakness-test', 'cumulative-test', 'error-test', 'feynman', 'error-review', 'other']

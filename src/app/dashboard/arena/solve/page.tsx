@@ -7,6 +7,7 @@ import Link from "next/link";
 
 import { ContestGrid, type GridItem } from "@/components/arena/contest-grid";
 import { listContests, listMySubmissions, useMe } from "@/lib/contest-api";
+import { t } from "@/lib/i18n";
 import { contestResult, ownSubmissions, plaqueOf } from "@/lib/contest-view";
 import { useResource } from "@/lib/resource-cache";
 import { useNow } from "@/lib/use-now";
@@ -29,27 +30,27 @@ export default function ContestsPage() {
   return (
     <div className="content view">
       <header className="head">
-        <h1 className="title">Контесты</h1>
+        <h1 className="title">{t("Контесты")}</h1>
       </header>
 
       {!list && contests.error ? (
         <section className="ct-note card" role="alert">
-          <h2>Контесты не загрузились</h2>
-          <p>Проверь связь и попробуй ещё раз.</p>
+          <h2>{t("Контесты не загрузились")}</h2>
+          <p>{t("Проверь связь и попробуй ещё раз.")}</p>
           <button className="btn btn-line" type="button" onClick={contests.reload}>
-            Повторить
+            {t("Повторить")}
           </button>
         </section>
       ) : !list || !now ? (
         <p className="small-note" role="status">
-          Загружаю контесты…
+          {t("Загружаю контесты…")}
         </p>
       ) : !list.length ? (
         <section className="ct-note card">
-          <h2>Контестов пока нет</h2>
-          <p>Когда объявят первый, здесь появятся дата, задачи и время. А пока можно закрыть слабые темы.</p>
+          <h2>{t("Контестов пока нет")}</h2>
+          <p>{t("Когда объявят первый, здесь появятся дата, задачи и время. А пока можно закрыть слабые темы.")}</p>
           <Link className="btn btn-line" href="/dashboard/weaknesses">
-            Слабые темы
+            {t("Слабые темы")}
           </Link>
         </section>
       ) : (
@@ -58,8 +59,8 @@ export default function ContestsPage() {
           now={now}
           aheadEmpty={
             <section className="ct-note card ct-gap">
-              <h2>Следующий контест ещё не объявили</h2>
-              <p>Как только появится дата, он будет здесь.</p>
+              <h2>{t("Следующий контест ещё не объявили")}</h2>
+              <p>{t("Как только появится дата, он будет здесь.")}</p>
             </section>
           }
         />

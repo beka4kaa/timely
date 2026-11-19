@@ -7,6 +7,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { t } from "@/lib/i18n";
+
 type PdfState = "loading" | "ready" | "error";
 
 /** Ширина, на которую уже нарисованы страницы: мелкие сдвиги не перерисовывают их. */
@@ -64,7 +66,7 @@ export function PdfView({ load, label }: { load: () => Promise<ArrayBuffer>; lab
             canvas.width = Math.floor(viewport.width);
             canvas.height = Math.floor(viewport.height);
             canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
-            canvas.setAttribute("aria-label", `${label}, страница ${number} из ${doc.numPages}`);
+            canvas.setAttribute("aria-label", t("{label}, страница {number} из {total}", { label, number, total: doc.numPages }));
             canvas.setAttribute("role", "img");
             const context = canvas.getContext("2d");
             if (!context) throw new Error("no canvas");
@@ -104,14 +106,14 @@ export function PdfView({ load, label }: { load: () => Promise<ArrayBuffer>; lab
       <div ref={box} className="pdf-pages" />
       {state === "loading" ? (
         <p className="small-note pdf-state" role="status">
-          Открываю PDF…
+          {t("Открываю PDF…")}
         </p>
       ) : null}
       {state === "error" ? (
         <div className="pdf-state" role="alert">
-          <p className="small-note">PDF не открылся.</p>
+          <p className="small-note">{t("PDF не открылся.")}</p>
           <button className="btn btn-line" type="button" onClick={() => setAttempt((value) => value + 1)}>
-            Повторить
+            {t("Повторить")}
           </button>
         </div>
       ) : null}

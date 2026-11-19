@@ -14,6 +14,7 @@ import { primeAlerts } from "@/components/pomodoro/pomodoro-alerts";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { BOARD_ENABLED, BOOKS_ENABLED } from "@/config/features";
 import { useAskRail } from "@/contexts/ask-rail";
+import { t } from "@/lib/i18n";
 import { bookLabel } from "@/lib/book-label";
 import type { CoursePlan, CurriculumDocument } from "@/lib/curriculum-api";
 import { formatSource } from "@/lib/curriculum-progress";
@@ -113,7 +114,7 @@ export function NowCard({
   const { prompt } = useAskRail();
   const { block } = hero;
   const { topic, detail } = splitBlockTitle(block.title);
-  const course = block.course_plan_title?.trim() || "Занятие";
+  const course = block.course_plan_title?.trim() || t("Занятие");
   const part = partLabel(detail);
   const criterion = criterionOf(block);
   const objective = block.objective?.trim() ?? "";
@@ -124,7 +125,7 @@ export function NowCard({
   const sub = [
     course,
     block.review_step
-      ? `${block.review_step}-е повторение`
+      ? t("{n}-е повторение", { n: block.review_step })
       : activityLabel(block.activity_type).toLowerCase(),
     part,
     live ? "" : nbsp(untilLabel(hero.minutesUntil)),
@@ -147,7 +148,7 @@ export function NowCard({
         <p className="now-sub">{sub}</p>
         {criterion || objective || citation ? (
           <p className="now-crit">
-            {criterion ? `Когда готово: ${lowerFirst(criterion)}.` : objective}
+            {criterion ? t("Когда готово: {criterion}.", { criterion: lowerFirst(criterion) }) : objective}
             {(criterion || objective) && citation ? " " : ""}
             {citation ? (
               <Link className="link" href={`/dashboard/curriculum/plan/${block.course_plan}`}>
@@ -157,9 +158,9 @@ export function NowCard({
           </p>
         ) : null}
         {block.fixed ? (
-          <p className="now-note">Закреплено: планировщик это время не двигает.</p>
+          <p className="now-note">{t("Закреплено: планировщик это время не двигает.")}</p>
         ) : null}
-        {draft ? <p className="now-note">Это предложение плана, его ещё можно поменять.</p> : null}
+        {draft ? <p className="now-note">{t("Это предложение плана, его ещё можно поменять.")}</p> : null}
         <div className="now-actions">
           <Link
             className="btn btn-main"
@@ -175,11 +176,11 @@ export function NowCard({
               prompt({
                 target: "book",
                 goalId: goalId ?? undefined,
-                text: `Помоги с темой «${topic}»: `,
+                text: t("Помоги с темой «{topic}»: ", { topic }),
               })
             }
           >
-            Нужна помощь
+            {t("Нужна помощь")}
           </button>
           <FocusButtons hero={hero} />
           <FocusToday focusLogged={focusLogged} />
@@ -205,14 +206,14 @@ function FocusRing({ hero }: { hero: Hero | null }) {
   const started = usePomodoroStore(selectHasStarted);
 
   if (started) {
-    const word = !running ? "пауза" : phase === "focus" ? "фокус" : "перерыв";
+    const word = !running ? t("пауза") : phase === "focus" ? t("фокус") : t("перерыв");
     const percent = planned ? Math.round((remaining / planned) * 100) : 0;
     return (
       <Link
         className="ring is-clock"
         href={POMODORO_HREF}
         style={{ "--p": percent } as React.CSSProperties}
-        aria-label={`Таймер: ${word}, осталось ${clockOf(remaining)}, открыть таймер`}
+        aria-label={t("Таймер: {word}, осталось {time}, открыть таймер", { word, time: clockOf(remaining) })}
       >
         <span className="ring-arc" />
         <span className="ring-head" />
@@ -237,15 +238,15 @@ function FocusRing({ hero }: { hero: Hero | null }) {
       style={{ "--p": percent } as React.CSSProperties}
       aria-label={
         hero.mode === "now"
-          ? `Осталось ${minutesWord(left)} из ${length}, открыть таймер`
-          : `Занятие на ${minutesWord(length)}, открыть таймер`
+          ? t("Осталось {left} из {length}, открыть таймер", { left: minutesWord(left), length })
+          : t("Занятие на {length}, открыть таймер", { length: minutesWord(length) })
       }
     >
       <span className="ring-arc" />
       <span className="ring-head" />
       <span className="ring-v">
         {left}
-        <small>мин</small>
+        <small>{t("мин")}</small>
       </span>
     </Link>
   );
@@ -281,10 +282,10 @@ function FocusButtons({ hero }: { hero: Hero | null }) {
             toggle();
           }}
         >
-          {running ? "Пауза" : "Продолжить"}
+          {running ? t("Пауза") : t("Продолжить")}
         </button>
         <button type="button" className="btn btn-text" onClick={reset}>
-          Сбросить
+          {t("Сбросить")}
         </button>
       </>
     );
@@ -308,9 +309,9 @@ function FocusButtons({ hero }: { hero: Hero | null }) {
       type="button"
       className="btn btn-text"
       onClick={start}
-      aria-label={`Начать фокус на ${minutesWord(preset.focus)}`}
+      aria-label={t("Начать фокус на {length}", { length: minutesWord(preset.focus) })}
     >
-      Фокус на {preset.focus} мин
+      {t("Фокус на {n} мин", { n: preset.focus })}
     </button>
   );
 }
@@ -327,7 +328,7 @@ function FocusToday({ focusLogged }: { focusLogged: number | null }) {
     .reduce((total, item) => total + item.seconds, 0);
   const minutes = Math.floor((focusLogged + unsent + liveFocus) / 60);
   if (minutes < 1) return null;
-  return <span className="now-focus">{nbsp(`сегодня в фокусе ${durationLabel(minutes)}`)}</span>;
+  return <span className="now-focus">{nbsp(t("сегодня в фокусе {time}", { time: durationLabel(minutes) }))}</span>;
 }
 
 export type QuietKind =
@@ -372,7 +373,7 @@ export function QuietCard({
 }) {
   if (kind === "loading") {
     return (
-      <div className="now glass now-quiet is-loading" aria-busy="true" aria-label="Загружаем план">
+      <div className="now glass now-quiet is-loading" aria-busy="true" aria-label={t("Загружаем план")}>
         <span />
         <div aria-hidden="true">
           <span className="now-skel is-big" />
@@ -399,7 +400,7 @@ export function QuietCard({
         <div className="now-actions">
           {kind === "error" ? (
             <button type="button" className="btn btn-main" onClick={onRetry}>
-              Повторить
+              {t("Повторить")}
             </button>
           ) : (
             <Link className={`btn ${content.primary ? "btn-main" : "btn-line"}`} href={content.href}>
@@ -417,7 +418,7 @@ export function QuietCard({
 function nextText(next: CalendarLearningBlock, timeZone: string, today: string): string {
   const day = dayPhrase(zonedDateKey(next.start_at, timeZone), today);
   const time = formatMinutes(zonedMinutes(next.start_at, timeZone));
-  return `${day} в ${time}: «${splitBlockTitle(next.title).topic}»`;
+  return t("{day} в {time}: «{topic}»", { day, time, topic: splitBlockTitle(next.title).topic });
 }
 
 function quietContent(
@@ -441,58 +442,58 @@ function quietContent(
   switch (kind) {
     case "error":
       return {
-        title: "План не загрузился",
-        text: "Сервер плана сейчас не ответил. Уроки и задания из дневника на месте, а план подтянется, когда сервер ответит.",
+        title: t("План не загрузился"),
+        text: t("Сервер плана сейчас не ответил. Уроки и задания из дневника на месте, а план подтянется, когда сервер ответит."),
         action: "",
         href: "",
         primary: true,
       };
     case "denied":
       return {
-        title: "План для этого аккаунта закрыт",
-        text: "Доступ к плану и темам включает администратор. Дневник и тьютор работают.",
-        action: "Открыть дневник",
+        title: t("План для этого аккаунта закрыт"),
+        text: t("Доступ к плану и темам включает администратор. Дневник и тьютор работают."),
+        action: t("Открыть дневник"),
         href: "/dashboard/plan",
         primary: false,
       };
     case "done":
       return {
-        title: "На сегодня всё",
-        text: `${done} ${plural(done, ["занятие", "занятия", "занятий"])} по плану позади.${
-          next ? ` Дальше ${nextText(next, timeZone, today)}.` : ""
-        }`,
-        action: "Открыть неделю",
+        title: t("На сегодня всё"),
+        text: `${t("{done} по плану позади.", {
+          done: `${done} ${plural(done, ["занятие", "занятия", "занятий"])}`,
+        })}${next ? ` ${t("Дальше {next}.", { next: nextText(next, timeZone, today) })}` : ""}`,
+        action: t("Открыть неделю"),
         href: "/dashboard/plan",
         primary: false,
       };
     case "no-plans":
       return {
-        title: BOOKS_ENABLED ? "Начнём с учебника" : "Начнём с предмета",
+        title: BOOKS_ENABLED ? t("Начнём с учебника") : t("Начнём с предмета"),
         text: BOOKS_ENABLED
-          ? "Загрузи учебник или добавь материал. Timely разложит его по темам и дням, и здесь появится первый шаг."
-          : "Добавь предмет и поставь по нему занятия. Здесь появится первый шаг.",
-        action: BOOKS_ENABLED ? "Добавить учебник" : "Добавить предмет",
+          ? t("Загрузи учебник или добавь материал. Timely разложит его по темам и дням, и здесь появится первый шаг.")
+          : t("Добавь предмет и поставь по нему занятия. Здесь появится первый шаг."),
+        action: BOOKS_ENABLED ? t("Добавить учебник") : t("Добавить предмет"),
         href: "/dashboard/curriculum",
         primary: true,
       };
     case "no-schedule":
       return {
-        title: "Осталось выбрать время",
-        text: "Программа есть. Скажи, в какие часы можешь заниматься, она разложится по дням, и здесь будет видно, что делать сейчас.",
-        action: "Разложить по дням",
+        title: t("Осталось выбрать время"),
+        text: t("Программа есть. Скажи, в какие часы можешь заниматься, она разложится по дням, и здесь будет видно, что делать сейчас."),
+        action: t("Разложить по дням"),
         href: "/dashboard/plan",
         primary: true,
       };
     case "free-day":
     default: {
       const parts: string[] = [];
-      if (!busyDay) parts.push("Сегодня свободный день.");
-      if (next) parts.push(`Следующее занятие ${nextText(next, timeZone, today)}.`);
-      if (hasTopics) parts.push("Если хочется, повтори тему из списка рядом.");
+      if (!busyDay) parts.push(t("Сегодня свободный день."));
+      if (next) parts.push(t("Следующее занятие {next}.", { next: nextText(next, timeZone, today) }));
+      if (hasTopics) parts.push(t("Если хочется, повтори тему из списка рядом."));
       return {
-        title: "Занятий по плану нет",
-        text: parts.join(" ") || "Если хочется, спроси тьютора о том, что непонятно.",
-        action: "Открыть неделю",
+        title: t("Занятий по плану нет"),
+        text: parts.join(" ") || t("Если хочется, спроси тьютора о том, что непонятно."),
+        action: t("Открыть неделю"),
         href: "/dashboard/plan",
         primary: false,
       };

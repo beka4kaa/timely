@@ -11,6 +11,7 @@
 "use client";
 
 import Link from "next/link";
+import { t } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -40,8 +41,8 @@ export function PlanActions({
   // Перестройка это минута работы модели: о ней говорит маскот, а кнопка занята.
   useEffect(() => {
     if (!rebuilding) return;
-    mascot.thinkStart("Строю программу заново");
-    mascot.thought("Читаю оглавление и подбираю темы");
+    mascot.thinkStart(t("Строю программу заново"));
+    mascot.thought(t("Читаю оглавление и подбираю темы"));
     return () => mascot.thinkEnd();
   }, [rebuilding]);
 
@@ -56,7 +57,7 @@ export function PlanActions({
         : await rebuildPlan(plan.id);
       router.replace(`/dashboard/curriculum/plan/${result.plan.id}`);
     } catch (cause) {
-      onError(cause instanceof Error ? cause.message : "Не получилось построить программу заново.");
+      onError(cause instanceof Error ? cause.message : t("Не получилось построить программу заново."));
     } finally {
       setRebuilding(false);
     }
@@ -75,10 +76,10 @@ export function PlanActions({
     <>
       {/* Темп меняет расписание, а не состав тем, поэтому доступен и на подтверждённой программе. */}
       <button type="button" className="btn btn-text" onClick={onEditPace}>
-        Изменить темп
+        {t("Изменить темп")}
       </button>
 
-      <OverflowMenu label="Другие действия">
+      <OverflowMenu label={t("Другие действия")}>
         {(close) => (
           <>
             {editable ? (
@@ -90,7 +91,7 @@ export function PlanActions({
                   onEditStructure();
                 }}
               >
-                Править состав
+                {t("Править состав")}
               </button>
             ) : null}
             <button
@@ -101,7 +102,7 @@ export function PlanActions({
                 void rebuild();
               }}
             >
-              {rebuilding ? "Строю заново…" : "Построить заново"}
+              {rebuilding ? t("Строю заново…") : t("Построить заново")}
             </button>
           </>
         )}
@@ -109,12 +110,12 @@ export function PlanActions({
 
       {approvable ? (
         <button type="button" onClick={onApprove} disabled={approving} className="btn btn-main">
-          {approving ? "Секунду…" : "Начать заниматься"}
+          {approving ? t("Секунду…") : t("Начать заниматься")}
         </button>
       ) : null}
       {active ? (
         <Link href="/dashboard/plan" className="btn btn-main">
-          Открыть план
+          {t("Открыть план")}
         </Link>
       ) : null}
     </>

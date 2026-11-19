@@ -13,6 +13,7 @@
 import { BACKEND_URL } from "@/lib/api-utils";
 import { authFetch } from "@/lib/auth-fetch";
 import type { CalendarBlock } from "@/lib/studyplan-calendar";
+import { t } from "./i18n";
 
 const BASE = `${BACKEND_URL}/api`;
 
@@ -296,7 +297,7 @@ async function unwrap<T>(response: Response): Promise<T> {
     const message =
       (typeof record.error === "string" && record.error) ||
       (typeof record.detail === "string" && record.detail) ||
-      `Запрос не удался (${response.status})`;
+      t("Запрос не удался ({status})", { status: response.status });
     const code = typeof record.code === "string" ? record.code : "";
     throw new StudyplanApiError(message, response.status, code, body);
   }
@@ -644,7 +645,7 @@ export async function applyStudyWindows(
     }
   }
 
-  if (!template) throw new Error("Не удалось записать ритм.");
+  if (!template) throw new Error(t("Не удалось записать ритм."));
   return template;
 }
 

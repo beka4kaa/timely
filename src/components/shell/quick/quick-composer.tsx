@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Icon } from "@/components/shell/icons";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 import { useAskRail } from "@/contexts/ask-rail";
+import { t } from "@/lib/i18n";
 
 import { useQuick, withAttached } from "./quick-context";
 
@@ -22,7 +23,7 @@ export function QuickChips() {
       {attached.map((row) => (
         <span className="q-chip" key={row.label}>
           <span>{row.label}</span>
-          <button type="button" aria-label={`Убрать: ${row.label}`} onClick={() => detach(row.el)}>
+          <button type="button" aria-label={t("Убрать: {label}", { label: row.label })} onClick={() => detach(row.el)}>
             <Icon name="x" />
           </button>
         </span>
@@ -46,17 +47,17 @@ export function QuickTools() {
   return (
     <>
       {canPick ? (
-        <button className="q-tool q-pick" type="button" title="Указать урок курсором" onClick={startPick}>
+        <button className="q-tool q-pick" type="button" title={t("Указать урок курсором")} onClick={startPick}>
           <Icon name="cursor" />
-          <span>Указать</span>
+          <span>{t("Указать")}</span>
         </button>
       ) : null}
       {voiceSupported ? (
         <button
           className="q-tool q-voice"
           type="button"
-          title={listening ? "Хватит слушать" : "Сказать голосом"}
-          aria-label={listening ? "Хватит слушать" : "Сказать голосом"}
+          title={listening ? t("Хватит слушать") : t("Сказать голосом")}
+          aria-label={listening ? t("Хватит слушать") : t("Сказать голосом")}
           onClick={listening ? stopListening : listen}
         >
           <Icon name="wave" />
@@ -77,7 +78,7 @@ export function QuickComposer({
   onSubmit,
   busy = false,
   disabled = false,
-  placeholder = "Чем помочь?",
+  placeholder = t("Чем помочь?"),
   suggestions,
   left,
   onStop,
@@ -166,8 +167,8 @@ export function QuickComposer({
             rows={1}
             value={draft}
             disabled={disabled}
-            placeholder={listening ? "Слушаю…" : placeholder}
-            aria-label="Быстрый запрос"
+            placeholder={listening ? t("Слушаю…") : placeholder}
+            aria-label={t("Быстрый запрос")}
             autoComplete="off"
             style={{ maxHeight: MAX_HEIGHT }}
             onChange={(event) => setDraft(event.target.value)}
@@ -184,16 +185,16 @@ export function QuickComposer({
       <div className="q-tools">
         {left}
         <QuickTools />
-        <span className="q-hint">Esc, чтобы закрыть</span>
+        <span className="q-hint">{t("Esc, чтобы закрыть")}</span>
         {busy && onStop ? (
-          <button className="send q-send" type="button" aria-label="Остановить" title="Остановить" onClick={onStop}>
+          <button className="send q-send" type="button" aria-label={t("Остановить")} title={t("Остановить")} onClick={onStop}>
             <span className="q-stop" />
           </button>
         ) : (
           <button
             className="send q-send"
             type="button"
-            aria-label="Отправить"
+            aria-label={t("Отправить")}
             disabled={busy || disabled || (!draft.trim() && !attached.length)}
             onClick={() => send()}
           >

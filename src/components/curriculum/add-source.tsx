@@ -10,6 +10,7 @@
 "use client";
 
 import { useState } from "react";
+import { t } from "@/lib/i18n";
 
 import { CurriculumApiError, createMaterial } from "@/lib/curriculum-api";
 
@@ -61,7 +62,7 @@ export function AddSourceForm({
       setFailure(
         error instanceof CurriculumApiError
           ? error.message
-          : "Не получилось сохранить. Проверь интернет.",
+          : t("Не получилось сохранить. Проверь интернет."),
       );
     } finally {
       setBusy(false);
@@ -79,7 +80,7 @@ export function AddSourceForm({
         void submit();
       }}
     >
-      <div className="tabs" role="group" aria-label="Что добавить">
+      <div className="tabs" role="group" aria-label={t("Что добавить")}>
         {SOURCE_KINDS.map((item) => (
           <button
             key={item.kind}
@@ -87,16 +88,16 @@ export function AddSourceForm({
             aria-pressed={values.kind === item.kind}
             onClick={() => set("kind", item.kind)}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </div>
 
       <label className="field">
-        Название
+        {t("Название")}
         <input
           value={values.title}
-          placeholder={SOURCE_KINDS.find((item) => item.kind === values.kind)?.example}
+          placeholder={t(SOURCE_KINDS.find((item) => item.kind === values.kind)?.example ?? "Khan Academy · SAT Math")}
           aria-invalid={Boolean(errors.title)}
           onChange={(event) => set("title", event.target.value)}
         />
@@ -105,7 +106,7 @@ export function AddSourceForm({
 
       {values.kind === "link" ? (
         <label className="field">
-          Адрес
+          {t("Адрес")}
           <input
             value={values.url}
             placeholder="khanacademy.org/sat"
@@ -119,7 +120,7 @@ export function AddSourceForm({
 
       <div className="cur-form-two">
         <label className="field">
-          Сколько {unitsHint(values.kind)}
+          {t("Сколько {unit}", { unit: t(unitsHint(values.kind)) })}
           <input
             inputMode="numeric"
             value={values.totalUnits}
@@ -129,7 +130,7 @@ export function AddSourceForm({
           />
         </label>
         <label className="field">
-          Минут на одну
+          {t("Минут на одну")}
           <input
             inputMode="numeric"
             value={values.minutesPerUnit}
@@ -143,10 +144,10 @@ export function AddSourceForm({
       {errors.minutesPerUnit ? <p className="cur-err">{errors.minutesPerUnit}</p> : null}
 
       <label className="field">
-        Что по нему делать
+        {t("Что по нему делать")}
         <input
           value={values.note}
-          placeholder="необязательно"
+          placeholder={t("необязательно")}
           onChange={(event) => set("note", event.target.value)}
         />
       </label>
@@ -157,10 +158,10 @@ export function AddSourceForm({
         <span className="muted">{summary}</span>
         <span className="cur-acts">
           <button type="button" className="btn btn-text" disabled={busy} onClick={onClose}>
-            Отмена
+            {t("Отмена")}
           </button>
           <button type="submit" className="btn btn-main" disabled={busy}>
-            {busy ? "Сохраняю…" : "Добавить"}
+            {busy ? t("Сохраняю…") : t("Добавить")}
           </button>
         </span>
       </div>

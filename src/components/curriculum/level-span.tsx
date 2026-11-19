@@ -13,6 +13,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
+import { t } from "@/lib/i18n";
 import { useRef, useState } from "react";
 
 import type { Level } from "@/lib/curriculum-api";
@@ -154,7 +155,7 @@ export function LevelSpan({
       <motion.div
         role="slider"
         tabIndex={disabled ? -1 : 0}
-        aria-label={which === "current" ? "Текущий уровень" : "Целевой уровень"}
+        aria-label={which === "current" ? t("Текущий уровень") : t("Целевой уровень")}
         aria-valuemin={0}
         aria-valuemax={LAST_INDEX}
         aria-valuenow={index}
@@ -185,9 +186,12 @@ export function LevelSpan({
   return (
     <div className="wz-block">
       <div className="wz-level-head">
-        <p className="wz-label">Уровень</p>
+        <p className="wz-label">{t("Уровень")}</p>
         <p className="muted">
-          {levelLabel(value.current)}, цель: {levelLabel(value.target).toLowerCase()}
+          {t("{current}, цель: {target}", {
+            current: levelLabel(value.current),
+            target: levelLabel(value.target).toLowerCase(),
+          })}
         </p>
       </div>
 
@@ -221,8 +225,8 @@ export function LevelSpan({
       </div>
 
       <div className="wz-track-ends muted">
-        <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[0]]}</span>
-        <span>{LEVEL_SHORT_LABELS[LEVEL_ORDER[LAST_INDEX]]}</span>
+        <span>{t(LEVEL_SHORT_LABELS[LEVEL_ORDER[0]])}</span>
+        <span>{t(LEVEL_SHORT_LABELS[LEVEL_ORDER[LAST_INDEX]])}</span>
       </div>
 
       <p className="wz-hint">{spanCaption(value)}</p>

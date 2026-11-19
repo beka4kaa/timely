@@ -3,6 +3,7 @@
 // Всё считается из тех же записей, что пишет таймер: каждая завершённая фаза фокуса или
 // отдыха длиной от минуты. День — местный день браузера, как у карточек на странице таймера.
 
+import { getLocale, plural, t } from "./i18n";
 import { dayKey, isLongBreakRow, type FocusSessionRow } from "./pomodoro";
 import { clockTime, sessionKey } from "./pomodoro.logic";
 
@@ -42,7 +43,7 @@ export interface NameTotal {
 }
 
 function nameKey(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru").replace(/ё/g, "е");
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru").replace(/ё/g, "е"); // i18n-skip
 }
 
 /**
@@ -141,34 +142,25 @@ export function ribbonSpan(part: Pick<DayPart, "startedAt" | "seconds">, from: n
   return { left, width };
 }
 
-function plural(count: number, one: string, few: string, many: string): string {
-  const hundred = count % 100;
-  const ten = count % 10;
-  if (hundred >= 11 && hundred <= 14) return many;
-  if (ten === 1) return one;
-  if (ten >= 2 && ten <= 4) return few;
-  return many;
-}
-
 /** «2 часа 40 минут», «50 минут», «1 час». Полными словами: так читается без расшифровки. */
 export function durationWords(seconds: number): string {
   const minutes = Math.round(Math.max(0, seconds) / 60);
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  const hourText = hours ? `${hours} ${plural(hours, "час", "часа", "часов")}` : "";
-  const minuteText = rest || !hours ? `${rest} ${plural(rest, "минута", "минуты", "минут")}` : "";
+  const hourText = hours ? plural(hours, "{n} час", "{n} часа", "{n} часов") : "";
+  const minuteText = rest || !hours ? plural(rest, "{n} минута", "{n} минуты", "{n} минут") : "";
   return [hourText, minuteText].filter(Boolean).join(" ");
 }
 
 export function blocksWord(count: number): string {
-  return `${count} ${plural(count, "блок", "блока", "блоков")}`;
+  return plural(count, "{n} блок", "{n} блока", "{n} блоков");
 }
 
-const MONTHS = [
-  "января", "февраля", "марта", "апреля", "мая", "июня",
+const MONTHS = [ // i18n-skip
+  "января", "февраля", "марта", "апреля", "мая", "июня", // i18n-skip
   "июля", "августа", "сентября", "октября", "ноября", "декабря",
-];
-const WEEKDAYS = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
+]; // i18n-skip
+const WEEKDAYS = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]; // i18n-skip
 
 function parseKey(key: string): Date {
   const [year, month, day] = key.split("-").map(Number);
@@ -179,10 +171,15 @@ function parseKey(key: string): Date {
 export function dayTitle(key: string, today: Date = new Date()): string {
   const todayKey = dayKey(today);
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
-  if (key === todayKey) return "Сегодня";
-  if (key === dayKey(yesterday)) return "Вчера";
+  if (key === todayKey) return t("Сегодня");
+  if (key === dayKey(yesterday)) return t("Вчера");
   const date = parseKey(key);
   const year = date.getFullYear() === today.getFullYear() ? "" : ` ${date.getFullYear()}`;
+  if (getLocale() === "en") {
+    const weekday = date.toLocaleDateString("en-GB", { weekday: "long" });
+    const month = date.toLocaleDateString("en-GB", { month: "long" });
+    return `${weekday}, ${date.getDate()} ${month}${year}`;
+  }
   return `${WEEKDAYS[date.getDay()]}, ${date.getDate()} ${MONTHS[date.getMonth()]}${year}`;
 }
 

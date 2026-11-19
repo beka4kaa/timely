@@ -7,6 +7,7 @@ import { memo, useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
 import { bookLabel } from "@/lib/book-label";
+import { t } from "@/lib/i18n";
 import type { AskCitation } from "@/lib/curriculum-api";
 import { speak, speechSupported, stopSpeaking, useSpeaking } from "@/lib/speech";
 import { speakableText } from "@/lib/speakable";
@@ -71,7 +72,7 @@ export const AskTurn = memo(function AskTurn({
 
       {turn.content ? (
         <div className="m-ai">
-          {outsideBook ? <p className="m-outside">В книге этого нет, отвечаю своими словами</p> : null}
+          {outsideBook ? <p className="m-outside">{t("В книге этого нет, отвечаю своими словами")}</p> : null}
           <MarkdownMessage content={turn.content} variant="page" />
           {turn.citations?.length ? <Citations items={turn.citations} onCite={onCite} /> : null}
         </div>
@@ -141,16 +142,16 @@ function AnswerBar({
 
   return (
     <div className="ans-bar">
-      <button className="ans-act" type="button" aria-label="Скопировать ответ" title="Скопировать" onClick={() => void copy()}>
+      <button className="ans-act" type="button" aria-label={t("Скопировать ответ")} title={t("Скопировать")} onClick={() => void copy()}>
         <Icon name={copied ? "check" : "copy"} />
       </button>
       {canSpeak ? (
         <button
           className="ans-act"
           type="button"
-          aria-label={speaking ? "Остановить чтение" : "Прочитать вслух"}
+          aria-label={speaking ? t("Остановить чтение") : t("Прочитать вслух")}
           aria-pressed={speaking}
-          title={speaking ? "Остановить" : "Прочитать вслух"}
+          title={speaking ? t("Остановить") : t("Прочитать вслух")}
           onClick={() => (speaking ? stopSpeaking() : speak(id, speakableText(turn.content)))}
         >
           <Icon name={speaking ? "stop" : "volume"} />
@@ -161,9 +162,9 @@ function AnswerBar({
           <button
             className="ans-act ans-rate"
             type="button"
-            aria-label="Хороший ответ"
+            aria-label={t("Хороший ответ")}
             aria-pressed={turn.rating === 1}
-            title="Хороший ответ"
+            title={t("Хороший ответ")}
             onClick={() => onRate(index, 1)}
           >
             <Icon name="thumb-up" />
@@ -171,9 +172,9 @@ function AnswerBar({
           <button
             className="ans-act ans-rate"
             type="button"
-            aria-label="Плохой ответ"
+            aria-label={t("Плохой ответ")}
             aria-pressed={turn.rating === -1}
-            title="Плохой ответ"
+            title={t("Плохой ответ")}
             onClick={() => onRate(index, -1)}
           >
             <Icon name="thumb-down" />
@@ -181,7 +182,7 @@ function AnswerBar({
         </>
       ) : null}
       {onRegenerate ? (
-        <button className="ans-act" type="button" aria-label="Ответить заново" title="Ответить заново" onClick={onRegenerate}>
+        <button className="ans-act" type="button" aria-label={t("Ответить заново")} title={t("Ответить заново")} onClick={onRegenerate}>
           <Icon name="refresh" />
         </button>
       ) : null}
@@ -201,7 +202,7 @@ function TurnError({ raw, onRetry }: { raw: string; onRetry?: () => void }) {
       <p>{askErrorText(raw)}</p>
       {onRetry ? (
         <button className="btn btn-line" type="button" onClick={onRetry}>
-          Повторить
+          {t("Повторить")}
         </button>
       ) : null}
     </div>
@@ -245,14 +246,14 @@ function Citations({
     <div className="m-cites">
       {books.map((book) => (
         <p key={book.documentId}>
-          <span>{book.title || "Источник"}: </span>
+          <span>{book.title || t("Источник")}: </span>
           {book.spots.map((spot, index) => (
             <span key={spot.label}>
               {index ? ", " : null}
               <button
                 className="link"
                 type="button"
-                title="Показать в источниках"
+                title={t("Показать в источниках")}
                 onClick={() => onCite(book.documentId, spot.page)}
               >
                 {spot.label}

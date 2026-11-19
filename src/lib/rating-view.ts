@@ -2,6 +2,7 @@
 // Сервер отдаёт рейтинг страницами, а фильтр и места считаются здесь по всему списку,
 // без React и сети: `collectBoard` собирает страницы в один список.
 
+import { msg, t } from "./i18n";
 import type { LeaderboardPage, LeaderboardUser } from "./contest-api";
 
 /**
@@ -24,16 +25,18 @@ export async function collectBoard(
 }
 
 /** Коды стран из `CustomUser.COUNTRY_CHOICES`. Незнакомый код показываем как есть. */
-const COUNTRY_NAMES: Record<string, string> = { KZ: "Казахстан", RU: "Россия", US: "США" };
-const COUNTRY_IN: Record<string, string> = { KZ: "в Казахстане", RU: "в России", US: "в США" };
+const COUNTRY_NAMES: Record<string, string> = { KZ: msg("Казахстан"), RU: msg("Россия"), US: msg("США") };
+const COUNTRY_IN: Record<string, string> = { KZ: msg("в Казахстане"), RU: msg("в России"), US: msg("в США") };
 
 export function countryName(code: string | null | undefined): string {
   if (!code) return "";
-  return COUNTRY_NAMES[code] ?? code;
+  const name = COUNTRY_NAMES[code];
+  return name ? t(name) : code;
 }
 
 export function countryIn(code: string): string {
-  return COUNTRY_IN[code] ?? `в стране ${code}`;
+  const name = COUNTRY_IN[code];
+  return name ? t(name) : t("в стране {code}", { code });
 }
 
 export interface BoardFilter {

@@ -9,6 +9,7 @@ import { useRef, useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useAskRail } from "@/contexts/ask-rail";
+import { t } from "@/lib/i18n";
 import { REVIEW_RATES, intervalLabel } from "@/lib/mind-srs";
 import {
   dayHeading,
@@ -69,11 +70,14 @@ export function TestTile({
         onClick={() =>
           prompt({
             target: "book",
-            text: `Помоги подготовиться: ${first.title}, ${dayMonthLabel(first.dateKey)}. Что повторить в первую очередь?`,
+            text: t("Помоги подготовиться: {title}, {date}. Что повторить в первую очередь?", {
+              title: first.title,
+              date: dayMonthLabel(first.dateKey),
+            }),
           })
         }
       >
-        Подготовиться
+        {t("Подготовиться")}
       </button>
     </section>
   );
@@ -87,17 +91,20 @@ export function ContestTile({ contest, today }: { contest: NextContest | null; t
     <Link
       className="tile card quiet soon"
       href={`/dashboard/arena/solve/${contest.id}`}
-      data-attach={`Контест: ${contest.title}`}
+      data-attach={t("Контест: {title}", { title: contest.title })}
     >
       <h2>
         {contest.running
-          ? "Идёт контест"
-          : `${dayHeading(contest.dateKey, today)} в ${formatMinutes(contest.minutes)}`}
+          ? t("Идёт контест")
+          : t("{day} в {time}", {
+              day: dayHeading(contest.dateKey, today),
+              time: formatMinutes(contest.minutes),
+            })}
       </h2>
       <ul>
         <li>{contest.title}</li>
       </ul>
-      <span className="go">{contest.running ? "Участвовать" : "Открыть"}</span>
+      <span className="go">{contest.running ? t("Участвовать") : t("Открыть")}</span>
     </Link>
   );
 }
@@ -118,7 +125,7 @@ export function HomeworkTile({
       <h2>{title}</h2>
       <ul>
         {homework.items.map((item) => (
-          <li key={item.id} data-attach={`Задание: ${item.subject}, ${item.text}`.slice(0, 120)}>
+          <li key={item.id} data-attach={t("Задание: {subject}, {text}", { subject: item.subject, text: item.text }).slice(0, 120)}>
             {item.subject}
             <small>{item.text}</small>
           </li>
@@ -165,7 +172,7 @@ export function WeakTile({
       const days = typeof updated?.intervalDays === "number" ? updated.intervalDays : null;
       focusDone.current = topic.id;
       setReviewed((current) => ({ ...current, [topic.id]: { days } }));
-      setAnnounce(`«${topic.name}»: записали.`);
+      setAnnounce(t("«{name}»: записали.", { name: topic.name }));
       if (rating === "GOOD" || rating === "EASY") mascot.hop(0.7);
       // Список и счётчик в панели обновятся, когда ученик успеет прочитать
       // «записали». Тема при этом может уйти из списка вместе с фокусом на
@@ -193,18 +200,18 @@ export function WeakTile({
         {announce}
       </p>
       <h2 id="weak-title" tabIndex={-1}>
-        {due.length || !shown.length ? "Пора повторить" : "Что подтянуть"}
+        {due.length || !shown.length ? t("Пора повторить") : t("Что подтянуть")}
       </h2>
 
       {topics.data === undefined && topics.error ? (
-        <p className="tile-text">Темы не загрузились. Попробуем ещё раз чуть позже.</p>
+        <p className="tile-text">{t("Темы не загрузились. Попробуем ещё раз чуть позже.")}</p>
       ) : topics.data === undefined ? (
         <div aria-hidden="true">
           <span className="now-skel is-tile" />
           <span className="now-skel is-tile" />
         </div>
       ) : !shown.length ? (
-        <p className="tile-text">Здесь появятся темы, которые пора повторить.</p>
+        <p className="tile-text">{t("Здесь появятся темы, которые пора повторить.")}</p>
       ) : (
         <ul>
           {shown.map((topic) => {
@@ -212,11 +219,13 @@ export function WeakTile({
             const state = reviewed[topic.id];
             const answered = typeof state === "object" ? state : null;
             return (
-              <li key={topic.id} id={`topic-${topic.id}`} data-attach={`Тема: ${topic.name}`}>
+              <li key={topic.id} id={`topic-${topic.id}`} data-attach={t("Тема: {name}", { name: topic.name })}>
                 {topic.name}
                 {!answered && late !== null && late > 0 ? (
                   <small>
-                    просрочено на {late} {plural(late, ["день", "дня", "дней"])}
+                    {t("просрочено на {days}", {
+                      days: `${late} ${plural(late, ["день", "дня", "дней"])}`,
+                    })}
                   </small>
                 ) : null}
                 {active?.id === topic.id ? (
@@ -249,13 +258,13 @@ export function WeakTile({
                     }}
                   >
                     {answered.days === null
-                      ? "Записали"
-                      : `Записали, повторим ${intervalLabel(answered.days)}`}
+                      ? t("Записали")
+                      : t("Записали, повторим {when}", { when: intervalLabel(answered.days) })}
                   </p>
                 ) : null}
                 {failed === topic.id ? (
                   <p className="tile-fail" role="alert">
-                    Не получилось записать, попробуй ещё раз.
+                    {t("Не получилось записать, попробуй ещё раз.")}
                   </p>
                 ) : null}
               </li>
@@ -265,7 +274,7 @@ export function WeakTile({
       )}
 
       <Link className="go" href="/dashboard/weaknesses">
-        {shown.length ? "Все темы" : "Слабые темы"}
+        {shown.length ? t("Все темы") : t("Слабые темы")}
       </Link>
     </section>
   );

@@ -10,6 +10,7 @@
 import type { IconName } from "@/components/shell/icons";
 
 import { isOpenGoal, toneOf } from "../goals/goal-logic";
+import { dateLocale, getLocale, msg, t } from "../../lib/i18n";
 
 export type ChatModeKey = "plain" | "plan" | "guide" | "ideas" | "check";
 
@@ -30,9 +31,9 @@ export const CHAT_MODES: readonly ChatMode[] = [
   {
     key: "plain",
     icon: "zap",
-    name: "Обычный",
-    note: "Просто поболтать и спросить что угодно",
-    hint: "Спроси о чём угодно",
+    name: msg("Обычный"),
+    note: msg("Просто поболтать и спросить что угодно"),
+    hint: msg("Спроси о чём угодно"),
     // «Подробнее» убрано: под каждым ответом теперь свои действия (скопировать, озвучить,
     // оценить, ответить заново), а уточнить можно просто вопросом.
     follow: [],
@@ -40,33 +41,33 @@ export const CHAT_MODES: readonly ChatMode[] = [
   {
     key: "plan",
     icon: "plan",
-    name: "Планирование",
-    note: "Выбрать цель и разложить путь к ней по дням",
-    hint: "Что нужно успеть?",
+    name: msg("Планирование"),
+    note: msg("Выбрать цель и разложить путь к ней по дням"),
+    hint: msg("Что нужно успеть?"),
     follow: [],
   },
   {
     key: "guide",
     icon: "compass",
-    name: "Наводящая помощь",
-    note: "Не решает за тебя, ведёт подсказками",
-    hint: "Какую задачу разберём?",
-    follow: ["Дай подсказку", "Покажи решение"],
+    name: msg("Наводящая помощь"),
+    note: msg("Не решает за тебя, ведёт подсказками"),
+    hint: msg("Какую задачу разберём?"),
+    follow: [msg("Дай подсказку"), msg("Покажи решение")],
   },
   {
     key: "ideas",
     icon: "bulb",
-    name: "Брейншторм",
-    note: "Ищет идеи вместе с тобой, текст пишешь сам",
-    hint: "О чём подумаем?",
-    follow: ["Подкинь идею"],
+    name: msg("Брейншторм"),
+    note: msg("Ищет идеи вместе с тобой, текст пишешь сам"),
+    hint: msg("О чём подумаем?"),
+    follow: [msg("Подкинь идею")],
   },
   {
     key: "check",
     icon: "target",
-    name: "Проверь меня",
-    note: "Спрашивает и смотрит, что ты помнишь",
-    hint: "Какую тему проверить?",
+    name: msg("Проверь меня"),
+    note: msg("Спрашивает и смотрит, что ты помнишь"),
+    hint: msg("Какую тему проверить?"),
     follow: [],
   },
 ];
@@ -131,26 +132,29 @@ export function goalTone(goal: Pick<PlanGoal, "id" | "tone">): string {
 }
 
 const MONTHS = [
-  "января",
-  "февраля",
-  "марта",
-  "апреля",
-  "мая",
-  "июня",
-  "июля",
-  "августа",
-  "сентября",
-  "октября",
-  "ноября",
-  "декабря",
+  "января", // i18n-skip
+  "февраля", // i18n-skip
+  "марта", // i18n-skip
+  "апреля", // i18n-skip
+  "мая", // i18n-skip
+  "июня", // i18n-skip
+  "июля", // i18n-skip
+  "августа", // i18n-skip
+  "сентября", // i18n-skip
+  "октября", // i18n-skip
+  "ноября", // i18n-skip
+  "декабря", // i18n-skip
 ];
 
 /** «6 ноября», а если год другой, «1 сентября 2027». Дата приходит как `ГГГГ-ММ-ДД`. */
 export function formatDue(iso: string | null | undefined, now: Date = new Date()): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   if (!match) return null;
-  const month = MONTHS[Number(match[2]) - 1];
-  if (!month) return null;
+  const month =
+    getLocale() === "en"
+      ? new Date(2000, Number(match[2]) - 1, 1).toLocaleDateString(dateLocale(), { month: "long" })
+      : MONTHS[Number(match[2]) - 1];
+  if (!month || Number(match[2]) < 1 || Number(match[2]) > 12) return null;
   const date = `${Number(match[3])} ${month}`;
   return Number(match[1]) === now.getFullYear() ? date : `${date} ${match[1]}`;
 }
@@ -159,8 +163,8 @@ export function formatDue(iso: string | null | undefined, now: Date = new Date()
 export function goalQuestion(goal: PlanGoal, now: Date = new Date()): string {
   const due = formatDue(goalDue(goal), now);
   return due
-    ? `Цель: «${goal.title}», срок ${due}. Разложи на шаги.`
-    : `Цель: «${goal.title}». Разложи на шаги.`;
+    ? t("Цель: «{title}», срок {due}. Разложи на шаги.", { title: goal.title, due })
+    : t("Цель: «{title}». Разложи на шаги.", { title: goal.title });
 }
 
 const STEPS_LIMIT = 900;
