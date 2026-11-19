@@ -303,3 +303,19 @@ class AssistantRulesProbe:
         from curriculum.assistant_tools import ASSISTANT_RULES, assistant_rules_text
 
         return assistant_rules_text(datetime.date(2026, 11, 11))
+
+
+class AnswerLanguageTests(TestCase):
+    """Интерфейс на английском: тьютор отвечает по-английски, на русском всё как было."""
+
+    def _system(self, language: str | None) -> str:
+        context = build_ask_context(goal=None, question="What is momentum?")
+        if language is not None:
+            context.language = language
+        return " ".join(m["content"] for m in context.messages() if m["role"] == "system")
+
+    def test_английский_интерфейс_просит_ответ_по_английски(self):
+        self.assertIn("English", self._system("en"))
+
+    def test_по_умолчанию_правила_языка_нет(self):
+        self.assertNotIn("Reply in English", self._system(None))

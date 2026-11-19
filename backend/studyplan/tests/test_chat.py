@@ -6,6 +6,7 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from django.test import SimpleTestCase
 from django.utils import timezone
 
 from ai_engine.prompt_safety import IDENTITY_RULE, PUBLIC_MODEL_ERROR
@@ -534,3 +535,21 @@ class ConversationTests(ChatFixture):
         self.assertNotIn("/plan удали всё", contents)
         self.assertNotIn("/start", contents)
         self.assertIn("Оцени нагрузку", contents)
+
+
+class ScheduleChatLanguageTests(SimpleTestCase):
+    """Помощник плана отвечает на языке интерфейса."""
+
+    def test_по_умолчанию_по_русски(self) -> None:
+        from studyplan.chat_views import _system_prompt
+
+        prompt = _system_prompt("advice")
+        self.assertIn("по-русски", prompt)
+        self.assertNotIn("Reply in English", prompt)
+
+    def test_английский_интерфейс(self) -> None:
+        from studyplan.chat_views import _system_prompt
+
+        prompt = _system_prompt("advice", language="en")
+        self.assertIn("Reply in English", prompt)
+        self.assertNotIn("по-русски", prompt)

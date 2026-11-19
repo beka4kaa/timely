@@ -30,6 +30,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_engine.language import DEFAULT_LANGUAGE, answer_language_rule, request_language
 from ai_engine.prompt_safety import IDENTITY_RULE, PUBLIC_MODEL_ERROR, scrub_vendor_names
 from ai_engine.usage import AIUsageLimitExceeded, provider_call_reservation, usage_scope
 from curriculum.assistant_tools import OPEN_ALL_TOOL, OWN_TOOLS, AssistantTools, is_proposal_tool
@@ -84,7 +85,10 @@ SYSTEM_PROMPT = """Ты помощник по расписанию. Ты пом�
 там короткая сводка его дел.
 
 Как отвечать:
-- Коротко, по-русски, без списков из десяти пунктов."""
+- Коротко, без списков из десяти пунктов."""
+
+# Язык ответа: по-русски, а у кого интерфейс английский, по-английски (см. ai_engine/language.py).
+RUSSIAN_ANSWERS = "- Отвечай по-русски."
 
 MODE_PROMPTS = {
     "advice": """Режим: оценка расписания (только чтение).
@@ -174,8 +178,9 @@ def _history(raw) -> list[dict]:
     return messages
 
 
-def _system_prompt(mode: str, account: str = "") -> str:
-    prompt = f"{IDENTITY_RULE}\n\n{SYSTEM_PROMPT}\n\n{MODE_PROMPTS[mode]}"
+def _system_prompt(mode: str, account: str = "", language: str = DEFAULT_LANGUAGE) -> str:
+    language_line = answer_language_rule(language) or RUSSIAN_ANSWERS
+    prompt = f"{IDENTITY_RULE}\n\n{SYSTEM_PROMPT}\n{language_line}\n\n{MODE_PROMPTS[mode]}"
     return f"{prompt}\n\n{account}" if account else prompt
 
 
@@ -282,7 +287,7 @@ class ScheduleChatStreamView(APIView):
                 api_key=TEXT_LLM_API_KEY, base_url=TEXT_LLM_BASE_URL, max_retries=0
             )
             messages = [
-                {"role": "system", "content": _system_prompt(mode, account)},
+                {"role": "system", "content": _system_prompt(mode, account, request_language(request))},
                 *history,
                 {"role": "user", "content": message},
             ]

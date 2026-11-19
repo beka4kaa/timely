@@ -24,6 +24,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ai_engine.language import request_language
 from ai_engine.prompt_safety import PUBLIC_MODEL_ERROR, scrub_stream
 from ai_engine.usage import usage_scope
 
@@ -101,6 +102,7 @@ class SubjectAskStreamView(APIView):
             history=request.data.get("history"),
             mode=request.data.get("mode"),
         )
+        context.language = request_language(request)
         # Инструменты работают от имени того, кто спрашивает, и только от него.
         assistant = AssistantTools(user_email, request.data.get("timezone")) if user_email else None
         if assistant is not None:

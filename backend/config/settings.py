@@ -112,6 +112,8 @@ CORS_ALLOW_HEADERS = [
     'authorization',
     'accept',
     'origin',
+    # Язык интерфейса ученика: на каком языке отвечать (ai_engine/language.py).
+    'x-timely-lang',
 ]
 
 # Who is calling (config.middleware). The Next.js app signs tokens with this

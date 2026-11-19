@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 from django.conf import settings
 
+from ai_engine.language import DEFAULT_LANGUAGE, answer_language_rule
 from ai_engine.prompt_safety import IDENTITY_RULE
 
 from .ask_modes import DEFAULT_MODE, mode_instructions, normalize_mode
@@ -100,6 +101,8 @@ class AskContext:
     mode: str = DEFAULT_MODE
     # Что он умеет в делах ученика: см. `assistant_tools.py`. Пусто, если инструментов нет.
     assistant_rules: str = ""
+    # Язык интерфейса ученика: см. `ai_engine/language.py`.
+    language: str = DEFAULT_LANGUAGE
 
     @property
     def grounded(self) -> bool:
@@ -115,6 +118,9 @@ class AskContext:
         instructions = mode_instructions(self.mode)
         if self.assistant_rules:
             instructions = f"{instructions}\n\n{self.assistant_rules}"
+        language_rule = answer_language_rule(self.language)
+        if language_rule:
+            instructions = f"{instructions}\n\n{language_rule}"
         if not self.has_library:
             messages = [
                 {"role": "system", "content": f"{IDENTITY_RULE}\n\n{general_system_prompt()}\n\n{instructions}"}
