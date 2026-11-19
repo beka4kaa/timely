@@ -24,10 +24,12 @@ import { Icon } from "@/components/shell/icons";
 import { useSmoothInput } from "@/components/shell/smooth-input";
 import { BOOKS_ENABLED } from "@/config/features";
 import { chatContextHint } from "@/lib/curriculum-books";
-import type { AskOptions } from "@/lib/curriculum-api";
+import { ASK_LEVELS, gaugeAngle, type AskLevel } from "@/lib/ask-level";
+import { withHeard } from "@/lib/dictation";
 
 import { CHAT_MODES, type ChatMode, type ChatModeKey } from "./chat-modes";
 import { contextPercent, contextUsed, countLabel, shortCount, type AskUsage } from "./chat-usage";
+import { useDictation } from "./use-dictation";
 
 const MAX_HEIGHT = 200;
 
@@ -56,7 +58,14 @@ export const Composer = forwardRef<
   }
 >(function Composer({ onSubmit, busy, disabled = false, placeholder, onStop, onCycleMode, tools, status }, ref) {
   const [draft, setDraft] = useState("");
+  // На телефоне, пока в поле не пишут, оно сжато в одну строку; нажатие раскрывает его
+  // вместе с режимом и переключателем Instant / Medium / High. На компьютере всегда раскрыто.
+  const [active, setActive] = useState(false);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
+  // Голосовой ввод дописывает сказанное к тому, что было набрано до нажатия.
+  const spokenFrom = useRef("");
+  const dictation = useDictation((text) => setDraft(withHeard(spokenFrom.current, text)));
+  const compact = !active && !draft && !dictation.listening;
   useSmoothInput(fieldRef);
 
   // Поле растёт под текст, дальше прокручивается.
@@ -94,9 +103,19 @@ export const Composer = forwardRef<
   return (
     <form
       className="composer glass chat-composer"
+      data-compact={compact || undefined}
       onSubmit={(event) => {
         event.preventDefault();
         send();
+      }}
+      onFocus={() => setActive(true)}
+      onBlur={(event) => {
+        // Фокус ушёл на кнопку или меню внутри поля — оно остаётся раскрытым.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setActive(false);
+      }}
+      onClick={(event) => {
+        // Сжатое поле целиком — одна кнопка: нажатие мимо текста всё равно ставит курсор.
+        if (compact && event.target === event.currentTarget) fieldRef.current?.focus();
       }}
     >
       <span className="ti-host">
@@ -105,7 +124,7 @@ export const Composer = forwardRef<
           ref={fieldRef}
           rows={1}
           value={draft}
-          placeholder={placeholder}
+          placeholder={dictation.listening ? "Слушаю…" : placeholder}
           aria-label="Сообщение"
           autoComplete="off"
           style={{ maxHeight: MAX_HEIGHT }}
@@ -127,8 +146,29 @@ export const Composer = forwardRef<
       <div className="cmp-tools">
         {tools}
         {status}
-        {/* Разные узлы, а не один с другим `type`: кнопка, ставшая `submit` прямо во время
-            нажатия, отправила бы форму. */}
+        {/* Микрофон отдельной кнопкой: браузер слушает фразу и дописывает её в поле */}
+        {dictation.supported ? (
+          <button
+            className="mic-btn"
+            type="button"
+            aria-label={dictation.listening ? "Хватит слушать" : "Сказать голосом"}
+            aria-pressed={dictation.listening}
+            title={dictation.listening ? "Хватит слушать" : "Сказать голосом"}
+            disabled={disabled}
+            onClick={() => {
+              if (dictation.listening) {
+                dictation.stop();
+                return;
+              }
+              spokenFrom.current = draft;
+              dictation.start();
+            }}
+          >
+            <Icon name="mic" />
+          </button>
+        ) : null}
+        {/* Круг цвета акцента со стрелкой; во время ответа — стоп. Разные узлы, а не один
+            с другим `type`: кнопка, ставшая `submit` прямо во время нажатия, отправила бы форму. */}
         {busy ? (
           <button
             key="stop"
@@ -253,71 +293,88 @@ export function ModePicker({
   );
 }
 
-/** Модель и уровень рассуждения: один выбор, потому что решают они одно и то же. */
-export function ModelPicker({
-  options,
-  model,
-  reasoning,
-  onModel,
-  onReasoning,
-}: {
-  options: AskOptions;
-  model: string;
-  reasoning: string;
-  onModel: (key: string) => void;
-  onReasoning: (key: string) => void;
-}) {
-  const menu = useMenu();
-  const currentModel = options.models.find((row) => row.key === model) ?? options.models[0];
-  const currentLevel = options.reasoning.find((row) => row.key === reasoning) ?? options.reasoning[0];
+/**
+ * Насколько глубоко думать: Instant, Medium или High. Один переключатель вместо выбора модели
+ * и рассуждения (что за ними стоит — в lib/ask-level). Подложка выбранного положения едет.
+ */
+export function LevelToggle({ level, onPick }: { level: AskLevel; onPick: (level: AskLevel) => void }) {
+  const index = Math.max(0, ASK_LEVELS.findIndex((row) => row.key === level));
+  const move = (step: number) => {
+    const next = ASK_LEVELS[(index + step + ASK_LEVELS.length) % ASK_LEVELS.length];
+    onPick(next.key);
+  };
   return (
-    <div className="mode-wrap model-wrap" ref={menu.wrapRef}>
+    <div
+      className="lvl"
+      role="radiogroup"
+      aria-label="Насколько глубоко думать"
+      style={{ "--i": index } as CSSProperties}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+        event.preventDefault();
+        move(event.key === "ArrowRight" ? 1 : -1);
+        const group = event.currentTarget;
+        window.requestAnimationFrame(() => group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
+      }}
+    >
+      {ASK_LEVELS.map((row) => (
+        <button
+          key={row.key}
+          type="button"
+          role="radio"
+          aria-checked={row.key === level}
+          tabIndex={row.key === level ? 0 : -1}
+          title={row.note}
+          onClick={() => onPick(row.key)}
+        >
+          {row.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Спидометр: стрелка показывает, насколько глубоко думает тьютор. */
+function Gauge({ level }: { level: AskLevel }) {
+  return (
+    <svg className="gauge" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.64 17.25A8.5 8.5 0 1 1 19.36 17.25" />
+      <path className="gauge-needle" d="M12 13V7.2" style={{ transform: `rotate(${gaugeAngle(level)}deg)` }} />
+      <circle cx="12" cy="13" r="1.7" />
+    </svg>
+  );
+}
+
+/**
+ * Кнопка-спидометр цвета акцента; нажатие открывает над полем переключатель Instant /
+ * Medium / High. После выбора окошко закрывается само, когда подложка доедет.
+ */
+export function LevelPicker({ level, onPick }: { level: AskLevel; onPick: (level: AskLevel) => void }) {
+  const menu = useMenu();
+  const current = ASK_LEVELS.find((row) => row.key === level) ?? ASK_LEVELS[1];
+  return (
+    <div className="mode-wrap lvl-wrap" ref={menu.wrapRef}>
       <button
-        className="mode-pick model-pick"
+        className="gauge-btn"
         type="button"
-        aria-haspopup="menu"
+        aria-haspopup="true"
         aria-expanded={menu.open}
-        title={`${currentModel.name}, рассуждение: ${currentLevel.name.toLowerCase()}`}
+        aria-label={`Насколько глубоко думать: ${current.name}`}
+        title={current.name}
         onClick={menu.toggle}
       >
-        <span>{currentModel.name}</span>
-        <Icon name="chev-d" className="chev" />
+        <Gauge level={level} />
       </button>
       {menu.open ? (
-        <div className="menu mode-menu model-menu" role="menu" aria-label="Модель и рассуждение" onKeyDown={menu.onItemsKey}>
-          <p className="model-head">Модель</p>
-          {options.models.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={row.key === currentModel.key}
-              onClick={() => onModel(row.key)}
-            >
-              <span>
-                <b>{row.name}</b>
-                <small>{row.note}</small>
-              </span>
-              <Icon name="check" className="ok" />
-            </button>
-          ))}
-          <p className="model-head">Рассуждение</p>
-          {options.reasoning.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={row.key === currentLevel.key}
-              onClick={() => onReasoning(row.key)}
-            >
-              <span>
-                <b>{row.name}</b>
-                <small>{row.note}</small>
-              </span>
-              <Icon name="check" className="ok" />
-            </button>
-          ))}
-          <p className="mode-hint">У этих моделей рассуждение выключить нельзя</p>
+        <div className="menu lvl-menu">
+          <LevelToggle
+            level={level}
+            onPick={(next) => {
+              onPick(next);
+              window.setTimeout(menu.close, 280);
+            }}
+          />
+          <p className="lvl-note">{current.note}</p>
         </div>
       ) : null}
     </div>

@@ -17,9 +17,18 @@
   --t-muted: #6a6a70;
   --t-faint: #98989e;
   --t-on-ink: #ffffff;
-  --t-accent: #111112;
+  /* Цвет акцента выбирают в настройках (lib/accent.ts), по умолчанию синий. У каждого
+     цвета пара: здесь для светлой темы, в .dark чуть светлее для тёмной. */
+  --acc-blue: #1a73f0;
+  --acc-violet: #7051e8;
+  --acc-green: #16935a;
+  --acc-orange: #e0660f;
+  --acc-pink: #d93a73;
+  --acc-mono: #111112;
+  --acc-mono-on: #ffffff;
+  --t-accent: var(--acc-blue);
   --t-on-accent: #ffffff;
-  --t-accent-soft: rgba(0, 0, 0, 0.06);
+  --t-accent-soft: color-mix(in srgb, var(--t-accent) 12%, transparent);
   --t-ok: #1f7a55;
   --t-warn: #c0392f;
 
@@ -91,9 +100,13 @@
     --t-muted: #8d8d93;
     --t-faint: #66666c;
     --t-on-ink: #111112;
-    --t-accent: #d8d8db;
-    --t-on-accent: #111112;
-    --t-accent-soft: rgba(255, 255, 255, 0.09);
+    --acc-blue: #3d8bff;
+    --acc-violet: #9b87ff;
+    --acc-green: #34c27a;
+    --acc-orange: #ff8a3d;
+    --acc-pink: #ff6b9d;
+    --acc-mono: #d8d8db;
+    --acc-mono-on: #111112;
     --t-ok: #7fcfa6;
     --t-warn: #ef8f86;
 
@@ -286,3 +299,10 @@
 
   }
 }
+
+/* Выбранный цвет акцента. Синий — без атрибута; атрибут ставит скрипт в <head> до отрисовки. */
+html[data-accent="violet"] { --t-accent: var(--acc-violet); }
+html[data-accent="green"] { --t-accent: var(--acc-green); }
+html[data-accent="orange"] { --t-accent: var(--acc-orange); }
+html[data-accent="pink"] { --t-accent: var(--acc-pink); }
+html[data-accent="mono"] { --t-accent: var(--acc-mono); --t-on-accent: var(--acc-mono-on); }

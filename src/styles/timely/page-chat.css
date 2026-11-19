@@ -8,9 +8,54 @@
 }
 .chat-composer textarea:focus-visible { outline: none; }
 .chat-composer textarea::placeholder { color: var(--t-muted); }
-/* Длинный текст не упирается в край стекла, а отправка остаётся на своём месте */
-.chat-composer { padding-right: 14px; }
-.chat-composer .cmp-tools { margin-right: -6px; }
+/* Текст не упирается в край стекла; круг справа стоит в 8 px от края, как и снизу */
+.chat-composer { padding: 12px 8px 8px 16px; }
+.chat-composer .ti-host { padding-right: 8px; }
+
+/* Справа: микрофон и круг цвета акцента со стрелкой. Круг всегда синий (акцентный); пока
+   отправлять нечего, стрелка чуть бледнее. corner-shape: round — иначе общее «яблочное»
+   скругление (ui.css) делает из круга квадрат со скруглёнными углами. */
+.chat-composer .send { width: 34px; height: 34px; border-radius: 50%; corner-shape: round; }
+.chat-composer .send .i { width: 17px; height: 17px; stroke-width: 2.2; }
+.chat-composer .send:disabled { opacity: 1; filter: none; }
+.chat-composer .send:disabled .i { opacity: 0.55; }
+.mic-btn {
+  display: grid; place-items: center; flex: none; width: 34px; height: 34px; margin-left: auto;
+  border-radius: 50%; corner-shape: round; color: var(--t-muted); transition: background 120ms ease, color 120ms ease;
+}
+.mic-btn .i { width: 19px; height: 19px; stroke-width: 1.8; }
+.mic-btn:hover { background: var(--t-hover); color: var(--t-ink); }
+.mic-btn:disabled { opacity: 0.4; }
+/* Слушает: значок цвета акцента и мягкий пульс вокруг */
+.mic-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--t-accent) 16%, transparent); color: var(--t-accent);
+  animation: listen-pulse 1.4s ease-out infinite;
+}
+@keyframes listen-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--t-accent) 40%, transparent); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn[aria-pressed="true"] { animation: none; }
+}
+/* Микрофон забирает свободное место себе, отправка стоит вплотную справа */
+.cmp-tools .mic-btn + .send { margin-left: 2px; }
+.cmp-tools .ctx + .mic-btn { margin-left: 0; }
+
+/* Спидометр цвета акцента: стрелка показывает уровень, нажатие открывает переключатель */
+.gauge-btn { display: grid; place-items: center; width: 34px; height: 30px; border-radius: 10px; color: var(--t-accent); transition: background 120ms ease; }
+.gauge-btn:hover, .gauge-btn[aria-expanded="true"] { background: var(--t-hover); }
+.gauge { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.gauge circle { fill: currentColor; stroke: none; }
+.gauge-needle { transform-box: view-box; transform-origin: 12px 13px; transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .gauge-needle { transition: none; }
+}
+/* Окошко над полем: тот же материал, что у всех меню */
+.lvl-menu { position: absolute; z-index: 6; left: -4px; bottom: calc(100% + 54px); display: grid; gap: 8px; width: max-content; padding: 8px; }
+.lvl-menu .lvl { margin-left: 0; }
+.lvl-menu .lvl button { height: 32px; padding: 0 15px; font-size: 13.5px; }
+.lvl-note { max-width: 250px; padding: 0 6px 2px; color: var(--t-muted); font-size: 12px; line-height: 1.35; }
 /* Копия поверх поля той же ширины, иначе строки переносились бы в другом месте */
 .chat-composer .ti-area .ti-mirror { right: 0; }
 
@@ -175,5 +220,69 @@
   .talk > .chat-bar::before { inset: 0 0 -14px; }
   .chat-round { width: 40px; height: 40px; }
   .chat-now { height: 40px; padding: 0 14px; line-height: 40px; }
+  /* Как в ChatGPT: слева кнопка меню, по центру название, справа «Поделиться». Новый чат
+     на телефоне — в меню, внизу списка чатов. Колонка пера остаётся пустой под кнопкой
+     меню, поэтому название стоит ровно по центру экрана. */
+  .talk > .chat-bar { padding-left: 16px; }
+  .chat-bar .chat-new { visibility: hidden; }
+  .chat-now { max-width: calc(100vw - 132px); }
+  /* «Поделиться» — такой же круг, как кнопка меню: тот же размер, стекло и значок */
+  .chat-bar .chat-round { background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong); color: var(--t-ink); }
+  .chat-bar .chat-round:disabled { color: var(--t-faint); }
+  .chat-bar .chat-round .i { width: 18px; height: 18px; }
   .talk::after { position: fixed; right: 0; bottom: 0; left: 0; height: calc(250px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* ── Насколько глубоко думать: Instant / Medium / High. Подложка выбранного положения едет ── */
+.lvl {
+  position: relative; display: inline-grid; grid-template-columns: repeat(3, 1fr); flex: none;
+  margin-left: 4px; padding: 2px; border-radius: 99px; background: var(--t-fill);
+}
+.lvl::before {
+  content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / 3);
+  border-radius: 99px; background: var(--t-pill); box-shadow: var(--t-pill-sh);
+  transform: translateX(calc(var(--i, 1) * 100%)); transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lvl button {
+  position: relative; z-index: 1; height: 26px; padding: 0 10px; border-radius: 99px;
+  color: var(--t-muted); font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: color 160ms ease;
+}
+.lvl button:hover { color: var(--t-ink-2); }
+.lvl button[aria-checked="true"] { color: var(--t-ink); }
+.lvl button:focus-visible { outline: 2px solid var(--t-ink); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) {
+  .lvl::before { transition: none; }
+}
+
+/* ── Новый чат в меню на телефоне: кнопка цвета акцента прилипает к низу списка ── */
+.chats-new { display: none; }
+@media (max-width: 640px) {
+  /* Плоская, без цветного свечения; от разделителя над именем отступ, чтобы не липла к нему */
+  .chats-new {
+    position: sticky; bottom: 12px; z-index: 2; display: inline-flex; align-items: center; align-self: flex-start;
+    gap: 8px; height: 44px; margin: auto 0 12px; padding: 0 18px 0 15px; border-radius: 99px; corner-shape: round;
+    background: var(--t-accent); color: var(--t-on-accent); font-size: 15px; font-weight: 600;
+    transition: transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+  }
+  .chats-new .i { width: 18px; height: 18px; stroke-width: 2; }
+  .chats-new:active { transform: scale(0.96); }
+
+  /* Поле ввода на телефоне: пока в нём не пишут — одна строка-капсула; нажатие раскрывает
+     его, и снизу появляются режим и переключатель Instant / Medium / High. */
+  .chat-composer[data-compact] {
+    --r: 99px; flex-direction: row; align-items: center; gap: 6px; min-height: 50px;
+    padding: 5px 5px 5px 18px; border-radius: 99px; cursor: text;
+  }
+  .chat-composer[data-compact] .ti-host { flex: 1; min-width: 0; }
+  .chat-composer[data-compact] .cmp-tools { margin-left: 0; }
+  .chat-composer[data-compact] .cmp-tools > :not(.send, .mic-btn) { display: none; }
+  .chat-composer[data-compact] .send, .chat-composer[data-compact] .mic-btn { width: 40px; height: 40px; }
+  .chat-composer[data-compact] .send .i { width: 19px; height: 19px; }
+  .chat-composer[data-compact] .mic-btn .i { width: 21px; height: 21px; }
+  .chat-composer:not([data-compact]) .cmp-tools { animation: cmp-open 220ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .chat-composer:not([data-compact]) .send, .chat-composer:not([data-compact]) .mic-btn { width: 36px; height: 36px; }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer:not([data-compact]) .cmp-tools { animation: none; }
+  }
+}
+@keyframes cmp-open { from { opacity: 0; transform: translateY(6px); } }

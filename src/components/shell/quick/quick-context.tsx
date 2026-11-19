@@ -16,6 +16,7 @@ import {
 } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
+import { recognitionCtor, type RecognitionLike } from "@/lib/dictation";
 
 /** Что можно указать на странице. Страницы помечают своё атрибутом `data-attach`. */
 const PICK = ".blk, .row, .now, .td, .tps li, .tp, .book:not(.mini), [data-attach]";
@@ -69,26 +70,6 @@ function pickTarget(node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null;
   const el = node.closest<HTMLElement>(PICK);
   return el && el.closest(".main") ? el : null;
-}
-
-interface RecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-
-function recognitionCtor(): (new () => RecognitionLike) | null {
-  if (typeof window === "undefined") return null;
-  const win = window as unknown as {
-    SpeechRecognition?: new () => RecognitionLike;
-    webkitSpeechRecognition?: new () => RecognitionLike;
-  };
-  return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
 }
 
 export function QuickProvider({ children }: { children: React.ReactNode }) {

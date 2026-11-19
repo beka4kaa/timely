@@ -30,7 +30,6 @@ import { authFetch } from "@/lib/auth-fetch";
 import type { FolderSubject } from "@/lib/chat-folders";
 import { buildSpines } from "@/lib/citation-spread";
 import {
-  fetchAskOptions,
   listDocuments,
   listGoals,
   type CurriculumDocument,
@@ -39,6 +38,7 @@ import {
 import { subjectTitle } from "@/lib/curriculum-catalog";
 import { coverAuthor, coverTitle } from "@/lib/curriculum-cover";
 import { isTerminal } from "@/lib/curriculum-progress";
+import { choiceOf, levelOf } from "@/lib/ask-level";
 import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { invalidateResources, useResource, type ResourceState } from "@/lib/resource-cache";
 
@@ -64,7 +64,7 @@ import {
   type ChatModeKey,
   type PlanGoal,
 } from "./chat-modes";
-import { BookPicker, Composer, ContextMeter, ModelPicker, ModePicker, type ComposerHandle } from "./composer";
+import { BookPicker, Composer, ContextMeter, LevelPicker, ModePicker, type ComposerHandle } from "./composer";
 import { lastUsage } from "./chat-usage";
 import { SourcesPanel } from "./sources-panel";
 import { useSubjectChat } from "./use-subject-chat";
@@ -196,7 +196,6 @@ export function ChatPage() {
   const [modeKey, setModeKey] = useState<ChatModeKey>(DEFAULT_MODE);
   const prefs = useChatPrefs();
   // Список моделей почти не меняется. Не загрузился: выбора просто нет, чат работает.
-  const askOptions = useResource("ask:options", fetchAskOptions, { ttl: 60 * 60_000 });
   const [marks, setMarks] = useState<ModeMark[]>([]);
   /** Планирование: показать цели под идущим разговором. */
   const [pickingGoal, setPickingGoal] = useState(false);
@@ -498,20 +497,27 @@ export function ChatPage() {
     modeKey === "plain" ? chatPlaceholder(BOOKS_ENABLED, Boolean(current?.books), mode.hint) : mode.hint;
 
   const list = (
-    <ChatList
-      chats={chats}
-      subjects={subjects}
-      activeId={chatId}
-      loading={loadingChats || !ready}
-      failed={chat.chatsFailed}
-      onRetry={chat.reloadChats}
-      onOpen={(id) => void openChat(id)}
-      onRename={(id, title) => void chat.renameChat(id, title)}
-      onDelete={(id) => {
-        if (id === chatId) resetTalk();
-        void chat.removeChat(id);
-      }}
-    />
+    <>
+      <ChatList
+        chats={chats}
+        subjects={subjects}
+        activeId={chatId}
+        loading={loadingChats || !ready}
+        failed={chat.chatsFailed}
+        onRetry={chat.reloadChats}
+        onOpen={(id) => void openChat(id)}
+        onRename={(id, title) => void chat.renameChat(id, title)}
+        onDelete={(id) => {
+          if (id === chatId) resetTalk();
+          void chat.removeChat(id);
+        }}
+      />
+      {/* Телефон: новый чат — кнопка цвета акцента внизу списка чатов, а не сверху в чате */}
+      <button className="chats-new" type="button" onClick={startNew}>
+        <Icon name="pen-plus" />
+        Новый чат
+      </button>
+    </>
   );
 
   const sources = hasSources ? (
@@ -656,13 +662,10 @@ export function ChatPage() {
                     onPick={pickSubject}
                   />
                 ) : null}
-                {prefs.showPicker && askOptions.data ? (
-                  <ModelPicker
-                    options={askOptions.data}
-                    model={prefs.model}
-                    reasoning={prefs.reasoning}
-                    onModel={(key) => setChatPrefs({ model: key })}
-                    onReasoning={(key) => setChatPrefs({ reasoning: key })}
+                {prefs.showPicker ? (
+                  <LevelPicker
+                    level={levelOf(prefs.model, prefs.reasoning)}
+                    onPick={(level) => setChatPrefs(choiceOf(level))}
                   />
                 ) : null}
               </>

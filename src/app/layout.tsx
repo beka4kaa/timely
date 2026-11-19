@@ -4,6 +4,7 @@ import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { accentBootScript } from '@/lib/accent'
 import { marketingOriginFromEnv } from '@/lib/host-routing'
 
 // Golos Text говорит за интерфейс, Manrope — за заголовки страниц, ответы тьютора и
@@ -104,10 +105,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`${golos.variable} ${manrope.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Цвет акцента до первой отрисовки, иначе страница мигнёт синим */}
+        <script dangerouslySetInnerHTML={{ __html: accentBootScript() }} />
+      </head>
       <body className="font-sans" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
+          defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >

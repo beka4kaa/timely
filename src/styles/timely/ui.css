@@ -377,6 +377,33 @@ a.row:hover, summary.row:hover { background: var(--t-hover); }
   }
   .sidebar[data-drawer="open"] { transform: none; visibility: visible; transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1); }
   .sidebar .sb-collapse { display: none; }
+  /* В выезжающем меню всё под палец: строки 46 px, текст и значки крупнее. Места хватает,
+     на телефоне панель шире, чем нужно подписям. */
+  .sidebar .sb-head { height: 40px; padding-left: 10px; }
+  .sidebar .brand { gap: 10px; font-size: 17px; }
+  .sidebar .brand .mark { width: 31px; height: auto; }
+  .sidebar .sb-pages { margin-top: 14px; }
+  .sidebar .nav-item { height: 46px; gap: 13px; padding: 0 12px; border-radius: 13px; font-size: 16px; }
+  .sidebar .nav-item .i { width: 20px; height: 20px; }
+  .sidebar .nav-group-btn .nav-chev { width: 17px; height: 17px; }
+  .sidebar .nav-count { font-size: 14px; }
+  .sidebar .nav-sep { margin: 8px 12px; }
+  /* Линия вложенных пунктов идёт под серединой значка группы */
+  .sidebar .nav-sub-in { gap: 2px; margin-left: 21px; padding-left: 8px; }
+  .sidebar .sb-top { height: 44px; margin-bottom: 8px; }
+  .sidebar .sb-top .icon-btn { width: 40px; height: 40px; border-radius: 12px; }
+  .sidebar .sb-top .icon-btn .i { width: 20px; height: 20px; }
+  .sidebar .sb-title { font-size: 16px; }
+  .sidebar .nav-label { padding: 0 12px 6px; font-size: 13px; }
+  .sidebar .chat-link { height: 46px; padding: 0 12px; border-radius: 13px; font-size: 15.5px; line-height: 46px; }
+  .sidebar .chat-rename, .sidebar .chat-asking { height: 46px; border-radius: 13px; font-size: 15.5px; }
+  .sidebar .sb-foot { margin-top: 10px; padding-top: 8px; }
+  .sidebar .me { height: 50px; gap: 12px; padding: 0 10px; border-radius: 13px; font-size: 15.5px; }
+  .sidebar .avatar { width: 32px; height: 32px; font-size: 12.5px; }
+  .sidebar .theme-btn { width: 44px; height: 44px; border-radius: 12px; }
+  .sidebar .theme-btn .i { width: 20px; height: 20px; }
+  .sidebar .menu-item { min-height: 44px; gap: 12px; padding: 8px 12px; border-radius: 11px; font-size: 15.5px; }
+  .sidebar .menu-item .i { width: 19px; height: 19px; }
   .nav-scrim {
     display: block; position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, 0.42);
     opacity: 0; pointer-events: none; transition: opacity 220ms ease;
@@ -424,6 +451,25 @@ a.row:hover, summary.row:hover { background: var(--t-hover); }
 @keyframes bead {
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--t-accent) 10%, var(--t-bg)); }
 }
+
+/* Цвет акцента в настройках: кружки цветов, у выбранного галочка */
+.acc-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.acc-dot {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--c); color: #ffffff; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.acc-dot:active { transform: scale(0.92); }
+.acc-dot .i { width: 15px; height: 15px; stroke-width: 2.6; opacity: 0; transition: opacity 120ms ease; }
+.acc-dot[aria-checked="true"] { box-shadow: 0 0 0 2px var(--t-modal, var(--t-card)), 0 0 0 4px var(--c); }
+.acc-dot[aria-checked="true"] .i { opacity: 1; }
+.acc-dot:focus-visible { outline: 2px solid var(--t-ink); outline-offset: 4px; }
+.acc-dot[data-accent="blue"] { --c: var(--acc-blue); }
+.acc-dot[data-accent="violet"] { --c: var(--acc-violet); }
+.acc-dot[data-accent="green"] { --c: var(--acc-green); }
+.acc-dot[data-accent="orange"] { --c: var(--acc-orange); }
+.acc-dot[data-accent="pink"] { --c: var(--acc-pink); }
+.acc-dot[data-accent="mono"] { --c: var(--acc-mono); color: var(--acc-mono-on); }
 
 /* ══════════════════ Настройки: окно с разделами слева ══════════════════
    Одно окно на весь кабинет. Слева разделы, справа строки выбранного. Фон окна — тихая

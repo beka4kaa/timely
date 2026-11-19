@@ -18,6 +18,7 @@ import { Icon, type IconName } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
 import { REMIND_MASCOT_KEY, REMIND_PUSH_KEY } from "@/components/shell/view-tracker";
+import { ACCENTS, DEFAULT_ACCENT, applyAccent, readAccent, type AccentKey } from "@/lib/accent";
 import { setChatPrefs, useChatPrefs } from "@/lib/chat-prefs";
 import { updateMe, useMe, type Me } from "@/lib/contest-api";
 import type { SettingsSection } from "@/stores/settings-dialog";
@@ -88,11 +89,11 @@ function ChatSection() {
       <div className="set-body">
         <div className="set-line">
           <div>
-            Выбор модели<small>В поле чата: умная или быстрая и уровень рассуждения</small>
+            Насколько глубоко думать<small>В поле чата: Instant, Medium или High</small>
           </div>
           <Switch
             on={prefs.showPicker}
-            label="Показывать выбор модели"
+            label="Показывать выбор Instant, Medium, High"
             onChange={(value) => setChatPrefs({ showPicker: value })}
           />
         </div>
@@ -284,6 +285,34 @@ function ThemePicker() {
   );
 }
 
+/** Цвет акцента: кнопка отправки, переключатели, выбранное и отметки «сегодня». */
+function AccentPicker() {
+  const [accent, setAccent] = useState<AccentKey>(DEFAULT_ACCENT);
+  useEffect(() => setAccent(readAccent()), []);
+  return (
+    <div className="acc-pick" role="radiogroup" aria-label="Цвет акцента">
+      {ACCENTS.map((item) => (
+        <button
+          key={item.key}
+          className="acc-dot"
+          type="button"
+          role="radio"
+          aria-checked={accent === item.key}
+          aria-label={item.name}
+          title={item.name}
+          data-accent={item.key}
+          onClick={() => {
+            applyAccent(item.key);
+            setAccent(item.key);
+          }}
+        >
+          <Icon name="check" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ProfileSettings() {
   const { data: session } = useSession();
   const { me, loading: meLoading, setMe } = useMe();
@@ -311,6 +340,12 @@ function ProfileSettings() {
         <h2>Оформление</h2>
         <div className="set-body">
           <ThemePicker />
+          <div className="set-line">
+            <div>
+              Цвет акцента<small>Кнопка отправки, переключатели и выбранное</small>
+            </div>
+            <AccentPicker />
+          </div>
         </div>
       </section>
       <section className="set">
@@ -342,7 +377,7 @@ function SlimeSettings() {
 }
 
 const SECTIONS: { key: SettingsSection; title: string; icon: IconName; lead: string }[] = [
-  { key: "profile", title: "Профиль", icon: "user", lead: "Аккаунт, кто тебя видит и тема" },
+  { key: "profile", title: "Профиль", icon: "user", lead: "Аккаунт, кто тебя видит, тема и цвет" },
   { key: "pomodoro", title: "Помодоро", icon: "timer", lead: "Ритм таймера, звонок и уведомления" },
   { key: "slime", title: "Слайм", icon: "chat", lead: "Чат с тьютором и напоминания" },
 ];

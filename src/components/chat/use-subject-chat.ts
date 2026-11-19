@@ -25,6 +25,7 @@ import {
   type SubjectChat,
   type SubjectChatSummary,
 } from "@/lib/curriculum-api";
+import { askChoice } from "@/lib/ask-level";
 import { chatPrefs } from "@/lib/chat-prefs";
 import { readSse } from "@/lib/sse";
 
@@ -243,8 +244,7 @@ export function useSubjectChat({
             history,
             ...(mode ? { mode } : {}),
             // Читается в момент вопроса: мини-окно отвечает той же моделью, что и чат.
-            ...(prefs.model ? { model: prefs.model } : {}),
-            ...(prefs.reasoning ? { reasoning: prefs.reasoning } : {}),
+            ...askChoice(prefs),
             // «Завтра» у ученика, а не на сервере.
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             ...(page ? { page } : {}),

@@ -62,7 +62,7 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .m-mode { align-self: center; padding: 2px 10px; border-radius: 99px; background: var(--t-hover); color: var(--t-muted); font-size: 12px; }
 .composer input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--t-ink); font: inherit; }
 .composer input::placeholder { color: var(--t-muted); }
-.send { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 10px; background: var(--t-btn-main); color: var(--t-on-ink); box-shadow: var(--t-btn-main-sh); transition: filter 140ms ease, transform 140ms ease; }
+.send { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 10px; background: var(--t-accent); color: var(--t-on-accent); box-shadow: none; transition: filter 140ms ease, transform 140ms ease; }
 .send:hover { filter: brightness(1.12); }
 .send:active { transform: scale(0.94); }
 .send .i { width: 14px; height: 14px; stroke-width: 1.8; }
@@ -496,8 +496,8 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 .opts span { grid-column: 2; color: var(--t-muted); font-size: 12.5px; font-weight: 400; }
 .switch { position: relative; flex: none; width: 32px; height: 19px; border-radius: 99px; background: var(--t-tube); box-shadow: inset 0 0 0 0.5px var(--t-line-strong); transition: background 140ms ease; }
 .switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 15px; height: 15px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: transform 180ms cubic-bezier(0.2, 1.3, 0.4, 1); }
-.switch[aria-checked="true"] { background: var(--t-ink); box-shadow: none; }
-.switch[aria-checked="true"]::after { background: var(--t-bg); transform: translateX(13px); }
+.switch[aria-checked="true"] { background: var(--t-accent); box-shadow: none; }
+.switch[aria-checked="true"]::after { background: var(--t-on-accent); transform: translateX(13px); }
 .mem { width: 100%; }
 .mem li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 2px 0; font-size: 13.5px; }
 .mem .icon-btn { width: 24px; height: 24px; }
@@ -531,11 +531,11 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 /* Закрытое: капсула с двумя кнопками */
 /* Капсула быстрого запроса: тихая и компактная, чтобы не спорить с содержимым страницы */
 .q-pill { --r: 99px; display: flex; align-items: center; padding: 3px; }
-.q-pill-btn { display: grid; place-items: center; width: 36px; height: 30px; border-radius: 99px; color: var(--t-ink-2); transition: background 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1); }
+.q-pill-btn { display: grid; place-items: center; width: 40px; height: 34px; border-radius: 99px; color: var(--t-ink-2); transition: background 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1); }
 .q-pill-btn:hover { background: var(--t-hover); color: var(--t-ink); }
 .q-pill-btn:active { transform: scale(0.93); }
-.q-pill .i { width: 16px; height: 16px; stroke-width: 1.6; }
-.q-div { width: 1px; height: 14px; background: var(--t-line-strong); }
+.q-pill .i { width: 18px; height: 18px; stroke-width: 1.6; }
+.q-div { width: 1px; height: 16px; background: var(--t-line-strong); }
 
 /* Открытое */
 .q-win { --r: 22px; display: flex; flex-direction: column; width: clamp(340px, calc(100% - 460px), 540px); padding: 12px 10px 9px 16px; font-size: 15px; transform-origin: 50% 100%; }
