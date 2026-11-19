@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://app.timelyplan.me"><img src="https://img.shields.io/badge/Live_App-app.timelyplan.me-brightgreen?style=for-the-badge" alt="Live App" /></a>
+  <a href="https://app.timely-plan.com"><img src="https://img.shields.io/badge/Live_App-app.timely-plan.com-brightgreen?style=for-the-badge" alt="Live App" /></a>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 
 **TimelyPlan** is a full-stack web application designed for students to manage their school life. It provides an interactive weekly diary, class schedule builder, grade tracker, AI-powered study assistant, and more — all in a modern, mobile-friendly interface with dark/light theme support.
 
-**Live:** [timelyplan.me](https://timelyplan.me) (landing) → [app.timelyplan.me](https://app.timelyplan.me) (the app itself)
+**Live:** [timely-plan.com](https://timely-plan.com) (landing) → [app.timely-plan.com](https://app.timely-plan.com) (the app itself)
 
 ---
 
@@ -83,7 +83,7 @@ Additional capabilities:
 
 | Service | Purpose |
 |---------|---------|
-| [Vercel](https://vercel.com) | Frontend hosting (both `timelyplan.me` and `app.timelyplan.me` on one project) |
+| [Vercel](https://vercel.com) | Frontend hosting (both `timely-plan.com` and `app.timely-plan.com` on one project) |
 | [Northflank](https://northflank.com) | Backend hosting |
 | [Docker](https://docker.com) | Backend containerization |
 
@@ -119,7 +119,7 @@ Additional capabilities:
 │   ├── hooks/                    # Custom React hooks
 │   ├── lib/                      # Utilities, API clients, stores
 │   │   ├── auth.ts               # NextAuth.js configuration
-│   │   ├── host-routing.ts       # apex vs app.timelyplan.me routing rules
+│   │   ├── host-routing.ts       # apex vs app.timely-plan.com routing rules
 │   │   ├── diary-store.ts        # Diary state management
 │   │   ├── diary-grades.ts       # Grade calculation logic
 │   │   ├── diary-undo.ts         # Undo system
@@ -220,7 +220,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 OPENROUTER_API_KEY=<your-openrouter-api-key>
 ```
 
-In production (Vercel), `NEXTAUTH_URL` must be **`https://app.timelyplan.me`**, not the apex domain — the app and all auth routes live on the subdomain, while `timelyplan.me` itself only redirects to it. See [src/lib/auth.ts](src/lib/auth.ts) for how the session cookie is shared across both hosts.
+In production (Vercel), `NEXTAUTH_URL` must be **`https://app.timely-plan.com`**, not the apex domain — the app and all auth routes live on the subdomain, while `timely-plan.com` itself only redirects to it. See [src/lib/auth.ts](src/lib/auth.ts) for how the session cookie is shared across both hosts.
 
 ### Curriculum / book ingestion API
 
@@ -290,7 +290,7 @@ the request container. Embeddings additionally require `EMBEDDING_MODEL`,
 3. Create an **OAuth 2.0 Client ID** (Web application)
 4. Add authorized redirect URIs for every host you use:
    - `http://localhost:3000/api/auth/callback/google` (local dev)
-   - `https://app.timelyplan.me/api/auth/callback/google` (production)
+   - `https://app.timely-plan.com/api/auth/callback/google` (production)
 5. Copy Client ID and Client Secret to `.env.local` (or the Vercel project's env vars)
 
 ---
@@ -312,8 +312,8 @@ the request container. Embeddings additionally require `EMBEDDING_MODEL`,
 ### Frontend (Vercel)
 
 1. Connect the repository to [Vercel](https://vercel.com)
-2. Add both domains to the project: `timelyplan.me` (apex, landing page) and `app.timelyplan.me` (the app) — one Vercel project serves both
-3. Add all environment variables from `.env.production.example`, setting `NEXTAUTH_URL=https://app.timelyplan.me`
+2. Add both domains to the project: `timely-plan.com` (apex, landing page) and `app.timely-plan.com` (the app) — one Vercel project serves both
+3. Add all environment variables from `.env.production.example`, setting `NEXTAUTH_URL=https://app.timely-plan.com`
 4. Deploy automatically on push to `main`
 
 ### Backend (Northflank / Docker)

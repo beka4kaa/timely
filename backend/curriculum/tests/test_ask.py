@@ -18,7 +18,7 @@ from curriculum.ask import (
 )
 from curriculum.models import Document, KnowledgeChunk, LearningGoal
 
-OWNER = "student@timelyplan.me"
+OWNER = "student@timely-plan.com"
 
 
 def goal(email: str = OWNER) -> LearningGoal:

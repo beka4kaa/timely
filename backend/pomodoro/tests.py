@@ -86,8 +86,8 @@ class FocusSessionApiTests(TestCase):
 
     def setUp(self):
         self.client = Client()
-        self.email = 'student@timelyplan.me'
-        self.other = 'someone-else@timelyplan.me'
+        self.email = 'student@timely-plan.com'
+        self.other = 'someone-else@timely-plan.com'
 
     def _create(self, **overrides):
         payload = {
@@ -268,7 +268,7 @@ class FocusSessionApiTests(TestCase):
     def test_summary_is_empty_for_new_user(self):
         response = self.client.get(
             '/api/pomodoro/sessions/summary/?tz_offset=0',
-            **auth_headers('fresh@timelyplan.me'),
+            **auth_headers('fresh@timely-plan.com'),
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -352,7 +352,7 @@ class DuplicateCleanupMigrationTests(TransactionTestCase):
 
         def add(**overrides):
             fields = {
-                'user_email': 'student@timelyplan.me',
+                'user_email': 'student@timely-plan.com',
                 'kind': 'focus',
                 'started_at': start,
                 'seconds': 3000,
@@ -367,7 +367,7 @@ class DuplicateCleanupMigrationTests(TransactionTestCase):
         add(seconds=2990)
         add(seconds=3000)
         other_kind = add(kind='break', seconds=600, planned_seconds=600)
-        other_user = add(user_email='someone-else@timelyplan.me')
+        other_user = add(user_email='someone-else@timely-plan.com')
         other_time = add(started_at=start + timedelta(milliseconds=1))
 
         new_apps = self._migrate(self.after)
@@ -382,7 +382,7 @@ class DuplicateCleanupMigrationTests(TransactionTestCase):
         old_apps = self._migrate(self.before)
         Session = old_apps.get_model('pomodoro', 'FocusSession')
         Session.objects.create(
-            user_email='student@timelyplan.me',
+            user_email='student@timely-plan.com',
             kind='focus',
             started_at=_utc(2026, 11, 10, 9, 0),
             seconds=3000,

@@ -114,8 +114,8 @@ test("the tutor answers with a canned stream in the asker's language", () => {
 })
 
 test("only the demo host is the demo", () => {
-  assert.equal(isDemoHost("demo.timely-plan.study"), true)
-  assert.equal(isDemoHost("DEMO.timely-plan.study."), true)
-  assert.equal(isDemoHost("app.timely-plan.study"), false)
+  assert.equal(isDemoHost("demo.timely-plan.com"), true)
+  assert.equal(isDemoHost("DEMO.timely-plan.com."), true)
+  assert.equal(isDemoHost("app.timely-plan.com"), false)
   assert.equal(isDemoHost(""), false)
 })

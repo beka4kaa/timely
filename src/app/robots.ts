@@ -1,13 +1,25 @@
 import type { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
+import {
+  DEFAULT_APP_HOSTNAME,
+  isAppHostname,
+  marketingOriginFromEnv,
+  normalizeHostname,
+} from '@/lib/host-routing'
 
-// The app now lives on app.timelyplan.me while the apex (timelyplan.me) is
+// The app lives on app.timely-plan.com while the apex (timely-plan.com) is
 // the marketing site. Search engines should only index the apex — the app
-// subdomain is behind auth and has nothing worth crawling.
+// subdomain is behind auth and has nothing worth crawling. Hosts come from the
+// same env variables the middleware reads.
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const headersList = await headers()
-  const host = headersList.get('host') ?? ''
-  const isAppHost = host === 'app.timelyplan.me'
+  const host = normalizeHostname(headersList.get('x-forwarded-host') ?? headersList.get('host'))
+  const appHostname = process.env.TIMELY_APP_HOST ?? DEFAULT_APP_HOSTNAME
+  const isAppHost = isAppHostname(host, {
+    appHostname,
+    appOrigin: `https://${appHostname}`,
+    marketingHostname: '',
+  })
 
   if (isAppHost) {
     return {
@@ -23,6 +35,6 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         disallow: ['/api/', '/dashboard/'],
       },
     ],
-    host: 'https://timelyplan.me',
+    host: marketingOriginFromEnv(),
   }
 }

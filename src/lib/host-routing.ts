@@ -1,6 +1,12 @@
-export const DEFAULT_MARKETING_HOSTNAME = "timelyplan.me";
-export const DEFAULT_APP_HOSTNAME = "app.timelyplan.me";
+export const DEFAULT_MARKETING_HOSTNAME = "timely-plan.com";
+export const DEFAULT_APP_HOSTNAME = "app.timely-plan.com";
 export const DEFAULT_APP_ORIGIN = `https://${DEFAULT_APP_HOSTNAME}`;
+
+/**
+ * Прошлые домены Timely. Любой их адрес уводится на тот же раздел нынешнего
+ * домена: app — в приложение, demo — в демо, остальное — на сайт-визитку.
+ */
+export const LEGACY_BASE_DOMAINS = ["timely-plan.study", "timelyplan.me"];
 
 export interface HostRoutingConfig {
   marketingHostname: string;
@@ -24,7 +30,7 @@ export interface HostRoutingInput {
 export type HostRoutingAction =
   | { type: "next" }
   | { type: "rewrite"; pathname: string }
-  | { type: "redirect"; destination: string; status: 302 };
+  | { type: "redirect"; destination: string; status: 302 | 308 };
 
 export const DEFAULT_HOST_ROUTING_CONFIG: HostRoutingConfig = {
   marketingHostname: DEFAULT_MARKETING_HOSTNAME,
@@ -115,6 +121,38 @@ export function marketingOriginFromEnv(): string {
   });
 }
 
+/**
+ * Куда уводить запрос на прошлый домен: origin без пути или null, если хост не
+ * старый. Хост из нынешней настройки не уводится никогда — пока окружение ещё
+ * указывает на старый домен, это была бы петля.
+ */
+export function legacyHostRedirectOrigin(
+  hostname: string,
+  config: HostRoutingConfig = DEFAULT_HOST_ROUTING_CONFIG,
+): string | null {
+  const host = normalizeHostname(hostname);
+  if (!host) return null;
+  if (
+    isMarketingHostname(host, config) ||
+    isAppHostname(host, config) ||
+    (!!config.demoHostname && host === normalizeHostname(config.demoHostname))
+  ) {
+    return null;
+  }
+
+  const base = LEGACY_BASE_DOMAINS.find(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
+  if (!base) return null;
+
+  const label = host === base ? "" : host.slice(0, -(base.length + 1));
+  if (label === "app") return config.appOrigin.replace(/\/$/, "");
+  if (label === "demo" && config.demoHostname) {
+    return `https://${normalizeHostname(config.demoHostname)}`;
+  }
+  return marketingOriginOf(config);
+}
+
 export function dashboardPathToAppPath(pathname: string): string {
   if (pathname === "/dashboard" || pathname === "/dashboard/") return "/";
 
@@ -168,6 +206,15 @@ export function resolveHostRouting(
     : input.search
       ? `?${input.search}`
       : "";
+
+  const legacyOrigin = legacyHostRedirectOrigin(input.hostname, config);
+  if (legacyOrigin) {
+    return {
+      type: "redirect",
+      destination: `${legacyOrigin}${input.pathname}${search}`,
+      status: 308,
+    };
+  }
 
   if (
     isMarketingHostname(input.hostname, config) &&

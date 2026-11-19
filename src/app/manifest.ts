@@ -5,9 +5,9 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'TimelyPlan',
     short_name: 'TimelyPlan',
     description: 'Школьный дневник, планировщик, AI-тьютор и учебные инструменты.',
-    // The app (and therefore the installable PWA) lives on app.timelyplan.me,
+    // The app (and therefore the installable PWA) lives on app.timely-plan.com,
     // not the apex marketing domain.
-    id: 'https://app.timelyplan.me/',
+    id: 'https://app.timely-plan.com/',
     scope: '/',
     // '/' is rewritten to /dashboard («Сейчас») internally by the host
     // routing, so launching the PWA costs no extra redirect.

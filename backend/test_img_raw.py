@@ -12,7 +12,7 @@ headers = {
     "Authorization": f"Bearer {_API_KEY}",
     "Content-Type": "application/json",
     "X-OR-Provider-Tier": _TIER,
-    "HTTP-Referer": "https://timelyplan.me",
+    "HTTP-Referer": "https://timely-plan.com",
     "X-Title": "Timely AI Tutor Board",
 }
 

@@ -131,7 +131,7 @@ OFF_URL = "https://world.openfoodfacts.org/api/v2/product/{code}.json"
 OFF_FIELDS = "product_name,product_name_ru,brands,nutriments,image_front_small_url"
 OFF_TIMEOUT = 8
 # Вежливый User-Agent — требование OFF к клиентам их API.
-OFF_HEADERS = {"User-Agent": "TimelyPlan/1.0 (nutrition tracker; contact: support@timelyplan.me)"}
+OFF_HEADERS = {"User-Agent": "TimelyPlan/1.0 (nutrition tracker; contact: support@timely-plan.com)"}
 
 
 class FoodSearchView(APIView):

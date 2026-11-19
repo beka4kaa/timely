@@ -336,7 +336,7 @@ def _call_openrouter(image_data_url: str, raw_size: int) -> tuple[dict | None, s
         raise ValueError("OPENROUTER_API_KEY не задан.")
 
     headers = {
-        "HTTP-Referer": getattr(settings, "SITE_URL", "https://timelyplan.me"),
+        "HTTP-Referer": getattr(settings, "SITE_URL", "https://timely-plan.com"),
         "X-Title": "TimelyPlan Nutrition",
     }
     last_exc: Exception | None = None

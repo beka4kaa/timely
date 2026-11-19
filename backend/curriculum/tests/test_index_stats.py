@@ -13,7 +13,7 @@ from django.test import TestCase
 from curriculum.index_stats import collect_index_stats
 from curriculum.models import Document, KnowledgeChunk
 
-OWNER = "student@timelyplan.me"
+OWNER = "student@timely-plan.com"
 MODEL = "openai/text-embedding-3-small"
 
 

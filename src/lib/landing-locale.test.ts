@@ -106,18 +106,18 @@ test("only the Russian home page is redirected, and the query string survives", 
 });
 
 test("the English landing is served on the marketing host as is", () => {
-  assert.deepEqual(resolveHostRouting({ hostname: "timelyplan.me", pathname: "/en" }), {
+  assert.deepEqual(resolveHostRouting({ hostname: "timely-plan.com", pathname: "/en" }), {
     type: "next",
   });
-  assert.deepEqual(resolveHostRouting({ hostname: "www.timelyplan.me", pathname: "/en" }), {
+  assert.deepEqual(resolveHostRouting({ hostname: "www.timely-plan.com", pathname: "/en" }), {
     type: "next",
   });
 });
 
 test("the app host sends /en to the marketing site instead of /dashboard/en", () => {
   assert.deepEqual(
-    resolveHostRouting({ hostname: "app.timelyplan.me", pathname: "/en", search: "?ref=demo" }),
-    { type: "redirect", destination: "https://timelyplan.me/en?ref=demo", status: 302 },
+    resolveHostRouting({ hostname: "app.timely-plan.com", pathname: "/en", search: "?ref=demo" }),
+    { type: "redirect", destination: "https://timely-plan.com/en?ref=demo", status: 302 },
   );
   assert.deepEqual(
     resolveHostRouting(
@@ -156,7 +156,7 @@ test("only /en itself is a marketing-only path, not app sections that start with
   assert.equal(isMarketingOnlyPath("/en"), true);
   assert.equal(isMarketingOnlyPath("/en/"), true);
   assert.equal(isMarketingOnlyPath("/entries"), false);
-  assert.deepEqual(resolveHostRouting({ hostname: "app.timelyplan.me", pathname: "/entries" }), {
+  assert.deepEqual(resolveHostRouting({ hostname: "app.timely-plan.com", pathname: "/entries" }), {
     type: "rewrite",
     pathname: "/dashboard/entries",
   });

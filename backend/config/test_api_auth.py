@@ -193,7 +193,7 @@ class StartupCheckTests(TestCase):
 
 
 class CorsTests(TestCase):
-    APP_ORIGIN = "https://app.timely-plan.study"
+    APP_ORIGIN = "https://app.timely-plan.com"
 
     def _allowed(self, response):
         return response.headers.get("Access-Control-Allow-Origin")

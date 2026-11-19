@@ -11,6 +11,8 @@ import re
 
 from django.db.models import Q
 
+# Домен почты гостей и выдуманного мира, а не адрес сайта. По нему рейтинг
+# отсеивает демо-аккаунты, поэтому при переезде сайта на timely-plan.com он прежний.
 DEMO_DOMAIN = "demo.timely-plan.study"
 VISITOR_PREFIX = "visitor-"
 VISITOR_RE = re.compile(r"^visitor-[0-9a-f-]{8,64}@demo\.timely-plan\.study$")

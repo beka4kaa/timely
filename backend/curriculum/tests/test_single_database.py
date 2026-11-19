@@ -13,7 +13,7 @@ from curriculum.models import (
     KnowledgeChunk,
 )
 
-OWNER = "student@timelyplan.me"
+OWNER = "student@timely-plan.com"
 
 
 def document(title="Механика") -> Document:

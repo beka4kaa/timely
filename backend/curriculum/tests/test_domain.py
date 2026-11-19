@@ -24,8 +24,8 @@ from curriculum.models import (
     LearningGoal,
 )
 
-OWNER = "student@timelyplan.me"
-STRANGER = "other@timelyplan.me"
+OWNER = "student@timely-plan.com"
+STRANGER = "other@timely-plan.com"
 
 
 class LearningGoalTests(TestCase):

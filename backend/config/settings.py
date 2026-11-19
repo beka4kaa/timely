@@ -101,7 +101,7 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "https://app.timely-plan.study,https://app.timelyplan.me",
+        "https://app.timely-plan.com,https://app.timely-plan.study",
     ).split(",")
     if origin.strip()
 ]
@@ -657,7 +657,7 @@ IMAGE_GEN_TIER = os.getenv("IMAGE_GEN_TIER", "standard")
 IMAGE_GEN_MAX_WORKERS = int(os.getenv("IMAGE_GEN_MAX_WORKERS", "3"))
 
 # Публичный URL сервиса (используется в HTTP-Referer при запросах к OpenRouter)
-SITE_URL = os.getenv("SITE_URL", "https://timelyplan.me")
+SITE_URL = os.getenv("SITE_URL", "https://timely-plan.com")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

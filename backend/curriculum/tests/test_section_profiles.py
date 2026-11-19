@@ -40,7 +40,7 @@ from curriculum.services.section_profiles import (
     sections_to_profile,
 )
 
-OWNER = "student@timelyplan.me"
+OWNER = "student@timely-plan.com"
 
 
 def document(title="Механика") -> Document:

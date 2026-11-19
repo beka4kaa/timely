@@ -1,5 +1,5 @@
 /**
- * Демо для проверяющих: demo.timely-plan.study.
+ * Демо для проверяющих: demo.timely-plan.com.
  *
  * Это отдельный проект Vercel со своим бэкендом и своей базой. Публичный флаг
  * вшивается в сборку, но middleware всё равно сверяет его при каждом запросе, так
@@ -15,6 +15,8 @@ export const IS_DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true"
 /** Куда отправлять человека без сессии. В демо вместо входа — заведение гостя. */
 export const SIGN_IN_PATH = IS_DEMO ? "/auth/demo" : "/auth/signin"
 
+// Домен в почте гостей, а не адрес сайта: бэкенд узнаёт гостей именно по нему
+// (backend/demo/identity.py), поэтому после переезда на timely-plan.com он прежний.
 export const DEMO_VISITOR_DOMAIN = "demo.timely-plan.study"
 
 /** Имя ученицы, в чей аккаунт попадает гость. Совпадает с сюжетом на бэкенде. */

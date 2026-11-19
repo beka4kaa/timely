@@ -15,8 +15,8 @@ from curriculum.retrieval import (
     wrap_as_data_section,
 )
 
-OWNER = "student@timelyplan.me"
-STRANGER = "someone@timelyplan.me"
+OWNER = "student@timely-plan.com"
+STRANGER = "someone@timely-plan.com"
 
 
 def chunk(

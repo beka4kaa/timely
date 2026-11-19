@@ -7,6 +7,7 @@ import {
   getRequestHostname,
   isAppHostname,
   isMarketingHostname,
+  legacyHostRedirectOrigin,
   isMarketingOnlyPath,
   resolveHostRouting,
   type HostRoutingConfig,
@@ -135,6 +136,9 @@ export default withAuth(
 
         // Публичное демо: входа нет, сессию и данные подставляет браузер.
         if (isDemoHost(hostname)) return true
+
+        // Прошлый домен: сначала переезд на новый, вход уже там.
+        if (legacyHostRedirectOrigin(hostname, HOST_ROUTING_CONFIG)) return true
 
         // The marketing /dashboard URL must reach the canonical redirect even
         // for signed-out visitors.

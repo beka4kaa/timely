@@ -4,6 +4,7 @@ import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { marketingOriginFromEnv } from '@/lib/host-routing'
 
 // Golos Text говорит за интерфейс, Source Serif 4 там, где читают: заголовки
 // страниц, ответы тьютора, цитаты, формулы. Кириллица обязательна: без неё русский
@@ -23,7 +24,7 @@ const sourceSerif = Source_Serif_4({
 // next/font/google can't reach Google Fonts in some environments.
 
 const siteName = 'TimelyPlan'
-const siteUrl = new URL('https://timelyplan.me')
+const siteUrl = new URL(marketingOriginFromEnv())
 const siteDescription = 'TimelyPlan — школьный дневник, планировщик, AI-тьютор и учебные инструменты в одном месте.'
 
 export const viewport: Viewport = {

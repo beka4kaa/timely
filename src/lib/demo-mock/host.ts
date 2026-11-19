@@ -5,7 +5,7 @@
 // public/demo/fixtures.json. Определяется по имени хоста во время работы, а не при
 // сборке: один и тот же деплой обслуживает и app, и demo.
 
-export const DEFAULT_DEMO_HOST = "demo.timely-plan.study";
+export const DEFAULT_DEMO_HOST = "demo.timely-plan.com";
 
 /** Хост демо. Для локального стенда задаётся `NEXT_PUBLIC_DEMO_HOST=demo.localhost`. */
 export const DEMO_HOST = (process.env.NEXT_PUBLIC_DEMO_HOST || DEFAULT_DEMO_HOST).trim().toLowerCase();

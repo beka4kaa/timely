@@ -895,7 +895,7 @@ def _call_image_api(
     headers = {
         "Authorization": f"Bearer {_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": getattr(settings, "SITE_URL", "https://timelyplan.me"),
+        "HTTP-Referer": getattr(settings, "SITE_URL", "https://timely-plan.com"),
         "X-Title": "Timely AI Tutor Board",
     }
 

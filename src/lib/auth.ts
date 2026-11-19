@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { fastApiClient } from "./fastapi-client"
 import { SESSION_COOKIE_NAME, USE_SECURE_COOKIES } from "./auth-cookies"
 import { isDemoServer, newDemoVisitor, SIGN_IN_PATH } from "./demo-mode"
+import { DEFAULT_APP_HOSTNAME, DEFAULT_MARKETING_HOSTNAME } from "./host-routing"
 
 // Демо: единственный способ войти — стать новым гостем. Без полей и пароля, каждый
 // вход даёт новую личность, а данные ей собирает демо-бэкенд (`/api/demo/start/`).
@@ -80,8 +81,9 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       const ALLOWED_HOSTS = new Set(
         [
-          'app.timelyplan.me',
-          'timelyplan.me',
+          DEFAULT_APP_HOSTNAME,
+          DEFAULT_MARKETING_HOSTNAME,
+          `www.${DEFAULT_MARKETING_HOSTNAME}`,
           'localhost:3000',
           process.env.TIMELY_APP_HOST,
           process.env.TIMELY_MARKETING_HOST,
@@ -118,7 +120,7 @@ export const authOptions: NextAuthOptions = {
   // The cookie name comes from ./auth-cookies so that the Edge middleware
   // reads back exactly what this (Node) runtime writes — see that file.
   // No `domain`: the app and the whole auth flow live only on
-  // app.timelyplan.me. The apex is a static landing page that never reads
+  // app.timely-plan.com. The apex is a static landing page that never reads
   // the session, so a host-only cookie is both sufficient and safer.
   cookies: {
     sessionToken: {
