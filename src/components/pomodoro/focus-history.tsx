@@ -18,7 +18,9 @@ import {
   daysBack,
   durationWords,
   ribbonSpan,
+  totalsByName,
   type DayDetail,
+  type NameTotal,
 } from "@/lib/focus-history";
 import { fetchSessions } from "@/lib/pomodoro-api";
 import { readSessionNames, sessionNameOf } from "@/lib/pomodoro-names";
@@ -28,6 +30,8 @@ import { useFocusUser } from "./use-focus-user";
 
 const LIST_DAYS = 400;
 const PAGE = 30;
+/** Сколько названий видно сразу; остальные — по кнопке. */
+const NAMES_SHOWN = 6;
 const HISTORY_URL = "/dashboard/pomodoro/history";
 
 export const dayUrl = (key: string) => `${HISTORY_URL}/${key}`;
@@ -56,7 +60,13 @@ export function FocusHistoryPage() {
   const days = useMemo(() => buildHistoryDays(sessions.data ?? []), [sessions.data]);
   const [shown, setShown] = useState(PAGE);
   const [today, setToday] = useState<Date | null>(null);
-  useEffect(() => setToday(new Date()), []);
+  // Названия сессий живут в этом браузере, поэтому читаются после монтирования.
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setToday(new Date());
+    setNames(readSessionNames());
+  }, []);
+  const totals = useMemo(() => totalsByName(sessions.data ?? [], names), [sessions.data, names]);
 
   return (
     <div className="content view fh">
@@ -74,13 +84,15 @@ export function FocusHistoryPage() {
         <p className="small-note">Загружаю…</p>
       ) : !days.length ? (
         <div className="fh-empty">
-          <p>Здесь будет каждый день, когда ты занимался с таймером.</p>
+          <p>Здесь будет каждый день с занятиями по таймеру.</p>
           <Link className="btn btn-main" href="/dashboard/pomodoro">
             Открыть таймер
           </Link>
         </div>
       ) : (
         <>
+          <NameTotals totals={totals} />
+          <h2 className="fh-h2">По дням</h2>
           <ul className="fh-days card">
             {days.slice(0, shown).map((day) => (
               <li key={day.key}>
@@ -104,6 +116,47 @@ export function FocusHistoryPage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Сколько времени ушло на каждое название сессии. Одинаковые названия складываются в одну
+ * строку; полоска — доля от самого долгого занятия. Без названий показывает подсказку.
+ */
+function NameTotals({ totals }: { totals: NameTotal[] }) {
+  const [all, setAll] = useState(false);
+  const named = totals.some((total) => total.key);
+  const max = Math.max(1, ...totals.map((total) => total.seconds));
+  const list = all ? totals : totals.slice(0, NAMES_SHOWN);
+  return (
+    <section className="fh-names-wrap" aria-label="На что ушло время">
+      <h2 className="fh-h2">На что ушло время</h2>
+      {named ? (
+        <>
+          <ul className="fh-names card">
+            {list.map((total) => (
+              <li key={total.key} className="fh-name" data-unnamed={total.key ? undefined : ""}>
+                <span className="fh-name-t">{total.name || "Без названия"}</span>
+                <span className="fh-name-v">{durationWords(total.seconds)}</span>
+                <span className="tube" aria-hidden="true">
+                  <i style={{ width: `${(total.seconds / max) * 100}%` }} />
+                </span>
+              </li>
+            ))}
+          </ul>
+          {totals.length > NAMES_SHOWN ? (
+            <button className="btn btn-line fh-more" type="button" onClick={() => setAll((value) => !value)}>
+              {all ? "Свернуть" : `Все названия (${totals.length})`}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p className="fh-names-hint">
+          Назови занятие на таймере, например «Физика». Здесь появится, сколько времени ушло на
+          каждое, а одинаковые названия сложатся вместе.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -159,11 +212,11 @@ function DayView({ day, names }: { day: DayDetail; names: Record<string, string>
     <>
       <section className="fh-sum" aria-label="Итог дня">
         <div className="fh-fig">
-          <span className="fh-fig-label">Учился</span>
+          <span className="fh-fig-label">Учёба</span>
           <span className="fh-fig-value">{durationWords(day.focusSeconds)}</span>
         </div>
         <div className="fh-fig">
-          <span className="fh-fig-label">Отдыхал</span>
+          <span className="fh-fig-label">Отдых</span>
           <span className="fh-fig-value">{day.restSeconds ? durationWords(day.restSeconds) : "без отдыха"}</span>
         </div>
         <div className="fh-fig">

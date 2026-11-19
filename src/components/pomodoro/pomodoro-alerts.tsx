@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 import { dashboardViewOf } from "@/config/dashboard-navigation";
-import { bellUnlocked, ringBell, unlockBell } from "@/lib/pomodoro-bell";
+import { bellSoundOf, bellUnlocked, ringBell, unlockBell } from "@/lib/pomodoro-bell";
 import { alarmNotice, alarmTitle, ringBursts, shouldNotify, tabTitle, type TimerPhase } from "@/lib/pomodoro-cycle";
 import { readSessionName } from "@/lib/pomodoro-names";
 import { askNoticePermission, noticePermission, showNotice, type NoticeHandle } from "@/lib/pomodoro-notify";
@@ -128,14 +128,15 @@ function useBell() {
   const at = usePomodoroStore((state) => state.alarm?.at ?? null);
   const auto = usePomodoroStore((state) => state.alarm?.auto ?? false);
   const sound = usePomodoroStore((state) => state.sound);
+  const bellSound = usePomodoroStore((state) => state.bellSound);
   const volume = usePomodoroStore((state) => state.volume);
 
   useEffect(() => {
     if (at === null || !sound) return;
     const alarm = usePomodoroStore.getState().alarm;
     if (!alarm) return;
-    return ringBell(volume, ringBursts(alarm, Date.now()));
-  }, [at, auto, sound, volume]);
+    return ringBell(volume, ringBursts(alarm, Date.now()), bellSoundOf(bellSound), alarm.next);
+  }, [at, auto, sound, bellSound, volume]);
 }
 
 /**

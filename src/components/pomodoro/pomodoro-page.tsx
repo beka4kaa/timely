@@ -26,7 +26,7 @@ import {
   buildWeekBars,
   clockTime,
 } from "@/lib/pomodoro.logic";
-import { readSessionName, readSessionNames, sessionNameOf, writeSessionName } from "@/lib/pomodoro-names";
+import { onSessionName, readSessionName, readSessionNames, sessionNameOf, writeSessionName } from "@/lib/pomodoro-names";
 import { useResource } from "@/lib/resource-cache";
 import { formatMinutes, zonedDateKey, zonedMinutes } from "@/lib/studyplan-calendar";
 import { browserTimeZone, useNow } from "@/lib/use-now";
@@ -120,9 +120,11 @@ export function PomodoroPage() {
     toggle();
   };
 
-  // Название читается после монтирования: на сервере localStorage нет.
+  // Название читается после монтирования: на сервере localStorage нет. Потом следим за
+  // ним: его могли поменять в другой вкладке или на другом устройстве.
   useEffect(() => {
     setSessionName(readSessionName());
+    return onSessionName(() => setSessionName(readSessionName()));
   }, []);
 
   const changeName = useCallback((name: string) => {

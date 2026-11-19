@@ -88,6 +88,16 @@
 .fh-day-sub { grid-area: sub; color: var(--t-muted); font-size: 14.5px; }
 .fh-go { grid-area: go; width: 18px; height: 18px; color: var(--t-faint); }
 .fh-more { margin-top: 14px; height: 42px; padding: 0 20px; font-size: 15px; }
+/* На что ушло время: одна строка на название, полоска — доля от самого долгого */
+.fh-names-wrap .fh-h2 { margin-top: 8px; }
+.fh-names { --r: 18px; display: grid; gap: 14px; padding: 16px 18px 18px; }
+.fh-name { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 6px 14px; }
+.fh-name-t { min-width: 0; overflow-wrap: anywhere; font-size: 17px; font-weight: 600; }
+.fh-name-v { font-size: 16px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.fh-name .tube { grid-column: 1 / -1; }
+.fh-name[data-unnamed] .fh-name-t { color: var(--t-muted); font-weight: 500; }
+.fh-name[data-unnamed] .tube { --c: var(--t-muted); }
+.fh-names-hint { max-width: 520px; color: var(--t-muted); font-size: 15px; line-height: 1.45; }
 
 /* Итог дня: три понятные цифры в строку */
 .fh-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

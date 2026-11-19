@@ -93,6 +93,15 @@ test("keeps auth routes and static assets outside dashboard rewrites", () => {
   );
 });
 
+test("a shared chat opens on both hosts without the dashboard prefix and without sign-in routing", () => {
+  assert.equal(isAppPassthroughPath("/share/AbC-123_xyz"), true);
+  assert.equal(toDashboardPath("/share/AbC-123_xyz"), "/share/AbC-123_xyz");
+  assert.deepEqual(resolveHostRouting({ hostname: "app.timely-plan.com", pathname: "/share/AbC-123_xyz" }), { type: "next" });
+  assert.deepEqual(resolveHostRouting({ hostname: "timely-plan.com", pathname: "/share/AbC-123_xyz" }), { type: "next" });
+  // Похожий раздел дашборда остаётся разделом дашборда.
+  assert.equal(isAppPassthroughPath("/shared-goals"), false);
+});
+
 test("the privacy page opens on both hosts without the dashboard prefix", () => {
   assert.equal(isAppPassthroughPath("/privacy"), true);
   assert.equal(toDashboardPath("/privacy"), "/privacy");

@@ -250,6 +250,9 @@ export function ModePicker({
   onPick: (key: ChatModeKey) => void;
 }) {
   const menu = useMenu();
+  // Под списком одна строка пояснения: к режиму под пальцем или курсором, иначе к текущему.
+  const [hovered, setHovered] = useState<ChatModeKey | null>(null);
+  const noted = CHAT_MODES.find((item) => item.key === (hovered ?? mode.key)) ?? mode;
   return (
     <div className="mode-wrap" ref={menu.wrapRef}>
       <button
@@ -266,27 +269,33 @@ export function ModePicker({
         <Icon name="chev-d" className="chev" />
       </button>
       {menu.open ? (
-        <div className="menu mode-menu" role="menu" aria-label="Режим тьютора" onKeyDown={menu.onItemsKey}>
+        <div
+          className="menu mode-menu"
+          role="menu"
+          aria-label="Режим тьютора"
+          onKeyDown={menu.onItemsKey}
+          onPointerLeave={() => setHovered(null)}
+        >
           {CHAT_MODES.map((item) => (
             <button
               key={item.key}
               type="button"
               role="menuitemradio"
               aria-checked={item.key === mode.key}
+              aria-label={`${item.name}. ${item.note}`}
+              onPointerEnter={() => setHovered(item.key)}
+              onFocus={() => setHovered(item.key)}
               onClick={() => {
                 menu.close();
                 onPick(item.key);
               }}
             >
               <Icon name={item.icon} />
-              <span>
-                <b>{item.name}</b>
-                <small>{item.note}</small>
-              </span>
+              <b>{item.name}</b>
               <Icon name="check" className="ok" />
             </button>
           ))}
-          <p className="mode-hint">Shift + Tab переключает</p>
+          <p className="mode-note" aria-hidden="true">{noted.note}</p>
         </div>
       ) : null}
     </div>
@@ -347,7 +356,7 @@ function Gauge({ level }: { level: AskLevel }) {
 
 /**
  * Кнопка-спидометр цвета акцента; нажатие открывает над полем переключатель Instant /
- * Medium / High. После выбора окошко закрывается само, когда подложка доедет.
+ * Medium / High. Окошко остаётся открытым, пока не нажмёшь мимо или Escape.
  */
 export function LevelPicker({ level, onPick }: { level: AskLevel; onPick: (level: AskLevel) => void }) {
   const menu = useMenu();
@@ -367,14 +376,8 @@ export function LevelPicker({ level, onPick }: { level: AskLevel; onPick: (level
       </button>
       {menu.open ? (
         <div className="menu lvl-menu">
-          <LevelToggle
-            level={level}
-            onPick={(next) => {
-              onPick(next);
-              window.setTimeout(menu.close, 280);
-            }}
-          />
-          <p className="lvl-note">{current.note}</p>
+          {/* Окошко не закрывается после выбора: можно сразу передумать. Закрывает нажатие мимо. */}
+          <LevelToggle level={level} onPick={onPick} />
         </div>
       ) : null}
     </div>

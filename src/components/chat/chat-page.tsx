@@ -471,7 +471,7 @@ export function ChatPage() {
       ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
   }, []);
 
-  const { retryLast } = chat;
+  const { retryLast, rateTurn } = chat;
   const retry = useCallback(() => {
     follow.current = true;
     void retryLast(modeKey);
@@ -554,8 +554,8 @@ export function ChatPage() {
             >
               <Icon name="pen-plus" />
             </button>
-            <span className="chat-now glass">{chatTitle(openRow?.title)}</span>
-            <ShareChat title={openRow?.title} turns={turns} disabled={busy || opening} />
+            <span className="chat-now">{chatTitle(openRow?.title)}</span>
+            <ShareChat chatId={chatId} title={openRow?.title} turns={turns} disabled={busy || opening} />
           </div>
 
           <div
@@ -584,9 +584,12 @@ export function ChatPage() {
                 <AskTurn
                   turn={turn}
                   id={`turn-${index}`}
+                  index={index}
                   showUsage={prefs.showUsage}
                   onCite={showSource}
                   onProposal={updateProposal}
+                  onRate={rateTurn}
+                  onRegenerate={!busy && index === turns.length - 1 && turn.content && !turn.error ? retry : undefined}
                   onRetry={
                     !busy &&
                     index === turns.length - 1 &&

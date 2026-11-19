@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { ringBell, unlockBell } from "@/lib/pomodoro-bell";
+import { BELL_SOUNDS, bellSoundOf, ringBell, unlockBell, type BellSound } from "@/lib/pomodoro-bell";
 import {
   checkRhythm,
   sessionsWord,
@@ -95,24 +95,10 @@ export function PomodoroSettings() {
   );
 }
 
-/**
- * Выбор ритма выпадающим списком: на экране одна строка с текущим ритмом, остальные
- * открываются по нажатию. Закрывается выбором, кликом мимо и Escape.
- */
-function RhythmSelect({
-  presetIdx,
-  rhythm,
-  onPreset,
-  onCustom,
-}: {
-  presetIdx: number;
-  rhythm: Rhythm;
-  onPreset: (index: number) => void;
-  onCustom: () => void;
-}) {
+/** Выпадающий список настроек: закрывается выбором, кликом мимо и Escape, стрелки ходят по пунктам. */
+function useDropdown() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const isCustom = presetIdx === CUSTOM_PRESET;
 
   useEffect(() => {
     if (!open) return;
@@ -147,6 +133,27 @@ function RhythmSelect({
     run();
     setOpen(false);
   };
+
+  return { open, setOpen, wrapRef, onItemsKey, pick };
+}
+
+/**
+ * Выбор ритма выпадающим списком: на экране одна строка с текущим ритмом, остальные
+ * открываются по нажатию. Закрывается выбором, кликом мимо и Escape.
+ */
+function RhythmSelect({
+  presetIdx,
+  rhythm,
+  onPreset,
+  onCustom,
+}: {
+  presetIdx: number;
+  rhythm: Rhythm;
+  onPreset: (index: number) => void;
+  onCustom: () => void;
+}) {
+  const { open, setOpen, wrapRef, onItemsKey, pick } = useDropdown();
+  const isCustom = presetIdx === CUSTOM_PRESET;
 
   return (
     <div className="st-select-wrap" ref={wrapRef}>
@@ -311,19 +318,65 @@ function AutoStartLines() {
   );
 }
 
+/** Какой звук звенит: выпадающий список, выбор сразу проигрывается один раз. */
+function SoundSelect({ value, disabled, onPick }: { value: BellSound; disabled: boolean; onPick: (sound: BellSound) => void }) {
+  const { open, setOpen, wrapRef, onItemsKey, pick } = useDropdown();
+  const current = BELL_SOUNDS.find((item) => item.key === value) ?? BELL_SOUNDS[0];
+  return (
+    <div className="st-select-wrap" ref={wrapRef}>
+      <button
+        className="st-select"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Звук звонка: ${current.name}`}
+        disabled={disabled}
+        onClick={() => setOpen((shown) => !shown)}
+      >
+        <span>
+          <b>{current.name}</b>
+          <small>{current.note}</small>
+        </span>
+        <Icon name="chev-d" className="st-select-chev" />
+      </button>
+      {open ? (
+        <div className="menu st-menu" role="listbox" aria-label="Звук звонка" onKeyDown={onItemsKey}>
+          {BELL_SOUNDS.map((item) => (
+            <button
+              key={item.key}
+              className="menu-item two"
+              type="button"
+              role="option"
+              aria-checked={item.key === value}
+              aria-selected={item.key === value}
+              onClick={() => pick(() => onPick(item.key))}
+            >
+              <b>{item.name}</b>
+              <small>{item.note}</small>
+              <Icon name="check" className="menu-ok" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SoundLines() {
   const sound = usePomodoroStore((state) => state.sound);
+  const bellSound = usePomodoroStore((state) => bellSoundOf(state.bellSound));
   const volume = usePomodoroStore((state) => state.volume);
   const setPrefs = usePomodoroStore((state) => state.setPrefs);
   const stopTest = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stopTest.current?.(), []);
 
-  const test = () => {
+  const play = (which: BellSound) => {
     unlockBell();
     stopTest.current?.();
-    stopTest.current = ringBell(volume, 1);
+    stopTest.current = ringBell(volume, 1, which, "break");
   };
+  const test = () => play(bellSound);
 
   return (
     <>
@@ -337,6 +390,17 @@ function SoundLines() {
           onChange={(value) => {
             if (value) unlockBell();
             setPrefs({ sound: value });
+          }}
+        />
+      </div>
+      <div className="set-line">
+        <div>Какой звук</div>
+        <SoundSelect
+          value={bellSound}
+          disabled={!sound}
+          onPick={(next) => {
+            setPrefs({ bellSound: next });
+            play(next);
           }}
         />
       </div>

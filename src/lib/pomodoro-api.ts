@@ -55,3 +55,42 @@ export async function clearDay(date: string): Promise<void> {
   const response = await authFetch(`${BASE}/clear-day/?${params}`, { method: "DELETE" });
   if (!response.ok) throw new Error(`Не удалось очистить день (${response.status})`);
 }
+
+// ── Идущий таймер, общий для всех устройств ──
+
+const STATE_URL = `${BACKEND_URL}/api/pomodoro/state/`;
+
+export interface RemoteTimerState {
+  /** Как прислал сервер: проверяет `remoteTimer` перед тем, как взять. */
+  state: unknown;
+  version: number;
+}
+
+function remotePayload(data: unknown): RemoteTimerState {
+  const body = (data && typeof data === "object" ? data : {}) as { state?: unknown; version?: unknown };
+  const version = Number(body.version);
+  return { state: body.state ?? null, version: Number.isInteger(version) && version >= 0 ? version : 0 };
+}
+
+export async function fetchTimerState(signal?: AbortSignal): Promise<RemoteTimerState> {
+  const response = await authFetch(STATE_URL, { signal });
+  if (!response.ok) throw new Error(`Не удалось загрузить таймер (${response.status})`);
+  return remotePayload(await response.json());
+}
+
+/**
+ * Записывает таймер поверх версии `baseVersion`. Другое устройство успело раньше — сервер
+ * отвечает 409, и здесь возвращается то, что лежит у него сейчас.
+ */
+export async function saveTimerState(
+  state: unknown,
+  baseVersion: number,
+): Promise<{ ok: true; version: number } | { ok: false; current: RemoteTimerState }> {
+  const response = await authFetch(STATE_URL, {
+    method: "PUT",
+    body: JSON.stringify({ state, base_version: baseVersion }),
+  });
+  if (response.status === 409) return { ok: false, current: remotePayload(await response.json()) };
+  if (!response.ok) throw new Error(`Не удалось сохранить таймер (${response.status})`);
+  return { ok: true, version: remotePayload(await response.json()).version };
+}

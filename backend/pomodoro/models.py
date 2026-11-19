@@ -43,3 +43,22 @@ class FocusSession(models.Model):
 
     def __str__(self) -> str:
         return f'{self.user_email} · {self.kind} · {self.seconds}s'
+
+
+class TimerState(models.Model):
+    """
+    Идущий таймер ученика, общий для всех его устройств.
+
+    Одна запись на ученика. Содержимое — то, что держит таймер в браузере (фаза, когда
+    кончится, остаток на паузе, ритм, название); сервер его не толкует, только хранит.
+    `version` растёт с каждой записью: устройство присылает версию, от которой менялось,
+    и опоздавшая запись отклоняется, а не затирает свежую.
+    """
+
+    user_email = models.EmailField(unique=True)
+    state = models.JSONField(default=dict, blank=True)
+    version = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f'{self.user_email} · v{self.version}'

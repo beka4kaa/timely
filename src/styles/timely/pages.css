@@ -45,14 +45,14 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 /* Материал и строки — общие (.menu в ui.css); здесь только место: над всей строкой ввода */
 .mode-menu { position: absolute; z-index: 6; left: 0; bottom: calc(100% + 54px); width: min(322px, calc(100vw - 40px)); }
 .cmp-tools .book-menu { bottom: calc(100% + 54px); right: auto; left: 0; }
-.mode-menu button { display: grid; grid-template-columns: 16px minmax(0, 1fr) 15px; align-items: start; gap: 9px; width: 100%; padding: 7px 8px; border-radius: 9px; color: var(--t-ink-2); text-align: left; transition: background 120ms ease, color 120ms ease; }
+.mode-menu button { display: grid; grid-template-columns: 16px minmax(0, 1fr) 15px; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border-radius: 9px; color: var(--t-ink-2); text-align: left; transition: background 120ms ease, color 120ms ease; }
 .mode-menu button:hover, .mode-menu button:focus-visible { background: var(--t-hover); color: var(--t-ink); outline: none; }
-.mode-menu .i { width: 16px; height: 16px; margin-top: 1px; color: var(--t-muted); stroke-width: 1.7; }
+.mode-menu .i { width: 16px; height: 16px; color: var(--t-muted); stroke-width: 1.7; }
 .mode-menu b { display: block; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
-.mode-menu small { display: block; margin-top: 1px; color: var(--t-muted); font-size: 12px; line-height: 1.3; }
 .mode-menu .ok { visibility: hidden; color: var(--t-ink); stroke-width: 2.4; }
 .mode-menu [aria-checked="true"] .ok { visibility: visible; }
-.mode-hint { padding: 6px 9px 5px; color: var(--t-faint); font-size: 11.5px; }
+/* Одна строка пояснения под списком режимов вместо подписи у каждого */
+.mode-note { margin-top: 4px; padding: 8px 9px 4px; border-top: 1px solid var(--t-line); color: var(--t-muted); font-size: 12.5px; line-height: 1.35; }
 .m-goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
 .m-goal { min-width: 0; padding: 10px 13px 11px; border-radius: 14px; background: linear-gradient(104deg, var(--d), var(--m)); color: #ffffff; text-align: left; transition: transform 180ms cubic-bezier(0.2, 1.4, 0.4, 1), filter 140ms ease; }
 .m-goal:hover { transform: translateY(-2px); filter: brightness(1.08); }
@@ -730,9 +730,11 @@ html.picking .sidebar, html.picking .mascot { opacity: 0.4; transition: opacity 
   .talk > .composer { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   /* Новое сообщение показывается над строкой ввода, а не под ней */
   .m-you, .m-ai, .m-think { scroll-margin-top: 84px; scroll-margin-bottom: 150px; }
+  /* Подсказки пустого чата под палец: 32 px на телефоне выглядели сплюснутыми */
+  .prompts { gap: 8px; }
+  .prompts button { height: 40px; padding: 0 16px; font-size: 14.5px; }
   /* Шестнадцать пикселей, чтобы телефон не увеличивал страницу при вводе */
   .composer, .fp-name, .q-win { font-size: 16px; }
-  .mode-hint { display: none; }
   .book-pick { max-width: 104px; overflow: hidden; }
   .quick { left: env(safe-area-inset-left, 0px); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); padding: 0 12px; }
   .q-hint { display: none; }

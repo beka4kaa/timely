@@ -52,10 +52,9 @@
   .gauge-needle { transition: none; }
 }
 /* Окошко над полем: тот же материал, что у всех меню */
-.lvl-menu { position: absolute; z-index: 6; left: -4px; bottom: calc(100% + 54px); display: grid; gap: 8px; width: max-content; padding: 8px; }
+.lvl-menu { position: absolute; z-index: 6; left: -4px; bottom: calc(100% + 54px); display: grid; width: max-content; padding: 6px; }
 .lvl-menu .lvl { margin-left: 0; }
 .lvl-menu .lvl button { height: 32px; padding: 0 15px; font-size: 13.5px; }
-.lvl-note { max-width: 250px; padding: 0 6px 2px; color: var(--t-muted); font-size: 12px; line-height: 1.35; }
 /* Копия поверх поля той же ширины, иначе строки переносились бы в другом месте */
 .chat-composer .ti-area .ti-mirror { right: 0; }
 
@@ -188,11 +187,11 @@
 .chat-round:disabled { color: var(--t-faint); cursor: default; }
 .chat-new { justify-self: start; }
 .chat-share { justify-self: end; }
+/* Название чата — просто текст: под ним и так размытие, читается без подложки */
 .chat-now {
-  --r: 99px; justify-self: center; max-width: min(440px, 100%); height: 38px; padding: 0 16px; overflow: hidden;
+  justify-self: center; max-width: min(440px, 100%); height: 38px; padding: 0 16px; overflow: hidden;
   font-size: 14px; font-weight: 600; line-height: 38px; white-space: nowrap; text-overflow: ellipsis;
 }
-.chat-now, .chat-now::before, .chat-now::after { corner-shape: round; }
 
 /* Снизу то же размытие под строкой ввода */
 .talk { position: relative; }
@@ -267,22 +266,63 @@
   .chats-new .i { width: 18px; height: 18px; stroke-width: 2; }
   .chats-new:active { transform: scale(0.96); }
 
-  /* Поле ввода на телефоне: пока в нём не пишут — одна строка-капсула; нажатие раскрывает
-     его, и снизу появляются режим и переключатель Instant / Medium / High. */
-  .chat-composer[data-compact] {
-    --r: 99px; flex-direction: row; align-items: center; gap: 6px; min-height: 50px;
-    padding: 5px 5px 5px 18px; border-radius: 99px; cursor: text;
+  /* Поле ввода на телефоне: пока в нём не пишут — капсула в одну строку; нажатие плавно
+     раскрывает его вверх. Раскладка в обоих видах одна (колонка: текст, под ним строка
+     кнопок), поэтому всё, что меняется, — числа, и браузер их анимирует: в капсуле строка
+     текста отрицательным отступом опускается на строку кнопок, режим и спидометр гаснут,
+     меняются поля и скругление. Низ поля прилип к экрану, так что растёт оно вверх: текст
+     поднимается вместе с верхним краем, микрофон и круг остаются на месте. */
+  .chat-composer {
+    gap: 0;
+    transition:
+      padding 300ms cubic-bezier(0.23, 1, 0.32, 1), border-radius 300ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 200ms ease, --lit 240ms ease;
   }
-  .chat-composer[data-compact] .ti-host { flex: 1; min-width: 0; }
-  .chat-composer[data-compact] .cmp-tools { margin-left: 0; }
-  .chat-composer[data-compact] .cmp-tools > :not(.send, .mic-btn) { display: none; }
-  .chat-composer[data-compact] .send, .chat-composer[data-compact] .mic-btn { width: 40px; height: 40px; }
-  .chat-composer[data-compact] .send .i { width: 19px; height: 19px; }
-  .chat-composer[data-compact] .mic-btn .i { width: 21px; height: 21px; }
-  .chat-composer:not([data-compact]) .cmp-tools { animation: cmp-open 220ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-  .chat-composer:not([data-compact]) .send, .chat-composer:not([data-compact]) .mic-btn { width: 36px; height: 36px; }
+  .chat-composer > .ti-host {
+    margin-bottom: 8px;
+    transition: margin-bottom 300ms cubic-bezier(0.23, 1, 0.32, 1), padding-right 300ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .chat-composer .send, .chat-composer .mic-btn { width: 36px; height: 36px; }
+  .chat-composer .cmp-tools > :not(.send, .mic-btn) {
+    transition: opacity 200ms ease 90ms, transform 300ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 0s;
+  }
+  /* Капсула 50 px: строка текста (22 px) по центру, кнопки 36 px по центру той же строки */
+  .chat-composer[data-compact] { --r: 25px; padding: 14px 7px 7px 18px; cursor: text; }
+  .chat-composer[data-compact] > .ti-host { margin-bottom: -29px; padding-right: 82px; }
+  /* Невидимые режим и спидометр лежат под текстом: нажатия проходят к полю, а не к ним */
+  .chat-composer[data-compact] .cmp-tools { pointer-events: none; }
+  .chat-composer[data-compact] .cmp-tools > .send, .chat-composer[data-compact] .cmp-tools > .mic-btn { pointer-events: auto; }
+  .chat-composer[data-compact] .cmp-tools > :not(.send, .mic-btn) {
+    opacity: 0; transform: translateY(6px); visibility: hidden;
+    transition: opacity 120ms ease, transform 200ms ease, visibility 0s linear 120ms;
+  }
   @media (prefers-reduced-motion: reduce) {
-    .chat-composer:not([data-compact]) .cmp-tools { animation: none; }
+    .chat-composer, .chat-composer > .ti-host, .chat-composer .cmp-tools > * { transition: none; }
   }
 }
-@keyframes cmp-open { from { opacity: 0; transform: translateY(6px); } }
+
+/* ── Под ответом: скопировать, озвучить, оценить, ответить заново и когда пришёл ──
+   Время на компьютере появляется при наведении на ответ, на телефоне видно всегда. */
+.ans-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 4px 0 0 -8px; }
+.ans-act {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px;
+  color: var(--t-muted); transition: background 120ms ease, color 120ms ease;
+}
+.ans-act .i { width: 17px; height: 17px; stroke-width: 1.8; }
+.ans-act:hover { background: var(--t-hover); color: var(--t-ink); }
+.ans-act:focus-visible { outline: 2px solid var(--t-ink); outline-offset: -2px; }
+.ans-act[aria-pressed="true"] { color: var(--t-ink); }
+.ans-rate[aria-pressed="true"] .i { fill: currentColor; }
+.ans-when {
+  margin-left: 8px; color: var(--t-muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  opacity: 0; transition: opacity 160ms ease;
+}
+.m-turn:hover .ans-when, .ans-bar:focus-within .ans-when { opacity: 1; }
+@media (hover: none) {
+  .ans-when { opacity: 1; }
+  .ans-act { width: 38px; height: 38px; }
+  .ans-act .i { width: 18px; height: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ans-when { transition: none; }
+}

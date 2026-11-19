@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import timedelta
 
 from django.conf import settings
@@ -44,6 +45,8 @@ from .models import (
     KnowledgeChunk,
     LearningGoal,
     StudyMaterial,
+    AnswerFeedback,
+    SharedChat,
     SubjectChat,
 )
 from .ocr import MAX_OCR_PAGES_PER_RUN, NullOcrProvider, get_ocr_provider
@@ -839,6 +842,79 @@ class SubjectChatViewSet(viewsets.ModelViewSet):
             raise Http404("Предмет не найден.")
         serializer.save(user_email=email)
 
+    @action(detail=True, methods=["get", "post", "delete"])
+    def share(self, request, pk=None):
+        """Публичная ссылка на этот чат: узнать, создать или обновить снимок, удалить.
+
+        Чат ищется в своих (`get_object`), поэтому чужим не поделиться: 404.
+        """
+        chat = self.get_object()
+        share = SharedChat.objects.filter(chat=chat).first()
+        if request.method == "GET":
+            return Response(_share_payload(share))
+        if request.method == "DELETE":
+            if share is not None:
+                share.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        messages = shared_messages(chat.messages)
+        if not messages:
+            return Response(
+                {"error": "Пока нечем делиться: в чате нет ответов.", "code": "chat_empty"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if share is None:
+            share = SharedChat(chat=chat, user_email=chat.user_email, token=secrets.token_urlsafe(18))
+        share.title = chat.title or ""
+        share.messages = messages
+        share.save()
+        return Response(_share_payload(share))
+
+    @action(detail=True, methods=["post"])
+    def feedback(self, request, pk=None):
+        """«Нравится» (1), «не нравится» (-1) или снять оценку (0) с ответа тьютора.
+
+        Ответ ищется в сохранённом чате по `at` — моменту, когда он пришёл. Вопрос и
+        ответ берутся оттуда же, а не из запроса: в оценке будет ровно то, что ученик видел.
+        """
+        chat = self.get_object()
+        at = request.data.get("at")
+        rating = request.data.get("rating")
+        if isinstance(at, bool) or not isinstance(at, int):
+            return Response({"error": "Нужен момент ответа.", "code": "bad_at"}, status=status.HTTP_400_BAD_REQUEST)
+        if isinstance(rating, bool) or rating not in (AnswerFeedback.LIKE, AnswerFeedback.DISLIKE, 0):
+            return Response({"error": "Оценка — 1, -1 или 0.", "code": "bad_rating"}, status=status.HTTP_400_BAD_REQUEST)
+
+        turns = [turn for turn in chat.messages if isinstance(turn, dict)] if isinstance(chat.messages, list) else []
+        index = next(
+            (i for i, turn in enumerate(turns) if turn.get("role") == "assistant" and turn.get("at") == at),
+            None,
+        )
+        if index is None:
+            return Response({"error": "Ответ не найден.", "code": "answer_not_found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if rating == 0:
+            AnswerFeedback.objects.filter(chat=chat, answer_at=at).delete()
+            return Response({"rating": 0})
+
+        question = next(
+            (str(turn.get("content") or "") for turn in reversed(turns[:index]) if turn.get("role") == "user"),
+            "",
+        )
+        AnswerFeedback.objects.update_or_create(
+            chat=chat,
+            answer_at=at,
+            defaults={
+                "user_email": chat.user_email,
+                "rating": rating,
+                "question": question[:4000],
+                "answer": str(turns[index].get("content") or "")[:20000],
+                "model": str(request.data.get("model") or "")[:40],
+                "mode": str(request.data.get("mode") or "")[:40],
+            },
+        )
+        return Response({"rating": rating})
+
     @action(detail=True, methods=["post"])
     def title(self, request, pk=None):
         """Придумывает чату короткое название по началу разговора.
@@ -856,6 +932,56 @@ class SubjectChatViewSet(viewsets.ModelViewSet):
         chat.title = generated[:200]
         chat.save(update_fields=["title", "updated_at"])
         return Response({"title": chat.title})
+
+
+# Сколько реплик и букв уходит по ссылке: разговор с тьютором, а не архив.
+SHARED_MESSAGES_LIMIT = 200
+SHARED_MESSAGE_CHARS = 20_000
+
+
+def shared_messages(messages) -> list[dict]:
+    """Только текст реплик: без цитат из книг, ошибок и служебных полей."""
+    out: list[dict] = []
+    for turn in messages if isinstance(messages, list) else []:
+        if not isinstance(turn, dict) or turn.get("error"):
+            continue
+        role = turn.get("role")
+        content = turn.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            continue
+        out.append({"role": role, "content": content.strip()[:SHARED_MESSAGE_CHARS]})
+        if len(out) >= SHARED_MESSAGES_LIMIT:
+            break
+    return out
+
+
+def _share_payload(share) -> dict:
+    if share is None:
+        return {"token": None, "shared_at": None}
+    return {"token": share.token, "shared_at": share.updated_at.isoformat()}
+
+
+class PublicSharedChatView(APIView):
+    """GET /api/public/chats/<token>/ — разговор по публичной ссылке, без входа.
+
+    Отдаёт только снимок: название и текст реплик. Ни почты, ни идентификатора чата.
+    Не кешируется: удалённая ссылка должна перестать открываться сразу.
+    """
+
+    def get(self, request, token: str):
+        share = SharedChat.objects.filter(token=token).first()
+        if share is None:
+            response = Response(
+                {"error": "Ссылка не найдена: её удалили или она неверная.", "code": "share_not_found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        else:
+            response = Response(
+                {"title": share.title, "messages": share.messages, "shared_at": share.updated_at.isoformat()}
+            )
+        response["X-Robots-Tag"] = "noindex"
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class KnowledgeSearchView(APIView):

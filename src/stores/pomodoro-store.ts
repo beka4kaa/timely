@@ -13,6 +13,8 @@ import { create } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
 
 import { CUSTOM_PRESET, DEFAULT_PRESET_INDEX, type FocusSessionPayload, type Rhythm } from "@/lib/pomodoro";
+import { DEFAULT_BELL, type BellSound } from "@/lib/pomodoro-bell";
+import type { TimerSnapshot } from "@/lib/pomodoro-remote";
 import {
   advanceCore,
   dismissCore,
@@ -49,6 +51,8 @@ export interface PomodoroPrefs {
   autoBreak: boolean;
   autoFocus: boolean;
   sound: boolean;
+  /** Какой звук звенит в конце фазы. */
+  bellSound: BellSound;
   /** Громкость звонка, 0..1. */
   volume: number;
   notify: boolean;
@@ -87,6 +91,8 @@ interface PomodoroState extends TimerCore, PomodoroPrefs {
   markNotified: (at: number) => void;
   setPrefs: (prefs: Partial<Omit<PomodoroPrefs, "custom">>) => void;
   setLeader: (leader: boolean) => void;
+  /** Таймер с другого устройства: заменяет фазу, время, ритм и звонок, остальное своё. */
+  adoptRemote: (remote: TimerSnapshot) => void;
   tick: () => void;
   /** Убирает отправленные сессии из очереди и будит подписчиков. */
   dropPending: (localIds: string[]) => void;
@@ -209,6 +215,7 @@ export const usePomodoroStore = create<PomodoroState>()(
         autoBreak: false,
         autoFocus: false,
         sound: true,
+        bellSound: DEFAULT_BELL,
         volume: 1,
         notify: true,
         notifyAsked: false,
@@ -273,6 +280,13 @@ export const usePomodoroStore = create<PomodoroState>()(
           if (get().leader !== leader) set({ leader });
         },
 
+        adoptRemote: (remote) => {
+          const { name: _name, presetIdx, custom, ...core } = remote;
+          set({ presetIdx, custom, ...core, nowTs: Date.now() });
+          // Фаза могла кончиться, пока запись шла: ведущая вкладка закончит её сама.
+          get().tick();
+        },
+
         tick: () => {
           const state = get();
           const now = Date.now();
@@ -325,6 +339,7 @@ export const usePomodoroStore = create<PomodoroState>()(
         autoBreak: state.autoBreak,
         autoFocus: state.autoFocus,
         sound: state.sound,
+        bellSound: state.bellSound,
         volume: state.volume,
         notify: state.notify,
         notifyAsked: state.notifyAsked,

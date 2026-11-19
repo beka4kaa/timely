@@ -4,7 +4,7 @@
 // отдыха длиной от минуты. День — местный день браузера, как у карточек на странице таймера.
 
 import { dayKey, isLongBreakRow, type FocusSessionRow } from "./pomodoro";
-import { clockTime } from "./pomodoro.logic";
+import { clockTime, sessionKey } from "./pomodoro.logic";
 
 export interface HistoryDay {
   key: string;
@@ -30,6 +30,48 @@ export function buildHistoryDays(sessions: FocusSessionRow[]): HistoryDay[] {
   return Array.from(days.values())
     .filter((day) => day.blocks > 0)
     .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+}
+
+export interface NameTotal {
+  /** Название, по которому складываются сессии: без регистра, лишних пробелов и «ё». */
+  key: string;
+  /** Как написано в последний раз. Пустое — сессии без названия. */
+  name: string;
+  seconds: number;
+  blocks: number;
+}
+
+function nameKey(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru").replace(/ё/g, "е");
+}
+
+/**
+ * Сколько времени ушло на каждое название. Названия свободные, готовых предметов нет:
+ * «Физика» и «физика » — одно и то же. Считается только фокус. Больше времени — выше,
+ * сессии без названия всегда в конце. `names` — названия из этого браузера по началу сессии.
+ */
+export function totalsByName(sessions: FocusSessionRow[], names: Record<string, string>): NameTotal[] {
+  const groups = new Map<string, NameTotal & { lastAt: number }>();
+  for (const session of sessions) {
+    if (session.kind !== "focus") continue;
+    const raw = names[sessionKey(session.started_at)] ?? "";
+    const key = nameKey(raw);
+    const at = new Date(session.started_at).getTime();
+    const group = groups.get(key) ?? { key, name: "", seconds: 0, blocks: 0, lastAt: -Infinity };
+    group.seconds += session.seconds;
+    group.blocks += 1;
+    if (at >= group.lastAt) {
+      group.lastAt = at;
+      group.name = raw.trim().replace(/\s+/g, " ");
+    }
+    groups.set(key, group);
+  }
+  return Array.from(groups.values())
+    .sort((a, b) => {
+      if (!a.key !== !b.key) return a.key ? -1 : 1;
+      return b.seconds - a.seconds || a.name.localeCompare(b.name, "ru");
+    })
+    .map(({ key, name, seconds, blocks }) => ({ key, name, seconds, blocks }));
 }
 
 export interface DayPart {

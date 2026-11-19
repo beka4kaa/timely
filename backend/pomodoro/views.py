@@ -1,13 +1,16 @@
 from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
+import json
+
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import FocusSession
+from .models import FocusSession, TimerState
 from .serializers import FocusSessionSerializer
 
 DEFAULT_WINDOW_DAYS = 365
@@ -199,3 +202,63 @@ def _compute_streak(daily: dict[str, int], today: date) -> int:
         else:
             break
     return streak
+
+
+# Состояние таймера — несколько полей и название сессии. Больше этого быть не может,
+# и сервер не должен хранить произвольные объёмы от клиента.
+MAX_TIMER_STATE_BYTES = 4096
+
+
+def _timer_payload(row):
+    if row is None:
+        return {'state': None, 'version': 0}
+    return {'state': row.state or None, 'version': row.version}
+
+
+class TimerStateView(APIView):
+    """
+    GET/PUT /api/pomodoro/state/ — идущий таймер, один на все устройства ученика.
+
+    PUT присылает `state` и `base_version` — версию, от которой устройство меняло
+    таймер. Совпала с текущей — запись принята, версия +1. Не совпала — 409 и то, что
+    лежит сейчас: значит, другое устройство успело раньше, и надо взять его состояние.
+    """
+
+    def get(self, request):
+        email = getattr(request, 'user_email', None)
+        if not email:
+            return Response({'detail': 'Не указан пользователь.'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(_timer_payload(TimerState.objects.filter(user_email=email).first()))
+
+    def put(self, request):
+        email = getattr(request, 'user_email', None)
+        if not email:
+            return Response({'detail': 'Не указан пользователь.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        state = request.data.get('state')
+        base_version = request.data.get('base_version')
+        if not isinstance(state, dict):
+            return Response({'detail': 'Состояние таймера должно быть объектом.'}, status=status.HTTP_400_BAD_REQUEST)
+        if isinstance(base_version, bool) or not isinstance(base_version, int) or base_version < 0:
+            return Response({'detail': 'Нужна версия, от которой менялся таймер.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(json.dumps(state, ensure_ascii=False).encode('utf-8')) > MAX_TIMER_STATE_BYTES:
+            return Response({'detail': 'Состояние таймера слишком большое.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                row = TimerState.objects.select_for_update().filter(user_email=email).first()
+                current = row.version if row else 0
+                if base_version != current:
+                    return Response(_timer_payload(row), status=status.HTTP_409_CONFLICT)
+                if row is None:
+                    row = TimerState(user_email=email)
+                row.state = state
+                row.version = current + 1
+                row.save()
+        except IntegrityError:
+            # Два устройства записали самый первый таймер одновременно: второе опоздало.
+            return Response(
+                _timer_payload(TimerState.objects.filter(user_email=email).first()),
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(_timer_payload(row))

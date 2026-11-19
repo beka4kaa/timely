@@ -925,6 +925,55 @@ export async function updateChat(
   return unwrap<SubjectChat>(response);
 }
 
+/** Публичная ссылка на чат: токен есть, пока ученик её не удалил. */
+export interface ChatShare {
+  token: string | null;
+  shared_at: string | null;
+}
+
+export async function getChatShare(chatId: string): Promise<ChatShare> {
+  return unwrap<ChatShare>(await authFetch(`${BASE}/chats/${chatId}/share/`));
+}
+
+/** Создаёт ссылку или обновляет её снимок: адрес остаётся прежним. */
+export async function shareChat(chatId: string): Promise<ChatShare> {
+  return unwrap<ChatShare>(await authFetch(`${BASE}/chats/${chatId}/share/`, { method: "POST" }));
+}
+
+export async function unshareChat(chatId: string): Promise<void> {
+  return remove(`${BASE}/chats/${chatId}/share/`);
+}
+
+export interface SharedChatPage {
+  title: string;
+  messages: { role: "user" | "assistant"; content: string }[];
+  shared_at: string;
+}
+
+/**
+ * Разговор по публичной ссылке. Без входа, поэтому обычный `fetch`, а не `authFetch`.
+ * `null` — ссылки нет: её удалили или она неверная.
+ */
+export async function fetchSharedChat(token: string): Promise<SharedChatPage | null> {
+  const response = await fetch(`${BACKEND_URL}/api/public/chats/${encodeURIComponent(token)}/`, { cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Не удалось открыть чат (${response.status})`);
+  return (await response.json()) as SharedChatPage;
+}
+
+/**
+ * «Нравится» (1), «не нравится» (-1) или снять оценку (0). Ответ находится по `at` —
+ * моменту, когда он пришёл; вопрос и ответ сервер берёт из сохранённого чата.
+ */
+export async function sendAnswerFeedback(
+  chatId: string,
+  body: { at: number; rating: 1 | -1 | 0; mode?: string; model?: string },
+): Promise<void> {
+  await unwrap<{ rating: number }>(
+    await authFetch(`${BASE}/chats/${chatId}/feedback/`, { method: "POST", body: JSON.stringify(body) }),
+  );
+}
+
 export async function deleteChat(chatId: string): Promise<void> {
   return remove(`${BASE}/chats/${chatId}/`);
 }

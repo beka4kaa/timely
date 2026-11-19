@@ -392,3 +392,83 @@ class DuplicateCleanupMigrationTests(TransactionTestCase):
         )
         new_apps = self._migrate(self.after)
         self.assertEqual(new_apps.get_model('pomodoro', 'FocusSession').objects.count(), 1)
+
+
+class TimerStateApiTests(TestCase):
+    """Идущий таймер один на все устройства ученика.
+
+    Сервер хранит его как есть и меняет версию на каждой записи. Запись со старой
+    версией отклоняется и возвращает то, что уже лежит: так два устройства не затирают
+    друг друга молча, а то, что опоздало, берёт свежее состояние.
+    """
+
+    URL = '/api/pomodoro/state/'
+
+    def setUp(self):
+        self.client = Client()
+        self.email = 'student@timely-plan.com'
+        self.other = 'someone-else@timely-plan.com'
+
+    def _put(self, state, base_version, email=None):
+        return self.client.put(
+            self.URL,
+            data={'state': state, 'base_version': base_version},
+            content_type='application/json',
+            **auth_headers(email or self.email),
+        )
+
+    def _get(self, email=None):
+        return self.client.get(self.URL, **auth_headers(email or self.email))
+
+    def test_nothing_is_stored_at_first(self):
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'state': None, 'version': 0})
+
+    def test_first_save_becomes_version_one_and_is_read_back(self):
+        state = {'phase': 'focus', 'running': True, 'endsAt': 1795080000000}
+        response = self._put(state, 0)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'state': state, 'version': 1})
+        self.assertEqual(self._get().json(), {'state': state, 'version': 1})
+
+    def test_each_save_moves_the_version(self):
+        self._put({'phase': 'focus'}, 0)
+        response = self._put({'phase': 'break'}, 1)
+        self.assertEqual(response.json()['version'], 2)
+
+    def test_stale_save_is_refused_and_returns_what_is_stored(self):
+        self._put({'phase': 'focus', 'running': True}, 0)
+        late = self._put({'phase': 'focus', 'running': False}, 0)
+        self.assertEqual(late.status_code, 409)
+        self.assertEqual(late.json(), {'state': {'phase': 'focus', 'running': True}, 'version': 1})
+
+    def test_save_before_anything_stored_with_a_wrong_version_is_refused(self):
+        response = self._put({'phase': 'focus'}, 3)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {'state': None, 'version': 0})
+
+    def test_each_student_has_their_own_timer(self):
+        self._put({'phase': 'focus'}, 0)
+        self.assertEqual(self._get(self.other).json(), {'state': None, 'version': 0})
+
+    def test_state_must_be_an_object(self):
+        self.assertEqual(self._put('focus', 0).status_code, 400)
+        self.assertEqual(self._put(['focus'], 0).status_code, 400)
+
+    def test_version_must_be_a_number(self):
+        self.assertEqual(self._put({'phase': 'focus'}, 'latest').status_code, 400)
+        response = self.client.put(
+            self.URL,
+            data={'state': {'phase': 'focus'}},
+            content_type='application/json',
+            **auth_headers(self.email),
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_oversized_state_is_refused(self):
+        response = self._put({'name': 'x' * 5000}, 0)
+        self.assertEqual(response.status_code, 400)
+
+    def test_requires_sign_in(self):
+        self.assertEqual(self.client.get(self.URL).status_code, 401)

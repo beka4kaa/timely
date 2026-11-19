@@ -19,6 +19,7 @@ import {
   getChat,
   listChats,
   renameChatAutomatically,
+  sendAnswerFeedback,
   updateChat,
   type AskCitation,
   type AskMessage,
@@ -35,6 +36,12 @@ import { STOPPED_ERROR } from "./ask-stages";
 import { historyContent, type AssistantProposal } from "./assistant-proposal";
 
 export interface Turn extends AskMessage {
+  /** Когда реплика появилась, epoch ms. У старых сохранённых реплик его нет. */
+  at?: number;
+  /** Оценка ответа: «нравится» (1) или «не нравится» (-1). */
+  rating?: 1 | -1;
+  /** Режим, в котором задан вопрос: идёт в оценку ответа. */
+  mode?: string;
   /** Сколько стоил ответ. Показывается по настройке. */
   usage?: AskUsage;
   citations?: AskCitation[];
@@ -99,6 +106,7 @@ export interface SubjectChatEngine {
   ask: (question: string, history?: Turn[], mode?: string) => Promise<void>;
   /** Спросить заново то, на что не удалось ответить: неудачная пара уходит с экрана. */
   retryLast: (mode?: string) => Promise<void>;
+  rateTurn: (index: number, rating: 1 | -1) => void;
   stop: () => void;
   startNew: () => void;
   /** Решение ученика по карточке. Хранится вместе с ответом. */
@@ -219,10 +227,17 @@ export function useSubjectChat({
       const goal = goalRef.current;
       setTurns((prev) => [
         ...prev,
-        { role: "user", content: text },
+        { role: "user", content: text, at: startedAt },
         // Без книги искать негде, и первым этапом сразу «отвечаю»: иначе
-        // заметка обещала бы поиск, которого не будет.
-        { role: "assistant", content: "", stage: goal ? "retrieving" : "answering" },
+        // заметка обещала бы поиск, которого не будет. Время ответа на миллисекунду
+        // позже вопроса: по нему ответ находится в чате, когда его оценивают.
+        {
+          role: "assistant",
+          content: "",
+          stage: goal ? "retrieving" : "answering",
+          at: startedAt + 1,
+          ...(mode ? { mode } : {}),
+        },
       ]);
 
       // Прерванный поток может ещё отдать то, что лежит в буфере. Это уже чужая лента.
@@ -343,6 +358,29 @@ export function useSubjectChat({
     );
   }, [turns, busy, scope]);
 
+  /**
+   * «Нравится» или «не нравится». Повторное нажатие на ту же оценку снимает её. Оценка
+   * лежит в самой реплике (сохраняется вместе с чатом) и уходит на сервер для разбора.
+   */
+  const rateTurn = useCallback(
+    (index: number, rating: 1 | -1) => {
+      const turn = turns[index];
+      if (!turn || turn.role !== "assistant" || !turn.content) return;
+      const next = turn.rating === rating ? undefined : rating;
+      setTurns((prev) => prev.map((item, at) => (at === index ? { ...item, rating: next } : item)));
+      const id = conversation.current.id;
+      if (id && turn.at) {
+        void sendAnswerFeedback(id, {
+          at: turn.at,
+          rating: next ?? 0,
+          mode: turn.mode,
+          model: turn.usage ? `${turn.usage.model} ${turn.usage.reasoning}`.trim() : undefined,
+        }).catch(() => undefined);
+      }
+    },
+    [turns],
+  );
+
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -435,6 +473,7 @@ export function useSubjectChat({
     reloadChats,
     ask,
     retryLast,
+    rateTurn,
     stop,
     startNew,
     updateProposal,

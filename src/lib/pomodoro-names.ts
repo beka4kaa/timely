@@ -16,12 +16,30 @@ export function readSessionName(): string {
   }
 }
 
+/** Название поменялось: страница таймера обновляет поле, синхронизация отправляет его. */
+export const SESSION_NAME_EVENT = "timely:pomodoro:name";
+
 export function writeSessionName(name: string): void {
   try {
+    if (window.localStorage.getItem(NAME_KEY) === name) return;
     window.localStorage.setItem(NAME_KEY, name);
   } catch {
     // Приватный режим: имя просто не переживёт перезагрузку.
   }
+  window.dispatchEvent(new Event(SESSION_NAME_EVENT));
+}
+
+/** Следит за названием: из этой вкладки, другой вкладки и другого устройства. */
+export function onSessionName(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === NAME_KEY) listener();
+  };
+  window.addEventListener(SESSION_NAME_EVENT, listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(SESSION_NAME_EVENT, listener);
+    window.removeEventListener("storage", onStorage);
+  };
 }
 
 export function readSessionNames(): Record<string, string> {

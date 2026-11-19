@@ -15,6 +15,7 @@ import { leadTimer, startTicker } from "@/lib/pomodoro-tabs";
 import { POMODORO_STORAGE_KEY, POMODORO_STORAGE_VERSION, usePomodoroStore } from "@/stores/pomodoro-store";
 
 import { useFocusUser } from "./use-focus-user";
+import { useTimerSync } from "./use-timer-sync";
 
 /**
  * Сколько новая ведущая вкладка ждёт перед первой отправкой: прошлая могла ещё ждать
@@ -35,6 +36,8 @@ function storedVersion(raw: string | null): number {
 export function PomodoroSync() {
   const email = useFocusUser();
   const leader = usePomodoroStore((state) => state.leader);
+  // Идущий таймер общий для всех устройств: ведущая вкладка держит его в согласии с сервером.
+  useTimerSync(email, leader);
   const pending = usePomodoroStore((state) => state.pending);
   const dropPending = usePomodoroStore((state) => state.dropPending);
   const focusing = usePomodoroStore((state) => state.running && state.phase === "focus");

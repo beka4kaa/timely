@@ -10,6 +10,7 @@ import {
   durationWords,
   isDayKey,
   ribbonSpan,
+  totalsByName,
 } from "./focus-history";
 import type { FocusSessionRow } from "./pomodoro";
 
@@ -99,4 +100,38 @@ test("only real dates are day keys, and the window reaches back to the day", () 
   assert.equal(daysBack("2026-11-19", today), 2);
   assert.equal(daysBack("2026-11-09", today), 12);
   assert.equal(daysBack("2020-01-01", today), 400);
+});
+
+test("время по названиям: одинаковые названия складываются, отдых не считается", () => {
+  const at = (local: string) => String(new Date(local).getTime());
+  const list = [
+    row("focus", "2026-11-18T10:00:00", 50),
+    row("focus", "2026-11-19T10:00:00", 30),
+    row("break", "2026-11-19T10:30:00", 10),
+    row("focus", "2026-11-19T11:00:00", 20),
+    row("focus", "2026-11-19T12:00:00", 90),
+    row("focus", "2026-11-19T14:00:00", 25),
+  ];
+  const names = {
+    [at("2026-11-18T10:00:00")]: "физика",
+    [at("2026-11-19T10:00:00")]: "  Физика ",
+    [at("2026-11-19T10:30:00")]: "Физика",
+    [at("2026-11-19T11:00:00")]: "Алгебра",
+    // 12:00 без названия
+    [at("2026-11-19T14:00:00")]: "алгебра  ",
+  };
+  assert.deepEqual(totalsByName(list, names), [
+    // Пишется так, как назвал в последний раз
+    { key: "физика", name: "Физика", seconds: 80 * 60, blocks: 2 },
+    { key: "алгебра", name: "алгебра", seconds: 45 * 60, blocks: 2 },
+    // Без названия всегда в конце, даже если времени больше всего
+    { key: "", name: "", seconds: 90 * 60, blocks: 1 },
+  ]);
+});
+
+test("время по названиям: «ё» и «е», лишние пробелы внутри — одно и то же", () => {
+  const at = (local: string) => String(new Date(local).getTime());
+  const list = [row("focus", "2026-11-19T09:00:00", 10), row("focus", "2026-11-19T09:20:00", 15)];
+  const names = { [at("2026-11-19T09:00:00")]: "Всё  о химии", [at("2026-11-19T09:20:00")]: "все о химии" };
+  assert.deepEqual(totalsByName(list, names), [{ key: "все о химии", name: "все о химии", seconds: 25 * 60, blocks: 2 }]);
 });

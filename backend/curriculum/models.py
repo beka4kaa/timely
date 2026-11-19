@@ -1213,6 +1213,60 @@ class SubjectChat(TimestampedModel):
         return self.title or f"Чат {self.pk}"
 
 
+class SharedChat(TimestampedModel):
+    """Публичная ссылка на разговор: снимок на момент, когда ученик поделился.
+
+    Снимок, а не ссылка на живой чат: то, что ученик напишет после, в ссылку не
+    попадает, пока он сам её не обновит. Хранится только текст реплик — без цитат из
+    книг ученика (его копия книги не для чужих глаз) и без служебных полей.
+
+    Одна ссылка на чат: «Обновить» меняет снимок, адрес остаётся прежним. Удалили
+    ссылку или чат — запись уходит, и по адресу больше ничего нет.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chat = models.OneToOneField(SubjectChat, on_delete=models.CASCADE, related_name="share")
+    user_email = models.EmailField(db_index=True)
+    token = models.CharField(max_length=40, unique=True)
+    title = models.CharField(max_length=200, blank=True, default="")
+    messages = models.JSONField(default=list, blank=True)
+
+    def __str__(self) -> str:
+        return f"Ссылка на {self.chat_id}"
+
+
+class AnswerFeedback(TimestampedModel):
+    """Оценка ответа тьютора: «нравится» (1) или «не нравится» (-1).
+
+    Хранится вместе с вопросом и ответом: по одной оценке без текста не понять, что
+    именно было плохо. Ответ находится в чате по моменту, когда он пришёл (`answer_at`,
+    поле `at` реплики): номер реплики не годится, старые реплики обрезаются. Чат удалили —
+    оценки уходят вместе с ним.
+    """
+
+    LIKE = 1
+    DISLIKE = -1
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_email = models.EmailField(db_index=True)
+    chat = models.ForeignKey(SubjectChat, on_delete=models.CASCADE, related_name="feedback")
+    answer_at = models.BigIntegerField()
+    rating = models.SmallIntegerField()
+    question = models.TextField(blank=True, default="")
+    answer = models.TextField(blank=True, default="")
+    model = models.CharField(max_length=40, blank=True, default="")
+    mode = models.CharField(max_length=40, blank=True, default="")
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["chat", "answer_at"], name="answer_feedback_once"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{'👍' if self.rating > 0 else '👎'} {self.answer[:40]}"
+
+
 class CourseEnrollment(TimestampedModel):
     """Факт того, что ученик начал заниматься по подтверждённой версии."""
 

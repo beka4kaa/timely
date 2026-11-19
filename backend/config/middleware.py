@@ -17,7 +17,8 @@ from django.http import JsonResponse
 logger = logging.getLogger("config.auth")
 
 # Everything else is refused without a credential, so a new endpoint starts closed.
-PUBLIC_PATH_PREFIXES = ("/health/", "/admin/", "/static/")
+# /api/public/ — только то, что ученик сам открыл всем: разговор по ссылке.
+PUBLIC_PATH_PREFIXES = ("/health/", "/admin/", "/static/", "/api/public/")
 
 TOKEN_ALGORITHM = "HS256"
 TOKEN_ISSUER = "timely-web"

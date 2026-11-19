@@ -1,71 +1,202 @@
 "use client";
 
-// «Поделиться» над перепиской: на телефоне системное меню, на компьютере текст чата в буфер.
-// Ссылки на чат нет, уходит только текст, и только туда, куда его отправит сам ученик.
+// «Поделиться» над перепиской: публичная ссылка на снимок разговора.
+//
+// Ссылку создаёт и удаляет сам ученик. По ней видно только текст реплик, без цитат из
+// книг. Новые сообщения в ссылку не попадают, пока её не обновят: «Обновить» меняет
+// снимок, адрес остаётся прежним.
 
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shell/icons";
+import { getChatShare, shareChat, unshareChat, type ChatShare } from "@/lib/curriculum-api";
 
-import { canShareChat, chatShareText, type ShareTurn } from "./chat-share";
+import { canShareChat, shareUrl, type ShareTurn } from "./chat-share";
 import { chatTitle } from "./chat-title";
 
-type Done = "copied" | "failed" | null;
+type Status = "idle" | "loading" | "busy" | "failed";
 
 export function ShareChat({
+  chatId,
   title,
   turns,
   disabled,
 }: {
+  /** Сохранённый чат. Пока разговор не сохранён, делиться нечем. */
+  chatId: string | null;
   title: string | null | undefined;
   turns: ShareTurn[];
   disabled?: boolean;
 }) {
-  const [done, setDone] = useState<Done>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const [open, setOpen] = useState(false);
+  /** `null` — ещё не знаем, есть ли ссылка. */
+  const [share, setShare] = useState<ChatShare | null>(null);
+  const [status, setStatus] = useState<Status>("idle");
+  const [copied, setCopied] = useState(false);
+  const [canSend, setCanSend] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const flash = (value: Done) => {
-    setDone(value);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setDone(null), 1800);
-  };
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  useEffect(() => setCanSend(typeof navigator.share === "function" && matchMedia("(pointer: coarse)").matches), []);
 
-  const share = async () => {
-    const text = chatShareText(title, turns);
-    if (typeof navigator.share === "function" && matchMedia("(pointer: coarse)").matches) {
-      try {
-        await navigator.share({ title: chatTitle(title), text });
-        return;
-      } catch (error) {
-        // Закрыл меню сам: ничего не случилось и копировать молча не нужно.
-        if (error instanceof DOMException && error.name === "AbortError") return;
-      }
-    }
+  // Другой чат — другая ссылка.
+  useEffect(() => {
+    setShare(null);
+    setOpen(false);
+    setStatus("idle");
+  }, [chatId]);
+
+  // Окошко закрывается нажатием мимо и Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      wrapRef.current?.querySelector<HTMLElement>(".chat-share")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Есть ли уже ссылка — спрашиваем, когда окошко открыли.
+  useEffect(() => {
+    if (!open || !chatId || share) return;
+    let gone = false;
+    setStatus("loading");
+    getChatShare(chatId)
+      .then((value) => {
+        if (gone) return;
+        setShare(value);
+        setStatus("idle");
+      })
+      .catch(() => {
+        if (!gone) setStatus("failed");
+      });
+    return () => {
+      gone = true;
+    };
+  }, [open, chatId, share]);
+
+  const link = share?.token ? shareUrl(window.location.origin, share.token) : "";
+
+  const copy = async (url: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      flash("copied");
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
-      flash("failed");
+      // Буфер закрыт: ссылка видна в поле, её можно выделить самому.
     }
   };
 
-  const label =
-    done === "copied" ? "Чат скопирован" : done === "failed" ? "Не получилось скопировать" : "Поделиться чатом";
+  /** Создать ссылку или обновить её снимок. Новую ссылку сразу кладём в буфер. */
+  const publish = async () => {
+    if (!chatId) return;
+    const fresh = !share?.token;
+    setStatus("busy");
+    try {
+      const value = await shareChat(chatId);
+      setShare(value);
+      setStatus("idle");
+      if (fresh && value.token) void copy(shareUrl(window.location.origin, value.token));
+    } catch {
+      setStatus("failed");
+    }
+  };
+
+  const unpublish = async () => {
+    if (!chatId) return;
+    setStatus("busy");
+    try {
+      await unshareChat(chatId);
+      setShare({ token: null, shared_at: null });
+      setStatus("idle");
+    } catch {
+      setStatus("failed");
+    }
+  };
+
+  const send = async () => {
+    try {
+      await navigator.share({ title: chatTitle(title), url: link });
+    } catch {
+      // Закрыл меню сам или отправка не удалась: ссылка остаётся в поле.
+    }
+  };
+
+  const busy = status === "busy";
 
   return (
-    <button
-      className="chat-round glass chat-share"
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled || !canShareChat(turns)}
-      onClick={() => void share()}
-    >
-      <Icon name={done === "copied" ? "check" : done === "failed" ? "x" : "share"} />
-      <span className="sr-only" aria-live="polite">
-        {done ? label : ""}
-      </span>
-    </button>
+    <div className="share-wrap" ref={wrapRef}>
+      <button
+        className="chat-round glass chat-share"
+        type="button"
+        aria-label="Поделиться чатом"
+        title="Поделиться чатом"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={disabled || !chatId || !canShareChat(turns)}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="share" />
+      </button>
+      {open ? (
+        <div className="menu share-pop" role="dialog" aria-label="Поделиться чатом">
+          <p className="share-h">Поделиться чатом</p>
+          {share === null ? (
+            status === "failed" ? null : <p className="share-note">Проверяю, есть ли ссылка…</p>
+          ) : share.token ? (
+            <>
+              <div className="share-link">
+                <input
+                  readOnly
+                  value={link}
+                  aria-label="Ссылка на чат"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button className="btn btn-main" type="button" onClick={() => void copy(link)}>
+                  {copied ? "Скопировано" : "Скопировать"}
+                </button>
+              </div>
+              <p className="share-note">Новые сообщения попадут по ссылке после «Обновить».</p>
+              <div className="share-acts">
+                {canSend ? (
+                  <button className="btn btn-line" type="button" onClick={() => void send()}>
+                    Отправить
+                  </button>
+                ) : null}
+                <button className="btn btn-line" type="button" disabled={busy} onClick={() => void publish()}>
+                  Обновить
+                </button>
+                <button className="btn btn-text share-del" type="button" disabled={busy} onClick={() => void unpublish()}>
+                  Удалить ссылку
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="share-note">Ссылку откроет любой, у кого она есть. Источников из книг по ней не видно.</p>
+              <button className="btn btn-main share-create" type="button" disabled={busy} onClick={() => void publish()}>
+                Создать ссылку
+              </button>
+            </>
+          )}
+          {status === "failed" ? (
+            <p className="share-error" role="alert">
+              Не получилось. Проверь интернет и попробуй ещё раз.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

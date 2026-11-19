@@ -26,7 +26,7 @@ from ai_engine.illustration_views import IllustrationView, ImageModelsView
 from ai_engine.usage_views import AIUsageSummaryView
 from ai_engine.understand import UnderstandView
 from habits.views import HabitViewSet
-from pomodoro.views import FocusSessionViewSet
+from pomodoro.views import FocusSessionViewSet, TimerStateView
 from nutrition.views import (
     FoodSearchView,
     BarcodeLookupView,
@@ -46,6 +46,7 @@ from studyplan.views import (
 )
 from curriculum.ask_views import AskOptionsView, SubjectAskStreamView
 from curriculum.views import (
+    PublicSharedChatView,
     SubjectChatViewSet,
     CourseEnrollmentViewSet,
     CoursePlanViewSet,
@@ -154,6 +155,14 @@ urlpatterns = [
         ScheduleSetupView.as_view(),
         name='studyplan-setup-no-slash',
     ),
+    # Идущий таймер помодоро, общий для всех устройств ученика. Оба варианта пути:
+    # фронтенд ходит в backend напрямую, и редирект на слеше оборвал бы PUT с телом.
+    path('api/pomodoro/state/', TimerStateView.as_view(), name='pomodoro-state'),
+    path('api/pomodoro/state', TimerStateView.as_view(), name='pomodoro-state-no-slash'),
+    # Разговор по публичной ссылке: открывается без входа (config.middleware пускает
+    # /api/public/ без токена), отдаёт только снимок, который ученик сам выложил.
+    path('api/public/chats/<str:token>/', PublicSharedChatView.as_view(), name='public-shared-chat'),
+    path('api/public/chats/<str:token>', PublicSharedChatView.as_view(), name='public-shared-chat-no-slash'),
     path('health/', health_check, name='health-check'),
     # Демо для проверяющих: без DEMO_MODE отвечает 404.
     path('api/demo/', include('demo.urls')),

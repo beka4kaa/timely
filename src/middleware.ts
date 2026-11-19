@@ -155,6 +155,8 @@ export default withAuth(
           '/auth/error',
           '/register',
           '/privacy',
+          // Чат, которым ученик поделился ссылкой, открывает любой.
+          '/share/',
         ]
         const isPublicPath = (IS_DEMO ? DEMO_PUBLIC_PATHS : publicPaths)
           .some(path => pathname.startsWith(path))

@@ -43,6 +43,8 @@ const APP_PASSTHROUGH_PREFIXES = [
   "/auth",
   "/register",
   "/privacy",
+  // Разговор по публичной ссылке: открывается без входа и без приставки дашборда.
+  "/share",
   "/_next",
 ];
 
