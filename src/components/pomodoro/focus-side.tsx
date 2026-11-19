@@ -2,9 +2,12 @@
 
 // Боковая колонка помодоро: сегодня, сессии, неделя. Стопка карточек на настоящих данных.
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
-import { DAY_GOAL_MIN, hm } from "@/lib/pomodoro";
+import { Icon } from "@/components/shell/icons";
+
+import { DAY_GOAL_MIN, dayKey, hm } from "@/lib/pomodoro";
 import type { DayBar, HistoryRow, TodayStats } from "@/lib/pomodoro.logic";
 import { sumSeconds } from "@/lib/pomodoro.logic";
 import { cn } from "@/lib/utils";
@@ -67,23 +70,48 @@ export function SessionsCard({
   onClearDay: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+
+  // Список длиннее карточки: низ мягко тает, пока ниже есть ещё строки.
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const update = () => setMore(box.scrollHeight - box.scrollTop - box.clientHeight > 4);
+    update();
+    box.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    if (box.firstElementChild) observer.observe(box.firstElementChild);
+    return () => {
+      box.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, [rows.length]);
 
   return (
-    <section className="scard card">
+    <section className="scard card fp-sess">
       <h2>Сессии</h2>
+      <div className="sess-scroll" ref={scrollRef} data-more={more || undefined}>
       {rows.length ? (
-        <ul className="sess">
-          {rows.map((row) => (
-            <li key={row.key}>
-              <span className="m">{row.time}</span>
-              <span className={cn(!row.isFocus && "muted")}>
-                {row.name}
-                {row.stoppedEarly ? <small>остановлена раньше</small> : null}
-              </span>
-              <span className="m">{row.duration}</span>
-            </li>
-          ))}
-        </ul>
+        <Link
+          className="sess-link"
+          href={`/dashboard/pomodoro/history/${dayKey(new Date())}`}
+          title="Подробнее о сегодняшнем дне"
+        >
+          <ul className="sess">
+            {rows.map((row) => (
+              <li key={row.key}>
+                <span className="m">{row.time}</span>
+                <span className={cn(!row.isFocus && "muted")}>
+                  {row.name}
+                  {row.stoppedEarly ? <small>остановлена раньше</small> : null}
+                </span>
+                <span className="m">{row.duration}</span>
+              </li>
+            ))}
+          </ul>
+        </Link>
       ) : (
         <p className="small-note">
           {loading
@@ -91,6 +119,11 @@ export function SessionsCard({
             : "Сегодня пока пусто. Запусти таймер: сессии от минуты появятся здесь."}
         </p>
       )}
+      </div>
+      <Link className="fh-all" href="/dashboard/pomodoro/history">
+        История занятий
+        <Icon name="chev-r" />
+      </Link>
       {canClear ? (
         confirming ? (
           <div className="fp-clear" role="alert">

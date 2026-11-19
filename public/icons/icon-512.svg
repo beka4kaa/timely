@@ -1,9 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
-  <rect width="100" height="100" rx="22" ry="22" fill="#162032"/>
-  <rect x="17" y="28" width="66" height="13" rx="6.5" ry="6.5" fill="#b8d4f0"/>
-  <rect x="17" y="28" width="42" height="13" rx="6.5" ry="6.5" fill="#2563eb"/>
-  <rect x="17" y="44" width="66" height="13" rx="6.5" ry="6.5" fill="#a7f3d0"/>
-  <rect x="17" y="44" width="34" height="13" rx="6.5" ry="6.5" fill="#16a34a"/>
-  <rect x="17" y="60" width="66" height="13" rx="6.5" ry="6.5" fill="#fef3c7"/>
-  <rect x="17" y="60" width="20" height="13" rx="6.5" ry="6.5" fill="#d97706"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+<rect width="64" height="64" fill="#121218"/>
+<path d="M11 42C11 25 21 17 32 17C43 17 53 25 53 42C53 48 49.5 51 44 51H20C14.5 51 11 48 11 42Z" fill="#ffffff"/>
+<ellipse cx="18.4" cy="38.6" rx="3.7" ry="2.3" fill="#ffc2d2"/><ellipse cx="45.6" cy="38.6" rx="3.7" ry="2.3" fill="#ffc2d2"/>
+<path d="M21.2 34.4Q25 29.6 28.8 34.4M35.2 34.4Q39 29.6 42.8 34.4" fill="none" stroke="#121218" stroke-width="3" stroke-linecap="round"/>
 </svg>

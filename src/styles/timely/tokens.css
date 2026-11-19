@@ -32,6 +32,10 @@
   /* Стекло */
   --t-glass: rgba(255, 255, 255, 0.62);
   --t-glass-strong: rgba(255, 255, 255, 0.86);
+  /* Всплывающие меню: стекло плотнее обычного — часто лежит внутри другого стекла,
+     где размытие страницы не работает */
+  --t-menu: rgba(255, 255, 255, 0.94);
+  --t-menu-sh: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi);
   --t-glass-sheen: rgba(255, 255, 255, 0.2);
   --t-rim-hi: rgba(255, 255, 255, 0.95);
   --t-rim-lo: rgba(255, 255, 255, 0.5);
@@ -68,35 +72,40 @@
   --t-moon-d: block;
 
   --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
-  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-display: var(--font-display), "Manrope", var(--t-sans);
+  --t-math: Georgia, "Times New Roman", serif;
   --t-hand: "Caveat", "Segoe Script", cursive;
 
 }
 
 .dark {
-    --t-bg: #0d0d0e;
+    /* Посередине между почти чёрным #0d0d0e и графитом #18181b: тёмный, но белый
+       текст на нём не режет глаз, а карточки заметно светлее фона */
+    --t-bg: #131315;
     --t-hover: rgba(255, 255, 255, 0.055);
     --t-fill: rgba(255, 255, 255, 0.085);
     --t-line: rgba(255, 255, 255, 0.07);
     --t-line-strong: rgba(255, 255, 255, 0.15);
-    --t-ink: #ececee;
-    --t-ink-2: #c4c4c8;
-    --t-muted: #97979d;
-    --t-faint: #6c6c72;
+    --t-ink: #e2e2e5;
+    --t-ink-2: #b9b9be;
+    --t-muted: #8d8d93;
+    --t-faint: #66666c;
     --t-on-ink: #111112;
-    --t-accent: #e4e4e6;
+    --t-accent: #d8d8db;
     --t-on-accent: #111112;
     --t-accent-soft: rgba(255, 255, 255, 0.09);
     --t-ok: #7fcfa6;
     --t-warn: #ef8f86;
 
-    --t-card: rgba(255, 255, 255, 0.042);
+    --t-card: rgba(255, 255, 255, 0.05);
     --t-card-sh: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06), inset 0 0.5px 0 rgba(255, 255, 255, 0.05);
     --t-card-soft: rgba(255, 255, 255, 0.026);
     --t-card-soft-sh: inset 0 0 0 0.5px rgba(255, 255, 255, 0.05);
 
     --t-glass: rgba(255, 255, 255, 0.06);
-    --t-glass-strong: rgba(38, 38, 40, 0.84);
+    --t-glass-strong: rgba(42, 42, 45, 0.85);
+    --t-menu: rgba(36, 36, 39, 0.95);
+    --t-menu-sh: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi);
     --t-glass-sheen: rgba(255, 255, 255, 0.022);
     --t-rim-hi: rgba(255, 255, 255, 0.24);
     --t-rim-lo: rgba(255, 255, 255, 0.06);
@@ -108,7 +117,7 @@
     --t-pill: rgba(255, 255, 255, 0.1);
     --t-pill-sh: inset 0 0.5px 0 rgba(255, 255, 255, 0.08), 0 1px 3px -1px rgba(0, 0, 0, 0.5);
     --t-tube: rgba(255, 255, 255, 0.08);
-    --t-btn-main: #e4e4e6;
+    --t-btn-main: #d8d8db;
     --t-btn-main-sh: none;
     --t-paper: rgba(255, 255, 255, 0.045);
 
@@ -119,7 +128,8 @@
     --t-fold: rgba(0, 0, 0, 0.28);
     --t-cal-ev: rgba(255, 255, 255, 0.1);
     --t-cal-ev-hi: rgba(255, 255, 255, 0.15);
-    --t-cloud: #2c2c30;
+    --t-cloud: #2e2e33;
+    --t-modal: #1d1d20;
     --t-cloud-rim: rgba(255, 255, 255, 0.3);
     --t-cloud-sh: rgba(0, 0, 0, 0.6);
     --t-sh-base: rgba(255, 255, 255, 0.46);
@@ -157,6 +167,10 @@
   /* Стекло */
   --t-glass: rgba(255, 255, 255, 0.62);
   --t-glass-strong: rgba(255, 255, 255, 0.86);
+  /* Всплывающие меню: стекло плотнее обычного — часто лежит внутри другого стекла,
+     где размытие страницы не работает */
+  --t-menu: rgba(255, 255, 255, 0.94);
+  --t-menu-sh: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi);
   --t-glass-sheen: rgba(255, 255, 255, 0.2);
   --t-rim-hi: rgba(255, 255, 255, 0.95);
   --t-rim-lo: rgba(255, 255, 255, 0.5);
@@ -192,7 +206,8 @@
   --t-moon-d: block;
 
   --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
-  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-display: var(--font-display), "Manrope", var(--t-sans);
+  --t-math: Georgia, "Times New Roman", serif;
   --t-hand: "Caveat", "Segoe Script", cursive;
 
 }
@@ -226,6 +241,10 @@
   /* Стекло */
   --t-glass: rgba(255, 255, 255, 0.62);
   --t-glass-strong: rgba(255, 255, 255, 0.86);
+  /* Всплывающие меню: стекло плотнее обычного — часто лежит внутри другого стекла,
+     где размытие страницы не работает */
+  --t-menu: rgba(255, 255, 255, 0.94);
+  --t-menu-sh: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi);
   --t-glass-sheen: rgba(255, 255, 255, 0.2);
   --t-rim-hi: rgba(255, 255, 255, 0.95);
   --t-rim-lo: rgba(255, 255, 255, 0.5);
@@ -261,7 +280,8 @@
   --t-moon-d: block;
 
   --t-sans: var(--font-golos), "Golos Text", "Helvetica Neue", Arial, sans-serif;
-  --t-serif: var(--font-source-serif), "Source Serif 4", Georgia, "Times New Roman", serif;
+  --t-display: var(--font-display), "Manrope", var(--t-sans);
+  --t-math: Georgia, "Times New Roman", serif;
   --t-hand: "Caveat", "Segoe Script", cursive;
 
   }

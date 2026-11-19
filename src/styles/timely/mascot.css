@@ -83,7 +83,8 @@
 @keyframes dot-rise { 0%, 100% { transform: translateY(1px) scale(0.86); } 50% { transform: translateY(-2px) scale(1.1); } }
 
 @media (max-width: 640px) {
-  .mascot { width: 86px; height: 79px; --mascot-right: 2px; --mascot-bottom: 68px; }
+  /* Нижней панели нет: слайм в самом углу, ниже панели «Сохранить» на «Неделе» */
+  .mascot { width: 86px; height: 79px; --mascot-right: 2px; --mascot-bottom: 6px; }
   .mascot-bubble { right: 6px; bottom: calc(100% - 20px); }
   .m-dot:nth-child(1) { width: 2.5px; height: 2.5px; }
   .m-dot:nth-child(2) { width: 3.5px; height: 3.5px; }

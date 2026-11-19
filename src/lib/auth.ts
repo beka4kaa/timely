@@ -22,40 +22,13 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development',
 
   providers: isDemoServer() ? [demoProvider] : [
+    // Пока вход только через Google: почта у него проверена, а своей проверки
+    // почты нет. Вход по паролю жил в файле в /tmp Vercel и терялся при каждом
+    // перезапуске, и любой мог зарегистрировать чужой адрес.
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
-    CredentialsProvider({
-      name: 'Credentials',
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email and password are required');
-        }
-
-        try {
-          const { verifyUser } = await import('./local-users');
-          const user = await verifyUser(credentials.email, credentials.password);
-
-          if (!user) {
-            throw new Error('Неверный email или пароль');
-          }
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-          };
-        } catch (error: any) {
-          console.error('Login error:', error);
-          throw new Error(error.message || 'Authentication failed');
-        }
-      }
-    })
   ],
 
   callbacks: {
@@ -100,10 +73,13 @@ export const authOptions: NextAuthOptions = {
     },
 
     async signIn({ account, profile }) {
-      // The address is the identity everywhere downstream, so Google must have
-      // verified it. Otherwise Google OAuth users are auto-accepted.
+      // Only Google (and the demo's guest provider on the demo server). The
+      // address is the identity everywhere downstream, so Google must have
+      // verified it.
+      if (account?.provider === 'demo') return isDemoServer();
+      if (account?.provider !== 'google') return false;
       const emailVerified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
-      return !(account?.provider === 'google' && emailVerified === false);
+      return emailVerified !== false;
     }
   },
 

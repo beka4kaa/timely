@@ -23,7 +23,6 @@ import {
 import { createPortal } from "react-dom";
 
 import { Icon } from "@/components/shell/icons";
-import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { useDashboardShell } from "@/contexts/dashboard-shell";
 import { BACKEND_URL } from "@/lib/api-utils";
@@ -49,6 +48,7 @@ import { BOOKS_ENABLED } from "@/config/features";
 import { chatEmptyLine, chatPlaceholder, showBookPicker } from "@/lib/curriculum-books";
 import { ChatList } from "./chat-list";
 import { chatTitle } from "./chat-title";
+import { ShareChat } from "./share-chat";
 import {
   DEFAULT_MODE,
   formatDue,
@@ -183,7 +183,8 @@ function closeOnBackdrop(event: React.MouseEvent<HTMLDialogElement>) {
 
 export function ChatPage() {
   const router = useRouter();
-  const { chatsSlot } = useDashboardShell();
+  // Список чатов живёт в левой панели; на телефоне она выезжает, и выбор чата её закрывает.
+  const { chatsSlot, setDrawerOpen } = useDashboardShell();
   const { prompt } = useAskRail();
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -211,7 +212,6 @@ export function ChatPage() {
   const composerRef = useRef<ComposerHandle>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const chatsSheet = useRef<HTMLDialogElement>(null);
   const sourcesSheet = useRef<HTMLDialogElement>(null);
   const follow = useRef(true);
   const openingId = useRef<string | null>(null);
@@ -284,7 +284,7 @@ export function ChatPage() {
 
   const openChat = useCallback(
     async (id: string) => {
-      chatsSheet.current?.close();
+      setDrawerOpen(false);
       // Уже открыт: перезагрузка только оборвала бы идущий ответ.
       if (id === chatId) return;
       resetTalk();
@@ -300,7 +300,7 @@ export function ChatPage() {
       if (loaded) setSelected(loaded.goal);
       else setOpenFailed(true);
     },
-    [chatId, chats, engineOpen, resetTalk],
+    [chatId, chats, engineOpen, resetTalk, setDrawerOpen],
   );
 
   /** Закрывает текущий разговор. Открывающийся тоже: его ответ уже никому не нужен. */
@@ -312,11 +312,11 @@ export function ChatPage() {
   }, [engineNew, resetTalk]);
 
   const startNew = useCallback(() => {
-    chatsSheet.current?.close();
+    setDrawerOpen(false);
     leaveTalk();
     setSelected(rememberedSubject(subjects));
     composerRef.current?.focus();
-  }, [leaveTalk, subjects]);
+  }, [leaveTalk, subjects, setDrawerOpen]);
 
   // Сначала книга из прошлого раза, а чат из адреса уже поверх неё. Вопрос, заданный до
   // загрузки предметов, остаётся в том разговоре, где его задали.
@@ -506,7 +506,6 @@ export function ChatPage() {
       failed={chat.chatsFailed}
       onRetry={chat.reloadChats}
       onOpen={(id) => void openChat(id)}
-      onCreate={startNew}
       onRename={(id, title) => void chat.renameChat(id, title)}
       onDelete={(id) => {
         if (id === chatId) resetTalk();
@@ -532,26 +531,25 @@ export function ChatPage() {
 
   return (
     <div className="content view">
-      <SubNav group="tutor" />
       <div
         ref={chatRef}
         className={hasSources ? "chat has-sources" : "chat"}
         data-kind={hasSources ? "book" : "general"}
       >
         <div className="talk">
-          <button
-            className="chats-fab glass"
-            type="button"
-            aria-label="Чаты"
-            onClick={() => {
-              chatsSheet.current?.showModal();
-              chatsSheet.current?.focus();
-            }}
-          >
-            <Icon name="chats" />
-          </button>
+          {/* Сверху: новый чат, название и «Поделиться». Переписка уходит под стекло. */}
           <div className="chat-bar">
-            <span className="chat-now">{chatTitle(openRow?.title)}</span>
+            <button
+              className="chat-round glass chat-new"
+              type="button"
+              aria-label="Новый чат"
+              title="Новый чат"
+              onClick={startNew}
+            >
+              <Icon name="pen-plus" />
+            </button>
+            <span className="chat-now glass">{chatTitle(openRow?.title)}</span>
+            <ShareChat title={openRow?.title} turns={turns} disabled={busy || opening} />
           </div>
 
           <div
@@ -677,15 +675,6 @@ export function ChatPage() {
 
       {chatsSlot ? createPortal(list, chatsSlot) : null}
 
-      <dialog
-        ref={chatsSheet}
-        className="sheet sheet-chats"
-        tabIndex={-1}
-        aria-label="Чаты"
-        onClick={closeOnBackdrop}
-      >
-        {list}
-      </dialog>
 
       <dialog
         ref={sourcesSheet}

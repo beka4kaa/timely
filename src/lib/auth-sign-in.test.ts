@@ -18,6 +18,16 @@ test("Google must have verified the address, because the address is the identity
   assert.equal(await signIn("google", { email: "a@example.com", email_verified: true }), true);
 });
 
-test("password sign-in stays available", async () => {
-  assert.equal(await signIn("credentials"), true);
+test("only Google signs in: password and unknown providers are refused", async () => {
+  assert.equal(await signIn("credentials"), false);
+  assert.equal(await signIn("email"), false);
+  // The guest provider exists only on the demo server.
+  assert.equal(await signIn("demo"), false);
+});
+
+test("password sign-in is not offered at all", () => {
+  assert.deepEqual(
+    authOptions.providers.map((provider) => provider.id),
+    ["google"],
+  );
 });

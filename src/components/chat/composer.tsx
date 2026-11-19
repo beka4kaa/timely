@@ -226,7 +226,7 @@ export function ModePicker({
         <Icon name="chev-d" className="chev" />
       </button>
       {menu.open ? (
-        <div className="mode-menu" role="menu" aria-label="Режим тьютора" onKeyDown={menu.onItemsKey}>
+        <div className="menu mode-menu" role="menu" aria-label="Режим тьютора" onKeyDown={menu.onItemsKey}>
           {CHAT_MODES.map((item) => (
             <button
               key={item.key}
@@ -284,7 +284,7 @@ export function ModelPicker({
         <Icon name="chev-d" className="chev" />
       </button>
       {menu.open ? (
-        <div className="mode-menu model-menu" role="menu" aria-label="Модель и рассуждение" onKeyDown={menu.onItemsKey}>
+        <div className="menu mode-menu model-menu" role="menu" aria-label="Модель и рассуждение" onKeyDown={menu.onItemsKey}>
           <p className="model-head">Модель</p>
           {options.models.map((row) => (
             <button
@@ -386,7 +386,7 @@ export function BookPicker({
         <Icon name="chev-d" />
       </button>
       {menu.open ? (
-        <div className="book-menu" onKeyDown={menu.onItemsKey}>
+        <div className="menu book-menu" onKeyDown={menu.onItemsKey}>
           <button type="button" aria-pressed={selected === null} onClick={() => pick(null)}>
             Без книги
             <small>Обычный разговор</small>

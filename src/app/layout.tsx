@@ -1,24 +1,23 @@
 import type { Metadata, Viewport } from 'next'
-import { Golos_Text, Source_Serif_4 } from 'next/font/google'
+import { Golos_Text, Manrope } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
 import { NextAuthProvider } from '@/components/providers/nextauth-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { marketingOriginFromEnv } from '@/lib/host-routing'
 
-// Golos Text говорит за интерфейс, Source Serif 4 там, где читают: заголовки
-// страниц, ответы тьютора, цитаты, формулы. Кириллица обязательна: без неё русский
-// текст падал в системный шрифт.
+// Golos Text говорит за интерфейс, Manrope — за заголовки страниц, ответы тьютора и
+// цитаты: геометрический и широкий, он заметно отличается от Golos, и пара не выглядит
+// случайной. Формулы остаются курсивом с засечками (--t-math). Кириллица обязательна:
+// без неё русский текст падал в системный шрифт.
 const golos = Golos_Text({
   subsets: ['latin', 'cyrillic'],
   variable: '--font-golos',
 })
 
-const sourceSerif = Source_Serif_4({
+const manrope = Manrope({
   subsets: ['latin', 'cyrillic'],
-  style: ['normal', 'italic'],
-  axes: ['opsz'],
-  variable: '--font-source-serif',
+  variable: '--font-display',
 })
 // Handwriting font (Caveat) is self-hosted via @font-face in globals.css —
 // next/font/google can't reach Google Fonts in some environments.
@@ -30,7 +29,7 @@ const siteDescription = 'TimelyPlan — школьный дневник, пла�
 export const viewport: Viewport = {
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#000000' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: dark)', color: '#131315' },
   ],
   viewportFit: 'cover',
 }
@@ -90,9 +89,11 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/logo.svg', type: 'image/svg+xml' },
+      { url: '/icons/icon-192.png', type: 'image/png', sizes: '192x192' },
     ],
     shortcut: '/logo.svg',
-    apple: '/icons/icon-192.svg',
+    // iOS ignores SVG touch icons and rounds the corners itself.
+    apple: { url: '/apple-touch-icon.png', sizes: '180x180' },
   },
 }
 
@@ -102,7 +103,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" className={`${golos.variable} ${sourceSerif.variable}`} suppressHydrationWarning>
+    <html lang="ru" className={`${golos.variable} ${manrope.variable}`} suppressHydrationWarning>
       <body className="font-sans" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"

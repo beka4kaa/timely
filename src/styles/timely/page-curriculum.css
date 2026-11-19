@@ -103,11 +103,11 @@ button.book-slot:hover { background: var(--t-hover); color: var(--t-ink); }
 .cur-page .btn:disabled:active, .cur-form .btn:disabled:active { transform: none; }
 
 .cur-menu { display: flex; flex-direction: column; }
-.cur-menu > button, .cur-menu > a { display: block; width: 100%; padding: 7px 9px; border-radius: 9px; font-size: 13px; text-align: left; }
-.cur-menu > button:hover:not(:disabled), .cur-menu > a:hover { background: var(--t-hover); }
+.cur-menu > button, .cur-menu > a { display: block; width: 100%; min-height: 30px; padding: 6px 8px; border-radius: 9px; color: var(--t-ink-2); font-size: 13.5px; text-align: left; }
+.cur-menu > button:hover:not(:disabled), .cur-menu > a:hover { background: var(--t-hover); color: var(--t-ink); }
 .cur-menu > button:disabled { color: var(--t-muted); cursor: not-allowed; }
 .cur-menu > button.is-danger { color: var(--t-warn); font-weight: 500; }
-.cur-menu hr { margin: 4px 9px; border: 0; border-top: 1px solid var(--t-line); }
+.cur-menu hr { margin: 4px 8px; border: 0; border-top: 1px solid var(--t-line); }
 .cur-menu-note { padding: 5px 9px 4px; color: var(--t-muted); font-size: 12.5px; }
 
 .cur-form { display: grid; gap: 10px; font-size: 13px; }
@@ -133,7 +133,7 @@ button.book-slot:hover { background: var(--t-hover); color: var(--t-ink); }
 .wz-sheet .field { min-width: 0; }
 .wz-sheet .gs-chips { min-width: 0; }
 .wz-sheet .gs-chip { text-align: left; }
-.wz-quote { padding-left: 12px; border-left: 2px solid var(--t-line-strong); font-family: var(--t-serif); font-size: 15px; line-height: 1.42; }
+.wz-quote { padding-left: 12px; border-left: 2px solid var(--t-line-strong); font-family: var(--t-display); font-size: 15px; line-height: 1.42; }
 .wz-block { min-width: 0; }
 .wz-label { margin-bottom: 6px; color: var(--t-muted); font-size: 12.5px; }
 .wz-hint { margin-top: 8px; color: var(--t-muted); font-size: 12.5px; }

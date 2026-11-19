@@ -368,7 +368,7 @@ const ru: LandingCopy = {
       },
       {
         q: "Как начать?",
-        a: "Нажми «Открыть Timely» и войди через Google или по почте. Начни с вопроса по сегодняшней домашке.",
+        a: "Нажми «Открыть Timely» и войди через Google. Начни с вопроса по сегодняшней домашке.",
       },
     ],
   },
@@ -658,7 +658,7 @@ const en: LandingCopy = {
       },
       {
         q: "How do I get started?",
-        a: "Click “Open Timely” and sign in with Google or email. Start with a question about today's homework.",
+        a: "Click “Open Timely” and sign in with Google. Start with a question about today's homework.",
       },
     ],
   },

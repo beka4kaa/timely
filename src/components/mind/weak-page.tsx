@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { mascot } from "@/components/shell/mascot/mascot";
-import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { intervalLabel, plural } from "@/lib/mind-srs";
 import { useResource } from "@/lib/resource-cache";
@@ -146,7 +145,6 @@ export function WeakPage() {
 
   return (
     <div className="content view">
-      <SubNav group="study" />
       <header className="head">
         <h1 className="title">Слабые темы</h1>
         {mastered > 0 ? (

@@ -18,7 +18,7 @@ import type { DemoLang } from "@/lib/demo-mode"
 import { useDashboardPath } from "@/lib/use-dashboard-path"
 
 import { DEMO_UI, TOUR_STOPS } from "./demo-copy"
-import { DOCK_BELOW, holeFor, placeCard, veilPath, type Rect, type Size } from "./tour-geometry"
+import { DOCK_BELOW, dockOffsetAbove, holeFor, placeCard, veilPath, type Rect, type Size } from "./tour-geometry"
 
 const FIND_TIMEOUT_MS = 8000
 const SETTLE_MS = 420
@@ -61,15 +61,6 @@ async function settle(node: HTMLElement, cancelled: () => boolean): Promise<void
     if (still) return
     last = next
   }
-}
-
-/** Высота панели вкладок снизу (на телефоне), чтобы карточка не легла на неё. */
-function dockOffset(viewport: Size): number {
-  const bar = document.querySelector<HTMLElement>(".tabbar")
-  if (!bar) return 0
-  const rect = bar.getBoundingClientRect()
-  if (rect.height <= 0 || rect.top >= viewport.height) return 0
-  return viewport.height - rect.top + 8
 }
 
 async function routeFor(index: number): Promise<string> {
@@ -283,7 +274,7 @@ export function DemoTour({
   if (typeof document === "undefined" || viewport.width === 0) return null
 
   const shownHole = ready && !welcome ? hole : null
-  const spot = placeCard(shownHole, card, viewport, dockOffset(viewport))
+  const spot = placeCard(shownHole, card, viewport, dockOffsetAbove(document.querySelector(".quick")?.getBoundingClientRect() ?? null, viewport))
   // Без цели окно сжимается под карточку, и экран затемнён целиком. Совсем в точку
   // нельзя: у крошечного блока Chrome не рисует тень, а затемнение и есть его тень.
   const cardWidth = spot.placement === "dock" ? viewport.width - 32 : card.width

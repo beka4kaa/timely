@@ -33,9 +33,12 @@ export const paperQuietButton = `btn btn-text ${PAPER_DISABLED}`;
 /** Главное действие страницы. Ровно одно на экран. */
 export const paperPrimaryButton = `btn btn-main ${PAPER_DISABLED}`;
 
-/** Всплывающий лист: меню и короткие формы. Он в портале, поэтому шрифт задан явно. */
+/**
+ * Всплывающий лист: меню и короткие формы. Материал тот же, что у `.menu` во всём
+ * кабинете (токены --t-menu и --t-menu-sh). Он в портале, поэтому шрифт задан явно.
+ */
 export const paperPopover =
-  "w-auto rounded-[14px] border-0 bg-[var(--t-cloud)] p-[5px] font-[family-name:var(--t-sans)] text-[13px] text-[color:var(--t-ink)] shadow-[var(--t-glass-shadow)]";
+  "w-auto rounded-[14px] border-0 bg-[var(--t-menu)] p-[5px] backdrop-blur-[30px] backdrop-saturate-[1.3] font-[family-name:var(--t-sans)] text-[13px] text-[color:var(--t-ink)] shadow-[var(--t-menu-sh)]";
 
 /** Переключатель вида: капсула и приподнятая на ней накладка, как `.tabs`. */
 export const paperSegment = "inline-flex gap-px rounded-[11px] bg-[var(--t-hover)] p-0.5";

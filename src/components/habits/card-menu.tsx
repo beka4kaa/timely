@@ -96,7 +96,7 @@ export function CardMenu({
         <Icon name="more" />
       </button>
       {open ? (
-        <div ref={pop} {...{ popover: "auto" }} className="gm-pop" aria-label={label}>
+        <div ref={pop} {...{ popover: "auto" }} className="menu gm-pop" aria-label={label}>
           {children(close)}
         </div>
       ) : null}

@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, ReactNode } from 'react'
-import { useSession, signIn as nextAuthSignIn, signOut as nextAuthSignOut } from 'next-auth/react'
+import { useSession, signOut as nextAuthSignOut } from 'next-auth/react'
 
 interface User {
   id: string
@@ -13,8 +13,6 @@ interface User {
 interface AuthContextType {
   user: User | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
-  register: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
 }
 
@@ -33,52 +31,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isLoading = status === 'loading'
 
-  const login = async (email: string, password: string) => {
-    try {
-      const result = await nextAuthSignIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      })
-
-      if (result?.error) {
-        return { success: false, error: result.error }
-      } else {
-        return { success: true }
-      }
-    } catch (error) {
-      return { success: false, error: 'Ошибка при входе в систему' }
-    }
-  }
-
-  const register = async (email: string, password: string, name: string) => {
-    try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, name }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        // После успешной регистрации автоматически входим через NextAuth
-        await nextAuthSignIn('credentials', {
-          email,
-          password,
-          redirect: false,
-        })
-        return { success: true }
-      } else {
-        return { success: false, error: data.error }
-      }
-    } catch (error) {
-      return { success: false, error: 'Ошибка при регистрации' }
-    }
-  }
-
   const logout = async () => {
     try {
       await nextAuthSignOut({ redirect: false })
@@ -88,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, logout }}>
       {children}
     </AuthContext.Provider>
   )

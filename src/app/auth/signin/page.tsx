@@ -1,27 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { signIn, getSession } from 'next-auth/react'
+import { signIn } from 'next-auth/react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import {
-  AuthShell,
-  Divider,
-  Field,
-  GoogleButton,
-  PasswordInput,
-  SecondaryButton,
-  SubmitButton,
-  TextInput,
-  authStyles,
-} from '@/components/auth/auth-shell'
+import { AuthShell, GoogleButton, SecondaryButton, authStyles } from '@/components/auth/auth-shell'
 
 /**
  * Куда вернуть человека после входа.
  *
  * Middleware отправляет незалогиненного на `/auth/signin?callbackUrl=<куда он
- * шёл>`, но обе кнопки входа этот адрес выбрасывали и вели на дневник. Открыл
+ * шёл>`, но кнопка входа этот адрес выбрасывала и вела на дневник. Открыл
  * «План» → вошёл → оказался в дневнике: ровно та жалоба, с которой всё
  * началось.
  *
@@ -37,6 +27,7 @@ function safeCallback(raw: string | null): string {
   return raw
 }
 
+// Пока вход только через Google (см. src/lib/auth.ts).
 export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -46,41 +37,6 @@ export default function SignInPage() {
     const raw = new URLSearchParams(window.location.search).get('callbackUrl')
     setCallbackUrl(safeCallback(raw))
   }, [])
-
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setIsLoading(true)
-
-    const formData = new FormData(event.currentTarget)
-    const email = formData.get('email') as string
-    const password = formData.get('password') as string
-
-    try {
-      const result = await signIn('credentials', {
-        email,
-        password,
-        redirect: false,
-      })
-
-      if (result?.error) {
-        toast.error('Неверный email или пароль', {
-          description: 'Проверьте введённые данные и попробуйте снова.',
-        })
-      } else {
-        const session = await getSession()
-        if (session) {
-          toast.success('Вы вошли в систему!', {
-            description: `Добро пожаловать, ${session.user?.name || session.user?.email}!`,
-          })
-          router.push(callbackUrl)
-        }
-      }
-    } catch (error) {
-      toast.error('Произошла ошибка при входе')
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true)
@@ -95,7 +51,7 @@ export default function SignInPage() {
   return (
     <AuthShell
       title="С возвращением"
-      subtitle="Войди, чтобы продолжить учёбу с того места, где остановился."
+      subtitle="Войди через Google, чтобы продолжить учёбу с того места, где остановился."
       footer={
         <>
           Нет аккаунта? <Link href="/auth/register">Создать аккаунт</Link>
@@ -103,43 +59,16 @@ export default function SignInPage() {
       }
     >
       <GoogleButton onClick={handleGoogleSignIn} disabled={isLoading}>
-        Продолжить с Google
+        {isLoading ? 'Открываем Google…' : 'Продолжить с Google'}
       </GoogleButton>
 
-      <Divider>или по почте</Divider>
-
-      <form onSubmit={onSubmit} className={authStyles.form}>
-        <Field label="Почта" htmlFor="email">
-          <TextInput
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            required
-            disabled={isLoading}
-          />
-        </Field>
-
-        <Field label="Пароль" htmlFor="password">
-          <PasswordInput
-            id="password"
-            name="password"
-            autoComplete="current-password"
-            placeholder="Твой пароль"
-            required
-            disabled={isLoading}
-          />
-        </Field>
-
-        <SubmitButton disabled={isLoading}>{isLoading ? 'Входим…' : 'Войти'}</SubmitButton>
-
-        {process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === 'true' && (
+      {process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === 'true' && (
+        <div className={authStyles.form}>
           <SecondaryButton onClick={() => router.push('/dashboard')} disabled={isLoading}>
             Войти без аккаунта (dev)
           </SecondaryButton>
-        )}
-      </form>
+        </div>
+      )}
     </AuthShell>
   )
 }

@@ -112,7 +112,7 @@ a.dy-video-name:hover { text-decoration: underline; text-decoration-color: var(-
 
 /* ── Окно об уроке и подтверждение ── */
 div.dy-dialog { width: calc(100vw - 32px); max-width: 420px; gap: 12px; padding: 20px; border: 0; border-radius: 18px; background: var(--t-cloud); color: var(--t-ink); font-family: var(--t-sans); font-size: 13.5px; box-shadow: var(--t-glass-shadow); }
-.dy-dialog-title { padding-right: 24px; font-family: var(--t-serif); font-size: 20px; font-weight: 400; line-height: 1.25; letter-spacing: -0.01em; }
+.dy-dialog-title { padding-right: 24px; font-family: var(--t-display); font-size: 20px; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
 .dy-dialog-sub { margin-top: -8px; color: var(--t-muted); font-size: 13px; line-height: 1.45; }
 .dy-field { display: flex; flex-direction: column; gap: 4px; color: var(--t-muted); font-size: 12.5px; }
 .dy-field .dy-grades-row { color: var(--t-ink); margin-left: -6px; }
@@ -245,7 +245,7 @@ div.ds-pop { width: 320px; max-height: min(600px, calc(100dvh - 32px)); overflow
 div.ds-sheet { max-height: 90dvh; padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px)); border: 0; border-radius: 22px 22px 0 0; background: var(--t-bg); color: var(--t-ink); }
 .ds-sheet .ds-ed { overflow: auto; }
 .ds-sheet .ds-ed-list { height: 30dvh; }
-.ds-sheet-title { margin: 12px 2px 6px; font: 500 18px/1.25 var(--t-serif); }
+.ds-sheet-title { margin: 12px 2px 6px; font: 500 18px/1.25 var(--t-display); }
 
 /* Несохранённое видно всегда: полоса снизу */
 /* Над кнопкой мини-окна и по той же середине: она стоит по центру рабочей области. */
@@ -287,8 +287,9 @@ div.ds-sheet { max-height: 90dvh; padding: 0 16px calc(16px + env(safe-area-inse
   .dy-plan .btn, .dy-add-form .btn, .dy-video-form .btn, .dy-add .btn { height: 34px; }
   .dy-links .btn { height: 30px; padding-inline: 9px; }
   .dy-grade::after { inset: -9px -12px; }
-  /* Над вкладками */
-  .ds-foot { left: calc(12px + env(safe-area-inset-left, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(130px + env(safe-area-inset-bottom, 0px)); transform: none; }
+  /* Прилипшая строка обмена встаёт ниже круглой кнопки меню, а не уходит под неё */
+  .ds-swapbar { top: calc(58px + env(safe-area-inset-top, 0px)); }
+  .ds-foot { left: calc(12px + env(safe-area-inset-left, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(68px + env(safe-area-inset-bottom, 0px)); transform: none; }
   .ds-foot > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .ds-week { padding: 4px; }
   .ds-tpl { max-width: 230px; }

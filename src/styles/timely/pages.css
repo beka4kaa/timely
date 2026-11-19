@@ -42,12 +42,12 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .mode-pick:hover, .mode-pick[aria-expanded="true"] { background: var(--t-hover); color: var(--t-ink); }
 .mode-pick .i { width: 15px; height: 15px; stroke-width: 1.7; }
 .mode-pick .chev { width: 12px; height: 12px; color: var(--t-muted); }
-/* Внутри стекла размытие не работает, поэтому меню плотное и встаёт над всей строкой ввода */
-.mode-menu { position: absolute; z-index: 6; left: 0; bottom: calc(100% + 54px); width: min(322px, calc(100vw - 40px)); padding: 5px; border-radius: 16px; background: var(--t-cloud); box-shadow: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo); }
-.cmp-tools .book-menu { bottom: calc(100% + 54px); right: auto; left: 0; background: var(--t-cloud); -webkit-backdrop-filter: none; backdrop-filter: none; }
-.mode-menu button { display: grid; grid-template-columns: 18px minmax(0, 1fr) 15px; align-items: start; gap: 10px; width: 100%; padding: 8px 9px; border-radius: 11px; text-align: left; transition: background 120ms ease; }
-.mode-menu button:hover { background: var(--t-hover); }
-.mode-menu .i { width: 16px; height: 16px; margin-top: 1px; color: var(--t-ink-2); stroke-width: 1.7; }
+/* Материал и строки — общие (.menu в ui.css); здесь только место: над всей строкой ввода */
+.mode-menu { position: absolute; z-index: 6; left: 0; bottom: calc(100% + 54px); width: min(322px, calc(100vw - 40px)); }
+.cmp-tools .book-menu { bottom: calc(100% + 54px); right: auto; left: 0; }
+.mode-menu button { display: grid; grid-template-columns: 16px minmax(0, 1fr) 15px; align-items: start; gap: 9px; width: 100%; padding: 7px 8px; border-radius: 9px; color: var(--t-ink-2); text-align: left; transition: background 120ms ease, color 120ms ease; }
+.mode-menu button:hover, .mode-menu button:focus-visible { background: var(--t-hover); color: var(--t-ink); outline: none; }
+.mode-menu .i { width: 16px; height: 16px; margin-top: 1px; color: var(--t-muted); stroke-width: 1.7; }
 .mode-menu b { display: block; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
 .mode-menu small { display: block; margin-top: 1px; color: var(--t-muted); font-size: 12px; line-height: 1.3; }
 .mode-menu .ok { visibility: hidden; color: var(--t-ink); stroke-width: 2.4; }
@@ -70,9 +70,9 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .book-pick { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px; border-radius: 8px; color: var(--t-muted); font-size: 12.5px; white-space: nowrap; }
 .book-pick:hover { background: var(--t-hover); color: var(--t-ink); }
 .book-pick .i { width: 12px; height: 12px; }
-.book-menu { position: absolute; z-index: 5; right: 0; bottom: calc(100% + 10px); width: 204px; padding: 5px; border-radius: 14px; background: var(--t-glass-strong); box-shadow: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi); }
-.book-menu button { display: block; width: 100%; padding: 7px 9px; border-radius: 9px; font-size: 13px; text-align: left; }
-.book-menu button:hover { background: var(--t-hover); }
+.book-menu { position: absolute; z-index: 5; right: 0; bottom: calc(100% + 10px); width: 204px; }
+.book-menu button { display: block; width: 100%; padding: 7px 8px; border-radius: 9px; color: var(--t-ink-2); font-size: 13.5px; text-align: left; }
+.book-menu button:hover, .book-menu button:focus-visible { background: var(--t-hover); color: var(--t-ink); outline: none; }
 .book-menu button[aria-pressed="true"] { font-weight: 600; }
 .book-menu small { display: block; color: var(--t-muted); font-size: 11.5px; font-weight: 400; }
 
@@ -93,20 +93,19 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .chat { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; height: calc(100vh - 32px); min-height: 520px; }
 .chat.has-sources { grid-template-columns: minmax(0, 1fr) 216px; }
 .chat:not(.has-sources) .sources { display: none; }
-.chats-fab { display: none; }
 .talk { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 100%; max-width: 720px; min-width: 0; min-height: 0; margin: 0 auto; }
 .log { flex: 1; display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow-y: auto; padding: 8px 0; scrollbar-width: thin; }
 .m-you { align-self: flex-end; max-width: 78%; padding: 7px 13px; border-radius: 15px 15px 5px 15px; background: var(--t-fill); font-size: 14px; }
 /* Ответ тьютора читается как книга */
-.m-ai { max-width: 64ch; font-family: var(--t-serif); font-size: 16.5px; line-height: 1.5; }
+.m-ai { max-width: 64ch; font-family: var(--t-display); font-size: 16px; font-weight: 500; line-height: 1.6; }
 .m-ai p + p, .m-ai p + .m-formula, .m-ai .m-formula + p { margin-top: 10px; }
 .m-ai b { font-weight: 600; }
-.m-formula { font-size: 21px; font-style: italic; }
+.m-formula { font-family: var(--t-math); font-size: 21px; font-style: italic; }
 .m-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; font-family: var(--t-sans); }
 .frac { display: inline-grid; line-height: 1.15; text-align: center; vertical-align: middle; font-size: 0.86em; }
 .frac > :first-child { padding: 0 0.3em; border-bottom: 1px solid currentColor; }
 .log-new { align-items: center; justify-content: center; text-align: center; }
-.log-new h2 { font-family: var(--t-serif); font-size: 29px; font-weight: 400; letter-spacing: -0.015em; }
+.log-new h2 { font-family: var(--t-display); font-size: 29px; font-weight: 600; letter-spacing: -0.015em; }
 .log-new p { color: var(--t-muted); }
 .prompts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 520px; }
 .prompts button { height: 32px; padding: 0 13px; border-radius: 99px; background: var(--t-fill); font-size: 13px; transition: background 120ms ease; }
@@ -115,13 +114,13 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .src-book { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
 .src-book small { display: block; color: var(--t-muted); font-size: 12px; font-weight: 400; }
 .paper { width: 100%; padding: 12px 14px 11px; border-radius: 4px 13px 13px 4px; background: var(--t-paper); box-shadow: inset 0 0 0 0.5px var(--t-line-strong), inset 5px 0 7px -6px var(--t-fold), 0 16px 30px -26px rgba(0, 0, 0, 0.7); }
-.paper blockquote { margin: 0 0 8px; font-family: var(--t-serif); font-size: 15px; line-height: 1.42; }
+.paper blockquote { margin: 0 0 8px; font-family: var(--t-display); font-size: 15px; line-height: 1.42; }
 .paper mark { padding: 0 2px; border-radius: 3px; background: var(--t-fill); color: inherit; }
 .paper figcaption { color: var(--t-muted); font-size: 11.5px; }
 
 /* ══════════════════ Доска ══════════════════ */
 .board-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-bottom: 12px; }
-.board-title { font-family: var(--t-serif); font-size: 21px; font-weight: 400; letter-spacing: -0.012em; }
+.board-title { font-family: var(--t-display); font-size: 21px; font-weight: 600; letter-spacing: -0.012em; }
 .steps { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--t-muted); font-size: 12.5px; }
 .steps li { display: inline-flex; align-items: center; gap: 6px; }
 .steps span { display: none; }
@@ -149,9 +148,9 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .d-tick { fill: var(--t-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .d-label { fill: var(--t-ink-2); font-size: 12px; }
 .d-accent { fill: var(--t-warn); font-size: 12.5px; font-weight: 500; }
-.drawing text.d-title { fill: var(--t-ink); font-family: var(--t-serif); font-size: 21px; letter-spacing: -0.012em; }
+.drawing text.d-title { fill: var(--t-ink); font-family: var(--t-display); font-size: 21px; letter-spacing: -0.012em; }
 .d-text { fill: var(--t-ink-2); font-size: 13.5px; }
-.drawing text.d-formula { fill: var(--t-ink); font-family: var(--t-serif); font-size: 21px; font-style: italic; }
+.drawing text.d-formula { fill: var(--t-ink); font-family: var(--t-math); font-size: 21px; font-style: italic; }
 .d-road { fill: none; stroke: var(--t-line-strong); stroke-width: 1; }
 .d-cart { fill: none; stroke: var(--t-ink-2); stroke-width: 1.2; }
 .d-vec { fill: none; stroke: var(--t-accent); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -166,7 +165,7 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .canvas-level { position: absolute; z-index: 3; right: 10px; top: 10px; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 .tutor { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
 .tutor > .tabs { align-self: flex-start; }
-.tutor-log { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; scrollbar-width: thin; font-family: var(--t-serif); font-size: 15.5px; line-height: 1.45; }
+.tutor-log { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; scrollbar-width: thin; font-family: var(--t-display); font-size: 15.5px; line-height: 1.45; }
 .tutor-log .m-you { font-family: var(--t-sans); font-size: 13px; padding: 6px 11px; }
 .suggest { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12.5px; }
 .suggest button { color: var(--t-muted); }
@@ -189,7 +188,7 @@ button.td-plan:hover { text-decoration-color: currentColor; }
   --b1: #777; --b2: #444;
   position: relative; display: block; flex: none; width: 92px; height: 122px; overflow: hidden; padding: 10px 4px 8px 13px;
   border-radius: 3px 6px 6px 3px; background: linear-gradient(152deg, var(--b1), var(--b2)); color: #ffffff;
-  font-family: var(--t-serif); font-size: 14.5px; font-weight: 500; line-height: 1.1;
+  font-family: var(--t-display); font-size: 14.5px; font-weight: 500; line-height: 1.1;
   box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.22), 1.5px 0 0 rgba(255, 255, 255, 0.28), 3px 7px 14px -6px rgba(8, 8, 26, 0.65);
   transition: transform 200ms cubic-bezier(0.2, 1.3, 0.4, 1);
 }
@@ -221,7 +220,7 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 /* ── Страница курса ── */
 .back { display: inline-block; margin-bottom: 6px; color: var(--t-muted); font-size: 12.5px; }
 .back:hover { color: var(--t-ink); }
-.lede { max-width: 62ch; margin: -12px 0 16px; color: var(--t-ink-2); font-family: var(--t-serif); font-size: 17px; line-height: 1.4; }
+.lede { max-width: 62ch; margin: -12px 0 16px; color: var(--t-ink-2); font-family: var(--t-display); font-size: 17px; line-height: 1.4; }
 .path { --r: 18px; padding: 34px 18px 14px; margin-bottom: 14px; }
 .path-track { display: flex; gap: 4px; }
 .path-track > div { flex: var(--h) 1 0; min-width: 0; }
@@ -313,14 +312,14 @@ button.td-plan:hover { text-decoration-color: currentColor; }
 .pod-name { max-width: 100%; margin-top: 9px; overflow: hidden; font-size: 13.5px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
 .pod-where { max-width: 100%; overflow: hidden; color: var(--t-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .pod-pts { margin-top: 2px; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.pod-base { display: grid; justify-items: center; width: 100%; height: 48px; margin-top: 8px; padding-top: 6px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, var(--t-fill), transparent); color: var(--t-faint); font-family: var(--t-serif); font-size: 26px; line-height: 1; }
+.pod-base { display: grid; justify-items: center; width: 100%; height: 48px; margin-top: 8px; padding-top: 6px; border-radius: 14px 14px 0 0; background: linear-gradient(180deg, var(--t-fill), transparent); color: var(--t-faint); font-family: var(--t-display); font-size: 26px; line-height: 1; }
 .pod.r1 { --metal: #d9b45f; } .pod.r1 .pod-av { width: 70px; height: 70px; font-size: 21px; } .pod.r1 .pod-base { height: 92px; color: var(--t-ink-2); }
 .pod.r2 { --metal: #b9bcc6; } .pod.r2 .pod-base { height: 68px; }
 .pod.r3 { --metal: #c08a5c; }
 .lb { display: grid; grid-template-columns: minmax(0, 1fr) 276px; gap: 26px; align-items: start; }
 .lb-main { min-width: 0; }
 .lb-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 10px 6px; }
-.lb-head h2 { font-family: var(--t-serif); font-size: 20px; font-weight: 400; letter-spacing: -0.01em; }
+.lb-head h2 { font-family: var(--t-display); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 .lb-head span { color: var(--t-muted); font-size: 12.5px; }
 .lr { display: grid; grid-template-columns: 30px 30px minmax(0, 1fr) 84px 54px 56px 30px; align-items: center; gap: 0 10px; width: 100%; padding: 6px 10px; border-radius: 11px; font-size: 13.5px; transition: background 120ms ease; }
 a.lr:hover { background: var(--t-hover); }
@@ -365,7 +364,7 @@ a.lr:hover { background: var(--t-hover); }
 .subj-rate b { font-size: 13px; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; text-align: right; white-space: nowrap; }
 
 /* ══════════════════ Помодоро ══════════════════ */
-.fp { display: grid; grid-template-columns: minmax(0, 1fr) 268px; gap: 36px; align-items: start; }
+.fp { display: grid; grid-template-columns: minmax(0, 1fr); }
 .fp-main { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 4px; }
 /* Циферблат: чёрточка на минуту вместо тонкой дуги и тёмного диска */
 .dial { position: relative; display: grid; place-items: center; width: 292px; height: 292px; }
@@ -383,13 +382,11 @@ a.lr:hover { background: var(--t-hover); }
 .fp-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--t-ink); }
 .fp-dot.none { background: transparent; box-shadow: inset 0 0 0 1.5px var(--t-faint); }
 .fp-link { flex: none; color: var(--t-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
-.fp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); padding: 5px; border-radius: 15px; background: var(--t-glass-strong); -webkit-backdrop-filter: blur(26px) saturate(130%); backdrop-filter: blur(26px) saturate(130%); box-shadow: var(--t-glass-shadow), inset 0 0 0 0.5px var(--t-rim-lo), inset 0 0.5px 0 var(--t-rim-hi); }
-.fp-opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 8px 9px; border-radius: 10px; font-size: 13.5px; text-align: left; }
+.fp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); }
+.fp-opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 5px 8px; border-radius: 9px; color: var(--t-ink-2); font-size: 13.5px; text-align: left; }
 .fp-opt small { color: var(--t-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fp-opt:hover, .fp-opt[aria-selected="true"] { background: var(--t-hover); }
 .fp-ctrl { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.fp-presets button { font-variant-numeric: tabular-nums; }
-.fp-side { display: flex; flex-direction: column; gap: 10px; }
 .fp-today { margin-bottom: 9px; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: lining-nums; }
 .fp-today small { margin-left: 5px; color: var(--t-muted); font-size: 12.5px; font-weight: 400; letter-spacing: 0; }
 .sess li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: baseline; gap: 0 8px; padding: 4px 0; font-size: 13px; }
@@ -417,7 +414,7 @@ a.lr:hover { background: var(--t-hover); }
 .pf-av { width: 76px; height: 76px; font-size: 24px; font-weight: 500; }
 .pf-meta { display: flex; flex-wrap: wrap; gap: 0 12px; margin-top: 3px; color: var(--t-muted); font-size: 13px; }
 .pf-rank { color: var(--t-ink); font-weight: 500; }
-.pf-bio { max-width: 58ch; margin-top: 9px; font-family: var(--t-serif); font-size: 17.5px; line-height: 1.42; }
+.pf-bio { max-width: 58ch; margin-top: 9px; font-family: var(--t-display); font-size: 17.5px; line-height: 1.42; }
 .pf-bio[contenteditable="true"] { outline: 1px dashed var(--t-line-strong); outline-offset: 5px; border-radius: 4px; }
 .pf-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .pf-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
@@ -430,7 +427,7 @@ a.lr:hover { background: var(--t-hover); }
 .pf-stat[aria-selected="true"] span { color: color-mix(in srgb, var(--t-on-accent) 68%, transparent); }
 .pf-detail { --r: 16px; padding: 16px 18px; margin-bottom: 26px; }
 .pf-d-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 14px; margin-bottom: 12px; }
-.pf-d-head h3 { font-family: var(--t-serif); font-size: 20px; font-weight: 400; letter-spacing: -0.01em; }
+.pf-d-head h3 { font-family: var(--t-display); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 .pf-d-head span { color: var(--t-muted); font-size: 12.5px; }
 .pf-detail .heat { grid-auto-columns: minmax(10px, 1fr); grid-template-rows: repeat(7, auto); width: 100%; min-width: 676px; }
 .pf-detail .heat i { width: 100%; height: auto; aspect-ratio: 1; }
@@ -473,7 +470,7 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 .bdg { display: block; width: 66px; height: 66px; overflow: visible; filter: drop-shadow(0 6px 7px rgba(0, 0, 0, 0.22)); transition: transform 340ms cubic-bezier(0.2, 1.5, 0.4, 1); }
 .badge:hover .bdg { transform: translateY(-3px) rotate(-6deg) scale(1.08); }
 .bdg-t { fill: #ffffff; font-family: var(--t-sans); font-weight: 700; letter-spacing: -0.02em; }
-.bdg-t.math { font-family: var(--t-serif); font-style: italic; font-weight: 600; letter-spacing: 0; }
+.bdg-t.math { font-family: var(--t-math); font-style: italic; font-weight: 600; letter-spacing: 0; }
 .bdg-t.dark { fill: #5a3a06; }
 
 /* ══════════════════ Настройки ══════════════════ */
@@ -532,12 +529,13 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 .quick[data-state="picking"] .q-win, .quick[data-state="picking"] .q-suggest, .quick[data-state="picking"] .q-pill { display: none; }
 
 /* Закрытое: капсула с двумя кнопками */
-.q-pill { --r: 99px; display: flex; align-items: center; padding: 4px; }
-.q-pill-btn { display: grid; place-items: center; width: 44px; height: 38px; border-radius: 99px; color: var(--t-ink); transition: background 120ms ease, transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1); }
-.q-pill-btn:hover { background: var(--t-hover); }
+/* Капсула быстрого запроса: тихая и компактная, чтобы не спорить с содержимым страницы */
+.q-pill { --r: 99px; display: flex; align-items: center; padding: 3px; }
+.q-pill-btn { display: grid; place-items: center; width: 36px; height: 30px; border-radius: 99px; color: var(--t-ink-2); transition: background 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.2, 1.4, 0.4, 1); }
+.q-pill-btn:hover { background: var(--t-hover); color: var(--t-ink); }
 .q-pill-btn:active { transform: scale(0.93); }
-.q-pill .i { width: 19px; height: 19px; stroke-width: 1.6; }
-.q-div { width: 1px; height: 18px; background: var(--t-line-strong); }
+.q-pill .i { width: 16px; height: 16px; stroke-width: 1.6; }
+.q-div { width: 1px; height: 14px; background: var(--t-line-strong); }
 
 /* Открытое */
 .q-win { --r: 22px; display: flex; flex-direction: column; width: clamp(340px, calc(100% - 460px), 540px); padding: 12px 10px 9px 16px; font-size: 15px; transform-origin: 50% 100%; }
@@ -569,7 +567,7 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 .q-answer { max-height: min(46vh, 340px); margin: 0 0 10px; padding: 2px 6px 12px 0; overflow-y: auto; border-bottom: 1px solid var(--t-line); scrollbar-width: thin; }
 .q-status { color: var(--t-muted); font-size: 14px; }
 .m-think { width: fit-content; color: var(--t-muted); font-size: 14px; }
-.q-say { font-family: var(--t-serif); font-size: 17px; line-height: 1.38; }
+.q-say { font-family: var(--t-display); font-size: 17px; line-height: 1.38; }
 .q-diff { display: grid; gap: 5px; margin-top: 9px; font-size: 13px; }
 .q-diff li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 14px; }
 .q-diff .nm { min-width: 0; font-weight: 500; }
@@ -583,7 +581,7 @@ a.pf-course:hover .book { transform: translateY(-2px) rotate(-3deg); }
 .q-pickbar .btn { height: 32px; border-radius: 99px; }
 html.picking, html.picking * { cursor: crosshair !important; }
 html.picking .q-pickbar, html.picking .q-pickbar * { cursor: default !important; }
-html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4; transition: opacity 200ms ease; }
+html.picking .sidebar, html.picking .mascot { opacity: 0.4; transition: opacity 200ms ease; }
 .pickable { outline: 1px dashed var(--t-line-strong); outline-offset: 1px; }
 .pick-hot, .pick-on { outline: 1.5px solid var(--t-ink); outline-offset: 1px; }
 .pick-tag { position: fixed; z-index: 70; left: 0; top: 0; padding: 3px 8px; border-radius: 8px; background: var(--t-ink); color: var(--t-on-ink); font-size: 12px; font-weight: 500; white-space: nowrap; pointer-events: none; }
@@ -626,7 +624,6 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
   .chat.has-sources { grid-template-columns: minmax(0, 1fr); }
   .chat .sources { display: none; }
   .board { grid-template-columns: minmax(0, 1fr) 248px; gap: 14px; }
-  .fp { grid-template-columns: minmax(0, 1fr) 224px; gap: 24px; }
   .lb { grid-template-columns: minmax(0, 1fr) 236px; gap: 18px; }
   .lr { grid-template-columns: 30px 30px minmax(0, 1fr) 54px 50px 28px; }
   .lr .tr { display: none; }
@@ -638,7 +635,6 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
 }
 
 @container main (max-width: 860px) {
-  .fp { grid-template-columns: minmax(0, 1fr); }
   /* Сначала твоё место и таблица, за ними всё остальное */
   .lb { grid-template-columns: repeat(auto-fit, minmax(max(220px, 40%), 1fr)); gap: 10px; }
   .lb-side { display: contents; }
@@ -723,37 +719,22 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
 }
 
 @media (max-width: 640px) {
-  .subnav { display: flex; gap: 14px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; font-size: 13.5px; }
-  .subnav a { flex: none; padding-bottom: 3px; border-bottom: 1.5px solid transparent; color: var(--t-muted); }
-  .subnav a[aria-current="page"] { border-color: var(--t-ink); color: var(--t-ink); font-weight: 500; }
-  .t-toast { bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
-  /* Страница прокручивается целиком, строка ввода прилипает: то же условие, что у нижних вкладок */
+  .t-toast { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+  /* Страница прокручивается целиком, строка ввода прилипает: то же условие, что у кнопки меню */
   .chat { height: auto; min-height: calc(100vh - 28px); }
   .log { overflow: visible; }
   .talk > .composer { position: sticky; bottom: 12px; }
-  /* Чаты на телефоне: панели нет, список открывается снизу */
-  /* Прилипает к верху прокрутки и не занимает места: заголовок стоит с ней в одном ряду */
-  .talk > .chats-fab {
-    --r: 50%;
-    position: sticky; z-index: 5; top: calc(10px + env(safe-area-inset-top, 0px)); flex: none; align-self: flex-start;
-    display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: -56px; color: var(--t-ink);
-    /* Лежит поверх текста, поэтому стекло плотнее обычного */
-    background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong);
-  }
-  /* У стекла скругления как у Apple, а тут нужен именно круг */
-  .talk > .chats-fab, .talk > .chats-fab::before, .talk > .chats-fab::after { corner-shape: round; }
-  .chats-fab .i { width: 20px; height: 20px; }
-  /* Строка ввода над нижними вкладками */
+  /* Строка ввода у нижнего края: колонка чата во весь экран без нижнего отступа */
   :root[data-view="chat"] .content { padding-bottom: 0; }
-  .chat { min-height: calc(100vh - 94px); }
-  .talk > .composer { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
-  /* Новое сообщение показывается над строкой ввода и вкладками, а не под ними */
+  .chat { min-height: calc(100vh - 12px - env(safe-area-inset-bottom, 0px)); }
+  .talk > .composer { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  /* Новое сообщение показывается над строкой ввода, а не под ней */
   .m-you, .m-ai, .m-think { scroll-margin-top: 84px; scroll-margin-bottom: 150px; }
   /* Шестнадцать пикселей, чтобы телефон не увеличивал страницу при вводе */
   .composer, .fp-name, .q-win { font-size: 16px; }
   .mode-hint { display: none; }
   .book-pick { max-width: 104px; overflow: hidden; }
-  .quick { left: env(safe-area-inset-left, 0px); bottom: calc(74px + env(safe-area-inset-bottom, 0px)); padding: 0 12px; }
+  .quick { left: env(safe-area-inset-left, 0px); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); padding: 0 12px; }
   .q-hint { display: none; }
   .q-tools .send { margin-left: auto; }
   .pick-tag { display: none; }
@@ -828,8 +809,8 @@ html.picking .sidebar, html.picking .tabbar, html.picking .mascot { opacity: 0.4
 .q-stop { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
 .send:disabled { opacity: 0.35; cursor: default; filter: none; }
 .q-book-menu { display: grid; gap: 1px; max-height: 260px; overflow-y: auto; padding: 4px; }
-.q-book-menu button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 8px; font-size: 13px; text-align: left; }
-.q-book-menu button:hover { background: var(--t-hover); }
+.q-book-menu button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 30px; padding: 5px 8px; border-radius: 9px; color: var(--t-ink-2); font-size: 13.5px; text-align: left; }
+.q-book-menu button:hover, .q-book-menu button:focus-visible { background: var(--t-hover); color: var(--t-ink); outline: none; }
 .q-book-menu button[aria-pressed="true"] { font-weight: 500; }
 .q-book-menu small { color: var(--t-muted); font-size: 12px; }
 .q-q { align-self: flex-end; max-width: 92%; padding: 6px 11px; border-radius: 13px 13px 4px 13px; background: var(--t-fill); font-size: 13.5px; white-space: pre-wrap; }

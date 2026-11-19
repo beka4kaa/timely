@@ -61,4 +61,4 @@
 .m-drop { fill: var(--t-m-mid); stroke: var(--t-m-edge); stroke-width: 0.8; }
 .m-heart { fill: #ff8fb0; }
 /* На лендинге токенов приложения нет: там «з» берёт запасной серый и шрифт. */
-.m-z { fill: var(--t-muted, #8d8d96); font-family: var(--t-serif, Georgia, serif); font-size: 16px; font-style: italic; }
+.m-z { fill: var(--t-muted, #8d8d96); font-family: var(--t-math); font-size: 16px; font-style: italic; }

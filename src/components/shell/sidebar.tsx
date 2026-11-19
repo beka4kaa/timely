@@ -1,6 +1,7 @@
 "use client";
 
-// Левая панель: стекло с подписанными группами.
+// Левая панель: сверху всегда видны Сейчас, Тьютор, Неделя и Помодоро, ниже три группы,
+// которые раскрываются на месте (что открыто, панель помнит).
 //
 // Внутри две страницы, меню и чаты. В чате панель уезжает слайдом в список разговоров,
 // стрелка возвращает меню, а сам список рисует страница чата порталом: у неё движок.
@@ -8,9 +9,10 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { useFullAccessDenied } from "@/components/full-access-gate";
+import { AccountMenu } from "@/components/shell/account-menu";
 import { useShellStatus } from "@/components/nav/use-shell-status";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { Icon, type IconName } from "@/components/shell/icons";
@@ -18,11 +20,18 @@ import {
   dashboardViewOf,
   getDashboardSections,
   matchNavigation,
+  type DashboardSection,
+  type DashboardSectionKey,
 } from "@/config/dashboard-navigation";
+import { groupSignal, openGroupsFor, readOpenGroups, toggleGroup, writeOpenGroups } from "@/lib/nav-groups";
 import { useDashboardShell } from "@/contexts/dashboard-shell";
+import { linkClosesDrawer } from "@/components/shell/drawer-swipe";
 import { useDashboardPath } from "@/lib/use-dashboard-path";
 
 const COLLAPSED_KEY = "timely-nav";
+const GROUP_KEYS: DashboardSectionKey[] = getDashboardSections()
+  .filter((section) => section.kind === "group")
+  .map((section) => section.key);
 
 export function initialsOf(name: string | null | undefined): string {
   const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
@@ -72,6 +81,85 @@ function NavItem({
   );
 }
 
+/** Сигналы раздела: число тем на повторение или точка, пока обрабатывается книга. */
+function Signal({ count, live }: { count: number | null; live: boolean }) {
+  return (
+    <>
+      {count ? (
+        <span className="nav-count" title={`${count} к повторению`}>
+          {count}
+        </span>
+      ) : null}
+      {live ? <span className="live" title="Книга ещё обрабатывается" /> : null}
+    </>
+  );
+}
+
+/** Группа: строка-кнопка и пункты под ней. Свёрнутая показывает сигналы на своей строке. */
+function NavGroup({
+  section,
+  open,
+  itemUrl,
+  status,
+  onToggle,
+}: {
+  section: DashboardSection;
+  open: boolean;
+  itemUrl: string | null;
+  status: { dueReviews: number; ingesting: boolean };
+  onToggle: () => void;
+}) {
+  const subId = `nav-sub-${section.key}`;
+  // Свёрнутые пункты не должны ловить фокус по Tab. React 18 не знает атрибута inert,
+  // поэтому он ставится напрямую, как у страниц панели ниже.
+  const subRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (subRef.current) subRef.current.inert = !open;
+  }, [open]);
+  return (
+    <div className="nav-group">
+      <button
+        className="nav-item nav-group-btn"
+        type="button"
+        title={section.title}
+        aria-expanded={open}
+        aria-controls={subId}
+        onClick={onToggle}
+      >
+        <Icon name={section.icon} />
+        <span className="nav-text">{section.title}</span>
+        {open ? null : <Signal {...groupSignal(section, status)} />}
+        <Icon name="chev-r" className="nav-chev" />
+      </button>
+      <div className="nav-sub" id={subId} data-open={open || undefined}>
+        <div className="nav-sub-in" ref={subRef}>
+          {section.items.map((item) => (
+            <NavItem key={item.url} href={item.url} title={item.title} icon={item.icon} current={itemUrl === item.url}>
+              <Signal
+                count={item.url === "/dashboard/weaknesses" && status.dueReviews > 0 ? status.dueReviews : null}
+                live={item.url === "/dashboard/curriculum" && status.ingesting}
+              />
+            </NavItem>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Телефонный вид: то же условие, что в стилях (до 640 px). */
+function useIsPhone(): boolean {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 640px)");
+    const update = () => setPhone(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return phone;
+}
+
 export function useThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   return useCallback(() => {
@@ -86,14 +174,26 @@ export function Sidebar() {
   const { data: session } = useSession();
   const denied = useFullAccessDenied();
   const status = useShellStatus(!denied);
-  const { setChatsSlot } = useDashboardShell();
+  const { setChatsSlot, drawerOpen, setDrawerOpen } = useDashboardShell();
+  const isPhone = useIsPhone();
   const toggleTheme = useThemeToggle();
-  const { itemUrl } = matchNavigation(path);
+  const { section: currentSection, itemUrl } = matchNavigation(path);
 
   const [collapsed, setCollapsed] = useState(false);
   /** Стрелка назад показывает меню, не уходя из чата. Новый заход в чат снова открывает список. */
   const [menuInChat, setMenuInChat] = useState(false);
   const menuRef = useRef<HTMLElement>(null);
+  // Раскрытые группы читаются после монтирования: на сервере хранилища нет.
+  const [openGroups, setOpenGroups] = useState<DashboardSectionKey[]>([]);
+  useEffect(() => {
+    setOpenGroups(openGroupsFor(readOpenGroups(), currentSection, GROUP_KEYS));
+    // Только при первом показе; переходы ниже добавляют группу текущей страницы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!currentSection || !GROUP_KEYS.includes(currentSection)) return;
+    setOpenGroups((open) => (open.includes(currentSection) ? open : [...open, currentSection]));
+  }, [currentSection]);
   const chatsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,7 +204,60 @@ export function Sidebar() {
     setMenuInChat(false);
   }, [view]);
 
-  const showChats = view === "chat" && !menuInChat && !collapsed;
+  // Узкая панель только на компьютере: на телефоне панель выезжает целиком.
+  const rail = collapsed && !isPhone;
+  const showChats = view === "chat" && !menuInChat && !rail;
+
+  // Телефон: переход на страницу закрывает меню; в чате меню открывается списком чатов.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [path, setDrawerOpen]);
+  useEffect(() => {
+    if (drawerOpen && view === "chat") setMenuInChat(false);
+  }, [drawerOpen, view]);
+
+  // Открытое меню: страница под ним не прокручивается и недоступна, фокус внутри меню,
+  // Escape закрывает.
+  const asideRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const aside = asideRef.current;
+    if (!aside) return;
+    const shown = !isPhone || drawerOpen;
+    // Меню закрылось, а фокус был в нём: возвращаем его на кнопку меню, иначе он остался
+    // бы на ссылке в спрятанной панели.
+    if (!shown && aside.contains(document.activeElement)) {
+      document.querySelector<HTMLElement>(".menu-fab")?.focus({ preventScroll: true });
+    }
+    aside.inert = !shown;
+    if (!isPhone || !drawerOpen) return;
+    const root = document.documentElement;
+    root.classList.add("drawer-open");
+    // Всё остальное в кабинете — страница, кнопка меню, слайм — до закрытия недоступно ни по
+    // Tab, ни экранному диктору. Затемнение остаётся: нажатие по нему закрывает меню. Окно
+    // настроек открывается из меню аккаунта поверх, его не трогаем.
+    const behind = Array.from(aside.parentElement?.children ?? []).filter(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement &&
+        node !== aside &&
+        !node.classList.contains("nav-scrim") &&
+        node.tagName !== "DIALOG" &&
+        !node.inert,
+    );
+    for (const node of behind) node.inert = true;
+    aside.querySelector<HTMLElement>(showChats ? ".sb-back" : ".sb-page.nav .nav-item")?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    // Снимается и при уходе из кабинета с открытым меню, иначе следующая страница не прокрутится.
+    return () => {
+      root.classList.remove("drawer-open");
+      for (const node of behind) node.inert = false;
+      document.removeEventListener("keydown", onKey);
+    };
+    // showChats меняется вместе с открытием в чате; фокус ставится на тот экран, что виден.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPhone, drawerOpen, setDrawerOpen]);
 
   // Страница, которая уехала, не должна ловить фокус по Tab.
   useEffect(() => {
@@ -136,15 +289,31 @@ export function Sidebar() {
   // В свёрнутой панели списку негде жить, поэтому панель разворачивается.
   const reopenChats = () => {
     setMenuInChat(false);
-    if (collapsed && view === "chat") toggleCollapsed();
+    if (rail && view === "chat") toggleCollapsed();
   };
   const chatClick = (url: string) => (url === "/dashboard/chat" ? reopenChats : undefined);
+
+  // Телефон: нажатие на ссылку в меню закрывает его, даже если это текущая страница и
+  // адрес не меняется.
+  const closeOnLink = (event: MouseEvent<HTMLElement>) => {
+    if (!isPhone || !drawerOpen) return;
+    const link = (event.target as Element).closest("a[href]");
+    if (link && linkClosesDrawer(link.getAttribute("href"), view)) setDrawerOpen(false);
+  };
 
   const sections = getDashboardSections();
   const name = session?.user?.name || "Ученик";
 
   return (
-    <aside className="sidebar glass" data-sb={showChats ? "chats" : "main"} aria-label="Навигация">
+    <aside
+      ref={asideRef}
+      id="app-nav"
+      className="sidebar glass"
+      data-sb={showChats ? "chats" : "main"}
+      data-drawer={isPhone ? (drawerOpen ? "open" : "closed") : undefined}
+      aria-label="Навигация"
+      onClick={closeOnLink}
+    >
       <div className="sb-head">
         <Link className="brand" href="/dashboard" aria-label="Timely, на главную">
           <SlimeMark />
@@ -162,29 +331,26 @@ export function Sidebar() {
       </div>
       <div className="sb-pages">
         <nav className="sb-page nav" ref={menuRef}>
-          {sections.map((section) =>
-            section.items.length ? (
-              <div className="nav-group" key={section.key}>
-                <div className="nav-label">{section.title}</div>
-                {section.items.map((item) => (
-                  <NavItem
-                    key={item.url}
-                    href={item.url}
-                    title={item.title}
-                    icon={item.icon}
-                    current={itemUrl === item.url}
-                    onClick={chatClick(item.url)}
-                  >
-                    {item.url === "/dashboard/weaknesses" && status.dueReviews > 0 ? (
-                      <span className="nav-count" title={`${status.dueReviews} к повторению`}>
-                        {status.dueReviews}
-                      </span>
-                    ) : null}
-                    {item.url === "/dashboard/curriculum" && status.ingesting ? (
-                      <span className="live" title="Книга ещё обрабатывается" />
-                    ) : null}
-                  </NavItem>
-                ))}
+          {sections.map((section, index) =>
+            section.kind === "group" ? (
+              <div key={section.key} className="nav-group-wrap">
+                {sections[index - 1]?.kind === "page" ? <div className="nav-sep" role="separator" /> : null}
+                <NavGroup
+                  section={section}
+                  open={openGroups.includes(section.key)}
+                  itemUrl={itemUrl}
+                  status={status}
+                  onToggle={() => {
+                    // В свёрнутой узкой панели пунктам негде показаться: панель разворачивается.
+                    if (rail) {
+                      toggleCollapsed();
+                      if (openGroups.includes(section.key)) return;
+                    }
+                    const next = toggleGroup(openGroups, section.key);
+                    setOpenGroups(next);
+                    writeOpenGroups(next);
+                  }}
+                />
               </div>
             ) : (
               <div className="nav-group" key={section.key}>
@@ -218,17 +384,11 @@ export function Sidebar() {
         </div>
       </div>
       <div className="sb-foot">
-        <Link
-          className="me"
-          href="/dashboard/profile"
-          title="Профиль и настройки"
-          aria-current={view === "profile" || view === "prefs" ? "page" : undefined}
-        >
-          <span className="avatar" aria-hidden="true">
-            {initialsOf(session?.user?.name)}
-          </span>
-          <span className="me-name">{name}</span>
-        </Link>
+        <AccountMenu
+          initials={initialsOf(session?.user?.name)}
+          name={name}
+          current={view === "profile" || view === "prefs"}
+        />
         <button
           className="icon-btn theme-btn"
           type="button"

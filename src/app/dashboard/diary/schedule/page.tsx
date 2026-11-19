@@ -29,7 +29,6 @@ import {
   type WeekDays,
 } from "@/components/diary/week-template"
 import { Icon } from "@/components/shell/icons"
-import { SubNav } from "@/components/shell/tab-bar"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import {
@@ -514,7 +513,6 @@ export default function SchedulePage() {
   if (loading) {
     return (
       <div className="content view ds-page">
-        <SubNav group="study" />
         <header className="head">
           <h1 className="title">Шаблон расписания</h1>
         </header>
@@ -529,7 +527,6 @@ export default function SchedulePage() {
 
   return (
     <div className="content view ds-page">
-      <SubNav group="study" />
       <header className="head">
         <h1 className="title">Шаблон расписания</h1>
         <div className="head-tools">

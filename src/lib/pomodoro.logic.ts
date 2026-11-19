@@ -291,16 +291,19 @@ const DIAL_OUTER = 136;
 const DIAL_INNER = 118;
 const DIAL_INNER_LONG = 111;
 
+/** Чёрточек на циферблате всегда столько же, сколько минут на часах. */
+export const DIAL_TICKS = 60;
+
 /**
- * Циферблат: одна чёрточка на минуту, каждая пятая длиннее. Чем минут больше, тем чёрточки
- * тоньше, чтобы они не слипались и в коротком перерыве, и в полуторачасовом марафоне.
+ * Циферблат: 60 чёрточек при любой длине таймера, каждая пятая длиннее, как на часах.
+ * Одна чёрточка — шестидесятая часть таймера: в 10-минутном перерыве 10 секунд, в
+ * 50-минутном фокусе 50 секунд. Так кольцо одинаково плотное и пустеет ровно к концу.
  */
-export function dialTicks(plannedSeconds: number): DialTick[] {
-  const count = Math.max(1, Math.round(plannedSeconds / 60));
-  const width = Number(Math.max(2.4, Math.min(6, 190 / count)).toFixed(1));
+export function dialTicks(): DialTick[] {
+  const width = Number(Math.max(2.4, Math.min(6, 190 / DIAL_TICKS)).toFixed(1));
   const round = (value: number) => Number(value.toFixed(2));
-  return Array.from({ length: count }, (_, index) => {
-    const angle = (index / count) * 2 * Math.PI - Math.PI / 2;
+  return Array.from({ length: DIAL_TICKS }, (_, index) => {
+    const angle = (index / DIAL_TICKS) * 2 * Math.PI - Math.PI / 2;
     const inner = index % 5 === 0 ? DIAL_INNER_LONG : DIAL_INNER;
     return {
       x1: round(DIAL_CENTER + inner * Math.cos(angle)),
@@ -312,16 +315,22 @@ export function dialTicks(plannedSeconds: number): DialTick[] {
   });
 }
 
-/** Прошедшие минуты гаснут, идущая дышит. */
+/** Прошедшие доли гаснут, идущая дышит. Длина таймера — прошло плюс осталось. */
 export function tickClass(index: number, elapsedSeconds: number, remainingSeconds: number): string {
-  const gone = Math.floor(elapsedSeconds / 60);
+  const total = elapsedSeconds + remainingSeconds;
+  if (total <= 0) return "";
+  const gone = Math.floor((elapsedSeconds / total) * DIAL_TICKS);
   if (index < gone) return "gone";
   return index === gone && remainingSeconds > 0 ? "now" : "";
 }
 
 const BREAK_WORD: Record<TimerPhase, string> = { focus: "", break: "перерыв", long: "длинный перерыв" };
 
-/** Подпись под цифрами: когда закончится, на паузе, или сколько будет идти. */
+/**
+ * Подпись под цифрами: когда закончится или что стоит на паузе. Длину нетронутой фазы
+ * не повторяем: её уже показывают сами цифры. Перед фокусом подписи нет, перед
+ * перерывом — только его вид.
+ */
 export function dialSubtitle({
   phase,
   running,
@@ -340,9 +349,7 @@ export function dialSubtitle({
   const word = BREAK_WORD[phase];
   if (running) return word ? `${word}, до ${end}` : `до ${end}`;
   if (remaining < planned) return `пауза, до ${end}`;
-  const minutes = Math.round(planned / 60);
-  const length = `${minutes} ${minutesWord(minutes)}`;
-  return word ? `${word} ${length}` : length;
+  return word;
 }
 
 /** Имя сессии хранится по моменту начала: сервер отдаёт его в другой записи, чем принял. */

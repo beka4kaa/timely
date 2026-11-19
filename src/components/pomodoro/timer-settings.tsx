@@ -1,6 +1,6 @@
 "use client";
 
-// Настройки таймера прямо под ним: свой ритм, автостарт, звонок и уведомления.
+// Настройки таймера в окне настроек: ритм, автостарт, звонок и уведомления.
 // Всё хранится в браузере, там же, где выбранный ритм.
 
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +14,8 @@ import {
   type RhythmErrors,
 } from "@/lib/pomodoro-cycle";
 import { askNoticePermission, noticePermission, type NoticePermission } from "@/lib/pomodoro-notify";
+import { Icon } from "@/components/shell/icons";
+import { CUSTOM_PRESET, PRESETS } from "@/lib/pomodoro";
 import { cn } from "@/lib/utils";
 import { selectRhythm, usePomodoroStore } from "@/stores/pomodoro-store";
 
@@ -38,17 +40,163 @@ function sameRhythm(a: Rhythm, b: Rhythm): boolean {
   return a.focus === b.focus && a.brk === b.brk && a.long === b.long && a.every === b.every;
 }
 
-export function TimerSettings({ id }: { id: string }) {
+/** «каждые 3 блока», «после каждого блока»: как часто приходит длинный отдых. */
+function everyWords(every: number): string {
+  if (every <= 1) return "после каждого блока";
+  const hundred = every % 100;
+  const ten = every % 10;
+  const word = hundred >= 11 && hundred <= 14 ? "блоков" : ten >= 2 && ten <= 4 ? "блока" : ten === 1 ? "блок" : "блоков";
+  return `каждые ${every} ${word}`;
+}
+
+/** «25 мин фокус, 5 мин отдых. Длинный отдых 15 мин каждые 4 блока». */
+export function rhythmWords(rhythm: Rhythm): string {
+  return `${rhythm.focus} мин фокус, ${rhythm.brk} мин отдых. Длинный отдых ${rhythm.long} мин ${everyWords(rhythm.every)}`;
+}
+
+/** Раздел «Помодоро» в окне настроек: сначала ритм, потом поведение таймера. */
+export function PomodoroSettings() {
+  const presetIdx = usePomodoroStore((state) => state.presetIdx);
   const rhythm = usePomodoroStore(selectRhythm);
+  const choosePreset = usePomodoroStore((state) => state.choosePreset);
+  const chooseCustom = usePomodoroStore((state) => state.chooseCustom);
   const setCustom = usePomodoroStore((state) => state.setCustom);
+  const isCustom = presetIdx === CUSTOM_PRESET;
 
   return (
-    <section className="fp-set card" id={id} aria-label="Свой ритм и настройки таймера">
-      <RhythmFields rhythm={rhythm} onCommit={setCustom} />
-      <AutoStartLines />
-      <SoundLines />
-      <NoticeLine />
-    </section>
+    <>
+      <section className="set">
+        <h2>Ритм</h2>
+        <div className="set-body">
+          <RhythmSelect
+            presetIdx={presetIdx}
+            rhythm={rhythm}
+            onPreset={choosePreset}
+            onCustom={chooseCustom}
+          />
+          {isCustom ? <RhythmFields rhythm={rhythm} onCommit={setCustom} /> : null}
+          <p className="small-note">Если таймер уже идёт, новый ритм начнётся со следующего блока.</p>
+        </div>
+      </section>
+      <section className="set">
+        <h2>Запуск</h2>
+        <div className="set-body">
+          <AutoStartLines />
+        </div>
+      </section>
+      <section className="set">
+        <h2>Звонок</h2>
+        <div className="set-body">
+          <SoundLines />
+          <NoticeLine />
+        </div>
+      </section>
+    </>
+  );
+}
+
+/**
+ * Выбор ритма выпадающим списком: на экране одна строка с текущим ритмом, остальные
+ * открываются по нажатию. Закрывается выбором, кликом мимо и Escape.
+ */
+function RhythmSelect({
+  presetIdx,
+  rhythm,
+  onPreset,
+  onCustom,
+}: {
+  presetIdx: number;
+  rhythm: Rhythm;
+  onPreset: (index: number) => void;
+  onCustom: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const isCustom = presetIdx === CUSTOM_PRESET;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+      wrapRef.current?.querySelector<HTMLElement>(".st-select")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    wrapRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  const onItemsKey = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button"));
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    items[(at + step + items.length) % items.length]?.focus();
+  };
+
+  const pick = (run: () => void) => {
+    run();
+    setOpen(false);
+  };
+
+  return (
+    <div className="st-select-wrap" ref={wrapRef}>
+      <button
+        className="st-select"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>
+          <b>{isCustom ? "Свой" : `${rhythm.focus} / ${rhythm.brk}`}</b>
+          <small>{rhythmWords(rhythm)}</small>
+        </span>
+        <Icon name="chev-d" className="st-select-chev" />
+      </button>
+      {open ? (
+        <div className="menu st-menu" role="listbox" aria-label="Ритм таймера" onKeyDown={onItemsKey}>
+          {PRESETS.map((preset, index) => (
+            <button
+              key={preset.note}
+              className="menu-item two"
+              type="button"
+              role="option"
+              aria-checked={presetIdx === index}
+              aria-selected={presetIdx === index}
+              onClick={() => pick(() => onPreset(index))}
+            >
+              <b>
+                {preset.focus} / {preset.brk}
+              </b>
+              <small>{rhythmWords(preset)}</small>
+              <Icon name="check" className="menu-ok" />
+            </button>
+          ))}
+          <button
+            className="menu-item two"
+            type="button"
+            role="option"
+            aria-checked={isCustom}
+            aria-selected={isCustom}
+            onClick={() => pick(onCustom)}
+          >
+            <b>Свой</b>
+            <small>Задать свои минуты</small>
+            <Icon name="check" className="menu-ok" />
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -76,7 +224,7 @@ function RhythmFields({ rhythm, onCommit }: { rhythm: Rhythm; onCommit: (rhythm:
 
   return (
     <fieldset className="fp-rhythm">
-      <legend>Свой ритм</legend>
+      <legend className="sr-only">Свой ритм</legend>
       <div className="fp-rhythm-grid">
         {FIELDS.map(({ key, label, unit }) => {
           const errorId = `fp-err-${key}`;

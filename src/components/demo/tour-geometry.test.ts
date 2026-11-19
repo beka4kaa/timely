@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { DOCK_BELOW, GAP, MARGIN, holeFor, placeCard, veilPath } from "./tour-geometry"
+import { DOCK_BELOW, GAP, MARGIN, dockOffsetAbove, holeFor, placeCard, veilPath } from "./tour-geometry"
 import { demoLandingPath, newDemoVisitor, pickDemoLang, withTourFlag } from "../../lib/demo-mode"
 
 const desktop = { width: 1280, height: 800 }
@@ -97,4 +97,14 @@ test("Russian for ru and kk browsers, English otherwise", () => {
   assert.equal(pickDemoLang(["en-US", "kk"]), "ru")
   assert.equal(pickDemoLang(["en-US", "de"]), "en")
   assert.equal(pickDemoLang(undefined), "en")
+})
+
+test("on a phone the docked card sits above the quick-ask capsule, not on it", () => {
+  const phone = { width: 375, height: 812 }
+  assert.equal(dockOffsetAbove({ top: 764, height: 36 }, phone), 812 - 764 + 8)
+  assert.equal(dockOffsetAbove({ top: 764, height: 0 }, phone), 0) // hidden, as in the chat
+  assert.equal(dockOffsetAbove({ top: 820, height: 36 }, phone), 0) // off screen
+  assert.equal(dockOffsetAbove(null, phone), 0)
+  const spot = placeCard(null, { width: 343, height: 160 }, phone, dockOffsetAbove({ top: 764, height: 36 }, phone))
+  assert.ok(spot.top + 160 <= 764, "the card ends above the capsule")
 })

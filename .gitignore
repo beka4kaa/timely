@@ -72,3 +72,6 @@ backend/.curriculum-storage/
 # замеров разбора PDF.
 backend/*.pdf
 backend/*.epub
+
+# Brainstorm mockups (visual companion)
+.superpowers/

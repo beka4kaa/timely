@@ -6,7 +6,8 @@ import { IconSprite } from "@/components/shell/icons"
 import { Mascot } from "@/components/shell/mascot/mascot"
 import { QuickProvider } from "@/components/shell/quick/quick-context"
 import { Sidebar } from "@/components/shell/sidebar"
-import { TabBar } from "@/components/shell/tab-bar"
+import { MenuButton } from "@/components/shell/menu-button"
+import { SettingsDialog } from "@/components/settings/settings-dialog"
 import { ViewTracker } from "@/components/shell/view-tracker"
 import { ActiveSubjectProvider } from "@/contexts/active-subject"
 import { ActiveScheduleProvider } from "@/contexts/active-schedule"
@@ -58,12 +59,15 @@ export default function DashboardLayout({
           <PomodoroAlerts />
           <ViewTracker />
           <Sidebar />
+          {/* Телефон: круглая кнопка меню и затемнение под выезжающей панелью */}
+          <MenuButton />
+          {/* Одно окно настроек на весь кабинет: открывается из меню аккаунта и у таймера */}
+          <SettingsDialog />
           <DashboardMain>{children}</DashboardMain>
           <Mascot />
           {/* Мини-окно внизу. На «Плане» это помощник по расписанию, на остальных
               страницах вопросы тьютору; выбор режима внутри. */}
           <SubjectAskRail />
-          <TabBar />
           {/* Демо для проверяющих: плашка и тур. Сам решает, на демо ли он. */}
           <DemoMount />
         </div>

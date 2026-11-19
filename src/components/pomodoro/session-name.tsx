@@ -1,6 +1,7 @@
 "use client";
 
-// Название сессии: пиши что угодно или выбирай занятие из сегодняшнего плана.
+// Название блока: пиши что угодно или выбирай занятие из сегодняшнего плана.
+// Встаёт стеклянным полем на место названия над цифрами: после старта и по нажатию на название.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,6 +19,8 @@ interface SessionNameProps {
   value: string;
   onChange: (value: string) => void;
   options: PlanOption[];
+  /** Ответ дан: Enter, выбор из плана или Escape. */
+  onDone: () => void;
 }
 
 const LIST_ID = "fp-list";
@@ -26,9 +29,8 @@ function normalized(text: string): string {
   return text.trim().toLocaleLowerCase("ru");
 }
 
-export function SessionName({ value, onChange, options }: SessionNameProps) {
+export function SessionName({ value, onChange, options, onDone }: SessionNameProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   useSmoothInput(inputRef);
 
@@ -43,23 +45,28 @@ export function SessionName({ value, onChange, options }: SessionNameProps) {
     return query ? options.filter((option) => normalized(option.name).includes(query)) : options;
   }, [options, value, matched]);
 
-  const expanded = open && shown.length > 0;
+  // План виден сразу: выбрать проще, чем вспоминать, как занятие называется.
+  const expanded = shown.length > 0;
+
+  // Поле открылось: курсор сразу в нём, прошлое название выделено, Enter его оставит.
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+    inputRef.current?.select();
+  }, []);
 
   useEffect(() => {
     setActiveId(null);
-  }, [value, open]);
+  }, [value]);
 
   const choose = (option: PlanOption) => {
     onChange(option.name);
-    setOpen(false);
-    inputRef.current?.blur();
     mascot.hop(0.42, "quiet");
+    onDone();
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      setOpen(true);
       if (!shown.length) return;
       const at = shown.findIndex((option) => option.id === activeId);
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -69,15 +76,16 @@ export function SessionName({ value, onChange, options }: SessionNameProps) {
       event.preventDefault();
       const active = shown.find((option) => option.id === activeId);
       if (active) choose(active);
-      else inputRef.current?.blur();
+      else onDone();
     } else if (event.key === "Escape") {
-      setOpen(false);
+      event.stopPropagation();
+      onDone();
     }
   };
 
   return (
     <div className="fp-name-wrap">
-      <label className="fp-name glass">
+      <label className="fp-name">
         <span className={cn("fp-dot", !matched && "none")} aria-hidden="true" />
         <span className="ti-host">
           <input
@@ -85,7 +93,7 @@ export function SessionName({ value, onChange, options }: SessionNameProps) {
             type="text"
             value={value}
             placeholder="Над чем работаешь?"
-            aria-label="Название сессии"
+            aria-label="Над чем работаешь"
             role="combobox"
             aria-expanded={expanded}
             aria-controls={LIST_ID}
@@ -95,17 +103,14 @@ export function SessionName({ value, onChange, options }: SessionNameProps) {
             maxLength={120}
             onChange={(event) => {
               onChange(event.target.value);
-              setOpen(true);
             }}
-            onFocus={() => setOpen(true)}
-            onBlur={() => setOpen(false)}
             onKeyDown={onKeyDown}
           />
         </span>
         {matched ? <span className="fp-link">из плана</span> : null}
       </label>
       <div
-        className={cn("fp-list", !expanded && "is-off")}
+        className={cn("menu fp-list", !expanded && "is-off")}
         id={LIST_ID}
         role="listbox"
         aria-label="Занятия из плана"

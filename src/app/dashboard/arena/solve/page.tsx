@@ -6,7 +6,6 @@
 import Link from "next/link";
 
 import { ContestGrid, type GridItem } from "@/components/arena/contest-grid";
-import { SubNav } from "@/components/shell/tab-bar";
 import { listContests, listMySubmissions, useMe } from "@/lib/contest-api";
 import { contestResult, ownSubmissions, plaqueOf } from "@/lib/contest-view";
 import { useResource } from "@/lib/resource-cache";
@@ -29,7 +28,6 @@ export default function ContestsPage() {
 
   return (
     <div className="content view">
-      <SubNav group="compete" />
       <header className="head">
         <h1 className="title">Контесты</h1>
       </header>

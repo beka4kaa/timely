@@ -43,10 +43,19 @@ export function holeFor(target: Rect, viewport: Size): Rect {
 }
 
 /**
+ * Сколько места снизу занимает капсула быстрого вопроса (с отступом), чтобы карточка
+ * тура на телефоне легла над ней, а не на неё. Скрытая или ушедшая за экран не мешает.
+ */
+export function dockOffsetAbove(rect: { top: number; height: number } | null, viewport: Size): number {
+  if (!rect || rect.height <= 0 || rect.top >= viewport.height) return 0
+  return viewport.height - rect.top + 8
+}
+
+/**
  * Куда поставить карточку. Под окном, если влезает; иначе над ним; если цель
  * высокая и не влезает ни то ни другое, карточка ложится поверх её нижнего угла.
- * Без цели — по центру. На узком экране — всегда внизу, над панелью вкладок
- * (`dockOffset` — её высота с отступом).
+ * Без цели — по центру. На узком экране — всегда внизу, над капсулой быстрого вопроса
+ * (`dockOffset` — её высота с отступом, см. `dockOffsetAbove`).
  */
 export function placeCard(
   hole: Rect | null,

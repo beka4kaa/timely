@@ -10,7 +10,7 @@ module.exports = {
   	extend: {
   		fontFamily: {
   			sans: ['var(--font-golos)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-  			serif: ['var(--font-source-serif)', 'Georgia', 'Times New Roman', 'serif'],
+  			serif: ['var(--font-display)', 'Manrope', 'var(--font-golos)', 'sans-serif'],
   			onest: ['var(--font-golos)', 'sans-serif'],
   			handwriting: ['var(--font-handwriting)', 'cursive'],
   			virgil: ['var(--font-handwriting)', 'cursive'],

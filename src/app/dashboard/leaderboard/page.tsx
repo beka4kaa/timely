@@ -14,7 +14,6 @@ import { toast } from "sonner";
 import { PrivateLeaderboards } from "@/components/leaderboard/PrivateLeaderboards";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { initialsOf } from "@/components/shell/sidebar";
-import { SubNav } from "@/components/shell/tab-bar";
 import {
   listGlobalLeaderboard,
   listMySubmissions,
@@ -373,7 +372,6 @@ export default function LeaderboardPage() {
 
   return (
     <div className="content view">
-      <SubNav group="compete" />
       <header className="head">
         <h1 className="title">Рейтинг</h1>
       </header>

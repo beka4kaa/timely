@@ -17,7 +17,6 @@ import { useDiaryPlan } from "@/components/diary/use-diary-plan";
 import { useDiaryWeek } from "@/components/diary/use-diary-week";
 import { WeekVideos, weekLinkCount } from "@/components/diary/week-videos";
 import { Icon } from "@/components/shell/icons";
-import { SubNav } from "@/components/shell/tab-bar";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { nextUndoLabel } from "@/lib/diary-undo";
 import {
@@ -182,7 +181,6 @@ export function DiaryPage() {
 
   return (
     <div className="content view">
-      <SubNav group="study" />
       <header className="head dy-head">
         <h1 className="title">Дневник</h1>
         <div className="head-tools">

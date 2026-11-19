@@ -3,23 +3,22 @@
 // Помодоро: циферблат по центру, стопка карточек сбоку и год снизу.
 // Таймер живёт в сторе, эта страница только показывает его и статистику с сервера.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TTL, blocksKey, fetchBlocks } from "@/components/now/now-resources";
-import { SubNav } from "@/components/shell/tab-bar";
+import { Icon } from "@/components/shell/icons";
+import { openSettings } from "@/stores/settings-dialog";
 import { isOpenBlock, splitBlockTitle } from "@/lib/now-feed";
 import {
-  CUSTOM_PRESET,
   EMPTY_SUMMARY,
   HEAT_WEEKS,
-  PRESETS,
   dayKey,
   streakLabel,
   type FocusSessionRow,
   type PomodoroSummary,
 } from "@/lib/pomodoro";
 import { clearDay, fetchSessions, fetchSummary } from "@/lib/pomodoro-api";
-import { cycleDots, rhythmHint, rhythmLabel } from "@/lib/pomodoro-cycle";
+import { cycleDots } from "@/lib/pomodoro-cycle";
 import {
   buildHeatWeeks,
   buildHistoryRows,
@@ -43,9 +42,9 @@ import {
 
 import { SessionsCard, TodayCard, WeekCard, sessionRowFrom, type SessionRow } from "./focus-side";
 import { START_LABEL, primeAlerts } from "./pomodoro-alerts";
+import { PomodoroTip } from "./pomodoro-tip";
 import { SessionName, type PlanOption } from "./session-name";
 import { TimerDial } from "./timer-dial";
-import { TimerSettings } from "./timer-settings";
 import { useFocusUser } from "./use-focus-user";
 import { YearHeat } from "./year-heat";
 
@@ -65,9 +64,7 @@ export function PomodoroPage() {
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const [sessionName, setSessionName] = useState("");
-  const [customOpen, setCustomOpen] = useState(false);
 
-  const presetIdx = usePomodoroStore((state) => state.presetIdx);
   const phase = usePomodoroStore((state) => state.phase);
   const running = usePomodoroStore((state) => state.running);
   const syncedAt = usePomodoroStore((state) => state.syncedAt);
@@ -83,30 +80,44 @@ export function PomodoroPage() {
   const toggle = usePomodoroStore((state) => state.toggle);
   const skip = usePomodoroStore((state) => state.skip);
   const reset = usePomodoroStore((state) => state.reset);
-  const choosePreset = usePomodoroStore((state) => state.choosePreset);
-  const chooseCustom = usePomodoroStore((state) => state.chooseCustom);
   const dismissAlarm = usePomodoroStore((state) => state.dismissAlarm);
 
   const cycle = useMemo(() => cycleDots(phase, done, rhythm.every), [phase, done, rhythm.every]);
 
+  // «Над чем работаешь?» спрашиваем в момент старта, стеклянным полем прямо на месте
+  // названия над цифрами. Пока таймер стоит, вопроса нет: он только мешает.
+  // `leaving` держит поле на экране, пока играет анимация исчезновения.
+  const [asking, setAsking] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const openAsk = useCallback(() => {
+    clearTimeout(leaveTimer.current);
+    setLeaving(false);
+    setAsking(true);
+  }, []);
+  const closeAsk = useCallback(() => {
+    setLeaving(true);
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = setTimeout(() => {
+      setAsking(false);
+      setLeaving(false);
+    }, 180);
+  }, []);
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  useEffect(() => {
+    if (!asking || leaving) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!(event.target as Element | null)?.closest?.(".dial-edit")) closeAsk();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, [asking, leaving, closeAsk]);
+
   const startOrPause = () => {
     // Звук и вопрос про уведомления браузер разрешает только изнутри клика.
     if (!running) primeAlerts();
+    if (!running && !hasStarted && phase === "focus") openAsk();
     toggle();
-  };
-
-  // «Своё» и есть настройки: свой ритм, автостарт, звук и уведомления в одной панели.
-  // Первый клик выбирает свой ритм и открывает её, следующий сворачивает. У готового
-  // ритма панели нет: она про своё.
-  const isCustom = presetIdx === CUSTOM_PRESET;
-  const panelOpen = isCustom && customOpen;
-  const pickCustom = () => {
-    if (isCustom) {
-      setCustomOpen((open) => !open);
-      return;
-    }
-    chooseCustom();
-    setCustomOpen(true);
   };
 
   // Название читается после монтирования: на сервере localStorage нет.
@@ -238,10 +249,24 @@ export function PomodoroPage() {
 
   return (
     <div className="content view">
-      <SubNav group="study" />
-      <header className="head">
-        <h1 className="title">Помодоро</h1>
-        {summary.streak > 1 ? <span className="head-note">{streakLabel(summary.streak)} подряд</span> : null}
+      <header className="head fp-head">
+        {/* Заголовок «Помодоро» уже есть в левой панели: здесь он только для читалок,
+            а на его месте совет по отдыху или мотивация. */}
+        <h1 className="sr-only">Помодоро</h1>
+        <PomodoroTip mode={phase !== "focus" ? "rest" : hasStarted ? "focus" : "any"} />
+        <div className="head-tools">
+          {summary.streak > 1 ? <span className="head-note">{streakLabel(summary.streak)} подряд</span> : null}
+          {/* Ритм, звонок и уведомления: меняются редко, поэтому в настройках, а не под таймером */}
+          <button
+            className="icon-btn fp-gear"
+            type="button"
+            title="Настройки таймера"
+            aria-label="Настройки таймера"
+            onClick={() => openSettings("pomodoro")}
+          >
+            <Icon name="gear" />
+          </button>
+        </div>
       </header>
 
       {error ? (
@@ -263,8 +288,16 @@ export function PomodoroPage() {
             running={running}
             now={nowTs}
             cycle={cycle}
+            name={hasStarted && phase === "focus" && !asking ? sessionName.trim() : ""}
+            onName={openAsk}
+            editor={
+              asking ? (
+                <div className="dial-edit" data-leaving={leaving || undefined}>
+                  <SessionName value={sessionName} onChange={changeName} options={planOptions} onDone={closeAsk} />
+                </div>
+              ) : null
+            }
           />
-          <SessionName value={sessionName} onChange={changeName} options={planOptions} />
           <div className="fp-ctrl">
             <button className="btn btn-main fp-start" type="button" onClick={startOrPause}>
               {running ? "Пауза" : hasStarted ? "Продолжить" : START_LABEL[phase]}
@@ -274,56 +307,54 @@ export function PomodoroPage() {
                 Тихо
               </button>
             ) : null}
-            <button className="btn btn-text" type="button" title="Следующая фаза" onClick={skip}>
-              Дальше
-            </button>
-            {/* Пока следующая фаза ждёт клика, сбрасывать нечего: место отдано «Тихо». */}
-            {waiting ? null : (
-              <button className="btn btn-text" type="button" disabled={!hasStarted} onClick={reset}>
+            {/* До старта можно только пропустить фазу, после — только сбросить её.
+                Обе кнопки в одной ячейке и сменяют друг друга, ничего не прыгает. */}
+            <span className="fp-swap">
+              <button
+                className="btn btn-text"
+                type="button"
+                title="Перейти к следующей фазе"
+                data-on={!hasStarted || undefined}
+                aria-hidden={hasStarted || undefined}
+                disabled={hasStarted}
+                onClick={skip}
+              >
+                Пропустить
+              </button>
+              <button
+                className="btn btn-text"
+                type="button"
+                title="Остановить и начать эту фазу заново"
+                data-on={hasStarted || undefined}
+                aria-hidden={!hasStarted || undefined}
+                disabled={!hasStarted}
+                onClick={reset}
+              >
                 Сбросить
               </button>
-            )}
+            </span>
           </div>
-          <div className="tabs fp-presets" role="group" aria-label="Ритм: фокус, перерыв и длинный перерыв">
-            {PRESETS.map((preset, index) => (
-              <button
-                key={preset.note}
-                type="button"
-                title={rhythmHint(preset)}
-                aria-pressed={index === presetIdx}
-                onClick={() => choosePreset(index)}
-              >
-                {rhythmLabel(preset)}
-              </button>
-            ))}
-            <button
-              type="button"
-              title={isCustom ? `Своё: ${rhythmHint(rhythm).toLowerCase()}` : "Свой ритм, звук и уведомления"}
-              aria-pressed={isCustom}
-              aria-expanded={panelOpen}
-              aria-controls={panelOpen ? "fp-set" : undefined}
-              onClick={pickCustom}
-            >
-              Своё
-            </button>
-          </div>
-          {panelOpen ? <TimerSettings id="fp-set" /> : null}
         </div>
 
-        {now ? (
-          <aside className="fp-side">
-            <TodayCard stats={todayStats} />
-            <SessionsCard
-              rows={rows}
-              loading={loading}
-              clearing={clearing}
-              canClear={savedRows.length > 0}
-              onClearDay={() => void handleClearDay()}
-            />
-            <WeekCard bars={weekBars} loading={loading} />
-          </aside>
-        ) : null}
       </div>
+
+      {/* Под таймером пара колонок одной высоты: слева итог дня и неделя, справа сессии.
+          Длинный список сессий прокручивается внутри своей карточки. */}
+      {now ? (
+        <div className="fp-cards">
+          <div className="fp-col">
+            <TodayCard stats={todayStats} />
+            <WeekCard bars={weekBars} loading={loading} />
+          </div>
+          <SessionsCard
+            rows={rows}
+            loading={loading}
+            clearing={clearing}
+            canClear={savedRows.length > 0}
+            onClearDay={() => void handleClearDay()}
+          />
+        </div>
+      ) : null}
 
       {now ? <YearHeat weeks={heatWeeks} loading={loading} /> : null}
     </div>

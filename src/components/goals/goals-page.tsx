@@ -19,7 +19,6 @@ import { EVERY_DAY, schedulePatch, type HabitSchedule } from "@/components/habit
 import { createHabit, listHabits, updateHabit, type Habit } from "@/components/habits/lib";
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
-import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { ConfirmingAction, OverflowMenu } from "@/components/curriculum/catalog-menu";
 import { invalidatePlan } from "@/components/now/now-resources";
@@ -481,7 +480,6 @@ export function GoalsPage() {
 
   return (
     <div className="content view">
-      <SubNav group="grow" />
       <header className="head">
         <h1 className="title">Цели</h1>
         <div className="head-tools">

@@ -1,6 +1,7 @@
 "use client";
 
-// Список разговоров: «Новый чат» и группы, сначала общие, дальше по предметам.
+// Список разговоров группами: сначала общие, дальше по предметам. Новый чат начинается
+// кнопкой с ручкой над перепиской, а не отсюда.
 //
 // Рисуется дважды: порталом в левую панель и в нижнем листе на телефоне, где панели нет.
 // Переименование и удаление тихие: на широком экране значки появляются у строки при
@@ -12,7 +13,7 @@ import { Icon } from "@/components/shell/icons";
 import { buildChatFolders, type FolderSubject } from "@/lib/chat-folders";
 import type { SubjectChatSummary } from "@/lib/curriculum-api";
 
-import { NEW_CHAT_TITLE as NEW_TITLE, chatTitle } from "./chat-title";
+import { chatTitle } from "./chat-title";
 
 
 export function ChatList({
@@ -23,7 +24,6 @@ export function ChatList({
   failed,
   onRetry,
   onOpen,
-  onCreate,
   onRename,
   onDelete,
 }: {
@@ -35,7 +35,6 @@ export function ChatList({
   failed: boolean;
   onRetry: () => void;
   onOpen: (id: string) => void;
-  onCreate: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -47,11 +46,6 @@ export function ChatList({
 
   return (
     <>
-      <button className="nav-item sb-new" type="button" onClick={onCreate}>
-        <Icon name="plus" />
-        <span className="nav-text">{NEW_TITLE}</span>
-      </button>
-
       {failed ? (
         <p className="chat-hint">
           Чаты не загрузились.{" "}

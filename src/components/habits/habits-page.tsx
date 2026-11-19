@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { listGoals } from "@/components/goals/goals-api";
 import { isOpenGoal, suggestGoalFor, type Goal } from "@/components/goals/goal-logic";
 import { mascot } from "@/components/shell/mascot/mascot";
-import { SubNav } from "@/components/shell/tab-bar";
 import { useAskRail } from "@/contexts/ask-rail";
 import { useDataChanged } from "@/lib/data-changed";
 import { parseHabit, parseSchedule } from "@/lib/understand";
@@ -275,7 +274,6 @@ export function HabitsPage() {
 
   return (
     <div className="content view">
-      <SubNav group="grow" />
       <header className="head">
         <h1 className="title">Привычки</h1>
         {habits && habits.length > 0 ? (

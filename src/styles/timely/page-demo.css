@@ -45,10 +45,12 @@
 }
 .demo-pill-btn:hover { filter: brightness(1.12); }
 .demo-pill-btn[aria-pressed="true"] { visibility: hidden; }
-.nav-collapsed .demo-sb { justify-content: center; padding: 4px; }
-.nav-collapsed .demo-sb .demo-pill-tag { display: none; }
+@media (min-width: 641px) {
+  .nav-collapsed .demo-sb { justify-content: center; padding: 4px; }
+  .nav-collapsed .demo-sb .demo-pill-tag { display: none; }
+}
 
-/* На телефоне панели нет: маленькая кнопка «Тур» внизу слева, над вкладками, рядом с
+/* На телефоне левая панель выезжает по кнопке: маленькая кнопка «Тур» внизу слева, рядом с
    быстрым вопросом. В чате внизу поле ввода, там её нет. */
 .demo-pill { display: none; }
 @media (max-width: 640px) {
@@ -57,7 +59,7 @@
     position: fixed;
     z-index: 44;
     left: 12px;
-    bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     display: flex;
     padding: 4px;
   }
@@ -146,7 +148,7 @@
 }
 .is-welcome .tour-title {
   margin-bottom: 8px;
-  font-family: var(--t-serif);
+  font-family: var(--t-display);
   font-size: 25px;
   font-weight: 500;
   letter-spacing: -0.01em;

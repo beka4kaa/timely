@@ -3,7 +3,6 @@
 import { useState, useMemo } from "react"
 import Link from "next/link"
 import { Icon } from "@/components/shell/icons"
-import { SubNav } from "@/components/shell/tab-bar"
 import { useDiaryYearStats } from "@/hooks/use-diary-year-stats"
 import { calcMonthStats } from "@/lib/diary-grades"
 import { MONTH_SHORT } from "@/lib/diary-grades"
@@ -284,7 +283,6 @@ export default function GradesPage() {
 
   return (
     <div className="content view">
-      <SubNav group="study" />
       <header className="head">
         <h1 className="title">Итоговые оценки</h1>
         <div className="head-tools">

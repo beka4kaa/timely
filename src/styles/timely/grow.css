@@ -111,12 +111,12 @@
 
 /* Карточка занятия и быстрое создание */
 .cal-pop { --r: 16px; position: fixed; z-index: 50; width: 264px; padding: 13px 14px 12px 16px; background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong); font-size: 13px; }
-.cal-pop h3 { padding-right: 24px; font-family: var(--t-serif); font-size: 17px; font-weight: 400; line-height: 1.25; }
+.cal-pop h3 { padding-right: 24px; font-family: var(--t-display); font-size: 17px; font-weight: 600; line-height: 1.25; }
 .cal-pop p { margin-top: 5px; color: var(--t-muted); font-size: 12.5px; line-height: 1.4; }
 .pop-x { position: absolute; right: 6px; top: 6px; }
 .pop-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .pop-acts .btn { height: 30px; }
-.pop-form input { width: calc(100% - 24px); padding: 0 0 5px; border: 0; border-bottom: 1px solid var(--t-line-strong); outline: none; background: transparent; color: var(--t-ink); font-family: var(--t-serif); font-size: 17px; }
+.pop-form input { width: calc(100% - 24px); padding: 0 0 5px; border: 0; border-bottom: 1px solid var(--t-line-strong); outline: none; background: transparent; color: var(--t-ink); font-family: var(--t-display); font-size: 17px; }
 .pop-form input::placeholder { color: var(--t-muted); }
 
 /* ══════════════════ Слабые темы: колода и кривая памяти ══════════════════ */
@@ -138,10 +138,10 @@
 .rv-pips i { width: 16px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--t-ink) 16%, transparent); }
 .rv-pips .on { background: var(--t-ink); }
 .rv-pips .done { background: color-mix(in srgb, var(--t-ink) 46%, transparent); }
-.rv-q { margin: auto 0; padding: 18px 0 20px; max-width: 24ch; font-family: var(--t-serif); font-size: 33px; font-weight: 400; line-height: 1.16; letter-spacing: -0.016em; text-wrap: balance; }
+.rv-q { margin: auto 0; padding: 18px 0 20px; max-width: 24ch; font-family: var(--t-display); font-size: 31px; font-weight: 500; line-height: 1.16; letter-spacing: -0.016em; text-wrap: balance; }
 .rv-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .rv-small-q { margin-top: 14px; color: var(--t-muted); font-size: 13px; }
-.rv-a { max-width: 54ch; margin: 5px 0 16px; font-family: var(--t-serif); font-size: 20px; line-height: 1.38; text-wrap: pretty; }
+.rv-a { max-width: 54ch; margin: 5px 0 16px; font-family: var(--t-display); font-size: 20px; line-height: 1.38; text-wrap: pretty; }
 .rv-rates { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: auto; }
 .rv-rates button { padding: 8px 11px 9px; border-radius: 13px; background: var(--t-fill); box-shadow: inset 0 0.5px 0 var(--t-top-light); text-align: left; transition: background 120ms ease, transform 140ms ease; }
 .rv-rates button:hover { background: var(--t-accent); color: var(--t-on-accent); }
@@ -151,7 +151,7 @@
 .rv-rates small { display: block; color: var(--t-muted); font-size: 12px; white-space: nowrap; }
 .rv-explain { align-self: flex-start; margin-top: 10px; font-size: 12.5px; }
 .rv-done { margin: auto; padding: 18px 0; text-align: center; }
-.rv-done h2 { margin-top: 10px; font-family: var(--t-serif); font-size: 26px; font-weight: 400; }
+.rv-done h2 { margin-top: 10px; font-family: var(--t-display); font-size: 26px; font-weight: 600; }
 .rv-done p { margin-top: 4px; color: var(--t-muted); font-size: 13.5px; }
 .rv-slime { display: block; width: 72px; height: 52px; margin: 0 auto; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.22)); }
 .rv-mem { --r: 18px; display: flex; flex-direction: column; padding: 15px 16px 14px; margin-bottom: 12px; transition: opacity 240ms ease; }
@@ -198,7 +198,7 @@
 .gsheet::backdrop { background: rgba(0, 0, 0, 0.4); }
 .gs { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; padding: 20px 22px 20px; }
 .gs-form { min-width: 0; }
-.gs-title input { width: 100%; padding: 0 0 8px; border: 0; border-bottom: 1px solid var(--t-line-strong); outline: none; background: transparent; color: var(--t-ink); font-family: var(--t-serif); font-size: 22px; letter-spacing: -0.01em; }
+.gs-title input { width: 100%; padding: 0 0 8px; border: 0; border-bottom: 1px solid var(--t-line-strong); outline: none; background: transparent; color: var(--t-ink); font-family: var(--t-display); font-size: 22px; letter-spacing: -0.01em; }
 .gs-title input::placeholder { color: var(--t-muted); }
 .gs-title input:focus { border-color: var(--t-ink); }
 .gs-ai { min-height: 17px; margin: 6px 0 2px; color: var(--t-muted); font-size: 12.5px; }

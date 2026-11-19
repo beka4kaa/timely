@@ -19,7 +19,6 @@ import { COMMITMENTS_KEY, TTL, fetchCommitments } from "@/components/now/now-res
 import { Icon } from "@/components/shell/icons";
 import { mascot } from "@/components/shell/mascot/mascot";
 import { useQuick } from "@/components/shell/quick/quick-context";
-import { SubNav } from "@/components/shell/tab-bar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -697,7 +696,6 @@ export function StudyPlanPage() {
 
   return (
     <div className="content view plan-view">
-      <SubNav group="study" />
       <header className="head">
         <h1 className="title">Неделя</h1>
         {ready ? (

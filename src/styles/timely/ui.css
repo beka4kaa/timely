@@ -6,7 +6,7 @@ summary::-webkit-details-marker { display: none; }
 .view { outline: none; }
 .is-off { display: none !important; }
 .i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.f { font-family: var(--t-serif); font-size: 1.06em; font-style: italic; white-space: nowrap; }
+.f { font-family: var(--t-math); font-size: 1.06em; font-style: italic; white-space: nowrap; }
 .f sub { font-size: 0.68em; font-style: normal; vertical-align: -0.25em; line-height: 0; }
 .num { font-variant-numeric: tabular-nums; }
 .muted { color: var(--t-muted); }
@@ -138,9 +138,57 @@ summary::-webkit-details-marker { display: none; }
   color: var(--t-ink-2); font-size: 13.5px; text-align: left; transition: background 120ms ease;
 }
 .nav-item .i { color: var(--t-muted); }
+
+/* ── Всплывающее меню: одно на весь кабинет ──
+   Материал — плотное стекло с тонкой кромкой, как у левой панели и попапов. Строки
+   ровно как пункты левой панели: 30 px, 13,5 px, иконка 16 px. Своего фона, размера
+   строк и цвета у отдельных меню нет: только положение. */
+.menu {
+  padding: 5px; border-radius: 14px; color: var(--t-ink);
+  background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-menu);
+  -webkit-backdrop-filter: blur(30px) saturate(130%); backdrop-filter: blur(30px) saturate(130%);
+  box-shadow: var(--t-menu-sh);
+  animation: menu-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes menu-in { from { opacity: 0; transform: scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
+.menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 30px; padding: 5px 8px; border-radius: 9px;
+  color: var(--t-ink-2); font-size: 13.5px; line-height: 1.3; text-align: left; transition: background 120ms ease, color 120ms ease;
+}
+.menu-item .i { flex: none; width: 16px; height: 16px; color: var(--t-muted); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--t-hover); color: var(--t-ink); outline: none; }
+.menu-item:hover .i, .menu-item:focus-visible .i { color: var(--t-ink); }
+.menu-item:disabled, .menu-item[aria-disabled="true"] { background: none; color: var(--t-faint); cursor: default; }
+.menu-item:disabled .i, .menu-item[aria-disabled="true"] .i { color: var(--t-faint); }
+.menu-note { margin-left: auto; color: var(--t-faint); font-size: 12px; }
+.menu-sep { height: 1px; margin: 4px 8px; border: 0; background: var(--t-line); }
+/* Двухстрочный пункт: название и пояснение, у выбранного галочка справа */
+.menu-item.two { display: grid; grid-template-columns: minmax(0, 1fr) 16px; grid-template-areas: "t ok" "s ok"; gap: 1px 10px; padding: 7px 8px; }
+.menu-item.two b { grid-area: t; color: var(--t-ink); font-size: 13.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.menu-item.two small { grid-area: s; color: var(--t-muted); font-size: 12px; }
+.menu-item .menu-ok { grid-area: ok; width: 15px; height: 15px; color: var(--t-ink); stroke-width: 2.4; visibility: hidden; }
+.menu-item[aria-checked="true"] .menu-ok, .menu-item[aria-selected="true"] .menu-ok { visibility: visible; }
 .nav-item:hover { background: var(--t-hover); color: var(--t-ink); }
 .nav-item[aria-current="page"] { background: var(--t-pill); color: var(--t-ink); font-weight: 500; box-shadow: var(--t-pill-sh); }
 .nav-item[aria-current="page"] .i { color: var(--t-ink); }
+/* Группы панели: строка-кнопка со стрелкой, пункты раскрываются под ней */
+/* Обёртка группы не сжимается: иначе в невысоком окне колонка панели срезала бы пункты */
+.nav-group-wrap { flex: none; }
+.nav-sep { height: 1px; margin: 6px 8px; background: var(--t-line); }
+/* Пункты-страницы и группы идут сплошным списком, без больших отступов между разделами */
+.sb-page.nav > .nav-group + .nav-group, .sb-page.nav > .nav-group-wrap + .nav-group-wrap { margin-top: 1px; }
+.nav-group-btn .nav-chev { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--t-muted); transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+.nav-group-btn .nav-count + .nav-chev, .nav-group-btn .live + .nav-chev { margin-left: 4px; }
+.nav-group-btn[aria-expanded="true"] .nav-chev { transform: rotate(90deg); }
+.nav-group-btn:focus-visible { outline: 2px solid var(--t-ink); outline-offset: -2px; }
+.nav-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms cubic-bezier(0.23, 1, 0.32, 1); }
+.nav-sub[data-open] { grid-template-rows: 1fr; }
+.nav-sub-in { display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow: hidden; margin-left: 15px; padding-left: 6px; border-left: 1px solid var(--t-line); }
+.nav-sub[data-open] .nav-sub-in { padding-block: 1px 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-sub, .nav-group-btn .nav-chev { transition: none; }
+}
 .nav-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .nav-count { color: var(--t-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .live { width: 6px; height: 6px; flex: none; margin-right: 2px; border-radius: 50%; background: var(--t-accent); }
@@ -151,19 +199,29 @@ summary::-webkit-details-marker { display: none; }
 .me { flex: 1; display: flex; align-items: center; gap: 9px; min-width: 0; height: 34px; padding: 0 6px; border-radius: 9px; font-size: 13px; text-align: left; transition: background 120ms ease; }
 .me:hover { background: var(--t-hover); }
 .me[aria-current="page"] { background: var(--t-pill); font-weight: 500; box-shadow: var(--t-pill-sh); }
+.me[data-current], .me[aria-expanded="true"] { background: var(--t-pill); font-weight: 500; box-shadow: var(--t-pill-sh); }
+/* Меню аккаунта всплывает над именем; в свёрнутой панели — справа от неё */
+.me-wrap { position: relative; flex: 1; display: flex; min-width: 0; }
+.me-menu { position: absolute; z-index: 40; left: -2px; right: -34px; bottom: calc(100% + 8px); display: grid; gap: 1px; }
 .avatar { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--t-fill); color: var(--t-ink-2); font-size: 10px; font-weight: 600; }
 .me-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Узкая панель только на компьютере: на телефоне панель выезжает целиком, с подписями,
+   даже если на компьютере её свернули */
+@media (min-width: 641px) {
+  .nav-collapsed .nav-chev, .nav-collapsed .nav-sub { display: none; }
+  .nav-collapsed .me-menu { left: calc(100% + 14px); right: auto; bottom: -6px; width: 232px; }
+  .nav-collapsed { --sb-w: 56px; }
+  .nav-collapsed .brand-word, .nav-collapsed .nav-text, .nav-collapsed .nav-count, .nav-collapsed .me-name, .nav-collapsed .theme-btn { display: none; }
+  .nav-collapsed .sb-head { flex-direction: column; height: auto; gap: 8px; padding: 0; }
+  .nav-collapsed .sb-collapse svg { transform: scaleX(-1); }
+  .nav-collapsed .nav-label { height: 1px; margin: 3px 8px 8px; padding: 0; overflow: hidden; color: transparent; background: var(--t-line); }
+  .nav-collapsed .nav-item, .nav-collapsed .me { justify-content: center; padding: 0; }
+  .nav-collapsed .live { display: none; }
+  .nav-collapsed .sb-chats { display: none; }
+}
 .theme-btn .sun, .sheet-theme .sun { display: var(--t-sun-d); }
 .theme-btn .moon, .sheet-theme .moon { display: var(--t-moon-d); }
 
-.nav-collapsed { --sb-w: 56px; }
-.nav-collapsed .brand-word, .nav-collapsed .nav-text, .nav-collapsed .nav-count, .nav-collapsed .me-name, .nav-collapsed .theme-btn { display: none; }
-.nav-collapsed .sb-head { flex-direction: column; height: auto; gap: 8px; padding: 0; }
-.nav-collapsed .sb-collapse svg { transform: scaleX(-1); }
-.nav-collapsed .nav-label { height: 1px; margin: 3px 8px 8px; padding: 0; overflow: hidden; color: transparent; background: var(--t-line); }
-.nav-collapsed .nav-item, .nav-collapsed .me { justify-content: center; padding: 0; }
-.nav-collapsed .live { display: none; }
-.nav-collapsed .sb-chats { display: none; }
 
 @media (max-height: 760px) and (min-width: 641px) {
   .sb-pages { margin-top: 8px; }
@@ -179,11 +237,11 @@ summary::-webkit-details-marker { display: none; }
   padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
 }
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; margin-bottom: 22px; }
-.title { font-family: var(--t-serif); font-size: 29px; font-weight: 400; line-height: 1.15; letter-spacing: -0.015em; text-wrap: balance; }
+.title { font-family: var(--t-display); font-size: 29px; font-weight: 600; line-height: 1.15; letter-spacing: -0.015em; text-wrap: balance; }
 .head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .head-note { color: var(--t-muted); font-size: 12.5px; }
 /* Раздел на странице: засечки. Заголовок внутри карточки: без них, 13,5 полужирным. */
-.sec { margin-bottom: 10px; font-family: var(--t-serif); font-size: 20px; font-weight: 400; line-height: 1.25; letter-spacing: -0.01em; }
+.sec { margin-bottom: 10px; font-family: var(--t-display); font-size: 20px; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
 
 /* ── Переключатель: капсула ── */
 .tabs { display: inline-flex; flex-wrap: wrap; gap: 1px; max-width: 100%; padding: 2px; border-radius: 11px; background: var(--t-hover); }
@@ -195,7 +253,6 @@ summary::-webkit-details-marker { display: none; }
 .pager { display: inline-flex; align-items: center; gap: 1px; height: 32px; padding: 2px; border-radius: 11px; background: var(--t-hover); color: var(--t-ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
 .pager span { padding: 0 6px; white-space: nowrap; }
 .pager .i { width: 14px; height: 14px; }
-.subnav { display: none; }
 
 /* ══════════════════ Сейчас ══════════════════ */
 /* Неделя плитками: день недели и крупное число, сегодня тёмная плитка */
@@ -249,7 +306,7 @@ a.row:hover, summary.row:hover { background: var(--t-hover); }
   display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 0 12px; padding: 16px 16px 16px 10px;
 }
 .now time { padding-top: 7px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.now-title { font-family: var(--t-serif); font-size: 25px; font-weight: 400; line-height: 1.18; letter-spacing: -0.012em; text-wrap: balance; }
+.now-title { font-family: var(--t-display); font-size: 25px; font-weight: 600; line-height: 1.18; letter-spacing: -0.012em; text-wrap: balance; }
 .now-sub { margin-top: 3px; color: var(--t-muted); font-size: 13px; }
 .now-crit { max-width: 56ch; margin-top: 11px; font-size: 13.5px; }
 .now-crit .link { white-space: nowrap; }
@@ -268,8 +325,8 @@ a.row:hover, summary.row:hover { background: var(--t-hover); }
 .tile.soon h2 { color: var(--t-ink); font-weight: 600; }
 .tile .go { display: inline-block; margin-top: 4px; font-size: 13px; text-decoration: underline; text-decoration-color: var(--t-line-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 
-/* ══════════════════ Телефон: панели нет, внизу вкладки с иконками ══════════════════ */
-.tabbar { display: none; }
+/* ══════════════════ Телефон: левая панель выезжает по кнопке, нижней панели нет ══════════════════ */
+.menu-fab, .nav-scrim { display: none; }
 .sheet {
   width: min(100%, 520px); max-width: 100%; max-height: 80vh; margin: auto auto 0;
   padding: 8px 10px calc(12px + env(safe-area-inset-bottom, 0px));
@@ -308,37 +365,138 @@ a.row:hover, summary.row:hover { background: var(--t-hover); }
 }
 
 @media (max-width: 640px) {
-  .sidebar { display: none; }
-  .main { left: 0; padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+  /* Левая панель выезжает слева по кнопке меню или свайпу */
+  .sidebar {
+    --r: 0 18px 18px 0;
+    top: 0; bottom: 0; left: 0; z-index: 60; width: min(80vw, 300px);
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 8px calc(10px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px));
+    border-radius: 0 18px 18px 0;
+    background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-menu);
+    transform: translateX(-104%); visibility: hidden;
+    transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 260ms;
+  }
+  .sidebar[data-drawer="open"] { transform: none; visibility: visible; transition: transform 260ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .sidebar .sb-collapse { display: none; }
+  .nav-scrim {
+    display: block; position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, 0.42);
+    opacity: 0; pointer-events: none; transition: opacity 220ms ease;
+  }
+  html.drawer-open .nav-scrim { opacity: 1; pointer-events: auto; }
+  html.drawer-open, html.drawer-open body { overflow: hidden; }
+  /* Кнопка меню: круглое стекло слева сверху, остаётся на месте при прокрутке */
+  .menu-fab {
+    --r: 50%;
+    position: fixed; z-index: 45; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px));
+    display: grid; place-items: center; width: 40px; height: 40px; color: var(--t-ink);
+    background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong);
+  }
+  .menu-fab, .menu-fab::before, .menu-fab::after { corner-shape: round; }
+  .menu-fab .i { width: 18px; height: 18px; }
+  html.drawer-open .menu-fab { opacity: 0; pointer-events: none; }
+  /* Первая строка страницы стоит на одной линии с кнопкой меню: заголовок справа от неё,
+     на том же отступе, что и кнопки в строке чата (66 px). Кнопка везде на одной высоте.
+     Если страница начинается не с заголовка (профиль с аватаром), всё уходит под кнопку. */
+  .main .content { padding-top: calc(60px + env(safe-area-inset-top, 0px)); }
+  .main .content:has(> .head:first-child, > .fh-back:first-child) { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+  .main .content > .head:first-child { min-height: 40px; }
+  .main .content > .head:first-child > .title { display: flex; align-items: center; min-height: 40px; margin-left: 50px; }
+  .main .content > .head:first-child > .now-skel.is-title { margin-left: 50px; }
+  .main .content > .fh-back:first-child { min-height: 40px; margin-left: 44px; }
+  :root[data-view="chat"] .main .content { padding-top: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar, .sidebar[data-drawer="open"], .nav-scrim { transition: none; }
+  }
+  /* Снизу место только под капсулу быстрого запроса; в чате её нет, там строка ввода у края */
+  .main { left: 0; padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-view="chat"] .main { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .btn { height: 38px; padding: 0 14px; }
   .late-line .btn { height: 34px; }
   .weekline { order: 2; width: 100%; }
   .weekline a { flex: 1; min-width: 0; }
-  .tabbar {
-    --r: 26px;
-    position: fixed; z-index: 40; left: calc(10px + env(safe-area-inset-left, 0px)); right: calc(10px + env(safe-area-inset-right, 0px));
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: repeat(5, 1fr); padding: 4px;
-  }
-  /* Выделение плавно переезжает с вкладки на вкладку */
-  .tab-lens {
-    position: absolute; left: 4px; top: 4px; bottom: 4px; width: calc((100% - 8px) / 5); border-radius: 22px;
-    background: var(--t-pill); box-shadow: var(--t-pill-sh);
-    transform: translateX(calc(var(--i, 0) * 100%)); transition: transform 440ms cubic-bezier(0.3, 1.25, 0.5, 1);
-  }
-  .tab {
-    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-    height: 50px; border-radius: 22px; color: var(--t-muted); font-size: 11px; transition: color 200ms ease;
-  }
-  .tab .i { width: 23px; height: 23px; stroke-width: 1.55; }
-  .tab[aria-current="page"] { color: var(--t-ink); font-weight: 600; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .step.is-now::before { animation: bead 3.2s ease-in-out infinite; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sb-page, .tab-lens { transition: none; }
+  .sb-page { transition: none; }
 }
 @keyframes bead {
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--t-accent) 10%, var(--t-bg)); }
 }
+
+/* ══════════════════ Настройки: окно с разделами слева ══════════════════
+   Одно окно на весь кабинет. Слева разделы, справа строки выбранного. Фон окна — тихая
+   поверхность, стекла нет: это содержимое, а не то, что плавает. */
+.st-modal {
+  width: min(920px, calc(100vw - 48px)); max-width: none; height: min(660px, calc(100dvh - 48px)); max-height: none;
+  margin: auto; padding: 0; overflow: hidden; border: 0; border-radius: 22px;
+  /* Сплошной фон: в тёмной теме карточки полупрозрачные, а окно не должно просвечивать */
+  background: var(--t-modal, #ffffff); color: var(--t-ink); box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.45), 0 0 0 0.5px var(--t-line-strong);
+}
+.st-modal::backdrop { background: rgba(0, 0, 0, 0.42); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.st-modal[open] { animation: st-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+.st-modal[open]::backdrop { animation: st-fade 200ms ease-out; }
+@keyframes st-in { from { opacity: 0; transform: scale(0.97); } }
+@keyframes st-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .st-modal[open], .st-modal[open]::backdrop { animation: none; }
+}
+.st-modal:focus-visible { outline: none; }
+
+.st { display: grid; grid-template-columns: 224px minmax(0, 1fr); height: 100%; min-height: 0; }
+.st-nav { display: flex; flex-direction: column; gap: 2px; padding: 20px 12px; background: var(--t-bg); border-right: 1px solid var(--t-line); }
+.st-title { margin: 0 8px 14px; font-family: var(--t-display); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.st-nav .nav-item { width: 100%; height: 38px; gap: 11px; font-size: 14.5px; }
+.st-nav .nav-item .i { width: 17px; height: 17px; }
+.st-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.st-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 22px 14px 28px; border-bottom: 1px solid var(--t-line); }
+.st-head h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.st-head p { margin-top: 2px; color: var(--t-muted); font-size: 13.5px; }
+.st-close { flex: none; width: 34px; height: 34px; margin: -4px -4px 0 0; }
+.st-close .i { width: 18px; height: 18px; }
+.st-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 28px 28px; scrollbar-width: thin; container: st-body / inline-size; }
+.st-body > .account { margin: 14px 0 4px; }
+.st-body > .set:first-child, .st-body > .account + .set { border-top: 0; }
+.st-body .set { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px 0; }
+.st-body .set-body { max-width: none; }
+.st-body .set > h2 { font-size: 14px; }
+.st-body .set-line { font-size: 14px; }
+.st-body .set-line small { font-size: 13px; }
+
+/* Те же настройки страницей */
+.st-page .st { min-height: min(680px, calc(100dvh - 60px)); overflow: hidden; border-radius: 20px; background: var(--t-card); box-shadow: var(--t-card-sh); }
+
+/* Телефон: окно во весь экран, разделы — строкой вкладок сверху */
+@media (max-width: 640px) {
+  .st-modal { width: 100vw; height: 100dvh; border-radius: 0; }
+  .st { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .st-nav {
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px; padding: calc(12px + env(safe-area-inset-top, 0px)) 12px 10px;
+    border-right: 0; border-bottom: 1px solid var(--t-line);
+  }
+  .st-title { flex: 1 0 100%; margin: 0 4px 6px; font-size: 20px; }
+  .st-nav .nav-item { width: auto; height: 36px; padding: 0 12px; }
+  /* Раздел уже назван выбранной вкладкой: здесь только пояснение */
+  .st-head { padding: 12px 16px; }
+  .st-head h2 { display: none; }
+  .st-head p { margin-top: 0; }
+  .st-modal .st-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; margin: 0; }
+  .st-body { padding: 4px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .st-body .set { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .st-page .st { min-height: auto; }
+}
+
+/* Выбор ритма: одна строка с текущим, список выпадает под ней */
+.st-select-wrap { position: relative; width: 100%; }
+.st-select {
+  display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 14px; border-radius: 14px; background: var(--t-fill); text-align: left; transition: background 120ms ease;
+}
+.st-select:hover { background: var(--t-hover); box-shadow: inset 0 0 0 1px var(--t-line-strong); }
+.st-select:focus-visible { outline: 2px solid var(--t-ink); outline-offset: 1px; }
+.st-select b { display: block; font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.st-select small { display: block; margin-top: 1px; color: var(--t-muted); font-size: 13px; }
+.st-select-chev { width: 17px; height: 17px; color: var(--t-muted); transition: transform 160ms ease; }
+.st-select[aria-expanded="true"] .st-select-chev { transform: rotate(180deg); }
+.st-menu { position: absolute; z-index: 5; top: calc(100% + 6px); left: 0; right: 0; display: grid; gap: 1px; }

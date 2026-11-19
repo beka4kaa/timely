@@ -46,7 +46,7 @@
 .plan-skel { height: clamp(420px, calc(100vh - 124px), 800px); }
 .plan-error { --r: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 16px 18px; font-size: 14px; }
 .plan-empty { position: absolute; z-index: 6; left: 50%; top: 50%; width: min(372px, calc(100% - 32px)); padding: 22px 24px 24px; border-radius: 20px; background: var(--t-card); box-shadow: var(--t-card-sh), inset 0 0 0 0.5px var(--t-line); text-align: center; transform: translate(-50%, -50%); }
-.plan-empty h2 { font-family: var(--t-serif); font-size: 21px; font-weight: 400; line-height: 1.2; }
+.plan-empty h2 { font-family: var(--t-display); font-size: 21px; font-weight: 600; line-height: 1.2; }
 .plan-empty p { margin-top: 7px; color: var(--t-muted); font-size: 13.5px; line-height: 1.42; }
 .plan-empty .btn { width: 100%; height: 44px; margin-top: 16px; font-size: 14.5px; }
 
@@ -136,7 +136,7 @@
   .cal-wrap.has-tasks, .cal-wrap.has-tasks[data-mode="day"] { grid-template-columns: minmax(0, 1fr) 272px; }
 }
 .wk-tasks { display: grid; gap: 10px; }
-.wk-tasks-h { font: 400 21px/1.2 var(--t-serif); }
+.wk-tasks-h { font: 600 21px/1.2 var(--t-display); }
 .wk-tasks .td-day + .td-day { margin-top: 4px; }
 .wk-tasks .td-day > h2 { font-size: 15px; }
 .wk-tasks-empty { color: var(--t-muted); font-size: 13px; }

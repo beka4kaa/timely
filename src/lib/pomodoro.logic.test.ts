@@ -234,9 +234,9 @@ test("сегодня: прогресс цели не превышает 100%", (
   assert.equal(stats.goalPercent, 100);
 });
 
-test("циферблат: чёрточка на минуту, каждая пятая длиннее", () => {
-  const ticks = dialTicks(50 * 60);
-  assert.equal(ticks.length, 50);
+test("циферблат: всегда 60 чёрточек, как на часах, каждая пятая длиннее", () => {
+  const ticks = dialTicks();
+  assert.equal(ticks.length, 60);
   const length = (tick: (typeof ticks)[number]) => Math.hypot(tick.x2 - tick.x1, tick.y2 - tick.y1);
   assert.ok(length(ticks[0]) > length(ticks[1]));
   assert.ok(Math.abs(length(ticks[0]) - length(ticks[5])) < 0.05);
@@ -244,22 +244,25 @@ test("циферблат: чёрточка на минуту, каждая пя�
   assert.equal(ticks[0].x1, 140);
   assert.equal(ticks[0].y1, 29);
   assert.equal(ticks[0].y2, 4);
+  // Тонкие, чтобы шестьдесят штук не слипались.
+  assert.equal(ticks[0].width, 3.2);
 });
 
-test("циферблат: толщина зависит от числа минут и не выходит за границы", () => {
-  assert.equal(dialTicks(5 * 60)[0].width, 6);
-  assert.equal(dialTicks(50 * 60)[0].width, 3.8);
-  assert.equal(dialTicks(90 * 60)[0].width, 2.4);
-});
-
-test("прошедшие минуты гаснут, идущая отмечена", () => {
-  assert.equal(tickClass(0, 0, 3000), "now");
-  assert.equal(tickClass(1, 0, 3000), "");
-  assert.equal(tickClass(6, 7 * 60, 43 * 60), "gone");
-  assert.equal(tickClass(7, 7 * 60, 43 * 60), "now");
-  assert.equal(tickClass(8, 7 * 60, 43 * 60), "");
-  // На нуле идущей уже нет.
-  assert.equal(tickClass(49, 49 * 60 + 59, 0), "");
+test("чёрточки гаснут равномерно и кончаются вместе с таймером", () => {
+  // Перерыв 10 минут: одна чёрточка — 10 секунд.
+  assert.equal(tickClass(0, 0, 600), "now");
+  assert.equal(tickClass(1, 0, 600), "");
+  assert.equal(tickClass(1, 25, 575), "gone");
+  assert.equal(tickClass(2, 25, 575), "now");
+  assert.equal(tickClass(3, 25, 575), "");
+  // Фокус 50 минут: одна чёрточка — 50 секунд.
+  assert.equal(tickClass(7, 7 * 60, 43 * 60), "gone");
+  assert.equal(tickClass(8, 7 * 60, 43 * 60), "now");
+  // Последняя идёт до последней секунды, на нуле погасли все.
+  assert.equal(tickClass(59, 599, 1), "now");
+  assert.equal(tickClass(59, 600, 0), "gone");
+  // Пустой таймер ничего не ломает.
+  assert.equal(tickClass(0, 0, 0), "");
 });
 
 test("подпись под цифрами", () => {
@@ -267,12 +270,12 @@ test("подпись под цифрами", () => {
   const base = { now, planned: 3000 };
   assert.equal(dialSubtitle({ ...base, phase: "focus", running: true, remaining: 43 * 60 }), "до 16:55");
   assert.equal(dialSubtitle({ ...base, phase: "focus", running: false, remaining: 43 * 60 }), "пауза, до 16:55");
-  assert.equal(dialSubtitle({ ...base, phase: "focus", running: false, remaining: 3000 }), "50 минут");
+  assert.equal(dialSubtitle({ ...base, phase: "focus", running: false, remaining: 3000 }), "");
   assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: true, remaining: 300 }), "перерыв, до 16:17");
   assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: false, remaining: 300 }), "пауза, до 16:17");
-  assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: false, remaining: 600 }), "перерыв 10 минут");
+  assert.equal(dialSubtitle({ now, planned: 600, phase: "break", running: false, remaining: 600 }), "перерыв");
   assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: true, remaining: 300 }), "длинный перерыв, до 16:17");
-  assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: false, remaining: 1800 }), "длинный перерыв 30 минут");
+  assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: false, remaining: 1800 }), "длинный перерыв");
   assert.equal(dialSubtitle({ now, planned: 1800, phase: "long", running: false, remaining: 300 }), "пауза, до 16:17");
 });
 

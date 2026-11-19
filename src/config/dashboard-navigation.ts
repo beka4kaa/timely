@@ -178,39 +178,55 @@ const FALLBACK_META: DashboardPageMeta = {
 export type DashboardSectionKey =
   | "now"
   | "tutor"
+  | "week"
+  | "focus"
   | "study"
   | "growth"
-  | "library"
   | "contests";
 
 /**
- * Группа левой панели. «Сейчас» и «Тьютор» идут первыми: это самые важные разделы.
+ * Раздел левой панели. Бывает двух видов:
+ * - `page` — одна строка, всегда на виду: Сейчас, Тьютор, Неделя, Помодоро;
+ * - `group` — раскрывается на месте и прячет редкие страницы: Учёба, Рост, Соревнования.
  *
- * На телефоне панели нет, там вкладки «Сейчас», «Тьютор», «Учёба», «Книги» и «Ещё».
+ * На компьютере это левая панель, на телефоне та же панель выезжает слева.
  */
 export interface DashboardSection {
   key: DashboardSectionKey;
+  kind: "page" | "group";
   title: string;
   icon: IconName;
   url: string;
+  /** Только у `page`: прежние адреса, на которых этот раздел тоже горит. */
+  aliases?: readonly string[];
+  /** Только у `group`; у `page` пусто. */
   items: DashboardNavigationItem[];
 }
 
 const dashboardSections: DashboardSection[] = [
+  { key: "now", kind: "page", title: "Сейчас", icon: "now", url: "/dashboard", items: [] },
+  { key: "tutor", kind: "page", title: "Тьютор", icon: "chat", url: "/dashboard/chat", items: [] },
   {
-    key: "now",
-    title: "Сейчас",
-    icon: "now",
-    url: "/dashboard",
+    key: "week",
+    kind: "page",
+    title: "Неделя",
+    icon: "plan",
+    url: "/dashboard/plan",
+    // Дневник и план стали одной неделей. Шаблон уроков и оценки живут по старым адресам.
+    aliases: ["/dashboard/diary"],
     items: [],
   },
+  { key: "focus", kind: "page", title: "Помодоро", icon: "timer", url: "/dashboard/pomodoro", items: [] },
   {
-    key: "tutor",
-    title: "Тьютор",
-    icon: "chat",
-    url: "/dashboard/chat",
+    key: "study",
+    kind: "group",
+    title: "Учёба",
+    icon: "diary",
+    url: "/dashboard/weaknesses",
     items: [
-      { title: "Чат", url: "/dashboard/chat", icon: "chat" },
+      { title: "Слабые темы", url: "/dashboard/weaknesses", icon: "target" },
+      // Курсы — опора для учёбы, поэтому здесь, а не отдельной «Библиотекой».
+      { title: SECTION_LABEL, url: "/dashboard/curriculum", icon: "book" },
       // Доска жжёт токены: в продакшене она выключена, пока не докажет ценность.
       ...(BOARD_ENABLED
         ? ([{ title: "Научная доска", url: "/dashboard/whiteboard", icon: "board" }] as const)
@@ -218,19 +234,8 @@ const dashboardSections: DashboardSection[] = [
     ],
   },
   {
-    key: "study",
-    title: "Учёба",
-    icon: "diary",
-    url: "/dashboard/plan",
-    items: [
-      // Дневник и план стали одной неделей. Шаблон уроков и оценки живут по старым адресам.
-      { title: "Неделя", url: "/dashboard/plan", icon: "plan", aliases: ["/dashboard/diary"] },
-      { title: "Слабые темы", url: "/dashboard/weaknesses", icon: "target" },
-      { title: "Помодоро", url: "/dashboard/pomodoro", icon: "timer" },
-    ],
-  },
-  {
     key: "growth",
+    kind: "group",
     title: "Рост",
     icon: "mountain",
     url: "/dashboard/goals",
@@ -240,14 +245,8 @@ const dashboardSections: DashboardSection[] = [
     ],
   },
   {
-    key: "library",
-    title: "Библиотека",
-    icon: "book",
-    url: "/dashboard/curriculum",
-    items: [{ title: SECTION_LABEL, url: "/dashboard/curriculum", icon: "book" }],
-  },
-  {
     key: "contests",
+    kind: "group",
     title: "Соревнования",
     icon: "flag",
     url: "/dashboard/arena/solve",
@@ -277,7 +276,7 @@ export function getDashboardSections(
 }
 
 /**
- * Разделы плоскими группами: так их читают меню телефона и мини-рейл доски.
+ * Разделы плоскими группами: так их читает мини-рейл доски.
  * У раздела из одной страницы пункт — он сам.
  */
 export function getDashboardNavigation(
@@ -285,9 +284,10 @@ export function getDashboardNavigation(
 ): DashboardNavigationGroup[] {
   return getDashboardSections(access).map((section) => ({
     label: section.title,
-    items: section.items.length
-      ? section.items
-      : [{ title: section.title, url: section.url, icon: section.icon }],
+    items:
+      section.kind === "group"
+        ? section.items
+        : [{ title: section.title, url: section.url, icon: section.icon, aliases: section.aliases }],
   }));
 }
 
@@ -318,9 +318,10 @@ export function matchNavigation(pathname: string): NavigationMatch {
   let best: { section: DashboardSectionKey; itemUrl: string; length: number } | null =
     null;
   for (const section of dashboardSections) {
-    const candidates = section.items.length
-      ? section.items.flatMap((item) => [item.url, ...(item.aliases ?? [])].map((url) => ({ url, itemUrl: item.url })))
-      : [{ url: section.url, itemUrl: section.url }];
+    const candidates =
+      section.kind === "group"
+        ? section.items.flatMap((item) => [item.url, ...(item.aliases ?? [])].map((url) => ({ url, itemUrl: item.url })))
+        : [section.url, ...(section.aliases ?? [])].map((url) => ({ url, itemUrl: section.url }));
     for (const { url, itemUrl } of candidates) {
       if (!matches(pathname, url)) continue;
       if (!best || url.length > best.length) {
