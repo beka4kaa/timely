@@ -37,7 +37,7 @@ export function AuthGuard({ children, requireAuth = true }: AuthGuardProps) {
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-tm-bg">
-        <LoadingMark size={46} className="text-tm-accent" />
+        <LoadingMark size={72} className="text-tm-accent" />
       </div>
     )
   }

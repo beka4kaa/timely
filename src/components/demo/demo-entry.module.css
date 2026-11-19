@@ -12,3 +12,12 @@
   color: rgb(var(--tm-muted));
   font-size: 14px;
 }
+
+/* Пока готовится демо: слайм прыгает над строкой о том, что происходит */
+.waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}

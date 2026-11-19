@@ -64,40 +64,116 @@
   }
 }
 
-/* ── Индикатор загрузки: искры разгораются по очереди ──────────────────────
-   Поворот берёт лишь четверть оборота: полный оборот у четырёхлучевой искры
-   неотличим от неподвижной, и анимация выглядела бы как подвисание. */
-@keyframes loading-mark-spark {
-  0%,
-  100% {
-    opacity: 0.28;
-    transform: scale(0.62) rotate(-25deg);
-  }
-  45% {
-    opacity: 1;
-    transform: scale(1) rotate(65deg);
-  }
+/* ── Индикатор загрузки: слайм прыгает на месте, под ним мигают три точки ──
+   Всё в `em`: 1em — ширина слайма (`size` у LoadingMark), поэтому прыжок, тень и точки
+   одинаково выглядят и на весь экран, и в маленьком окне. */
+.loading-mark {
+  --lm-shadow: rgba(30, 34, 70, 0.16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.16em;
+}
+.dark .loading-mark {
+  /* На почти чёрном тёмная тень не видна: в тёмной теме это мягкий светлый блик пола */
+  --lm-shadow: rgba(255, 255, 255, 0.11);
+}
+.lm-stage {
+  position: relative;
+  width: 1.3em;
+  height: 1.32em;
+}
+.lm-hop {
+  position: absolute;
+  left: 0.15em;
+  bottom: 0.14em;
+  width: 1em;
+  animation: lm-hop 1.15s infinite;
+}
+.lm-squash {
+  transform-origin: 50% 100%;
+  animation: lm-squash 1.15s infinite;
+}
+.lm-slime {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.lm-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 0.06em;
+  width: 0.82em;
+  height: 0.14em;
+  margin-left: -0.41em;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--lm-shadow), transparent);
+  animation: lm-shadow 1.15s infinite;
+}
+.lm-dots {
+  display: flex;
+  gap: max(4px, 0.09em);
+}
+.lm-dots i {
+  width: max(4px, 0.075em);
+  height: max(4px, 0.075em);
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: lm-dot 1.2s infinite;
+}
+.lm-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.lm-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.lm-label {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.7;
 }
 
-.loading-mark-spark {
-  animation: loading-mark-spark 1500ms cubic-bezier(0.45, 0, 0.35, 1) infinite;
+/* Присел — вытянулся в прыжке — завис — вытянулся перед землёй — сплющился, как желе */
+@keyframes lm-hop {
+  0%, 14% { transform: translateY(0); animation-timing-function: cubic-bezier(0.22, 0.8, 0.4, 1); }
+  50% { transform: translateY(-0.44em); animation-timing-function: cubic-bezier(0.6, 0, 0.85, 0.35); }
+  84%, 100% { transform: translateY(0); }
 }
-
-/* Сдвиг по фазе — то, что превращает три отдельные пульсации в одно движение. */
-.loading-mark g:nth-of-type(2) .loading-mark-spark {
-  animation-delay: 230ms;
+@keyframes lm-squash {
+  0% { transform: scale(1.14, 0.8); }
+  16% { transform: scale(0.9, 1.14); }
+  50% { transform: scale(1, 1); }
+  80% { transform: scale(0.94, 1.07); }
+  88% { transform: scale(1.18, 0.78); }
+  95% { transform: scale(0.97, 1.04); }
+  100% { transform: scale(1.14, 0.8); }
 }
-
-.loading-mark g:nth-of-type(3) .loading-mark-spark {
-  animation-delay: 460ms;
+@keyframes lm-shadow {
+  0%, 14%, 84%, 100% { transform: scaleX(1); opacity: 1; }
+  50% { transform: scaleX(0.55); opacity: 0.45; }
+}
+@keyframes lm-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-0.04em); }
+}
+@keyframes lm-dot-still {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Не «выключаем индикатор», а показываем его статичным: пропажа единственного
-     признака работы читалась бы как зависший экран. */
-  .loading-mark-spark {
+  /* Не «выключаем индикатор»: слайм стоит, а точки тихо мигают на месте — пропажа
+     единственного признака работы читалась бы как зависший экран. */
+  .lm-hop,
+  .lm-squash,
+  .lm-shadow {
     animation: none;
-    opacity: 0.75;
+  }
+  .lm-dots i {
+    animation-name: lm-dot-still;
   }
 }
 

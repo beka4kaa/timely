@@ -102,9 +102,9 @@ export function DemoEntry() {
             </button>
           </>
         ) : (
-          <div className={entry.line}>
-            <LoadingMark size={18} />
-            <span>{line}</span>
+          <div className={entry.waiting}>
+            <LoadingMark size={56} />
+            <p className={entry.line}>{line}</p>
           </div>
         )}
       </div>

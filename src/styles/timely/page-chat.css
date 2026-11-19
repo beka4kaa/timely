@@ -24,7 +24,6 @@
   border-radius: 50%; corner-shape: round; color: var(--t-muted); transition: background 120ms ease, color 120ms ease;
 }
 .mic-btn .i { width: 19px; height: 19px; stroke-width: 1.8; }
-.mic-btn:hover { background: var(--t-hover); color: var(--t-ink); }
 .mic-btn:disabled { opacity: 0.4; }
 /* Слушает: значок цвета акцента и мягкий пульс вокруг */
 .mic-btn[aria-pressed="true"] {
@@ -44,7 +43,7 @@
 
 /* Спидометр цвета акцента: стрелка показывает уровень, нажатие открывает переключатель */
 .gauge-btn { display: grid; place-items: center; width: 34px; height: 30px; border-radius: 10px; color: var(--t-accent); transition: background 120ms ease; }
-.gauge-btn:hover, .gauge-btn[aria-expanded="true"] { background: var(--t-hover); }
+.gauge-btn[aria-expanded="true"] { background: var(--t-hover); }
 .gauge { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .gauge circle { fill: currentColor; stroke: none; }
 .gauge-needle { transform-box: view-box; transform-origin: 12px 13px; transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -216,7 +215,12 @@
     position: sticky; top: 0; box-sizing: border-box; height: calc(64px + env(safe-area-inset-top, 0px));
     margin: calc(-10px - env(safe-area-inset-top, 0px)) -16px 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px 66px;
   }
-  .talk > .chat-bar::before { inset: 0 0 -14px; }
+  /* Сверху размытие плотное до середины первой строки под названием и тает чуть ниже:
+     текст, уходящий под кнопки, не читается обрывком. */
+  .talk > .chat-bar::before {
+    inset: 0 0 -20px;
+    -webkit-mask-image: linear-gradient(#000 66%, transparent); mask-image: linear-gradient(#000 66%, transparent);
+  }
   .chat-round { width: 40px; height: 40px; }
   .chat-now { height: 40px; padding: 0 14px; line-height: 40px; }
   /* Как в ChatGPT: слева кнопка меню, по центру название, справа «Поделиться». Новый чат
@@ -229,7 +233,12 @@
   .chat-bar .chat-round { background: linear-gradient(180deg, var(--t-glass-sheen), transparent 38%), var(--t-glass-strong); color: var(--t-ink); }
   .chat-bar .chat-round:disabled { color: var(--t-faint); }
   .chat-bar .chat-round .i { width: 18px; height: 18px; }
-  .talk::after { position: fixed; right: 0; bottom: 0; left: 0; height: calc(250px + env(safe-area-inset-bottom, 0px)); }
+  /* Снизу только узкая полоса под полем ввода: до уровня кнопки режима (молнии), выше
+     текст остаётся чётким. Под самим полем его и так размывает стекло поля. */
+  .talk::after {
+    position: fixed; right: 0; bottom: 0; left: 0; height: calc(56px + env(safe-area-inset-bottom, 0px));
+    -webkit-mask-image: linear-gradient(transparent, #000 45%); mask-image: linear-gradient(transparent, #000 45%);
+  }
 }
 
 /* ── Насколько глубоко думать: Instant / Medium / High. Подложка выбранного положения едет ── */
@@ -309,7 +318,11 @@
   color: var(--t-muted); transition: background 120ms ease, color 120ms ease;
 }
 .ans-act .i { width: 17px; height: 17px; stroke-width: 1.8; }
-.ans-act:hover { background: var(--t-hover); color: var(--t-ink); }
+/* Подсветка только там, где есть мышь: на телефоне «наведение» залипает после нажатия */
+@media (hover: hover) {
+  .ans-act:hover, .mic-btn:hover { background: var(--t-hover); color: var(--t-ink); }
+  .gauge-btn:hover { background: var(--t-hover); }
+}
 .ans-act:focus-visible { outline: 2px solid var(--t-ink); outline-offset: -2px; }
 .ans-act[aria-pressed="true"] { color: var(--t-ink); }
 .ans-rate[aria-pressed="true"] .i { fill: currentColor; }
