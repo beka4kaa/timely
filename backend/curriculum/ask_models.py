@@ -67,8 +67,11 @@ REASONING_LEVELS = (
     ReasoningLevel("max", "Максимум", "Для самых сложных задач, дороже всего", 32000),
 )
 
-DEFAULT_MODEL = ASK_MODELS[0]
-DEFAULT_REASONING = REASONING_LEVELS[0]
+# По умолчанию — Medium из переключателя в чате: быстрая модель, которая думает дольше.
+# Уровня medium у GLM 5.3 нет, поэтому середина между Instant (быстрая, low) и High
+# (умная, high) — это быстрая модель с high (src/lib/ask-level.ts).
+DEFAULT_MODEL = next(row for row in ASK_MODELS if row.key == "fast")
+DEFAULT_REASONING = next(row for row in REASONING_LEVELS if row.key == "high")
 # Такие ключи ещё лежат в браузерах учеников и в открытых вкладках.
 _OLD_MODEL_KEYS = {"glm-5.3": "smart", "glm-5.3-flash": "fast"}
 

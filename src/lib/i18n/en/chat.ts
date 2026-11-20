@@ -167,7 +167,7 @@ const en: Dictionary = {
 
   // lib/ask-level.ts
   "Быстрая модель, отвечает сразу": "Fast model, answers right away",
-  "Умная модель, рассуждает коротко": "Smart model, reasons briefly",
+  "Быстрая модель, думает дольше": "Fast model, thinks longer",
   "Умная модель, думает дольше и тратит больше": "Smart model, thinks longer and uses more",
 
   // lib/ai-limit.ts

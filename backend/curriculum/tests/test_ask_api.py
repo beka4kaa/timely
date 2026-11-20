@@ -379,10 +379,10 @@ class AskModelChoiceTests(TestCase):
             events = _events(response)
         return seen, events
 
-    def test_по_умолчанию_основная_модель_и_низкий_уровень(self):
+    def test_по_умолчанию_medium_быстрая_модель_с_высоким_уровнем(self):
         seen, _ = self._ask()
-        self.assertEqual(seen["model"], "z-ai/glm-5.3")
-        self.assertEqual(seen["reasoning_effort"], "low")
+        self.assertEqual(seen["model"], "z-ai/glm-5.3-flash")
+        self.assertEqual(seen["reasoning_effort"], "high")
 
     def test_выбранная_модель_и_уровень_доходят_до_провайдера(self):
         seen, _ = self._ask(model="glm-5.3-flash", reasoning="high")
@@ -396,8 +396,8 @@ class AskModelChoiceTests(TestCase):
 
     def test_чужую_модель_с_клиента_не_пропускаем(self):
         seen, _ = self._ask(model="openai/gpt-5-pro", reasoning="turbo")
-        self.assertEqual(seen["model"], "z-ai/glm-5.3")
-        self.assertEqual(seen["reasoning_effort"], "low")
+        self.assertEqual(seen["model"], "z-ai/glm-5.3-flash")
+        self.assertEqual(seen["reasoning_effort"], "high")
 
     def test_расход_приходит_отдельным_событием(self):
         numbers = UsageNumbers(
@@ -515,7 +515,7 @@ class ModelLabelsTests(TestCase):
         self.assertEqual(resolve_choice("fast").model.name, "Быстрая")
 
     def test_незнакомый_ключ_даёт_значение_по_умолчанию(self):
-        self.assertEqual(resolve_choice("gpt").model.key, "smart")
+        self.assertEqual(resolve_choice("gpt").model.key, "fast")
 
     def test_варианты_не_называют_модель(self):
         self.assertNotRegex(json.dumps(ask_options(), ensure_ascii=False), "(?i)glm|z-ai")
