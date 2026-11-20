@@ -159,7 +159,7 @@ class OpenAICompatibleEmbeddingProvider:
         client = OpenAI(
             api_key=self.api_key, base_url=self.base_url, max_retries=0
         )
-        routing = private_provider_body(self.base_url) if self.private else {}
+        routing = private_provider_body(self.base_url, full_model=False) if self.private else {}
 
         last_error = ""
         for attempt in range(self.max_attempts):

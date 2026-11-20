@@ -22,9 +22,10 @@ class RequestLanguageTests(SimpleTestCase):
 
 
 class AnswerLanguageRuleTests(SimpleTestCase):
-    def test_для_английского_правило_просит_английский(self) -> None:
+    def test_для_английского_отвечать_на_языке_ученика_а_английский_по_умолчанию(self) -> None:
         rule = answer_language_rule("en")
-        self.assertIn("English", rule)
+        self.assertIn("language the student writes in", rule)
+        self.assertIn("reply in English", rule)
 
     def test_для_русского_правила_нет(self) -> None:
         self.assertEqual(answer_language_rule("ru"), "")

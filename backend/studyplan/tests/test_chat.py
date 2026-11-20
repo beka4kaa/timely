@@ -220,12 +220,34 @@ class ConversationTests(ChatFixture):
     def test_requests_go_only_to_hosts_that_keep_nothing(self):
         _, _, client = self.run_chat([_Message(content="Привет")])
 
-        self.assertEqual(client.completions.calls[0]["extra_body"]["provider"], {"zdr": True})
+        provider = client.completions.calls[0]["extra_body"]["provider"]
+        # Без хранения и только полноценная модель: в сжатой fp4 вызовы инструментов ломались.
+        self.assertEqual(provider["zdr"], True)
+        self.assertEqual(provider["require_parameters"], True)
+        self.assertNotIn("fp4", provider["quantizations"])
 
     def test_vendor_name_does_not_reach_the_student(self):
         _, events, _ = self.run_chat([_Message(content="Я GLM-5.3 от Zhipu")])
 
         self.assertNotRegex(events[0][1]["text"], "GLM-5|Zhipu")
+
+    def test_вызов_инструмента_текстом_не_показывается_а_круг_повторяется(self):
+        _, events, client = self.run_chat(
+            [
+                _Message(content="Сейчас поставлю. <tool_call>propose_study_windows"),
+                _Message(content="Готово, расписание на неделю ниже."),
+            ]
+        )
+        text = dict(events)["content"]["text"]
+        self.assertNotIn("tool_call", text)
+        self.assertIn("Готово", text)
+        self.assertEqual(len(client.completions.calls), 2)
+
+    def test_дважды_текстом_обычная_ошибка_а_не_мусор(self):
+        _, events, _ = self.run_chat([_Message(content="<tool_call>propose_study_windows")])
+        names = [name for name, _ in events]
+        self.assertNotIn("content", names)
+        self.assertEqual(dict(events)["error"]["error"], PUBLIC_MODEL_ERROR)
 
     def test_provider_failure_text_stays_in_the_log(self):
         with mock.patch.object(_FakeCompletions, "create", side_effect=RuntimeError("404 z-ai/glm-5.3")):
@@ -545,11 +567,11 @@ class ScheduleChatLanguageTests(SimpleTestCase):
 
         prompt = _system_prompt("advice")
         self.assertIn("по-русски", prompt)
-        self.assertNotIn("Reply in English", prompt)
+        self.assertNotIn("language the student writes in", prompt)
 
     def test_английский_интерфейс(self) -> None:
         from studyplan.chat_views import _system_prompt
 
         prompt = _system_prompt("advice", language="en")
-        self.assertIn("Reply in English", prompt)
+        self.assertIn("language the student writes in", prompt)
         self.assertNotIn("по-русски", prompt)

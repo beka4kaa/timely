@@ -86,8 +86,19 @@ def default_reasoning_body(model: str) -> dict[str, Any]:
     return {"reasoning": reasoning_options(model)} if has_mandatory_reasoning(model) else {}
 
 
-def private_provider_body(base_url: str | None = None) -> dict[str, Any]:
+# Точность модели у хостинга, которому можно отдать запрос с данными ученика. Без сжатых fp4
+# и int4: на них GLM 5.3 печатала вызовы инструментов текстом и писала мусор вроде «rappa人湘西».
+# «unknown» оставлен: так помечены и сильные хостинги, а без них выбор слишком узкий.
+PRIVATE_QUANTIZATIONS = ("fp8", "fp16", "bf16", "fp32", "unknown")
+
+
+def private_provider_body(base_url: str | None = None, *, full_model: bool = True) -> dict[str, Any]:
     """Запрос с данными ученика идёт только туда, где их не хранят и на них не учатся.
+
+    И только к хостингу с полноценной моделью, который понимает все параметры запроса
+    (`require_parameters`): иначе OpenRouter отдаёт его самому дешёвому, а тот может молча
+    пропустить инструменты. Эмбеддингам это не нужно (`full_model=False`): там нет ни
+    инструментов, ни текста, который мог бы сломаться.
 
     Запасного пути нет намеренно: лучше «Тьютор сейчас не отвечает», чем данные ребёнка на
     чужом хостинге. Выключается только настройкой `AI_TEXT_ZDR`. `base_url` нужен тем, кто
@@ -95,11 +106,42 @@ def private_provider_body(base_url: str | None = None) -> dict[str, Any]:
     """
     if not AI_TEXT_ZDR or provider_from_base_url(base_url or TEXT_LLM_BASE_URL) != "openrouter":
         return {}
-    return {"provider": {"zdr": True}}
+    if not full_model:
+        return {"provider": {"zdr": True}}
+    return {
+        "provider": {
+            "zdr": True,
+            "require_parameters": True,
+            "quantizations": list(PRIVATE_QUANTIZATIONS),
+        }
+    }
 
 
 class TextLLMNotConfigured(RuntimeError):
     """Ключ провайдера не задан — вызывать модель нечем."""
+
+
+class ToolMarkupLeaked(RuntimeError):
+    """Модель дважды подряд напечатала вызов инструмента текстом вместо настоящего вызова."""
+
+
+# Так GLM пишет вызов инструмента, когда хостинг не превратил его в настоящий вызов.
+_TOOL_MARKUP = ("<tool_call", "<arg_key>", "<|tool")
+_MARKUP_HOLD = max(len(marker) for marker in _TOOL_MARKUP) - 1
+
+
+def tool_markup_at(text: str) -> int:
+    """Где в тексте начинается разметка вызова инструмента, или -1."""
+    found = [at for at in (text.find(marker) for marker in _TOOL_MARKUP) if at >= 0]
+    return min(found) if found else -1
+
+
+def _held_tail(text: str) -> int:
+    """Сколько последних символов может оказаться началом разметки: их придерживаем до следующего куска."""
+    for size in range(min(len(text), _MARKUP_HOLD), 0, -1):
+        if any(marker.startswith(text[-size:]) for marker in _TOOL_MARKUP):
+            return size
+    return 0
 
 
 @dataclass(frozen=True)
@@ -268,47 +310,87 @@ class TextModel:
             force_text = round_index == last_round
             if uses_tools:
                 offered = list(read_tools())
-            try:
-                stream = open_stream(conversation, offered, force_text=force_text)
-            except BadRequestError as exc:
-                if not offered:
-                    raise
-                # Чат не должен падать из-за инструментов: на первом круге отвечаем без них,
-                # а дальше повторяем без того, что провайдер мог не принять.
-                logger.warning("[text_llm] %s не принял запрос с инструментами (круг %s): %s", self.model, round_index, exc)
-                if round_index == 0:
-                    uses_tools = False
-                    offered = []
-                    stream = open_stream(conversation, offered)
-                else:
-                    conversation = _without_reasoning(conversation)
-                    stream = open_stream(conversation, offered)
 
-            usage_chunk = None
-            pending: dict[int, dict] = {}
-            reasoning_details: list[dict] = []
-            round_text = ""
-            for chunk in stream:
-                if getattr(chunk, "usage", None):
-                    # Чанк с usage приходит последним и НЕ содержит choices.
-                    usage_chunk = chunk
-                choices = getattr(chunk, "choices", None)
-                if not choices:
-                    continue
-                delta = getattr(choices[0], "delta", None)
-                if not delta:
-                    continue
-                content = getattr(delta, "content", None)
-                if content:
-                    # Сказала что-то перед инструментом, а теперь отвечает: это разные абзацы.
+            # Круг может начаться дважды: если модель напечатала вызов инструмента текстом
+            # (`_TOOL_MARKUP`), ученик этого не видит, а круг повторяется. Второй раз — ошибка:
+            # лучше «Тьютор сейчас не отвечает», чем служебный мусор в ответе.
+            for attempt in range(2):
+                try:
+                    stream = open_stream(conversation, offered, force_text=force_text)
+                except BadRequestError as exc:
+                    if not offered:
+                        raise
+                    # Чат не должен падать из-за инструментов: на первом круге отвечаем без них,
+                    # а дальше повторяем без того, что провайдер мог не принять.
+                    logger.warning(
+                        "[text_llm] %s не принял запрос с инструментами (круг %s): %s", self.model, round_index, exc
+                    )
+                    if round_index == 0:
+                        uses_tools = False
+                        offered = []
+                        stream = open_stream(conversation, offered)
+                    else:
+                        conversation = _without_reasoning(conversation)
+                        stream = open_stream(conversation, offered)
+
+                usage_chunk = None
+                pending: dict[int, dict] = {}
+                reasoning_details: list[dict] = []
+                round_text = ""
+                # Конец текста, который может оказаться началом разметки: держим до следующего куска.
+                held = ""
+                leaked = False
+                for chunk in stream:
+                    if getattr(chunk, "usage", None):
+                        # Чанк с usage приходит последним и НЕ содержит choices.
+                        usage_chunk = chunk
+                    choices = getattr(chunk, "choices", None)
+                    if not choices:
+                        continue
+                    delta = getattr(choices[0], "delta", None)
+                    if not delta:
+                        continue
+                    content = getattr(delta, "content", None)
+                    if content:
+                        held += content
+                        at = tool_markup_at(held)
+                        if at >= 0:
+                            leaked = True
+                            shown, held = held[:at], ""
+                        else:
+                            keep = _held_tail(held)
+                            shown, held = (held[:-keep], held[-keep:]) if keep else (held, "")
+                        if shown:
+                            # Сказала что-то перед инструментом, а теперь отвечает: это разные абзацы.
+                            if said_anything and not round_text:
+                                yield "\n\n"
+                            round_text += shown
+                            said_anything = True
+                            yield shown
+                        if leaked:
+                            break
+                    if offered:
+                        _collect_tool_deltas(pending, getattr(delta, "tool_calls", None))
+                        _collect_reasoning(reasoning_details, getattr(delta, "reasoning_details", None))
+
+                if leaked:
+                    close = getattr(stream, "close", None)
+                    if callable(close):
+                        close()
+                    if attempt == 0:
+                        logger.warning(
+                            "[text_llm] %s напечатала вызов инструмента текстом (круг %s), повторяю", self.model, round_index
+                        )
+                        continue
+                    raise ToolMarkupLeaked(f"{self.model}: вызов инструмента дважды пришёл текстом")
+
+                if held:
                     if said_anything and not round_text:
                         yield "\n\n"
-                    round_text += content
+                    round_text += held
                     said_anything = True
-                    yield content
-                if offered:
-                    _collect_tool_deltas(pending, getattr(delta, "tool_calls", None))
-                    _collect_reasoning(reasoning_details, getattr(delta, "reasoning_details", None))
+                    yield held
+                break
 
             if usage_chunk is not None:
                 record_model_usage(

@@ -20,11 +20,16 @@ def request_language(request) -> str:
 
 
 def answer_language_rule(language: str) -> str:
-    """Правило для системного промпта. Для русского пусто: промпты и так на русском."""
+    """Правило для системного промпта. Для русского пусто: промпты и так на русском.
+
+    Отвечать на языке ученика: кто пишет по-русски с английским интерфейсом, ждёт ответа
+    по-русски. Интерфейс решает, только если язык сообщения не понять.
+    """
     if language == "en":
         return (
-            "The student's interface is in English. Reply in English, even though these "
-            "instructions, the student's data and the books may be in Russian. If the student "
-            "writes in another language, reply in that language."
+            "Reply in the language the student writes in. The student's interface is in English, "
+            "so if you cannot tell the language of the message (for example, only numbers or a "
+            "command), reply in English. These instructions, the student's data and the books may "
+            "be in Russian: that does not choose the language of the reply."
         )
     return ""

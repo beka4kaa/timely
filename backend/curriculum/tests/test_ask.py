@@ -314,8 +314,8 @@ class AnswerLanguageTests(TestCase):
             context.language = language
         return " ".join(m["content"] for m in context.messages() if m["role"] == "system")
 
-    def test_английский_интерфейс_просит_ответ_по_английски(self):
-        self.assertIn("English", self._system("en"))
+    def test_английский_интерфейс_отвечает_на_языке_ученика(self):
+        self.assertIn("language the student writes in", self._system("en"))
 
     def test_по_умолчанию_правила_языка_нет(self):
-        self.assertNotIn("Reply in English", self._system(None))
+        self.assertNotIn("language the student writes in", self._system(None))

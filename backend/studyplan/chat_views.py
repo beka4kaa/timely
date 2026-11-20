@@ -278,8 +278,10 @@ class ScheduleChatStreamView(APIView):
             from ai_engine.text_llm import (
                 TEXT_LLM_API_KEY,
                 TEXT_LLM_BASE_URL,
+                ToolMarkupLeaked,
                 default_reasoning_body,
                 private_provider_body,
+                tool_markup_at,
             )
             from ai_engine.usage import provider_from_base_url, record_model_usage
 
@@ -300,39 +302,56 @@ class ScheduleChatStreamView(APIView):
                     reply = ""
                     for round_index in range(MAX_TOOL_ROUNDS):
                         last_round = round_index == MAX_TOOL_ROUNDS - 1
-                        with provider_call_reservation(
-                            input_payload=messages,
-                            max_output_tokens=CHAT_MAX_TOKENS,
-                            feature="schedule_chat",
-                        ):
-                            response = client.chat.completions.create(
+                        # Модель могла напечатать вызов инструмента текстом вместо вызова: такой
+                        # ответ ученик не видит, круг повторяется. Второй раз — обычная ошибка.
+                        for attempt in range(2):
+                            with provider_call_reservation(
+                                input_payload=messages,
+                                max_output_tokens=CHAT_MAX_TOKENS,
+                                feature="schedule_chat",
+                            ):
+                                response = client.chat.completions.create(
+                                    model=binding.model,
+                                    messages=messages,
+                                    tools=[
+                                        *tool_schemas(allowed_tool_names),
+                                        *assistant.own_schemas(read_only=read_only_life),
+                                    ],
+                                    # На последнем круге только слова: иначе сделанное пропало бы без следа.
+                                    **({"tool_choice": "none"} if last_round else {}),
+                                    max_tokens=CHAT_MAX_TOKENS,
+                                    temperature=0.2,
+                                    timeout=CHAT_TIMEOUT_SECONDS,
+                                    **(
+                                        {"extra_body": extra_body}
+                                        if (
+                                            extra_body := {
+                                                **default_reasoning_body(binding.model),
+                                                **private_provider_body(),
+                                            }
+                                        )
+                                        else {}
+                                    ),
+                                )
+                            record_model_usage(
+                                response,
                                 model=binding.model,
-                                messages=messages,
-                                tools=[
-                                    *tool_schemas(allowed_tool_names),
-                                    *assistant.own_schemas(read_only=read_only_life),
-                                ],
-                                # На последнем круге только слова: иначе сделанное пропало бы без следа.
-                                **({"tool_choice": "none"} if last_round else {}),
-                                max_tokens=CHAT_MAX_TOKENS,
-                                temperature=0.2,
-                                timeout=CHAT_TIMEOUT_SECONDS,
-                                **(
-                                    {"extra_body": extra_body}
-                                    if (extra_body := {**default_reasoning_body(binding.model), **private_provider_body()})
-                                    else {}
-                                ),
+                                provider=provider_from_base_url(TEXT_LLM_BASE_URL),
+                                feature="schedule_chat",
+                                input_payload=messages,
                             )
-                        record_model_usage(
-                            response,
-                            model=binding.model,
-                            provider=provider_from_base_url(TEXT_LLM_BASE_URL),
-                            feature="schedule_chat",
-                            input_payload=messages,
-                        )
 
-                        choice = response.choices[0].message
-                        reply = (choice.content or "").strip()
+                            choice = response.choices[0].message
+                            reply = (choice.content or "").strip()
+                            if tool_markup_at(reply) < 0:
+                                break
+                            if attempt:
+                                raise ToolMarkupLeaked(f"{binding.model}: вызов инструмента дважды пришёл текстом")
+                            logger.warning(
+                                "[schedule_chat] %s напечатала вызов инструмента текстом (круг %s), повторяю",
+                                binding.model,
+                                round_index,
+                            )
                         tool_calls = getattr(choice, "tool_calls", None)
                         if not tool_calls or last_round:
                             break
