@@ -113,6 +113,7 @@ function coreOf(state: TimerCore): TimerCore {
     done: state.done,
     idleSince: state.idleSince,
     alarm: state.alarm,
+    runs: state.runs ?? [],
   };
 }
 
@@ -198,12 +199,14 @@ export const usePomodoroStore = create<PomodoroState>()(
         set({ presetIdx, custom, ...replanCore(coreOf(state), rhythmOf(presetIdx, custom)), nowTs: Date.now() });
       };
 
-      /** Конец фазы: новое состояние и, если было что, сессия в очередь на сервер. */
-      const commit = (result: { core: TimerCore; log: FocusSessionPayload | null }, now: number) => {
+      /** Конец фазы: новое состояние и, если было что, сессии в очередь на сервер (по одной на день). */
+      const commit = (result: { core: TimerCore; logs: FocusSessionPayload[] }, now: number) => {
         const pending = get().pending;
         set({
           ...result.core,
-          pending: result.log ? pending.concat({ ...result.log, localId: makeLocalId() }) : pending,
+          pending: result.logs.length
+            ? pending.concat(result.logs.map((log) => ({ ...log, localId: makeLocalId() })))
+            : pending,
           nowTs: now,
         });
       };
@@ -298,7 +301,7 @@ export const usePomodoroStore = create<PomodoroState>()(
           }
           const core = coreOf(state);
           const result = advanceCore(core, selectRhythm(state), state, now);
-          if (result.core === core && !result.log) {
+          if (result.core === core && !result.logs.length) {
             set({ nowTs: now });
             return;
           }
@@ -333,6 +336,7 @@ export const usePomodoroStore = create<PomodoroState>()(
         done: state.done,
         idleSince: state.idleSince,
         alarm: state.alarm,
+        runs: state.runs,
         pending: state.pending,
         syncedAt: state.syncedAt,
         notifiedAt: state.notifiedAt,

@@ -142,7 +142,16 @@ export interface TimerCore {
   /** С какого момента таймер стоит. От него считается простой. */
   idleSince: number | null;
   alarm: Alarm | null;
+  /**
+   * Отрезки работы текущей фазы до последней паузы: [начало, конец], epoch ms. Идущий
+   * отрезок здесь не лежит, он начался в `runStartOf`. По отрезкам время фазы делится по
+   * местным дням: фаза могла идти через полночь или её доделали на другой день.
+   */
+  runs: Run[];
 }
+
+/** Отрезок работы таймера: [начало, конец], epoch ms. */
+export type Run = [number, number];
 
 export interface AutoStart {
   autoBreak: boolean;
@@ -160,6 +169,7 @@ export function freshCore(rhythm: Rhythm): TimerCore {
     done: 0,
     idleSince: null,
     alarm: null,
+    runs: [],
   };
 }
 
@@ -210,8 +220,17 @@ export function startCore(core: TimerCore, rhythm: Rhythm, now: number): TimerCo
   };
 }
 
+/**
+ * Когда начался идущий отрезок. При старте `endsAt` ставится на остаток вперёд, а
+ * `remainingWhenPaused` хранит этот остаток, поэтому начало видно без отдельного поля.
+ */
+export function runStartOf(core: Pick<TimerCore, "endsAt" | "remainingWhenPaused">): number | null {
+  return core.endsAt === null ? null : core.endsAt - core.remainingWhenPaused * 1000;
+}
+
 export function pauseCore(core: TimerCore, now: number): TimerCore {
   if (!core.running) return core;
+  const from = runStartOf(core);
   return {
     ...core,
     running: false,
@@ -219,6 +238,7 @@ export function pauseCore(core: TimerCore, now: number): TimerCore {
     remainingWhenPaused: remainingOf(core, now),
     idleSince: now,
     alarm: null,
+    runs: from !== null && now > from ? [...(core.runs ?? []), [from, now]] : core.runs ?? [],
   };
 }
 
@@ -233,11 +253,115 @@ export function resetCore(core: TimerCore, rhythm: Rhythm, now: number): TimerCo
     phaseStartedAt: null,
     idleSince: now,
     alarm: null,
+    runs: [],
   };
 }
 
 export function dismissCore(core: TimerCore): TimerCore {
   return core.alarm ? { ...core, alarm: null } : core;
+}
+
+/** Начало следующих местных суток после `at`. */
+function nextMidnight(at: number): number {
+  const date = new Date(at);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+}
+
+/** Доля фазы в одном местном дне: когда в этот день таймер пошёл впервые и сколько шёл. */
+export interface DayShare {
+  startedAt: number;
+  ms: number;
+}
+
+/** Отрезки работы по местным дням, от ранних к поздним. Отрезок через полночь режется в полночь. */
+export function splitByDay(runs: readonly Run[]): DayShare[] {
+  const days = new Map<string, DayShare>();
+  for (const [from, to] of runs) {
+    let at = from;
+    while (at < to) {
+      const end = Math.min(to, nextMidnight(at));
+      const key = dayKey(new Date(at));
+      const day = days.get(key);
+      if (day) {
+        day.ms += end - at;
+        day.startedAt = Math.min(day.startedAt, at);
+      } else {
+        days.set(key, { startedAt: at, ms: end - at });
+      }
+      at = end;
+    }
+  }
+  return Array.from(days.values()).sort((a, b) => a.startedAt - b.startedAt);
+}
+
+const isRun = (value: unknown): value is Run =>
+  Array.isArray(value) &&
+  value.length === 2 &&
+  value.every((moment) => typeof moment === "number" && Number.isFinite(moment)) &&
+  value[1] > value[0];
+
+/**
+ * Секунды фазы по дням: `worked` целиком, без потерь на округлении. Доля короче минуты
+ * отдельной записью не становится и уходит соседнему дню: ленте дня нечего показать.
+ */
+function dayParts(core: TimerCore, worked: number, end: number | null): Array<{ startedAt: number; seconds: number }> {
+  const runs: Run[] = (Array.isArray(core.runs) ? core.runs : []).filter(isRun);
+  const from = core.running ? runStartOf(core) : null;
+  if (from !== null && end !== null && end > from) runs.push([from, end]);
+
+  // Отрезков от прошлой версии таймера нет: их время остаётся в дне начала фазы, как раньше.
+  const known = runs.reduce((sum, [start, stop]) => sum + (stop - start), 0);
+  const missing = worked * 1000 - known;
+  if (missing >= 1000 && core.phaseStartedAt !== null) runs.unshift([core.phaseStartedAt, core.phaseStartedAt + missing]);
+
+  const days = splitByDay(runs);
+  const total = days.reduce((sum, day) => sum + day.ms, 0);
+  if (!days.length || total <= 0) return [{ startedAt: core.phaseStartedAt ?? end ?? 0, seconds: worked }];
+
+  const parts = days.map((day) => ({ startedAt: day.startedAt, seconds: Math.round((worked * day.ms) / total) }));
+  // Округление по дням могло дать секунду лишнюю или недостающую: поправка самому длинному дню.
+  const drift = worked - parts.reduce((sum, part) => sum + part.seconds, 0);
+  if (drift) parts.reduce((longest, part) => (part.seconds > longest.seconds ? part : longest)).seconds += drift;
+
+  while (parts.length > 1) {
+    const short = parts.findIndex((part) => part.seconds < MIN_LOGGED_SECONDS);
+    if (short < 0) break;
+    const into = short + 1 < parts.length ? short + 1 : short - 1;
+    parts[into].seconds += parts[short].seconds;
+    parts.splice(short, 1);
+  }
+  return parts;
+}
+
+/**
+ * Записи фазы: по одной на каждый местный день, в который она шла, со своим началом и
+ * своими секундами. Так блок, начатый вечером и доделанный утром, не уходит целиком во
+ * вчера.
+ *
+ * `planned_seconds` у части фокуса — сколько плана она закрыла: у ранних частей это их
+ * секунды, у последней — остаток плана. Поэтому «остановлен раньше времени» видно только
+ * у последней части и только если фазу правда закончили досрочно. У перерыва план
+ * остаётся целым: по нему история узнаёт длинный перерыв.
+ */
+function phaseLogs(core: TimerCore, worked: number, planned: number, end: number | null): FocusSessionPayload[] {
+  if (worked < MIN_LOGGED_SECONDS) return [];
+  const focus = core.phase === "focus";
+  const parts = dayParts(core, worked, end);
+  let before = 0;
+  return parts.map((part, index) => {
+    const last = index === parts.length - 1;
+    const log: FocusSessionPayload = {
+      kind: focus ? "focus" : "break",
+      started_at: new Date(part.startedAt).toISOString(),
+      seconds: part.seconds,
+      planned_seconds: !focus ? planned : last ? Math.max(part.seconds, planned - before) : part.seconds,
+      // Ритм той же фазы: по паре длины и перерыва история отличает длинный перерыв.
+      preset_focus_min: core.phaseRhythm.focus,
+      preset_break_min: core.phaseRhythm.brk,
+    };
+    before += part.seconds;
+    return log;
+  });
 }
 
 /**
@@ -247,6 +371,7 @@ export function dismissCore(core: TimerCore): TimerCore {
  * к длинному перерыву. Следующая фаза по умолчанию ждёт клика,
  * а с автостартом идёт от настоящего конца прошлой, даже если тик пришёл с опозданием.
  * Фаза, кончившаяся давно (вкладка была закрыта), сама уже не стартует.
+ * Записей у фазы столько, во сколько местных дней она шла (`phaseLogs`).
  */
 export function finishCore(
   core: TimerCore,
@@ -254,23 +379,12 @@ export function finishCore(
   auto: AutoStart,
   now: number,
   natural: boolean,
-): { core: TimerCore; log: FocusSessionPayload | null } {
+): { core: TimerCore; logs: FocusSessionPayload[] } {
   const planned = plannedOf(core);
   const remaining = natural ? 0 : remainingOf(core, now);
-  const worked = Math.min(planned, Math.max(0, planned - remaining));
-
-  const log: FocusSessionPayload | null =
-    worked >= MIN_LOGGED_SECONDS
-      ? {
-          kind: core.phase === "focus" ? "focus" : "break",
-          started_at: new Date(core.phaseStartedAt ?? now).toISOString(),
-          seconds: Math.round(worked),
-          planned_seconds: planned,
-          // Ритм той же фазы: по паре длины и перерыва история отличает длинный перерыв.
-          preset_focus_min: core.phaseRhythm.focus,
-          preset_break_min: core.phaseRhythm.brk,
-        }
-      : null;
+  const worked = Math.round(Math.min(planned, Math.max(0, planned - remaining)));
+  // Сама дошедшая фаза кончилась в `endsAt`, даже если тик пришёл позже.
+  const logs = phaseLogs(core, worked, planned, natural ? core.endsAt ?? now : now);
 
   let done = core.done;
   let next: TimerPhase;
@@ -283,12 +397,12 @@ export function finishCore(
   }
 
   const nextPlanned = phaseSeconds(rhythm, next);
-  const after = { ...core, phase: next, done, remainingWhenPaused: nextPlanned, phaseRhythm: rhythm };
+  const after = { ...core, phase: next, done, remainingWhenPaused: nextPlanned, phaseRhythm: rhythm, runs: [] };
 
   if (!natural) {
     return {
       core: { ...after, running: false, endsAt: null, phaseStartedAt: null, idleSince: now, alarm: null },
-      log,
+      logs,
     };
   }
 
@@ -306,7 +420,7 @@ export function finishCore(
         idleSince: null,
         alarm: { next, at: endedAt, auto: true },
       },
-      log,
+      logs,
     };
   }
 
@@ -319,7 +433,7 @@ export function finishCore(
       idleSince: endedAt,
       alarm: { next, at: endedAt, auto: false },
     },
-    log,
+    logs,
   };
 }
 
@@ -329,13 +443,13 @@ export function advanceCore(
   rhythm: Rhythm,
   auto: AutoStart,
   now: number,
-): { core: TimerCore; log: FocusSessionPayload | null } {
+): { core: TimerCore; logs: FocusSessionPayload[] } {
   if (core.running && core.endsAt !== null && now >= core.endsAt) {
     return finishCore(core, rhythm, auto, now, true);
   }
   let next = settleIdle(core, rhythm, now);
   if (next.alarm?.auto && now - next.alarm.at > RING_LIMIT_MS) next = { ...next, alarm: null };
-  return { core: next, log: null };
+  return { core: next, logs: [] };
 }
 
 /**

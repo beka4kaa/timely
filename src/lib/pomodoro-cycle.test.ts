@@ -166,7 +166,7 @@ test("свои значения: длинный перерыв не короче
 // ─────────────────────────── Цикл ───────────────────────────
 
 test("фокус дошёл до нуля: счёт растёт, дальше перерыв", () => {
-  const { core, log } = advanceCore(focusEndingAt(T0), CLASSIC, MANUAL, T0);
+  const { core, logs: [log] } = advanceCore(focusEndingAt(T0), CLASSIC, MANUAL, T0);
   assert.equal(core.phase, "break");
   assert.equal(core.done, 1);
   assert.equal(core.running, false);
@@ -212,7 +212,7 @@ test("длинный перерыв пишется в лог как переры
     endsAt: T0,
     phaseStartedAt: T0 - 15 * MIN,
   };
-  const { log } = advanceCore(core, CLASSIC, MANUAL, T0);
+  const { logs: [log] } = advanceCore(core, CLASSIC, MANUAL, T0);
   assert.ok(log);
   assert.equal(log.kind, "break");
   assert.equal(log.planned_seconds, 15 * 60);
@@ -224,7 +224,7 @@ test("длинный перерыв пишется в лог как переры
 
 test("пропущенный фокус не считается, но отработанное время пишется", () => {
   const running = startCore(freshCore(CLASSIC), CLASSIC, T0);
-  const { core, log } = finishCore(running, CLASSIC, MANUAL, T0 + 10 * MIN, false);
+  const { core, logs: [log] } = finishCore(running, CLASSIC, MANUAL, T0 + 10 * MIN, false);
   assert.equal(core.phase, "break");
   assert.equal(core.done, 0);
   assert.equal(core.running, false);
@@ -268,7 +268,7 @@ test("пауза и продолжение не мешают фокусу зас
   assert.equal(core.remainingWhenPaused, 15 * 60);
   core = startCore(core, CLASSIC, T0 + 20 * MIN);
   assert.equal(core.endsAt, T0 + 35 * MIN);
-  const { core: after, log } = advanceCore(core, CLASSIC, MANUAL, T0 + 35 * MIN);
+  const { core: after, logs: [log] } = advanceCore(core, CLASSIC, MANUAL, T0 + 35 * MIN);
   assert.equal(after.done, 1);
   assert.equal(log?.started_at, new Date(T0).toISOString());
 });
@@ -412,7 +412,7 @@ test("идущая фаза доходит в своей длине, новый 
   const after = replanCore(running, CLASSIC);
   assert.equal(after, running, "ничего не меняется посреди фазы");
   assert.equal(remainingOf(after, T0 + 10 * MIN), 40 * 60);
-  const { core: next, log } = advanceCore(after, CLASSIC, MANUAL, T0 + 50 * MIN);
+  const { core: next, logs: [log] } = advanceCore(after, CLASSIC, MANUAL, T0 + 50 * MIN);
   assert.equal(log?.planned_seconds, 50 * 60);
   assert.equal(log?.seconds, 50 * 60);
   // Ритм в логе тот же, по которому шла фаза, иначе история спутала бы перерывы.
@@ -427,14 +427,14 @@ test("перерыв, начатый в одном ритме и законче�
   // Обычные 10 минут из 50/10/30, посреди переключили на 25/5/15: всё ещё обычный перерыв.
   const shortBreak: TimerCore = { ...freshCore(DEEP), phase: "break", remainingWhenPaused: 10 * 60 };
   const shortRun = replanCore(startCore(shortBreak, DEEP, T0), CLASSIC);
-  const shortLog = advanceCore(shortRun, CLASSIC, MANUAL, T0 + 10 * MIN).log;
+  const shortLog = advanceCore(shortRun, CLASSIC, MANUAL, T0 + 10 * MIN).logs[0];
   assert.ok(shortLog);
   assert.equal(shortLog.planned_seconds, 10 * 60);
   assert.equal(isLongBreakRow(shortLog), false);
   // Длинные 15 минут из 25/5/15, посреди переключили на 90/20/30: всё ещё длинный.
   const longBreak: TimerCore = { ...freshCore(CLASSIC), phase: "long", done: 4, remainingWhenPaused: 15 * 60 };
   const longRun = replanCore(startCore(longBreak, CLASSIC, T0), marathon);
-  const longLog = advanceCore(longRun, marathon, MANUAL, T0 + 15 * MIN).log;
+  const longLog = advanceCore(longRun, marathon, MANUAL, T0 + 15 * MIN).logs[0];
   assert.ok(longLog);
   assert.equal(longLog.planned_seconds, 15 * 60);
   assert.equal(isLongBreakRow(longLog), true);
@@ -444,8 +444,8 @@ test("заглянуть в «Своё» посреди фокуса не обр
   // Своё 25 минут, а идёт 30-я минута 50-минутного фокуса.
   const running = startCore(freshCore(DEEP), DEEP, T0);
   const after = replanCore(running, CLASSIC);
-  const { core, log } = advanceCore(after, CLASSIC, MANUAL, T0 + 30 * MIN);
-  assert.equal(log, null);
+  const { core, logs } = advanceCore(after, CLASSIC, MANUAL, T0 + 30 * MIN);
+  assert.deepEqual(logs, []);
   assert.equal(core.running, true);
   assert.equal(remainingOf(core, T0 + 30 * MIN), 20 * 60);
   assert.equal(core.done, 0);
@@ -633,4 +633,91 @@ test("испорченный ритм фазы в хранилище чинит�
   assert.deepEqual(mergeSaved(undefined, current).phaseRhythm, CLASSIC, "без сохранения всё по умолчанию");
   const saved = { presetIdx: 0, custom: null, phaseRhythm: DEEP };
   assert.deepEqual(mergeSaved(saved, current).phaseRhythm, DEEP, "правильный снимок не трогаем");
+});
+
+// ─────────────────────────── Фаза через полночь ───────────────────────────
+
+const at = (day: number, hour: number, minute: number, second = 0) => new Date(2026, 10, day, hour, minute, second).getTime();
+const iso = (ms: number) => new Date(ms).toISOString();
+const parts = (logs: readonly { started_at: string; seconds: number; planned_seconds: number }[]) =>
+  logs.map((log) => [log.started_at, log.seconds, log.planned_seconds]);
+
+test("фокус на паузе через ночь: вчерашние минуты вчера, сегодняшние сегодня", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, at(10, 23, 50));
+  const paused = pauseCore(started, at(10, 23, 55));
+  const resumed = startCore(paused, CLASSIC, at(11, 10, 0));
+  const { logs } = advanceCore(resumed, CLASSIC, MANUAL, at(11, 10, 20));
+  assert.deepEqual(parts(logs), [
+    [iso(at(10, 23, 50)), 5 * 60, 5 * 60],
+    [iso(at(11, 10, 0)), 20 * 60, 20 * 60],
+  ]);
+  assert.ok(logs.every((log) => log.kind === "focus" && log.preset_focus_min === 25));
+});
+
+test("фокус без паузы через полночь делится в полночь", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, at(10, 23, 50));
+  const { logs } = advanceCore(started, CLASSIC, MANUAL, at(11, 0, 15));
+  assert.deepEqual(parts(logs), [
+    [iso(at(10, 23, 50)), 10 * 60, 10 * 60],
+    [iso(at(11, 0, 0)), 15 * 60, 15 * 60],
+  ]);
+});
+
+test("досрочно законченный фокус через ночь: раньше времени остановлена только последняя часть", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, at(10, 23, 50));
+  const resumed = startCore(pauseCore(started, at(10, 23, 55)), CLASSIC, at(11, 10, 0));
+  const { logs } = finishCore(resumed, CLASSIC, MANUAL, at(11, 10, 5), false);
+  assert.deepEqual(parts(logs), [
+    [iso(at(10, 23, 50)), 5 * 60, 5 * 60],
+    [iso(at(11, 10, 0)), 5 * 60, 20 * 60],
+  ]);
+});
+
+test("пауза внутри одного дня: одна запись с начала фазы, как раньше", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, at(10, 10, 0));
+  const resumed = startCore(pauseCore(started, at(10, 10, 5)), CLASSIC, at(10, 10, 30));
+  const { logs } = advanceCore(resumed, CLASSIC, MANUAL, at(10, 10, 50));
+  assert.deepEqual(parts(logs), [[iso(at(10, 10, 0)), 25 * 60, 25 * 60]]);
+});
+
+test("хвост короче минуты не становится отдельной записью: он у соседнего дня", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, at(10, 23, 59, 30));
+  const { logs } = advanceCore(started, CLASSIC, MANUAL, at(11, 0, 24, 30));
+  assert.deepEqual(parts(logs), [[iso(at(11, 0, 0)), 25 * 60, 25 * 60]]);
+});
+
+test("сохранение без отрезков: неизвестное раньше время остаётся в дне начала фазы", () => {
+  const old: TimerCore = {
+    ...freshCore(CLASSIC),
+    running: true,
+    phaseStartedAt: at(10, 23, 50),
+    endsAt: at(11, 10, 20),
+    remainingWhenPaused: 20 * 60,
+    runs: [],
+  };
+  const { logs } = advanceCore(old, CLASSIC, MANUAL, at(11, 10, 20));
+  assert.deepEqual(parts(logs), [
+    [iso(at(10, 23, 50)), 5 * 60, 5 * 60],
+    [iso(at(11, 10, 0)), 20 * 60, 20 * 60],
+  ]);
+});
+
+test("перерыв через полночь делится по дням, но остаётся длинным перерывом", () => {
+  const long: TimerCore = { ...freshCore(CLASSIC), phase: "long", done: 4, remainingWhenPaused: 15 * 60 };
+  const started = startCore(long, CLASSIC, at(10, 23, 55));
+  const { logs } = advanceCore(started, CLASSIC, MANUAL, at(11, 0, 10));
+  assert.deepEqual(parts(logs), [
+    [iso(at(10, 23, 55)), 5 * 60, 15 * 60],
+    [iso(at(11, 0, 0)), 10 * 60, 15 * 60],
+  ]);
+  assert.ok(logs.every((log) => isLongBreakRow(log)));
+});
+
+test("отрезки фазы не переходят в следующую: после конца, сброса и автостарта их нет", () => {
+  const started = startCore(freshCore(CLASSIC), CLASSIC, T0);
+  const paused = pauseCore(started, T0 + 5 * MIN);
+  assert.deepEqual(paused.runs, [[T0, T0 + 5 * MIN]]);
+  assert.deepEqual(resetCore(paused, CLASSIC, T0 + 6 * MIN).runs, []);
+  const finished = advanceCore(startCore(paused, CLASSIC, T0 + 10 * MIN), CLASSIC, AUTO, T0 + 30 * MIN).core;
+  assert.deepEqual(finished.runs, []);
 });

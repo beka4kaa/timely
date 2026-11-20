@@ -17,6 +17,7 @@ const running: TimerSnapshot = {
   done: 2,
   idleSince: null,
   alarm: null,
+  runs: [[1795076000000, 1795076600000]],
   name: "Физика",
 };
 
@@ -60,4 +61,13 @@ test("пауза и звонок с сервера принимаются", () =
 test("старая запись без названия читается с пустым названием", () => {
   const { name: _name, ...withoutName } = running;
   assert.deepEqual(remoteTimer(withoutName), { ...running, name: "" });
+});
+
+test("отрезки фазы идут на другие устройства, а таймер со старой версией без них не считается порченым", () => {
+  const sent = timerSnapshot(running, running.name);
+  assert.deepEqual(sent.runs, running.runs);
+  const { runs: _runs, ...withoutRuns } = running;
+  assert.deepEqual(remoteTimer(withoutRuns)?.runs, []);
+  assert.equal(remoteTimer({ ...running, runs: [[5, 3]] }), null);
+  assert.equal(remoteTimer({ ...running, runs: "вчера" }), null);
 });

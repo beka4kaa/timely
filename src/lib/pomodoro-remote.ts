@@ -5,7 +5,7 @@
 // С сервера берётся только целое состояние: испорченная запись не должна сломать таймер.
 
 import type { Rhythm, TimerPhase } from "./pomodoro";
-import { isRhythm, type Alarm, type TimerCore } from "./pomodoro-cycle";
+import { isRhythm, type Alarm, type Run, type TimerCore } from "./pomodoro-cycle";
 
 export interface TimerSnapshot extends TimerCore {
   /** Индекс в `PRESETS` или `CUSTOM_PRESET`. */
@@ -32,6 +32,7 @@ export function timerSnapshot(state: TimerCore & { presetIdx: number; custom: Rh
     done: state.done,
     idleSince: state.idleSince,
     alarm: state.alarm,
+    runs: state.runs ?? [],
     name: name.trim().slice(0, NAME_LIMIT),
   };
 }
@@ -49,6 +50,15 @@ function isAlarm(value: unknown): value is Alarm | null {
   if (!value || typeof value !== "object") return false;
   const alarm = value as Record<string, unknown>;
   return isPhase(alarm.next) && isMoment(alarm.at) && typeof alarm.auto === "boolean";
+}
+
+/** Отрезки работы фазы. У таймера с прошлой версией приложения их нет вовсе: это не порча. */
+function isRuns(value: unknown): value is Run[] | undefined {
+  if (value === undefined) return true;
+  return (
+    Array.isArray(value) &&
+    value.every((run) => Array.isArray(run) && run.length === 2 && isMoment(run[0]) && isMoment(run[1]) && run[1] > run[0])
+  );
 }
 
 /** Состояние с сервера, если оно целое; иначе `null`, и таймер остаётся как был. */
@@ -69,6 +79,7 @@ export function remoteTimer(raw: unknown): TimerSnapshot | null {
     (data.done as number) >= 0 &&
     isMomentOrNull(data.idleSince) &&
     isAlarm(data.alarm) &&
+    isRuns(data.runs) &&
     (data.name === undefined || typeof data.name === "string");
   if (!valid) return null;
   return timerSnapshot(data as unknown as TimerSnapshot, typeof data.name === "string" ? data.name : "");
