@@ -1864,3 +1864,23 @@ class SchoolTimetableTests(TestCase):
         for question in ("запиши школьное расписание", "в понедельник первым уроком алгебра"):
             with self.subTest(question=question):
                 self.assertIn("propose_school_timetable", choose_tools(question))
+
+
+class ToolFailureLogTests(TestCase):
+    """Отказ инструмента пишется в журнал: иначе по жалобе «система отклоняла» нечего разбирать."""
+
+    def test_отказ_пишется_с_причиной_и_аргументами(self):
+        tools = _tools()
+        with self.assertLogs("curriculum.assistant_tools", level="WARNING") as logs:
+            answer = tools.run("propose_study_plan", {"subject": "SAT English", "days": [0, 1], "start_time": "08:00"})
+        self.assertFalse(answer["ok"])
+        line = "\n".join(logs.output)
+        self.assertIn("propose_study_plan", line)
+        self.assertIn(answer["error"], line)
+        self.assertIn('"days": [0, 1]', line)
+        self.assertNotIn(OWNER, line)
+
+    def test_удачный_вызов_журнал_не_засоряет(self):
+        tools = _tools()
+        with self.assertNoLogs("curriculum.assistant_tools", level="WARNING"):
+            self.assertTrue(tools.run("propose_study_plan", {"subject": "Физика"})["ok"])

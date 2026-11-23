@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -1783,13 +1784,25 @@ class AssistantTools:
                 self.names = _ALL_TOOLS
                 return {"ok": True, "note": "Теперь доступны все инструменты.", "rules": self.rules()}
             if name in OWN_TOOLS:
-                return OWN_TOOLS[name].handler(args, self.context)
-            if name in SCHEDULE_READ_TOOLS or name in SCHEDULE_PROPOSAL_TOOLS:
-                return self._run_schedule(name, args)
-            return _fail("unknown_tool", "Такого инструмента нет.")
+                result = OWN_TOOLS[name].handler(args, self.context)
+            elif name in SCHEDULE_READ_TOOLS or name in SCHEDULE_PROPOSAL_TOOLS:
+                result = self._run_schedule(name, args)
+            else:
+                result = _fail("unknown_tool", "Такого инструмента нет.")
         except Exception:  # noqa: BLE001 — сбой инструмента не рвёт разговор
             logger.exception("[assistant_tools] %s упал", name)
             return _fail("tool_failed", "Не получилось посмотреть данные.")
+        if result.get("ok") is False:
+            # Отказ модели виден только ей самой. Без записи жалобу «система отклоняла» не разобрать.
+            # Почта ученика в аргументы не попадает: её модель не знает.
+            logger.warning(
+                "[assistant_tools] %s отказал: %s — %s; аргументы: %s",
+                name,
+                result.get("error"),
+                result.get("message"),
+                json.dumps(args, ensure_ascii=False, default=str)[:600],
+            )
+        return result
 
     def _run_schedule(self, name: str, args: dict) -> dict[str, Any]:
         arguments = dict(args)
