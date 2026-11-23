@@ -78,7 +78,6 @@ export function PomodoroPage() {
   const done = usePomodoroStore((state) => state.done);
   const toggle = usePomodoroStore((state) => state.toggle);
   const skip = usePomodoroStore((state) => state.skip);
-  const reset = usePomodoroStore((state) => state.reset);
 
   const cycle = useMemo(() => cycleDots(phase, done, rhythm.every), [phase, done, rhythm.every]);
 
@@ -305,8 +304,9 @@ export function PomodoroPage() {
             <button className="btn btn-main fp-start" type="button" onClick={startOrPause}>
               {running ? t("Пауза") : hasStarted ? t("Продолжить") : t(START_LABEL[phase])}
             </button>
-            {/* До старта можно только пропустить фазу, после — только сбросить её.
-                Обе кнопки в одной ячейке и сменяют друг друга, ничего не прыгает. */}
+            {/* Две кнопки, не больше. До старта фазу можно пропустить, после — закончить
+                досрочно: отработанное сохранится, дальше следующая фаза. Обе в одной ячейке и
+                сменяют друг друга, ничего не прыгает. */}
             <span className="fp-swap">
               <button
                 className="btn btn-text"
@@ -322,13 +322,13 @@ export function PomodoroPage() {
               <button
                 className="btn btn-text"
                 type="button"
-                title={t("Остановить и начать эту фазу заново")}
+                title={t("Закончить сейчас: время сохранится, дальше следующая фаза")}
                 data-on={hasStarted || undefined}
                 aria-hidden={!hasStarted || undefined}
                 disabled={!hasStarted}
-                onClick={reset}
+                onClick={skip}
               >
-                {t("Сбросить")}
+                {t("Закончить")}
               </button>
             </span>
           </div>

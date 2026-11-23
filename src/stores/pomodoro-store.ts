@@ -28,7 +28,7 @@ import {
   plannedOf,
   remainingOf,
   replanCore,
-  resetCore,
+  resetLoggingCore,
   rhythmOf,
   startCore,
   type TimerCore,
@@ -241,7 +241,8 @@ export const usePomodoroStore = create<PomodoroState>()(
         reset: () => {
           const state = get();
           const now = Date.now();
-          set({ ...resetCore(coreOf(state), selectRhythm(state), now), nowTs: now });
+          // Отработанное до сброса сохраняется: потерять 20 минут учёбы одной кнопкой нельзя.
+          commit(resetLoggingCore(coreOf(state), selectRhythm(state), now), now);
         },
 
         skip: () => {

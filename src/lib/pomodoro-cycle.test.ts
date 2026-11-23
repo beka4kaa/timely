@@ -25,6 +25,7 @@ import {
   remainingOf,
   replanCore,
   resetCore,
+  resetLoggingCore,
   rhythmLabel,
   rhythmOf,
   ringBursts,
@@ -720,4 +721,25 @@ test("отрезки фазы не переходят в следующую: п�
   assert.deepEqual(resetCore(paused, CLASSIC, T0 + 6 * MIN).runs, []);
   const finished = advanceCore(startCore(paused, CLASSIC, T0 + 10 * MIN), CLASSIC, AUTO, T0 + 30 * MIN).core;
   assert.deepEqual(finished.runs, []);
+});
+
+test("сброс начатого фокуса не теряет отработанное: 20 минут из 50 записываются", () => {
+  const started = startCore(freshCore(DEEP), DEEP, T0);
+  const { core, logs } = resetLoggingCore(started, DEEP, T0 + 20 * MIN);
+  assert.deepEqual(
+    logs.map((log) => [log.kind, log.started_at, log.seconds, log.planned_seconds]),
+    [["focus", new Date(T0).toISOString(), 20 * 60, 50 * 60]],
+  );
+  assert.equal(core.phase, "focus");
+  assert.equal(core.running, false);
+  assert.equal(core.phaseStartedAt, null);
+  assert.equal(core.remainingWhenPaused, 50 * 60);
+  assert.equal(core.done, 0, "досрочный фокус в цикл не засчитывается");
+});
+
+test("сброс после паузы пишет только время работы, а меньше минуты не пишет ничего", () => {
+  const paused = pauseCore(startCore(freshCore(DEEP), DEEP, T0), T0 + 10 * MIN);
+  assert.equal(resetLoggingCore(paused, DEEP, T0 + 40 * MIN).logs[0].seconds, 10 * 60);
+  const blink = startCore(freshCore(DEEP), DEEP, T0);
+  assert.deepEqual(resetLoggingCore(blink, DEEP, T0 + 30_000).logs, []);
 });

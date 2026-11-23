@@ -242,7 +242,7 @@ export function pauseCore(core: TimerCore, now: number): TimerCore {
   };
 }
 
-/** «Сбросить»: фаза с начала, уже по текущему ритму. Сброшенный фокус не засчитывается и не пишется. */
+/** Фаза с начала, уже по текущему ритму. Само по себе ничего не пишет: кнопка «Сбросить» идёт через `resetLoggingCore`. */
 export function resetCore(core: TimerCore, rhythm: Rhythm, now: number): TimerCore {
   return {
     ...core,
@@ -255,6 +255,21 @@ export function resetCore(core: TimerCore, rhythm: Rhythm, now: number): TimerCo
     alarm: null,
     runs: [],
   };
+}
+
+/**
+ * «Сбросить» с сохранением: фаза начинается заново, но уже отработанное не пропадает — оно
+ * пишется, как досрочно законченный блок (по дням, `phaseLogs`). В цикл такой фокус не идёт.
+ */
+export function resetLoggingCore(
+  core: TimerCore,
+  rhythm: Rhythm,
+  now: number,
+): { core: TimerCore; logs: FocusSessionPayload[] } {
+  const planned = plannedOf(core);
+  const worked =
+    core.phaseStartedAt === null ? 0 : Math.round(Math.min(planned, Math.max(0, planned - remainingOf(core, now))));
+  return { core: resetCore(core, rhythm, now), logs: phaseLogs(core, worked, planned, now) };
 }
 
 export function dismissCore(core: TimerCore): TimerCore {

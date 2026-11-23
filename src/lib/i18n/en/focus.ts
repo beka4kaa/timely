@@ -1,6 +1,9 @@
 import type { Dictionary } from "../types";
 
 const en: Dictionary = {
+  // components/pomodoro/pomodoro-page.tsx: закончить досрочно и сброс без потери времени
+  "Закончить": "Finish",
+  "Закончить сейчас: время сохранится, дальше следующая фаза": "Finish now: the time is saved and the next phase comes up",
   // components/pomodoro/focus-history.tsx: заголовок истории, не расписание привычки
   "история::По дням": "By day",
   // components/pomodoro/focus-history.tsx
