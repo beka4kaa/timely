@@ -165,9 +165,10 @@
 .q-open { position: relative; }
 .q-open[data-unseen]::after { content: ""; position: absolute; top: 7px; right: 11px; width: 7px; height: 7px; border-radius: 50%; background: var(--t-accent); }
 
-/* ── Верх чата: новый чат, название в стекле и «Поделиться» ──
-   Переписка уходит под эту строку и под строку ввода, а там, где она прячется, всё мягко
-   размыто: размытие тает к середине экрана, резкой полосы нет. */
+/* ── Верх чата: новый чат, название и «Поделиться» ──
+   Переписка уходит под эту строку и под строку ввода. На компьютере там, где она прячется,
+   просто затемнение цветом страницы с плавным переходом, без размытия: размытый текст
+   читался грязным пятном. На телефоне осталось лёгкое размытие (ниже). */
 .chat-bar {
   position: relative; z-index: 4; display: grid; grid-template-columns: 1fr minmax(0, auto) 1fr;
   align-items: center; gap: 10px; flex: none; min-width: 0; min-height: 40px;
@@ -175,9 +176,8 @@
 .chat-bar > * { z-index: 1; }
 .chat-bar::before {
   content: ""; position: absolute; z-index: 0; inset: -18px -24px -44px; pointer-events: none;
-  background: linear-gradient(color-mix(in srgb, var(--t-bg) 72%, transparent), transparent);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-mask-image: linear-gradient(#000 50%, transparent); mask-image: linear-gradient(#000 50%, transparent);
+  /* Плотно за названием и кнопками, ниже плавно тает */
+  background: linear-gradient(var(--t-bg) 52%, color-mix(in srgb, var(--t-bg) 55%, transparent) 76%, transparent);
 }
 .chat-round { --r: 50%; display: grid; place-items: center; width: 38px; height: 38px; color: var(--t-ink-2); transition: color 120ms ease; }
 .chat-round, .chat-round::before, .chat-round::after { corner-shape: round; }
@@ -194,13 +194,13 @@
 
 .talk { position: relative; }
 .talk > .composer { z-index: 4; }
-/* Компьютер: под строкой ввода размытие, которое тает к середине экрана */
+/* Компьютер: под строкой ввода затемнение цветом страницы. Сверху оно прозрачное, плотнеет
+   к верхнему краю поля и за полем уже сплошное: переписка плавно тонет, а последний ответ
+   над полем (отступ у `.log`) остаётся чистым. */
 @media (min-width: 641px) {
   .talk::after {
-    content: ""; position: absolute; z-index: 3; right: -24px; bottom: -14px; left: -24px; height: 184px; pointer-events: none;
-    background: linear-gradient(transparent, color-mix(in srgb, var(--t-bg) 72%, transparent));
-    -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
-    -webkit-mask-image: linear-gradient(transparent, #000 48%); mask-image: linear-gradient(transparent, #000 48%);
+    content: ""; position: absolute; z-index: 3; right: -24px; bottom: -14px; left: -24px; height: 150px; pointer-events: none;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--t-bg) 85%, transparent) 45%, var(--t-bg) 75%);
   }
 }
 /* Телефон: под полем переписку видно, как в Telegram, только чуть затемнённую и размытую —
@@ -231,6 +231,8 @@
      текст, уходящий под кнопки, не читается обрывком. */
   .talk > .chat-bar::before {
     inset: 0 0 -20px;
+    background: linear-gradient(color-mix(in srgb, var(--t-bg) 72%, transparent), transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
     -webkit-mask-image: linear-gradient(#000 66%, transparent); mask-image: linear-gradient(#000 66%, transparent);
   }
   .chat-round { width: 40px; height: 40px; }

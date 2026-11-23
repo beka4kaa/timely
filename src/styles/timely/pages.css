@@ -614,9 +614,10 @@ html.picking .sidebar, html.picking .mascot { opacity: 0.4; transition: opacity 
 .ti-area .ti-caret { top: 0; margin-top: 0; }
 
 /* ══════════════════ Адаптив ══════════════════ */
-/* Строка ввода плавает над перепиской: сообщения уходят под стекло */
+/* Строка ввода плавает над перепиской: сообщения уходят под стекло. Снизу у переписки запас:
+   прокрученный до конца последний ответ стоит над полем с воздухом, а не впритык. */
 @container main (min-width: 621px) {
-  .log { padding-bottom: 104px; }
+  .log { padding-bottom: 136px; }
   .talk > .composer { margin-top: -100px; }
 }
 
